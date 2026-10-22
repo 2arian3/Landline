@@ -33,25 +33,25 @@ The event runs from **Fri 23 Oct, 18:00** to **Sat 24 Oct, 16:00–17:00** (conf
 - [ ] **X-00 · Arian · Accounts and access**: invite Danial and Mahyar to the repo; create the Supabase project (ca-central-1) and enable PostGIS + pgvector; claim Boson credits and create keys; confirm the Twilio number and `DEMO_AGENT_PHONES` (teammates only); share secrets through a password manager. **Done when** all three can run `psql $DATABASE_URL -c 'select postgis_version()'` and see the Boson dashboard.
 - [ ] **X-0R · Arian · Rules**: email the organizers to ask whether a project first built at another event may be entered, and what pre-event work is allowed. **Done when** we have a written answer, or a note saying we asked and when.
 - [ ] **A-01 · Danial · Higgs spike**: `scripts/spike_higgs.py` connects with `audio/pcmu`, measures time to first audio, checks `conversation.item.truncate`, opens 5 sessions at once and reports any 1013, and checks Farsi + English transcription on one recorded clip. **Done when** the numbers are posted in the team chat and added to the `higgs-realtime` skill.
-- [ ] **D-01 · Arian · Source survey**: pick one main listing source and an optional second; check robots.txt and terms; find the structured endpoint (map JSON / JSON-LD / `__NEXT_DATA__`). **Done when** `docs/DATA.md` names the sources, the endpoints and the field mapping.
+- [x] **D-01 · Arian · Source survey**: pick one main listing source and an optional second; check robots.txt and terms; find the structured endpoint (map JSON / JSON-LD / `__NEXT_DATA__`). **Done when** `docs/DATA.md` names the sources, the endpoints and the field mapping.
 - [ ] **U-00 · Mahyar · Visual direction**: three phone-sized mockups (map + list, detail drawer, judge mode) following the `live-map-ui` skill. **Done when** the team picks one.
 
 ## Kickoff (all three)
 
-- [ ] **X-01 · Contracts freeze**: turn `docs/CONTRACTS.md` into `server/landline/contracts/*.py`, `db/migrations/0001_init.sql` (from `docs/DATA.md`), `web/lib/types.ts` and `web/lib/fixtures/session.json`; add the contract snapshot test; set up `pyproject.toml` (uv), the FastAPI app skeleton, `make test`, and CI. **Done when** CI is green, the migration applies to Supabase, and all three approve the PR; tag `contracts-v1`.
+- [ ] **X-01 · Contracts freeze**: turn `docs/CONTRACTS.md` into `server/landline/contracts/*.py`, `db/migrations/0001_init.sql` (from `docs/DATA.md`), `web/lib/types.ts` and `web/lib/fixtures/session.json`; add the contract snapshot test; set up `pyproject.toml` (uv), the FastAPI app skeleton, `make test`, and CI. **Done when** CI is green, the migration applies to Supabase, and all three approve the PR; tag `contracts-v1`. *Drafted on `skeleton/initial`: `server/landline/contracts/`, `db/migrations/0001_init.sql`, `web/lib/types.ts`, the app skeleton and CI. Needs review from all three.*
 
 ---
 
 ## Arian: data
 
-- [ ] **D-02 · Fetcher**: polite fetcher for source 1 with an on-disk cache and raw snapshots. **Done when** ≥ 800 Toronto listings are snapshotted under `data/raw/`.
-- [ ] **D-03 · Parser + normalizer**: rows with address, unit label, rent, fees, beds, dens, baths, sqft, floor, unit type, description, photos, url; building ranges expanded to units. **Done when** `data/stages/parse/*.jsonl` passes the row validator with zero errors.
-- [ ] **D-09 · UI/eval fixture (by 21:00 Fri)**: export 50 real listings in `Card` shape to `web/lib/fixtures/listings.json` and `evals/fixtures/listings.json`. **Done when** Mahyar's map renders them.
+- [x] **D-02 · Fetcher**: polite fetcher for source 1 with an on-disk cache and raw snapshots. **Done when** ≥ 800 Toronto listings are snapshotted under `data/raw/`.
+- [x] **D-03 · Parser + normalizer**: rows with address, unit label, rent, fees, beds, dens, baths, sqft, floor, unit type, description, photos, url; building ranges expanded to units. **Done when** `data/stages/parse/*.jsonl` passes the row validator with zero errors.
+- [x] **D-09 · UI/eval fixture (by 21:00 Fri)**: export 50 real listings in `Card` shape to `web/lib/fixtures/listings.json` and `evals/fixtures/listings.json`. **Done when** Mahyar's map renders them.
 - [ ] **D-04 · Geocoder**: map-pin coordinates first, geocoder fallback with cache and precision. **Done when** ≥ 90% of rows are street precision or better.
 - [ ] **D-05 · Enricher**: neighbourhoods (point-in-polygon + adjacency), TTC stations + walk minutes, City registration/evaluation join, neighbourhood medians. **Done when** the coverage report prints join rates for each.
 - [ ] **D-06 · Grounded extractor**: shared `grounding.py` (quote must appear in source text, fuzzy ≥ 0.85) + description extractor (fees, pets, parking, laundry, AC, floor, light cues, red-flag phrases). **Done when** 30 hand-checked rows show zero ungrounded values, and Danial's extraction eval runs on it.
 - [ ] **D-07 · Light estimator**: floor + text cues + photo brightness → `light_score` with `light_basis`. **Done when** every row has a score and the 5 brightest/darkest look right to a human.
-- [ ] **D-08 · Dedupe + load + report**: upsert to Postgres, mark stale, `make data-report`. **Done when** the DB holds ≥ 800 active listings and the report is in the PR.
+- [x] **D-08 · Dedupe + load + report**: upsert to Postgres, mark stale, `make data-report`. **Done when** the DB holds ≥ 800 active listings and the report is in the PR.
 
 ## Arian: orchestration and scoring
 
@@ -83,7 +83,7 @@ The event runs from **Fri 23 Oct, 18:00** to **Sat 24 Oct, 16:00–17:00** (conf
 
 ## Mahyar: UI, API and delivery
 
-- [ ] **U-01 · Web scaffold**: Next.js 15, React 19, Tailwind 4, MapLibre GL with OpenFreeMap tiles, design tokens from the `live-map-ui` skill, renders `fixtures/session.json`. **Done when** it deploys to Vercel and shows the fixture on a map at 375 px and desktop.
+- [ ] **U-01 · Web scaffold**: Next.js 15, React 19, Tailwind 4, MapLibre GL with OpenFreeMap tiles, design tokens from the `live-map-ui` skill, renders `fixtures/session.json`. **Done when** it deploys to Vercel and shows the fixture on a map at 375 px and desktop. *Local build done (map, list, detail, mobile sheet, live updates); Vercel deploy pending.*
 - [ ] **U-02 · Map + list**: every catalogue listing as a faint dot that fades as filters apply; numbered pins by rank, coloured by status; list in sync with pins; mobile bottom sheet; desktop split view. **Done when** 60 fps pan/zoom on a mid-range phone and pins match card order.
 - [ ] **U-03 · Live updates**: SSE client with version + snapshot fetch, poll fallback, reorder animation by transform, focus sync both ways (tap → POST focus; voice focus → fly to). **Done when** a voice change moves the map in < 1 s on the deployed stack, and killing SSE falls back to polling with no blank board.
 - [ ] **U-04 · Detail drawer**: photos, features with source badges (listing says / City record / agent heard), reasons and watch-outs, call facts with quotes, live captions while calling, red flags. **Done when** every field shows its source.

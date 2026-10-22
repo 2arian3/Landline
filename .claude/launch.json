@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "api",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-lc", "cd server && DATABASE_URL=${DATABASE_URL:-postgresql://landline:landline@localhost:54329/landline} uv run uvicorn landline.app:app --port 8000"],
+      "port": 8000
+    },
+    {
+      "name": "web",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-lc", "cd web && npm run dev"],
+      "port": 3000
+    }
+  ]
+}
