@@ -1,0 +1,30 @@
+# secrets
+.env
+.env.*
+!.env.example
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# web
+node_modules/
+web/.next/
+web/out/
+.vercel
+
+# data and caches (fixtures under */fixtures/ are committed)
+data/raw/
+data/stages/
+pipeline/cache/
+*.sqlite
+*.db
+
+# local tooling
+.claude/settings.local.json
+.DS_Store
+*.log

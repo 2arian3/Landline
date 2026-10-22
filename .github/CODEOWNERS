@@ -1,0 +1,12 @@
+# Review requests by lane. Update the handles if teammates use different GitHub accounts.
+*                                   @2arian3
+/pipeline/                          @2arian3
+/db/                                @2arian3 @Danial-Kord @mahyar-jbr
+/server/landline/contracts/         @2arian3 @Danial-Kord @mahyar-jbr
+/web/lib/types.ts                   @2arian3 @Danial-Kord @mahyar-jbr
+/server/landline/voice/             @Danial-Kord
+/server/landline/agents/            @Danial-Kord
+/evals/                             @Danial-Kord
+/server/landline/api/               @mahyar-jbr
+/web/                               @mahyar-jbr
+/deploy/                            @mahyar-jbr
