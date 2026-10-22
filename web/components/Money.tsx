@@ -14,8 +14,10 @@ const CAD = { style: "currency", currency: "CAD", currencyDisplay: "narrowSymbol
 export function Money({ rent, monthly, lead = false }: { rent: number; monthly: number; lead?: boolean }) {
   const corrected = monthly !== rent;
   const delta = monthly - rent;
+  // `relative` contains the absolutely positioned sr-only text; without it the
+  // text anchors to the app shell and makes the page scrollable by 40px.
   return (
-    <div className="min-w-0">
+    <div className="relative min-w-0">
       <div aria-hidden className="flex items-baseline gap-1">
         <NumberFlow
           value={monthly}
