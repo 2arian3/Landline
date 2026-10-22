@@ -1,0 +1,144 @@
+@import "tailwindcss";
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Landline: the live surface.
+
+   A calm map of places someone actually checked. The renter is on the phone
+   while this fills in; the screen confirms what they hear and never competes
+   with it. Tokens carried over from Realest, where they survived two design
+   audits:
+     · Warm-neutral ink on a warm ground. Ink is the primary action and the focus ring.
+     · Colour means status and nothing else: checked, live, gone.
+     · Money is the largest thing on a card, set in the sans with tabular figures.
+     · Every fact says where it came from.
+   Every text colour is at least 4.5:1 on white; no text under 13px.
+   ───────────────────────────────────────────────────────────────────────── */
+
+@theme static {
+  --color-ground: #f6f4f0;
+  --color-surface: #ffffff;
+  --color-press: #f1efea;
+  --color-ink: #1a1815;      /* 17.7:1 */
+  --color-ink-2: #55524e;    /*  7.8:1 */
+  --color-ink-3: #6c6864;    /*  5.5:1, the quietest text there is */
+  --color-line: rgba(26, 24, 21, 0.1);
+  --color-hair: rgba(26, 24, 21, 0.06);
+
+  /* status, the only colour on the page */
+  --color-real: #216a49;     /* checked by phone */
+  --color-live: #935a11;     /* on the phone now */
+  --color-dead: #af2b25;     /* gone, or over budget */
+
+  /* the map, tuned to sit under the ink */
+  --color-map-land: #efece6;
+  --color-map-water: #cad7dc;
+  --color-map-park: #dfe5d4;
+
+  --font-sans: var(--font-instrument), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-plex), ui-monospace, monospace;
+
+  --text-price-lead: 28px;
+  --text-price-lead--line-height: 32px;
+  --text-price-lead--letter-spacing: -0.02em;
+  --text-price: 22px;
+  --text-price--line-height: 26px;
+  --text-price--letter-spacing: -0.015em;
+  --text-title: 20px;
+  --text-title--line-height: 25px;
+  --text-title--letter-spacing: -0.012em;
+  --text-fact: 17px;
+  --text-fact--line-height: 22px;
+  --text-fact--letter-spacing: -0.01em;
+  --text-support: 15px;
+  --text-support--line-height: 20px;
+  --text-support--letter-spacing: -0.005em;
+  --text-meta: 13px;
+  --text-meta--line-height: 18px;
+
+  --font-weight-label: 540;
+  --font-weight-strong: 580;
+
+  --radius-card: 16px;
+  --radius-control: 12px;
+  --radius-photo: 10px;
+
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+@layer base {
+  /* An app shell: the map and the panel scroll on their own, the page never does. */
+  html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
+  html { background: var(--color-ground); -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--color-ground);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+  h1, h2, h3 { text-wrap: balance; }
+  p { text-wrap: pretty; }
+  :where(s, del) { text-decoration-thickness: 1.5px; }
+  ::selection { background: var(--color-ink); color: #fff; }
+  button:not(:disabled), [role="button"], a[href] { cursor: pointer; }
+  :focus-visible { outline: 2px solid var(--color-ink); outline-offset: 2px; }
+}
+
+.tnum { font-variant-numeric: lining-nums tabular-nums; }
+
+/* ── map pins ─────────────────────────────────────────────────────────── */
+
+.pin {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  background: var(--color-ink);
+  color: #fff;
+  font: 580 13px/1 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 2px rgba(26, 24, 21, 0.18), 0 4px 10px rgba(26, 24, 21, 0.12);
+  transition: transform 220ms var(--ease-out), box-shadow 220ms var(--ease-out);
+  cursor: pointer;
+  padding: 0;
+}
+.pin:hover, .pin[data-hover="true"] { transform: scale(1.12); }
+.pin[data-focus="true"] {
+  transform: scale(1.22);
+  box-shadow: 0 0 0 2px var(--color-ink), 0 6px 16px rgba(26, 24, 21, 0.25);
+}
+.pin[data-status="verified"] { background: var(--color-real); }
+.pin[data-status="calling"] { background: var(--color-live); }
+.pin[data-status="calling"]::after {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border-radius: 999px;
+  border: 2px solid var(--color-live);
+  animation: ring 1.8s var(--ease-out) infinite;
+}
+.pin[data-status="dead"] { background: #fff; color: var(--color-ink-3); border-color: var(--color-ink-3); }
+
+@keyframes ring {
+  from { opacity: 0.7; transform: scale(0.85); }
+  to { opacity: 0; transform: scale(1.5); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pin, .pin::after { transition: none; animation: none; }
+}
+
+/* MapLibre's own controls, quieted to match */
+.maplibregl-ctrl-group {
+  border-radius: var(--radius-control) !important;
+  box-shadow: 0 0 0 1px var(--color-line), 0 2px 8px rgba(26, 24, 21, 0.06) !important;
+}
+.maplibregl-ctrl-attrib { font: 400 11px/1.4 var(--font-sans); color: var(--color-ink-3); }
+.maplibregl-ctrl-attrib a { color: var(--color-ink-2); }
+
+/* vaul sheet */
+[data-vaul-drawer] { touch-action: none; }
