@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    services:
+      db:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: landline
+          POSTGRES_PASSWORD: landline
+          POSTGRES_DB: landline
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U landline" --health-interval 2s --health-retries 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync
+      - run: uv run ruff check server pipeline scripts
+      - run: uv run pytest -q
+      - name: Install PostGIS into the service and apply migrations
+        env:
+          DATABASE_URL: postgresql://landline:landline@localhost:5432/landline
+        run: |
+          docker exec "${{ job.services.db.id }}" bash -c \
+            "apt-get update -qq && apt-get install -y -qq --no-install-recommends postgresql-17-postgis-3 > /dev/null"
+          uv run python scripts/migrate.py
+          uv run python scripts/migrate.py   # second run must be a no-op
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build

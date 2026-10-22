@@ -1,0 +1,50 @@
+# Re-scrape listings on a schedule and update the database.
+#
+# Safety: the run checks the scrape before loading (minimum listing count and
+# coordinate coverage), so a site change or a block can never overwrite good
+# data. Unseen listings are marked stale only after a complete run.
+#
+# Needs repository secrets DATABASE_URL (Supabase) and SCRAPER_CONTACT_EMAIL.
+# Without DATABASE_URL it still scrapes and uploads the JSONL as an artifact.
+name: Refresh listings
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"     # every 6 hours, off the top of the hour
+  workflow_dispatch:
+    inputs:
+      max_pages:
+        description: "Most pages to fetch"
+        default: "40"
+
+concurrency:
+  group: refresh-listings
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SCRAPER_CONTACT_EMAIL: ${{ secrets.SCRAPER_CONTACT_EMAIL }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PYTHONPATH: server:.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --no-dev
+      - name: Scrape, check, load
+        run: |
+          LOAD=""
+          if [ -n "$DATABASE_URL" ]; then LOAD="--load"; fi
+          uv run python -m pipeline run --source livrent --no-cache \
+            --max-pages "${{ inputs.max_pages || '40' }}" --min-listings 500 $LOAD | tee run.txt
+      - name: Upload the run
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: listings-${{ github.run_id }}
+          path: |
+            run.txt
+            data/stages/normalize/*.jsonl
+          retention-days: 7
