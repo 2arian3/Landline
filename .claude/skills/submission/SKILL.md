@@ -21,7 +21,7 @@ Full requirements and the video script are in `docs/DEMO.md`.
 
 ## The first sentence
 
-Lead with the inversion, not "a voice assistant for apartments":
+Open with the inversion, not "a voice assistant for apartments":
 
 > Every voice agent in real estate works for the brokerage. Landline works for the renter: it phones the listing agents for you, in your language, and shows you on a live map which listings are actually true.
 

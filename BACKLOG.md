@@ -4,7 +4,7 @@ Three lanes that run in parallel and meet at the contracts. Take the next open t
 
 | Lane | Owner | Paths |
 |---|---|---|
-| Data, orchestration and scoring (`D-`, `O-`) + lead (`X-`) | Arian | `pipeline/`, `db/`, `server/landline/{contracts,db,orchestrator,scoring}` |
+| Data, orchestration and scoring (`D-`, `O-`) + shared setup (`X-`) | Arian | `pipeline/`, `db/`, `server/landline/{contracts,db,orchestrator,scoring}` |
 | Agents, voice and evals (`A-`, `E-`) | Danial | `server/landline/{voice,agents}`, `evals/` |
 | UI, API read side and delivery (`U-`) | Mahyar | `web/`, `server/landline/api/` (except Twilio webhooks), `deploy/` |
 
@@ -36,7 +36,7 @@ The event runs from **Fri 23 Oct, 18:00** to **Sat 24 Oct, 16:00–17:00** (conf
 - [ ] **D-01 · Arian · Source survey**: pick one main listing source and an optional second; check robots.txt and terms; find the structured endpoint (map JSON / JSON-LD / `__NEXT_DATA__`). **Done when** `docs/DATA.md` names the sources, the endpoints and the field mapping.
 - [ ] **U-00 · Mahyar · Visual direction**: three phone-sized mockups (map + list, detail drawer, judge mode) following the `live-map-ui` skill. **Done when** the team picks one.
 
-## Kickoff (all three, Arian drives)
+## Kickoff (all three)
 
 - [ ] **X-01 · Contracts freeze**: turn `docs/CONTRACTS.md` into `server/landline/contracts/*.py`, `db/migrations/0001_init.sql` (from `docs/DATA.md`), `web/lib/types.ts` and `web/lib/fixtures/session.json`; add the contract snapshot test; set up `pyproject.toml` (uv), the FastAPI app skeleton, `make test`, and CI. **Done when** CI is green, the migration applies to Supabase, and all three approve the PR; tag `contracts-v1`.
 
