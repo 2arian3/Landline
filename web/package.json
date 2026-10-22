@@ -1,0 +1,28 @@
+{
+  "name": "landline-web",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start -p 3000",
+    "typecheck": "tsc --noEmit",
+    "postinstall": "node scripts/copy-maplibre-worker.mjs"
+  },
+  "dependencies": {
+    "@number-flow/react": "^0.6.2",
+    "maplibre-gl": "^6.15.0",
+    "motion": "^14.6.0",
+    "next": "^15.5.28",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "vaul": "^1.1.2"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^5.7.0"
+  }
+}
