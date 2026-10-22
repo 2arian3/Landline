@@ -1,0 +1,16 @@
+#!/bin/sh
+# Team rule: commit messages never mention AI tools or carry AI attribution.
+# Installed by `make setup` (git config core.hooksPath .githooks).
+
+msg_file="$1"
+pattern='claude|anthropic|chatgpt|codex|copilot|generated with|noreply@anthropic\.com|\[bot\]|🤖'
+
+# Ignore git's comment lines when checking.
+body=$(grep -v '^#' "$msg_file")
+
+if printf '%s\n' "$body" | grep -Eiq "$pattern"; then
+  echo "commit-msg: this message mentions an AI tool or carries AI attribution:" >&2
+  printf '%s\n' "$body" | grep -Ein "$pattern" >&2
+  echo "commit-msg: describe the change itself (say \"agent instructions\" for the agent docs) and try again." >&2
+  exit 1
+fi
