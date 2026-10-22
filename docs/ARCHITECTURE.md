@@ -134,3 +134,5 @@ stateDiagram-v2
 | Models | Boson Higgs Realtime and Higgs TTS (Avatar is a stretch goal); a text LLM for extraction and memory, behind one provider interface |
 
 No tunnels in the demo path. The VM stays up until judging ends.
+
+**No Redis for now.** One API process holds the catalogue and sessions in memory and persists to Postgres; SSE subscribers are woken in-process. Redis comes in only if the API runs as several processes (pub/sub for SSE, shared rate limits, a job queue). See [DATA.md](DATA.md#caching-and-why-no-redis-yet).

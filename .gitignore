@@ -15,6 +15,7 @@ __pycache__/
 node_modules/
 web/.next/
 web/out/
+web/tsconfig.tsbuildinfo
 .vercel
 
 # data and caches (fixtures under */fixtures/ are committed)
@@ -28,3 +29,4 @@ pipeline/cache/
 .claude/settings.local.json
 .DS_Store
 *.log
+web/public/maplibre/

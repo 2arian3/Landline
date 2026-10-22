@@ -8,7 +8,7 @@ Built on Boson AI's **Higgs Realtime** (the renter's call and every listing call
 
 ## Status
 
-Pre-event: the plan, contracts and team setup. The build starts at kickoff (Fri 23 Oct, 18:00). See [BACKLOG.md](BACKLOG.md).
+Skeleton in place: the database schema, a polite scraper with a scheduled refresh (about 1,080 Toronto listings, all with coordinates), the API read side with a live session stream, and the map UI for phones and laptops. Voice agents, scoring and calls come next. See [BACKLOG.md](BACKLOG.md).
 
 ## How it works
 
@@ -31,12 +31,21 @@ Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · [docs/DATA.md](docs/DAT
 
 ## Getting started
 
+You need Python 3.12 with [uv](https://docs.astral.sh/uv/), Node 22, and Docker (for the local database).
+
 ```bash
 git clone https://github.com/2arian3/BosonAI-Hackathon.git
 cd BosonAI-Hackathon
-make setup          # installs the commit-msg hook; more once the code exists
-cp .env.example .env
+make setup           # git hooks, Python deps, web deps
+cp .env.example .env # set SCRAPER_CONTACT_EMAIL; the rest can wait
+make db-up           # Postgres 17 + PostGIS + pgvector on :54329
+make db-migrate
+make data            # scrape ~1,000 Toronto listings (politely), check, load
+make dev             # API on :8000      (in one terminal)
+make web             # web on :3000      (in another); open /?dev=1 for demo controls
 ```
+
+No database? `make dev` falls back to the latest scrape, then to `web/lib/fixtures/listings.json`, so the web app works on any laptop.
 
 Read [AGENTS.md](AGENTS.md) before writing code, then take the next open task in your lane in [BACKLOG.md](BACKLOG.md).
 

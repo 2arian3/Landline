@@ -102,6 +102,41 @@ create table events (seq bigserial primary key, session_id text, call_id text, t
   idem_key text unique, payload jsonb not null, at timestamptz not null default now());
 ```
 
+## Sources (surveyed 22 Oct 2026)
+
+| Site | robots.txt | Honest crawler gets | Structured data | Decision |
+|---|---|---|---|---|
+| **liv.rent** | Allows the city listing pages; publishes sitemaps | 200 | schema.org JSON-LD item list (address, lat/lng, price) plus the page's own listing objects (beds, baths, size, unit type, furnished, photos, amenities) | **Primary source.** ~1,080 Toronto listings across 9 pages; 100% have coordinates |
+| rentals.ca | Allows `/`, blocks filters and feeds | **403** (even robots.txt and terms) | n/a | **Excluded.** It blocks identified crawlers, and we don't disguise ours to get round that |
+| RentSeeker | Allows `/`, blocks `/api/` | 200 | sitemaps for rentals | Candidate second source (purpose-built rentals; pairs well with City building records) |
+| City of Toronto open data | Open Government Licence | API | CKAN datastore | **Enrichment** (building registration and evaluations; see below) |
+
+**Terms.** liv.rent's terms forbid copying its content for commercial use or redistribution without permission. Landline is a non-commercial hackathon prototype. We store facts (address, price, size, coordinates), always link back, show photos only by URL with "Photos: liv.rent" attribution, keep volume low (9 page loads per refresh, ≥2 s apart, honest User-Agent with a contact address), and never read or store contact details. If we ever go beyond the demo, we ask liv.rent first.
+
+**What liv.rent gives us today** (from the latest run): coordinates, postal code, rent, beds, baths 100%; sqft 83%; furnished 98%; utilities flag 78%; building amenities 64%. Floor, pets, parking and laundry are not in the list pages. They come from the description (D-06), the City record (D-05) and phone calls.
+
+## Refresh workflow
+
+`.github/workflows/refresh-listings.yml` re-scrapes every 6 hours (and on demand from the Actions tab):
+
+1. `python -m pipeline run --source livrent --no-cache --min-listings 500 --load`
+2. **Check before load:** if the run finds fewer than 500 listings or under 90% have coordinates, it exits with code 3 and loads nothing. A site change or a block can't overwrite good data.
+3. Upsert by `listing_id`; `first_seen` is kept, `last_seen` and the facts are updated, and provenance is merged.
+4. Rows not seen in a **complete** run (the scraper reached the end of the results) are marked `stale`. A partial run never marks anything stale.
+5. Every run is recorded in `ingest_runs` (pages, fetched, inserted, updated, marked stale, status), and its JSONL and log are uploaded as an artifact for 7 days.
+
+It needs repository secrets `DATABASE_URL` (Supabase) and `SCRAPER_CONTACT_EMAIL`. Without the database secret it still scrapes and uploads the artifact.
+
+## Caching (and why no Redis yet)
+
+| Cache | Where | Why |
+|---|---|---|
+| HTTP responses | `pipeline/cache/http/` on disk, 6 h TTL | Re-running a stage never hits the site twice |
+| Listing catalogue | API process memory, loaded at boot | Ranking per utterance can't wait on a network hop |
+| Sessions | API process memory + Postgres (O-02) | One writer per session; SSE wakes subscribers in-process |
+
+Redis would earn its place only when the API runs as **more than one process**: SSE fan-out via pub/sub, a shared rate limiter for judge mode, or a job queue for scraping and extraction. Until then it is one more service to keep alive during judging, with nothing to do. If we scale the API out, add Redis for pub/sub and rate limiting, and keep Postgres as the source of truth.
+
 ## Pipeline
 
 Each stage reads the previous stage's JSONL from `data/stages/<stage>/` and writes its own, so any stage can be re-run alone. Raw responses are kept under `data/raw/<source>/<date>/` (gitignored, shared as a release asset if needed).
