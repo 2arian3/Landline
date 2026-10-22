@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Drawer } from "vaul";
 import { Board } from "./Board";
 import { DemoControls } from "./DemoControls";
@@ -39,7 +39,14 @@ export function LiveBoard({ sessionId }: { sessionId: string }) {
   }, []);
 
   const board = useMemo(() => view?.board ?? [], [view]);
-  const focusId = selected ?? view?.focus_listing_id ?? null;
+
+  // Follow the server's focus (the voice agent saying "the Yorkville one") only
+  // when it changes after the page opened; on open, frame the whole board.
+  const openingFocus = useRef<string | null | undefined>(undefined);
+  if (view && openingFocus.current === undefined) openingFocus.current = view.focus_listing_id ?? null;
+  const serverFocus =
+    view?.focus_listing_id && view.focus_listing_id !== openingFocus.current ? view.focus_listing_id : null;
+  const focusId = selected ?? serverFocus;
   const selectedCard = board.find((c) => c.listing_id === selected);
 
   function select(id: string) {
@@ -103,11 +110,13 @@ export function LiveBoard({ sessionId }: { sessionId: string }) {
   );
 
   // Until the browser says which layout this is, show the ground and nothing else.
-  if (desktop === null) return <div className="h-dvh w-full bg-ground" aria-busy="true" />;
+  // The shell is `fixed inset-0`: nothing can scroll the page itself, not even
+  // focus or scrollIntoView on something inside the panel.
+  if (desktop === null) return <div className="fixed inset-0 bg-ground" aria-busy="true" />;
 
   if (desktop) {
     return (
-      <div className="flex h-dvh w-full overflow-hidden">
+      <div className="fixed inset-0 flex overflow-hidden">
         <main className="relative min-w-0 flex-1">{map}</main>
         <aside
           className="flex w-[440px] shrink-0 flex-col bg-ground"
@@ -118,14 +127,14 @@ export function LiveBoard({ sessionId }: { sessionId: string }) {
             <Brand stale={stale} connected={!!view} />
             <p className="mt-0.5 text-meta text-ink-3">Toronto rentals, checked by phone</p>
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto">{panel}</div>
+          <div className="relative min-h-0 flex-1 overflow-y-auto">{panel}</div>
         </aside>
       </div>
     );
   }
 
   return (
-    <div className="relative h-dvh w-full overflow-hidden">
+    <div className="fixed inset-0 overflow-hidden">
       {map}
       <header
         className="pointer-events-none absolute inset-x-0 top-0 z-10 px-3"
@@ -155,7 +164,10 @@ export function LiveBoard({ sessionId }: { sessionId: string }) {
           >
             <Drawer.Title className="sr-only">Places Landline found</Drawer.Title>
             <div aria-hidden className="mx-auto mb-2 mt-2.5 h-1 w-10 shrink-0 rounded-full bg-ink/20" />
-            <div className="min-h-0 flex-1 overflow-y-auto" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
+            <div
+              className="relative min-h-0 flex-1 overflow-y-auto"
+              style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+            >
               {panel}
             </div>
           </Drawer.Content>
