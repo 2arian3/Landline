@@ -1,0 +1,22 @@
+# Local development database. The shared dev database is Supabase; this is for
+# working offline and for testing migrations before applying them there.
+#   docker compose up -d db
+#   DATABASE_URL=postgresql://landline:landline@localhost:54329/landline make db-migrate
+services:
+  db:
+    build: ./db/local
+    environment:
+      POSTGRES_USER: landline
+      POSTGRES_PASSWORD: landline
+      POSTGRES_DB: landline
+    ports:
+      - "54329:5432"
+    volumes:
+      - landline-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U landline"]
+      interval: 2s
+      retries: 30
+
+volumes:
+  landline-db:
