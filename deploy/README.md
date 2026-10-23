@@ -1,6 +1,6 @@
 # deploy/
 
-The API and its database run on one Arbutus VM. The public gateway's nginx proxies to it, and the web app runs on Vercel. Every push to `main` that passes CI redeploys the VM. Task U-07.
+The API and its database run on one Arbutus VM. The public gateway's nginx proxies to it, and the web app runs on Vercel. Every push to the `release` branch that passes CI redeploys the VM. `main` is where work lands. `release` is what runs. Task U-07.
 
 **Public URL:** https://landline.134.87.8.230.sslip.io (`/health`, `/docs`, `/api/*`)
 
@@ -34,7 +34,22 @@ Secrets live only on the VM, in `~/landline/.env` (mode 600): `POSTGRES_PASSWORD
 
 ## CI/CD
 
-`.github/workflows/deploy.yml` runs when **CI** succeeds on a push to `main`. It can also be started by hand from the Actions tab, with a re-scrape choice.
+`.github/workflows/deploy.yml` runs when **CI** succeeds on a push to `release`. It can also be started by hand from the Actions tab, with a re-scrape choice. A manual run only deploys when it is started on `release`. Pushes to `main` run CI and nothing else.
+
+To ship, fast-forward `release` to a green `main`:
+
+```bash
+git push origin main:release
+```
+
+Git refuses the push if `release` has diverged from `main`. So as long as everyone ships this way, `release` only moves forward along `main`. To roll back, push an older commit of `main` with `--force-with-lease`:
+
+```bash
+git push --force-with-lease origin <sha>:release
+```
+
+The deploy then reinstalls that version. Migrations are forward-only, so a rollback past a migration keeps the newer schema.
+
 
 1. It connects to the VM through the gateway, using the gateway as an SSH jump host. The VM can't be reached any other way. The connection uses `.github/actions/landline-ssh` with secrets `DEPLOY_SSH_KEY` and `DEPLOY_KNOWN_HOSTS`.
 2. `rsync --delete` copies the commit to `~/landline`.

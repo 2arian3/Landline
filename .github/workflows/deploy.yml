@@ -1,6 +1,8 @@
-# Deploy the API and the database to the Landline VM whenever main changes.
+# Deploy the API and the database to the Landline VM whenever release changes.
 #
-# Runs after CI passes on a push to main (or by hand). The VM has no public
+# main is where work lands; release is what runs. To ship, fast-forward release
+# to a green main: `git push origin main:release`. This runs after CI passes on
+# that push (or by hand, on release only). The VM has no public
 # address, so the job reaches it through the gateway as an SSH jump host. On the
 # gateway the deploy key can only open that one tunnel: no shell, no other
 # destinations. CI never changes the gateway's nginx; see deploy/README.md.
@@ -12,7 +14,7 @@ on:
   workflow_run:
     workflows: [CI]
     types: [completed]
-    branches: [main]
+    branches: [release]
   workflow_dispatch:
     inputs:
       refresh:
@@ -28,8 +30,9 @@ concurrency:
 jobs:
   deploy:
     if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/release') ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'release')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
