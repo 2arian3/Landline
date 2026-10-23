@@ -1,9 +1,9 @@
 "use client";
 
 import { heardLine } from "@/lib/format";
-import type { SessionView } from "@/lib/types";
+import type { Card, SessionView } from "@/lib/types";
 
-export function Brand({ stale, connected }: { stale: boolean; connected: boolean }) {
+export function Brand({ stale, connected, idle = false }: { stale: boolean; connected: boolean; idle?: boolean }) {
   const label = !connected ? "Connecting…" : stale ? "Reconnecting…" : "Live";
   const color = connected && !stale ? "var(--color-real)" : "var(--color-ink-3)";
   return (
@@ -11,32 +11,115 @@ export function Brand({ stale, connected }: { stale: boolean; connected: boolean
       <div className="min-w-0">
         <p className="text-fact font-strong tracking-[-0.01em]">Landline</p>
       </div>
-      <p className="flex items-center gap-1.5 text-meta text-ink-2" aria-live="polite">
-        <span aria-hidden className="h-2 w-2 rounded-full" style={{ background: color }} />
-        {label}
-      </p>
+      {!idle && (
+        <p className="flex items-center gap-1.5 text-meta text-ink-2" aria-live="polite">
+          <span aria-hidden className="h-2 w-2 rounded-full" style={{ background: color }} />
+          {label}
+        </p>
+      )}
     </div>
   );
 }
 
-/** What Landline heard and what it last said: the renter's half of the call, on screen. */
-export function Heard({ view }: { view: SessionView | null }) {
+/**
+ * What the agents are doing right now, counted from the card statuses the
+ * server sent. Nothing here is guessed: no "dialing", no ETAs. With no calls
+ * yet it says how many places fit.
+ */
+export function Activity({ view, compact = false }: { view: SessionView | null; compact?: boolean }) {
+  if (!view) return <div className="h-[18px] w-1/2 rounded bg-press" aria-hidden />;
+  const n = count(view.board);
+  const done: string[] = [];
+  if (n.booked) done.push(`${n.booked} viewing booked`);
+  if (n.verified) done.push(`${n.verified} checked by phone`);
+  if (n.suspect) done.push(`${n.suspect} flagged`);
+  if (n.no_answer) done.push(`${n.no_answer} no answer`);
+  if (n.dead) done.push(`${n.dead} already rented`);
+  const rest = compact ? "min-w-0 truncate" : "";
+
+  if (n.calling) {
+    const label = (
+      <span className="shrink-0 whitespace-nowrap font-label text-live">
+        Calling {n.calling} {n.calling === 1 ? "place" : "places"}
+      </span>
+    );
+    const dot = <span aria-hidden className="live-dot h-2 w-2 shrink-0 self-center rounded-full bg-live" />;
+    if (compact) {
+      return (
+        <p className="flex items-baseline gap-x-1.5 text-meta" aria-live="polite">
+          {dot}
+          {label}
+          {done.length > 0 && <span className={`text-ink-2 ${rest}`}>· {done.join(" · ")}</span>}
+        </p>
+      );
+    }
+    return (
+      <div aria-live="polite">
+        <p className="flex items-baseline gap-x-1.5 text-meta">
+          {dot}
+          {label}
+        </p>
+        {done.length > 0 && <p className="pl-3.5 text-meta text-ink-2">{capitalize(done.join(" · "))}</p>}
+      </div>
+    );
+  }
+  if (done.length) {
+    return (
+      <p className="flex items-baseline gap-x-1.5 text-meta" aria-live="polite">
+        <span aria-hidden className="h-2 w-2 shrink-0 self-center rounded-full bg-real" />
+        <span className={`font-label text-ink ${rest}`}>{capitalize(done.join(" · "))}</span>
+      </p>
+    );
+  }
+  const shown = view.board.length;
+  return (
+    <p className={`text-meta text-ink-3 tnum ${compact ? "truncate" : ""}`}>
+      {view.matches.length.toLocaleString("en-CA")} {view.matches.length === 1 ? "place fits" : "places fit"}
+      {shown > 0 && ` · the best ${shown} are numbered on the map`}
+    </p>
+  );
+}
+
+/**
+ * What Landline heard and what it last said: the renter's half of the call, on
+ * screen. `compact` (phones) keeps it to one line so the first place shows
+ * above the fold of the sheet; the renter is hearing Landline already.
+ */
+export function Heard({ view, compact = false }: { view: SessionView | null; compact?: boolean }) {
   if (!view) {
     return (
       <div className="space-y-2" aria-hidden>
         <div className="h-4 w-2/3 rounded bg-press" />
-        <div className="h-4 w-1/2 rounded bg-press" />
+        {!compact && <div className="h-4 w-1/2 rounded bg-press" />}
       </div>
     );
   }
-  const heard = heardLine(view.preferences);
-  const shown = view.board.length;
+  const heard = capitalize(heardLine(view.preferences).join(" · "));
+  const welcome = view.returning ? `Welcome back${view.user_name ? `, ${view.user_name}` : ""}.` : null;
+
+  if (compact) {
+    return (
+      <div className="min-w-0 space-y-0.5">
+        {welcome && <p className="truncate text-support font-label text-ink">{welcome}</p>}
+        {heard && (
+          <p className="truncate text-support text-ink">
+            <span className="text-ink-3">Heard </span>
+            {heard.charAt(0).toLowerCase() + heard.slice(1)}
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  // Landline usually opens a returning call with the welcome itself; don't say it twice.
+  const saidWelcome = /^welcome back/i.test(view.agent_says ?? "");
   return (
     <div className="space-y-3">
-      {heard.length > 0 && (
+      {welcome && !saidWelcome && <p className="text-fact font-label text-ink">{welcome}</p>}
+      {heard && (
         <div>
           <p className="text-meta text-ink-3">What I heard</p>
-          <p className="text-support text-ink">{capitalize(heard.join(" · "))}</p>
+          <p className="text-support text-ink">{heard}</p>
         </div>
       )}
       {view.agent_says && (
@@ -45,12 +128,14 @@ export function Heard({ view }: { view: SessionView | null }) {
           <p className="text-fact">“{view.agent_says}”</p>
         </blockquote>
       )}
-      <p className="text-meta text-ink-3 tnum">
-        {view.matches.length.toLocaleString("en-CA")} {view.matches.length === 1 ? "place fits" : "places fit"}
-        {shown > 0 && ` · the best ${shown} are numbered on the map`}
-      </p>
     </div>
   );
+}
+
+function count(board: Card[]) {
+  const n = { calling: 0, verified: 0, suspect: 0, dead: 0, no_answer: 0, booked: 0, pending: 0 };
+  for (const c of board) n[c.status] += 1;
+  return n;
 }
 
 const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
