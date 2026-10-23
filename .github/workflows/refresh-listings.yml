@@ -1,21 +1,14 @@
-# Re-scrape listings on a schedule and update the database.
+# Re-scrape listings now. The schedule itself lives on the VM, next to the
+# database it writes to (deploy/systemd/landline-refresh.timer, every 6 hours);
+# this starts the same job on demand and shows its log.
 #
 # Safety: the run checks the scrape before loading (minimum listing count and
 # coordinate coverage), so a site change or a block can never overwrite good
 # data. Unseen listings are marked stale only after a complete run.
-#
-# Needs repository secrets DATABASE_URL (Supabase) and SCRAPER_CONTACT_EMAIL.
-# Without DATABASE_URL it still scrapes and uploads the JSONL as an artifact.
 name: Refresh listings
 
 on:
-  schedule:
-    - cron: "17 */6 * * *"     # every 6 hours, off the top of the hour
   workflow_dispatch:
-    inputs:
-      max_pages:
-        description: "Most pages to fetch"
-        default: "40"
 
 concurrency:
   group: refresh-listings
@@ -24,21 +17,26 @@ concurrency:
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    env:
-      SCRAPER_CONTACT_EMAIL: ${{ secrets.SCRAPER_CONTACT_EMAIL }}
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      PYTHONPATH: server:.
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
-      - run: uv sync --no-dev
-      - name: Scrape, check, load
+      - uses: ./.github/actions/landline-ssh
+        with:
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          known-hosts: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+
+      - name: Scrape, check, load (on the VM)
         run: |
-          LOAD=""
-          if [ -n "$DATABASE_URL" ]; then LOAD="--load"; fi
-          uv run python -m pipeline run --source livrent --no-cache \
-            --max-pages "${{ inputs.max_pages || '40' }}" --min-listings 500 $LOAD | tee run.txt
+          start=$(ssh landline 'date -u "+%Y-%m-%d %H:%M:%S"')
+          status=0
+          ssh landline 'sudo systemctl start landline-refresh.service' || status=$?
+          ssh landline "sudo journalctl -u landline-refresh --since '$start' --no-pager -o cat" | tee run.txt
+          exit $status
+
+      - name: Fetch the scrape
+        if: always()
+        run: scp landline:landline/data/stages/normalize/livrent-latest.jsonl . || true
+
       - name: Upload the run
         if: always()
         uses: actions/upload-artifact@v4
@@ -46,5 +44,6 @@ jobs:
           name: listings-${{ github.run_id }}
           path: |
             run.txt
-            data/stages/normalize/*.jsonl
+            livrent-latest.jsonl
+          if-no-files-found: ignore
           retention-days: 7

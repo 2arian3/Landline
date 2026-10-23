@@ -1,0 +1,19 @@
+[Unit]
+Description=Landline API (FastAPI on :8000, behind the gateway's nginx)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/landline
+EnvironmentFile=/home/ubuntu/landline/deploy/production.env
+# One worker: demo sessions and their event streams live in this process.
+# The gateway (192.168.104.213) is the only proxy whose X-Forwarded-* we trust.
+ExecStart=/home/ubuntu/landline/.venv/bin/uvicorn landline.app:app --app-dir server \
+    --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips 192.168.104.213 \
+    --timeout-graceful-shutdown 5
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

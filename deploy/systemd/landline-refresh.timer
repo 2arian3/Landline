@@ -1,0 +1,12 @@
+[Unit]
+Description=Refresh Landline listings every 6 hours
+
+[Timer]
+# UTC: 00:17, 06:17, 12:17, 18:17 (20:17, 02:17, 08:17, 14:17 in Toronto during EDT).
+# Stop the timer during judging so a refresh never restarts the API mid-demo.
+OnCalendar=*-*-* 00/6:17:00
+RandomizedDelaySec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
