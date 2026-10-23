@@ -42,6 +42,8 @@ class DemoSessions:
         self.calls: dict[str, dict[str, DemoCall]] = {}
         self.dialing: dict[str, asyncio.Task] = {}
         self.call_s = call_s
+        # Sessions marked as a returning renter, with the name to greet (None: no name on file).
+        self.returning: dict[str, str | None] = {}
         self.changed = asyncio.Condition()
 
     def get(self, session_id: str) -> SessionView:
@@ -84,6 +86,14 @@ class DemoSessions:
         for task in self.dialing.values():
             task.cancel()
 
+    async def welcome_back(self, session_id: str, returning: bool, name: str | None) -> SessionView:
+        """Demo hook for a known caller: O-05 decides "returning" from the phone number."""
+        if returning:
+            self.returning[session_id] = name
+        else:
+            self.returning.pop(session_id, None)
+        return await self.update(session_id)
+
     async def update(self, session_id: str, prefs: Preferences | None = None,
                      focus: str | None = None) -> SessionView:
         cur = self.get(session_id)
@@ -107,6 +117,7 @@ class DemoSessions:
         says = (f"{len(matches)} places fit. {top} is on top." if top
                 else "Nothing fits yet. Want to widen the budget or the area?")
         return SessionView(session_id=session_id, version=version, preferences=prefs,
+                           user_name=self.returning.get(session_id), returning=session_id in self.returning,
                            focus_listing_id=focus, matches=[x.listing_id for x in matches],
                            board=board, agent_says=says)
 

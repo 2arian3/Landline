@@ -7,7 +7,7 @@ import { Board } from "./Board";
 import { DemoControls } from "./DemoControls";
 import { ListingDetail, type Reaction } from "./ListingDetail";
 import { MapView, type Padding } from "./MapView";
-import { Activity, Brand, Heard } from "./Summary";
+import { Activity, Brand, Heard, Welcome } from "./Summary";
 import { postJSON, useCatalogue, useLiveSession } from "@/lib/live";
 import { useMedia } from "@/lib/useMedia";
 
@@ -113,6 +113,7 @@ export function LiveBoard({
 
   const list = (
     <div className={desktop ? "space-y-4" : "space-y-3"}>
+      <Welcome view={view} compact={!desktop} />
       <Activity view={view} compact={!desktop} />
       <Heard view={view} compact={!desktop} />
       <Board
@@ -128,6 +129,8 @@ export function LiveBoard({
           sessionId={sessionId}
           prefs={view.preferences}
           calling={view.board.some((c) => c.status === "calling")}
+          returning={view.returning}
+          userName={view.user_name ?? null}
         />
       )}
     </div>
