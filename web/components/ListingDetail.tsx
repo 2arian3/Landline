@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Money } from "./Money";
 import { bathsLabel, bedsLabel, sizeLabel, sourceName, unitLabel } from "@/lib/format";
+import { api } from "@/lib/live";
 import type { Card, ListingDetail as Detail } from "@/lib/types";
 
 /**
@@ -18,7 +19,7 @@ export function ListingDetail({ id, card, onBack }: { id: string; card?: Card; o
     const ctl = new AbortController();
     setDetail(null);
     setFailed(false);
-    fetch(`/api/listings/${encodeURIComponent(id)}`, { signal: ctl.signal })
+    fetch(api(`/api/listings/${encodeURIComponent(id)}`), { signal: ctl.signal })
       .then((r) => (r.ok ? r.json() : Promise.reject()))
       .then(setDetail)
       .catch(() => !ctl.signal.aborted && setFailed(true));

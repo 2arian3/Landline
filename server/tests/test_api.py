@@ -42,6 +42,37 @@ def test_session_board_follows_preferences_and_bumps_version():
         assert updated["board"][0]["rank"] == 1
 
 
+def test_cors_allows_listed_origins_only():
+    cat = Catalogue([_listing(1, 2400, 1)], "test")
+    settings = Settings(database_url=None, web_url="https://landline.vercel.app", transport="stub",
+                        cors_origins=("https://api.example.org/",),
+                        cors_origin_regex=r"https://landline-[a-z0-9-]+\.vercel\.app")
+    preflight = {"Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": "content-type"}
+    with TestClient(create_app(settings, cat)) as c:
+        for origin in ("https://landline.vercel.app", "https://api.example.org", "http://localhost:3000",
+                       "https://landline-git-ui-team.vercel.app"):
+            res = c.options("/api/sessions/s1/preferences", headers={"Origin": origin, **preflight})
+            assert res.status_code == 200
+            assert res.headers["access-control-allow-origin"] == origin
+        assert c.get("/api/catalogue", headers={"Origin": "https://landline.vercel.app"}).headers[
+            "access-control-allow-origin"] == "https://landline.vercel.app"
+
+        assert c.options("/api/sessions/s1/preferences",
+                         headers={"Origin": "https://evil.example", **preflight}).status_code == 400
+        assert "access-control-allow-origin" not in c.get(
+            "/api/catalogue", headers={"Origin": "https://evil.example"}).headers
+
+
+def test_settings_read_cors_from_env(monkeypatch):
+    monkeypatch.setenv("WEB_URL", "")
+    monkeypatch.setenv("CORS_ORIGINS", " https://a.example , https://b.example/ ,")
+    monkeypatch.setenv("CORS_ORIGIN_REGEX", "")
+    s = Settings.load()
+    assert s.web_url == "http://localhost:3000"
+    assert s.allowed_origins() == ["http://localhost:3000", "https://a.example", "https://b.example"]
+    assert s.cors_origin_regex is None
+
+
 def test_focus_rejects_unknown_listing():
     with _client() as c:
         assert c.post("/api/sessions/s1/focus", json={"listing_id": "nope"}).status_code == 404
