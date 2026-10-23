@@ -67,37 +67,41 @@ jobs:
 
       - name: Deploy to production
         run: |
-          set -o pipefail
           auth=(--token="$VERCEL_TOKEN" ${VERCEL_SCOPE:+--scope="$VERCEL_SCOPE"})
-          echo "::group::Recent deployments"; $VERCEL list "$VERCEL_PROJECT" "${auth[@]}" 2>&1 | head -15; echo "::endgroup::"
           url=$($VERCEL deploy --prebuilt --prod --no-wait "${auth[@]}")
           echo "deployment: $url"
-          # Wait here rather than in `deploy`, with a limit, so a stuck build fails
-          # the job with its state and log instead of hanging until the job timeout.
-          if ! $VERCEL inspect "$url" --wait --timeout 5m "${auth[@]}" 2>&1 | tee inspect.txt; then
-            echo "::error::Deployment $url did not become ready within 5 minutes"
-            echo "::group::Recent deployments"; $VERCEL list "$VERCEL_PROJECT" "${auth[@]}" 2>&1 | head -15; echo "::endgroup::"
-            echo "::group::Build log"; $VERCEL inspect "$url" --logs "${auth[@]}" 2>&1 | tail -60; echo "::endgroup::"
+          # Wait here, with a limit, rather than in `deploy`. `inspect --wait` exits 0
+          # on a timeout and on BLOCKED, so the readyState check below decides.
+          $VERCEL inspect "$url" --wait --timeout 5m "${auth[@]}" > inspect.txt 2>&1 || true
+          cat inspect.txt
+          state=$($VERCEL inspect "$url" --json "${auth[@]}" 2> /dev/null | jq -r '.readyState // empty' || true)
+          if [ "$state" != READY ]; then
+            echo "::error::Deployment $url is ${state:-in an unknown state}, not READY"
+            echo "::group::Build log"; $VERCEL inspect "$url" --logs "${auth[@]}" 2>&1 | tail -60 || true; echo "::endgroup::"
             exit 1
           fi
-          # The production domains (what WEB_URL and CORS need), not the per-deploy URL.
+          # Best effort from here on: the deploy is live, so reporting can't fail the step.
+          # The production domains (what WEB_URL and CORS need), not the per-deploy URL;
           # Standard Deployment Protection leaves only these public.
           domains=$($VERCEL inspect "$url" --json "${auth[@]}" 2> /dev/null \
-            | jq -r '[.alias?, .aliases?, .deployment?.alias?] | flatten | map(select(type == "string")) | unique | .[]' \
-            | sed 's|^https\?://||; s|^|https://|')
-          [ -n "$domains" ] || domains=$(grep -oE 'https://[a-z0-9.-]+\.vercel\.app' inspect.txt | grep -vF "$url" | sort -u)
-          echo "production domains:"; echo "$domains"
-          { echo "### Web deployed: $url"; echo "Production domains:"; echo "$domains" | sed 's/^/- /'; } >> "$GITHUB_STEP_SUMMARY"
+            | jq -r '[.alias?, .aliases?] | flatten | map(select(type == "string")) | unique | .[]' \
+            | sed 's|^https\?://||; s|^|https://|' || true)
+          [ -n "$domains" ] || domains=$(grep -oE 'https://[a-z0-9.-]+\.vercel\.app' inspect.txt | grep -vF "$url" | sort -u || true)
+          echo "production domains:"; echo "${domains:-(not reported yet)}"
+          { echo "### Web deployed: $url"; echo "Production domains:"; echo "${domains:-(not reported yet)}" | sed 's/^/- /'; } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Explain a failed deploy
         if: failure()
         run: |
           auth=(--token="$VERCEL_TOKEN" ${VERCEL_SCOPE:+--scope="$VERCEL_SCOPE"})
+          # Vercel checks the author of the commit being deployed against the team.
+          echo "commit author: $(git log -1 --format='%an <%ae>')"
+          $VERCEL list "$VERCEL_PROJECT" --json "${auth[@]}" 2> /dev/null | jq '.deployments[:3][] | {url, state,
+            creator: .creator.username,
+            git: ((.meta // {}) | with_entries(select(.key | test("commitAuthor|githubCommitAuthor|commitSha"; "i"))))}' || true
           for u in $($VERCEL list "$VERCEL_PROJECT" "${auth[@]}" 2> /dev/null | grep -oE 'https://[a-z0-9-]+\.vercel\.app' | head -3); do
             echo "== $u"
-            $VERCEL inspect "$u" --json "${auth[@]}" 2> /dev/null | jq '{readyState, readySubstate, readyStateReason,
-              errorCode, errorMessage, creator: .creator.username, target,
-              git: ((.meta // {}) | with_entries(select(.key | test("git|commit"; "i")))), keys: keys}' || true
+            $VERCEL inspect "$u" --json "${auth[@]}" 2> /dev/null | jq '{readyState, readyStateReason}' || true
           done
           echo "== project"; $VERCEL project inspect "$VERCEL_PROJECT" "${auth[@]}" 2>&1 | head -40 || true
 
