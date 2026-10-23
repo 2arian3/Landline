@@ -71,6 +71,8 @@ The server cancels and truncates on its own. On `input_audio_buffer.speech_start
 
 ## Spike results (fill in from A-01)
 
+Run the playground: `uv run python scripts/spike_higgs.py` (or `make spike`). Needs `BOSON_API_KEY`. Use `--write-skill` to fill this table.
+
 | Measure | Value |
 |---|---|
 | Time to first audio (pcmu) | _tbd_ |

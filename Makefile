@@ -1,4 +1,4 @@
-.PHONY: setup db-up db-down db-migrate data data-report dev web test lint eval contracts-snapshot
+.PHONY: setup db-up db-down db-migrate data data-report dev web test lint eval contracts-snapshot spike
 
 export PYTHONPATH := server:.
 LOCAL_DB := postgresql://landline:landline@localhost:54329/landline
@@ -46,6 +46,10 @@ lint:
 
 eval:
 	@echo "added in E-01: writes evals/reports/latest.md"
+
+# A-01: Higgs Realtime spike. Needs BOSON_API_KEY.
+spike:
+	uv run python scripts/spike_higgs.py
 
 contracts-snapshot:
 	@echo "added in X-01: regenerates the contract JSON Schema snapshot"
