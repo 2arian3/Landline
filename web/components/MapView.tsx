@@ -27,6 +27,14 @@ const PARK = "#dfe5d4";
 export type Padding = { top: number; right: number; bottom: number; left: number };
 
 /**
+ * Greater Toronto, generously. A pin or a fit outside it is a data error (a
+ * flipped longitude once sent the whole map to the Atlantic), so those
+ * listings stay in the list but never move the map.
+ */
+const onMap = (lat?: number | null, lng?: number | null): boolean =>
+  lat != null && lng != null && lat > 43.3 && lat < 44.4 && lng > -80.3 && lng < -78.6;
+
+/**
  * The map. Every catalogue listing is a small dot; the ones that stop matching
  * fade rather than disappear, so the renter watches the city narrow while
  * they talk. The ranked board sits on top as numbered pins, one DOM node per
@@ -132,7 +140,7 @@ export function MapView({
     const matched = new Set(matches);
     src.setData({
       type: "FeatureCollection",
-      features: points.map((p) => ({
+      features: points.filter((p) => onMap(p.lat, p.lng)).map((p) => ({
         type: "Feature",
         geometry: { type: "Point", coordinates: [p.lng, p.lat] },
         properties: { id: p.listing_id, match: matched.has(p.listing_id) },
@@ -147,7 +155,7 @@ export function MapView({
     if (!m || !ready) return;
     const keep = new Set<string>();
     for (const card of board) {
-      if (card.lat == null || card.lng == null) continue;
+      if (!onMap(card.lat, card.lng)) continue;
       keep.add(card.listing_id);
       let pin = pins.current.get(card.listing_id);
       if (!pin) {
@@ -160,7 +168,7 @@ export function MapView({
         });
         el.addEventListener("mouseenter", () => handlers.current.onHover(card.listing_id));
         el.addEventListener("mouseleave", () => handlers.current.onHover(null));
-        const marker = new Marker({ element: el, anchor: "center" }).setLngLat([card.lng, card.lat]).addTo(m);
+        const marker = new Marker({ element: el, anchor: "center" }).setLngLat([card.lng!, card.lat!]).addTo(m);
         pin = { marker, el };
         pins.current.set(card.listing_id, pin);
       }
@@ -184,7 +192,7 @@ export function MapView({
   useEffect(() => {
     const m = map.current;
     if (!m || !ready) return;
-    const located = board.filter((c) => c.lat != null && c.lng != null);
+    const located = board.filter((c) => onMap(c.lat, c.lng));
     if (!located.length) return;
     const bounds = new LngLatBounds();
     located.forEach((c) => bounds.extend([c.lng!, c.lat!]));
@@ -198,9 +206,9 @@ export function MapView({
     if (!m || !ready || !focusId) return;
     const card = board.find((c) => c.listing_id === focusId);
     const pt = card ?? points.find((p) => p.listing_id === focusId);
-    if (!pt || pt.lat == null || pt.lng == null) return;
+    if (!pt || !onMap(pt.lat, pt.lng)) return;
     m.easeTo({
-      center: [pt.lng, pt.lat],
+      center: [pt.lng!, pt.lat!],
       zoom: Math.max(m.getZoom(), 14),
       padding,
       duration: reducedMotion() ? 0 : 600,

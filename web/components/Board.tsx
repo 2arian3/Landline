@@ -1,13 +1,18 @@
 "use client";
 
 import { AnimatePresence, LayoutGroup, motion } from "motion/react";
-import { ListingCard } from "./ListingCard";
+import { useEffect, useRef, useState } from "react";
+import { ListingCard, type Move } from "./ListingCard";
 import type { Card } from "@/lib/types";
+
+const MOVE_MS = 4000;
 
 /**
  * The ranked list. `board` arrives ranked from the server and is never sorted
  * here. Cards are keyed by listing so a re-rank animates each card to its new
- * place (layout animation) instead of re-rendering the list.
+ * place (layout animation) instead of re-rendering the list. For a few seconds
+ * after a re-rank each card that moved says so ("Up 2", "New"), so the renter
+ * can see what their last sentence did.
  */
 export function Board({
   board,
@@ -24,6 +29,8 @@ export function Board({
   onSelect: (id: string) => void;
   onHover: (id: string | null) => void;
 }) {
+  const moves = useMoves(board);
+
   if (loading) {
     return (
       <ol className="m-0 list-none space-y-2 p-0" aria-hidden>
@@ -57,6 +64,7 @@ export function Board({
                 card={card}
                 focused={card.listing_id === focusId}
                 hovered={card.listing_id === hoverId}
+                moved={moves[card.listing_id] ?? null}
                 onSelect={onSelect}
                 onHover={onHover}
               />
@@ -66,4 +74,32 @@ export function Board({
       </ol>
     </LayoutGroup>
   );
+}
+
+/** Rank changes since the previous board, held for MOVE_MS. The first board shows none. */
+function useMoves(board: Card[]): Record<string, Move> {
+  const prev = useRef<Map<string, number> | null>(null);
+  const [moves, setMoves] = useState<Record<string, Move>>({});
+  const key = board.map((c) => `${c.listing_id}:${c.rank}`).join(",");
+
+  useEffect(() => {
+    const now = new Map(board.map((c) => [c.listing_id, c.rank]));
+    const before = prev.current;
+    prev.current = now;
+    // The first board (or the first after an empty one) has nothing to compare against.
+    if (!before || before.size === 0) return;
+    const next: Record<string, Move> = {};
+    for (const [id, rank] of now) {
+      const old = before.get(id);
+      if (old == null) next[id] = "new";
+      else if (old !== rank) next[id] = old - rank;
+    }
+    setMoves(next);
+    if (!Object.keys(next).length) return;
+    const t = setTimeout(() => setMoves({}), MOVE_MS);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+
+  return moves;
 }
