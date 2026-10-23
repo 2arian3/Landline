@@ -26,8 +26,8 @@ Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · [docs/DATA.md](docs/DAT
 | | GitHub | Builds |
 |---|---|---|
 | Arian Boukani | [@2arian3](https://github.com/2arian3) | Data pipeline, database, orchestrator, scoring |
-| Danial Kordmodanlou | | Voice agents, agent-to-agent board, evals |
-| Mahyar Jaberi | | Web app, live map, API read side, deployment, video |
+| Danial Kordmodanlou | [@Danial-Kord](https://github.com/Danial-Kord) | Voice agents, agent-to-agent board, evals |
+| Mahyar Jaberi | [@mahyar-jbr](https://github.com/mahyar-jbr) | Web app, live map, API read side, deployment, video |
 
 ## Getting started
 
