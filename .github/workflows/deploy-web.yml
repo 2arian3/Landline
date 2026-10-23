@@ -67,12 +67,21 @@ jobs:
 
       - name: Deploy to production
         run: |
+          set -o pipefail
           auth=(--token="$VERCEL_TOKEN" ${VERCEL_SCOPE:+--scope="$VERCEL_SCOPE"})
-          url=$($VERCEL deploy --prebuilt --prod "${auth[@]}")
+          echo "::group::Recent deployments"; $VERCEL list "$VERCEL_PROJECT" "${auth[@]}" 2>&1 | head -15; echo "::endgroup::"
+          url=$($VERCEL deploy --prebuilt --prod --no-wait "${auth[@]}")
           echo "deployment: $url"
+          # Wait here rather than in `deploy`, with a limit, so a stuck build fails
+          # the job with its state and log instead of hanging until the job timeout.
+          if ! $VERCEL inspect "$url" --wait --timeout 5m "${auth[@]}" 2>&1 | tee inspect.txt; then
+            echo "::error::Deployment $url did not become ready within 5 minutes"
+            echo "::group::Recent deployments"; $VERCEL list "$VERCEL_PROJECT" "${auth[@]}" 2>&1 | head -15; echo "::endgroup::"
+            echo "::group::Build log"; $VERCEL inspect "$url" --logs "${auth[@]}" 2>&1 | tail -60; echo "::endgroup::"
+            exit 1
+          fi
           # The production domains (what WEB_URL and CORS need), not the per-deploy URL.
           # Standard Deployment Protection leaves only these public.
-          $VERCEL inspect "$url" --wait "${auth[@]}" 2>&1 | tee inspect.txt
           domains=$($VERCEL inspect "$url" --json "${auth[@]}" 2> /dev/null \
             | jq -r '[.alias?, .aliases?, .deployment?.alias?] | flatten | map(select(type == "string")) | unique | .[]' \
             | sed 's|^https\?://||; s|^|https://|')
