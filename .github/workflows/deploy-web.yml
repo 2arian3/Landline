@@ -1,0 +1,84 @@
+# Deploy the web app to Vercel whenever web/ changes on release.
+#
+# Same rule as the API: main is where work lands, release is what runs. A push to
+# release that touches web/ is typechecked and built here (`vercel build`), and
+# the prebuilt output goes to production. A failed build ships nothing. Vercel's
+# own Git integration is off (web/vercel.json), so a push never deploys twice.
+#
+# The browser calls the API directly (NEXT_PUBLIC_API_URL, allowed by the API's
+# CORS settings), so the event stream doesn't pass through Vercel's proxy. The
+# /api rewrite points at the same API as a fallback.
+#
+# Needs: secret VERCEL_TOKEN. Repository variables: VERCEL_PROJECT (default
+# landline), VERCEL_SCOPE (team slug; leave unset for a personal account),
+# WEB_URL (production URL, checked after each deploy). See deploy/README.md.
+name: Deploy web
+
+on:
+  push:
+    branches: [release]
+    paths: ["web/**", ".github/workflows/deploy-web.yml"]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-web
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/release'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web
+    env:
+      VERCEL: npx --yes vercel@62.1.0
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_PROJECT: ${{ vars.VERCEL_PROJECT || 'landline' }}
+      VERCEL_SCOPE: ${{ vars.VERCEL_SCOPE }}
+      WEB_URL: ${{ vars.WEB_URL }}
+      API_URL: https://landline.134.87.8.230.sslip.io
+      NEXT_PUBLIC_API_URL: https://landline.134.87.8.230.sslip.io
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+
+      - name: Link the Vercel project (created on first run)
+        run: |
+          if [ -z "$VERCEL_TOKEN" ]; then
+            echo "::error::Set the VERCEL_TOKEN repository secret first (deploy/README.md, Web on Vercel)"
+            exit 1
+          fi
+          auth=(--token="$VERCEL_TOKEN" ${VERCEL_SCOPE:+--scope="$VERCEL_SCOPE"})
+          $VERCEL project inspect "$VERCEL_PROJECT" "${auth[@]}" > /dev/null 2>&1 \
+            || $VERCEL project add "$VERCEL_PROJECT" "${auth[@]}"
+          $VERCEL link --yes --project="$VERCEL_PROJECT" "${auth[@]}"
+          $VERCEL pull --yes --environment=production "${auth[@]}"
+
+      - name: Build
+        run: $VERCEL build --prod --token="$VERCEL_TOKEN" ${VERCEL_SCOPE:+--scope="$VERCEL_SCOPE"}
+
+      - name: Deploy to production
+        run: |
+          url=$($VERCEL deploy --prebuilt --prod --token="$VERCEL_TOKEN" ${VERCEL_SCOPE:+--scope="$VERCEL_SCOPE"})
+          echo "deployment: $url"
+          echo "### Web deployed: $url" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Check the production URL
+        run: |
+          if [ -z "$WEB_URL" ]; then
+            echo "::notice::Set the WEB_URL repository variable to check the production URL after each deploy"
+            exit 0
+          fi
+          for _ in $(seq 1 10); do
+            curl -fsS -o /dev/null --max-time 10 "$WEB_URL" && { echo "$WEB_URL is up"; exit 0; }
+            sleep 3
+          done
+          echo "::error::$WEB_URL did not answer"; exit 1
