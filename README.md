@@ -34,8 +34,8 @@ Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · [docs/DATA.md](docs/DAT
 You need Python 3.12 with [uv](https://docs.astral.sh/uv/), Node 22, and Docker (for the local database).
 
 ```bash
-git clone https://github.com/2arian3/BosonAI-Hackathon.git
-cd BosonAI-Hackathon
+git clone https://github.com/2arian3/Landline.git
+cd Landline
 make setup           # git hooks, Python deps, web deps
 cp .env.example .env # set SCRAPER_CONTACT_EMAIL; the rest can wait
 make db-up           # Postgres 17 + PostGIS + pgvector on :54329
