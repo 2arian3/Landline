@@ -75,7 +75,7 @@ Run the playground: `uv run python scripts/spike_higgs.py` (or `make spike`). Ne
 
 | Measure | Value |
 |---|---|
-| Time to first audio (pcmu) | _tbd_ |
-| Max concurrent sessions before 1013 | _tbd_ |
-| `conversation.item.truncate` accepted | _tbd_ |
-| Farsi + English transcription on 8 kHz | _tbd_ |
+| Time to first audio (pcmu) | 487 ms connect → first delta; 282 ms response.create → first delta|
+| Max concurrent sessions before 1013 | 5/5 opened, 0× close 1013|
+| `conversation.item.truncate` accepted | yes (accepted after response.done; audio_end_ms=2620)|
+| Farsi + English transcription on 8 kHz | no — 'Salam. I want a two-bedroom in Toronto. Sagdaram.'  (from higgs-tts-3 (synthesized mixed utterance))|
