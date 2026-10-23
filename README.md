@@ -47,7 +47,7 @@ make web             # web on :3000      (in another); open /?dev=1 for demo con
 
 No database? `make dev` falls back to the latest scrape, then to `web/lib/fixtures/listings.json`, so the web app works on any laptop.
 
-**Production:** https://landline.134.87.8.230.sslip.io (API and database on the Landline VM). Pushing to the `release` branch deploys it once CI passes (`git push origin main:release`). See [deploy/README.md](deploy/README.md).
+**Production:** web app https://landline-mu.vercel.app (Vercel), API https://landline.134.87.8.230.sslip.io (API and database on the Landline VM). Pushing to the `release` branch deploys both once CI passes (`git push origin main:release`). See [deploy/README.md](deploy/README.md).
 
 Read [AGENTS.md](AGENTS.md) before writing code, then take the next open task in your lane in [BACKLOG.md](BACKLOG.md).
 

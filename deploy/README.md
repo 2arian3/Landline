@@ -80,7 +80,7 @@ The build sets `NEXT_PUBLIC_API_URL` and `API_URL` to `https://landline.134.87.8
 | `VERCEL_SCOPE` | variable | The team slug when the project lives under a team. Unset for a personal account |
 | `WEB_URL` | variable | The production URL. It is checked after each deploy; the same origin goes in `production.env` |
 
-The project lives under the Vercel team **AAMEL**. `landline.vercel.app` belongs to someone else, so the production domain is the one the deploy summary prints.
+The project lives under the Vercel team **AAMEL**. `landline.vercel.app` belongs to someone else, so the production domain is **https://landline-mu.vercel.app** (also the repository variable `WEB_URL` and `WEB_URL` in `production.env`). Each deploy prints its domains in the run summary.
 
 Vercel's default Standard Protection puts every URL except the production domain behind a Vercel login, including per-deploy URLs and `landline-aamel.vercel.app`. Share only the production domain; judges need no Vercel login there.
 
