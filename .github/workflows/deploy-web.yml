@@ -67,9 +67,14 @@ jobs:
 
       - name: Deploy to production
         run: |
-          url=$($VERCEL deploy --prebuilt --prod --token="$VERCEL_TOKEN" ${VERCEL_SCOPE:+--scope="$VERCEL_SCOPE"})
+          auth=(--token="$VERCEL_TOKEN" ${VERCEL_SCOPE:+--scope="$VERCEL_SCOPE"})
+          url=$($VERCEL deploy --prebuilt --prod "${auth[@]}")
           echo "deployment: $url"
-          echo "### Web deployed: $url" >> "$GITHUB_STEP_SUMMARY"
+          # The production domains (what WEB_URL and CORS need), not the per-deploy URL
+          domains=$($VERCEL inspect "$url" --json "${auth[@]}" \
+            | jq -r '(.alias // .aliases // []) | if type == "array" then .[] else . end' | sed 's|^|https://|')
+          echo "production domains:"; echo "$domains"
+          { echo "### Web deployed: $url"; echo "Production domains:"; echo "$domains" | sed 's/^/- /'; } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Check the production URL
         run: |
