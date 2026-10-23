@@ -34,6 +34,8 @@ export function ListingCard({
   const status = STATUS[card.status];
   const dead = card.status === "dead";
   const flag = card.red_flags[0];
+  // What a person said on the phone. A red flag outranks it here; the detail shows both.
+  const heard = flag ? undefined : card.facts[0];
   const moveWord = moved === "new" ? "New" : moved && moved > 0 ? `Up ${moved}` : moved && moved < 0 ? `Down ${-moved}` : null;
   return (
     <button
@@ -87,6 +89,11 @@ export function ListingCard({
           <span className="mt-1 block truncate text-meta text-ink-2">{card.reasons.join(" · ")}</span>
         )}
         {flag && <span className="block truncate text-meta text-dead">Red flag: {lower(flag)}</span>}
+        {heard && (
+          <span className="block truncate text-meta text-ink-2">
+            <span className="text-ink-3">{heard.speaker}:</span> {lower(heard.value)}
+          </span>
+        )}
         {card.watch_out && <span className="block truncate text-meta text-dead">{card.watch_out}</span>}
         {card.reaction && (
           <span className="block truncate text-meta text-ink">

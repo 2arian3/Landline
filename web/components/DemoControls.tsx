@@ -5,14 +5,23 @@ import { postJSON } from "@/lib/live";
 import type { Preferences } from "@/lib/types";
 
 /**
- * Shown with ?dev=1. Stands in for the voice agent's update_preferences call
- * until the Concierge exists, so the live loop (POST → SSE → re-rank → map)
- * can be exercised from a browser.
+ * Shown with ?dev=1. Stands in for the voice agent's update_preferences and
+ * call_listings calls until the Concierge exists, so the live loop (POST → SSE
+ * → re-rank → map) and every call status can be exercised from a browser.
  */
-export function DemoControls({ sessionId, prefs }: { sessionId: string; prefs: Preferences }) {
+export function DemoControls({
+  sessionId,
+  prefs,
+  calling,
+}: {
+  sessionId: string;
+  prefs: Preferences;
+  calling: boolean;
+}) {
   const [budget, setBudget] = useState(prefs.max_monthly ?? 2800);
   const [beds, setBeds] = useState(prefs.min_beds ?? 1);
   const [busy, setBusy] = useState(false);
+  const [dialing, setDialing] = useState(false);
 
   async function apply() {
     setBusy(true);
@@ -22,6 +31,12 @@ export function DemoControls({ sessionId, prefs }: { sessionId: string; prefs: P
       min_beds: beds,
     });
     setBusy(false);
+  }
+
+  async function callTop() {
+    setDialing(true);
+    await postJSON(`/api/sessions/${encodeURIComponent(sessionId)}/calls`, {});
+    setDialing(false);
   }
 
   return (
@@ -71,6 +86,16 @@ export function DemoControls({ sessionId, prefs }: { sessionId: string; prefs: P
       >
         {busy ? "Updating…" : "Say it"}
       </button>
+      <button
+        type="button"
+        onClick={() => void callTop()}
+        disabled={calling || dialing}
+        className="mt-2 w-full rounded-[var(--radius-control)] bg-surface py-2 text-support font-label text-ink hover:bg-press disabled:opacity-60"
+        style={{ boxShadow: "0 0 0 1px var(--color-line)" }}
+      >
+        Call the top 3
+      </button>
+      <p className="mt-1.5 text-meta text-ink-3">Three scripted agents answer. No phone rings.</p>
     </form>
   );
 }

@@ -96,6 +96,13 @@ async def feedback(session_id: str, body: FeedbackBody, request: Request) -> Ses
     return await request.app.state.sessions.react(session_id, body.listing_id, body.reaction, body.reason)
 
 
+@router.post("/api/sessions/{session_id}/calls", response_model=SessionView)
+async def call_top(session_id: str, request: Request) -> SessionView:
+    """Demo hook: stands in for the Concierge's call_listings ("call the top three") until the voice
+    layer exists. The top three cards show "calling", then a scripted outcome about 3 s later."""
+    return await request.app.state.sessions.call_top(session_id)
+
+
 @router.post("/api/sessions/{session_id}/preferences", response_model=SessionView)
 async def preferences(session_id: str, body: Preferences, request: Request) -> SessionView:
     """Demo hook: stands in for the Concierge's update_preferences until the voice layer exists."""
