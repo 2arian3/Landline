@@ -23,11 +23,16 @@ def create_app(settings: Settings | None = None, catalogue: Catalogue | None = N
         yield
 
     app = FastAPI(title="Landline", version="0.1.0", lifespan=lifespan)
+    # The web app normally reaches the API through its own /api proxy (same origin, no CORS).
+    # Browsers that call the API directly (NEXT_PUBLIC_API_URL) need their origin listed here.
+    # No cookies or auth headers, so credentials stay off.
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[settings.web_url, "http://localhost:3000"],
+        allow_origins=settings.allowed_origins(),
+        allow_origin_regex=settings.cors_origin_regex,
         allow_methods=["GET", "POST"],
         allow_headers=["Content-Type"],
+        max_age=600,
     )
     app.include_router(router)
     return app

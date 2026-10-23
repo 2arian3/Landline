@@ -17,6 +17,18 @@ import type { CataloguePoint, SessionView } from "./types";
 const STALE_MS = 6500;
 const POLL_MS = 1500;
 
+/**
+ * Where the API lives. Empty means this origin's /api proxy (next.config.ts),
+ * which needs no CORS. Set NEXT_PUBLIC_API_URL to call the API directly, for
+ * example to keep the event stream off Vercel's proxy; that origin must then be
+ * in the API's CORS_ORIGINS.
+ */
+const API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "").replace(/\/+$/, "");
+
+export function api(path: string): string {
+  return `${API_BASE}${path}`;
+}
+
 export function useLiveSession(sessionId: string) {
   const [view, setView] = useState<SessionView | null>(null);
   const [stale, setStale] = useState(false);
@@ -28,7 +40,7 @@ export function useLiveSession(sessionId: string) {
     if (inFlight.current) return;
     inFlight.current = true;
     try {
-      const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, {
+      const res = await fetch(api(`/api/sessions/${encodeURIComponent(sessionId)}`), {
         cache: "no-store",
         signal: AbortSignal.timeout(4000),
       });
@@ -55,7 +67,7 @@ export function useLiveSession(sessionId: string) {
     let errors = 0;
     void refresh();
 
-    const source = new EventSource(`/api/sessions/${encodeURIComponent(sessionId)}/stream`);
+    const source = new EventSource(api(`/api/sessions/${encodeURIComponent(sessionId)}/stream`));
     // Any word from the server, a version or a ping, means the line is up.
     const markAlive = () => {
       lastOk.current = Date.now();
@@ -104,7 +116,7 @@ export function useLiveSession(sessionId: string) {
 export function useCatalogue() {
   const [points, setPoints] = useState<CataloguePoint[]>([]);
   useEffect(() => {
-    fetch("/api/catalogue", { cache: "force-cache" })
+    fetch(api("/api/catalogue"), { cache: "force-cache" })
       .then((r) => (r.ok ? r.json() : []))
       .then(setPoints)
       .catch(() => setPoints([]));
@@ -114,7 +126,7 @@ export function useCatalogue() {
 
 export async function postJSON<T>(path: string, body: unknown): Promise<T | null> {
   try {
-    const res = await fetch(path, {
+    const res = await fetch(api(path), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
