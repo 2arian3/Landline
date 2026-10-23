@@ -89,6 +89,18 @@ jobs:
           echo "production domains:"; echo "$domains"
           { echo "### Web deployed: $url"; echo "Production domains:"; echo "$domains" | sed 's/^/- /'; } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Explain a failed deploy
+        if: failure()
+        run: |
+          auth=(--token="$VERCEL_TOKEN" ${VERCEL_SCOPE:+--scope="$VERCEL_SCOPE"})
+          for u in $($VERCEL list "$VERCEL_PROJECT" "${auth[@]}" 2> /dev/null | grep -oE 'https://[a-z0-9-]+\.vercel\.app' | head -3); do
+            echo "== $u"
+            $VERCEL inspect "$u" --json "${auth[@]}" 2> /dev/null | jq '{readyState, readySubstate, readyStateReason,
+              errorCode, errorMessage, creator: .creator.username, target,
+              git: ((.meta // {}) | with_entries(select(.key | test("git|commit"; "i")))), keys: keys}' || true
+          done
+          echo "== project"; $VERCEL project inspect "$VERCEL_PROJECT" "${auth[@]}" 2>&1 | head -40 || true
+
       - name: Check the production URL
         run: |
           if [ -z "$WEB_URL" ]; then
