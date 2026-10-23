@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from landline.api.demo import DemoSessions
+from landline.api.judge import JudgeLines
 from landline.api.routes import router
 from landline.config import Settings
 from landline.db.catalogue import Catalogue
@@ -20,6 +21,7 @@ def create_app(settings: Settings | None = None, catalogue: Catalogue | None = N
         app.state.settings = settings
         app.state.catalogue = catalogue or Catalogue.load(settings.database_url)
         app.state.sessions = DemoSessions(app.state.catalogue)
+        app.state.judges = JudgeLines(settings.higgs_max_sessions)
         # For /health. The voice layer (A-02) replaces it once it has reached Higgs.
         app.state.higgs = "not configured"
         yield

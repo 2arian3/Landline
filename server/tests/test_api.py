@@ -1,10 +1,12 @@
 import asyncio
+import re
 import time
 from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
 
 from landline.api.demo import DemoSessions
+from landline.api.judge import JudgeLines
 from landline.app import create_app
 from landline.config import Settings
 from landline.contracts import Listing
@@ -171,3 +173,49 @@ def test_call_endpoint_shows_calling_then_the_outcomes():
                 break
             time.sleep(0.02)
         assert sorted(b["status"] for b in board) == ["pending", "suspect", "verified", "verified"]
+
+
+def _judge_client(cap: int) -> TestClient:
+    settings = Settings(database_url=None, web_url="http://localhost:3000", transport="stub",
+                        higgs_max_sessions=cap)
+    return TestClient(create_app(settings, Catalogue([_listing(1, 2400, 1)], "test")))
+
+
+def test_judge_start_mints_a_session_and_its_audio_socket():
+    with _judge_client(2) as c:
+        r = c.post("/api/judge/start")
+        assert r.status_code == 200
+        sid = r.json()["session_id"]
+        assert re.fullmatch(r"s_[A-Za-z0-9_-]{10}", sid)
+        assert r.json()["ws_url"] == f"/api/judge/{sid}/audio"
+        assert c.get("/health").json()["sessions"] == 1
+        assert c.get(f"/api/sessions/{sid}").json()["version"] == 1
+
+
+def test_judge_start_is_busy_when_every_line_is_taken():
+    with _judge_client(2) as c:
+        first = c.post("/api/judge/start").json()["session_id"]
+        assert c.post("/api/judge/start").status_code == 200
+        busy = c.post("/api/judge/start")
+        assert busy.status_code == 503
+        assert busy.headers["retry-after"] == "60"
+        assert busy.json()["detail"] == "All lines are busy. Try again in a minute."
+        c.app.state.judges.hang_up(first)   # what the browser transport (A-03) does when a judge leaves
+        assert c.post("/api/judge/start").status_code == 200
+
+
+def test_judge_lines_free_at_their_deadline():
+    now = [0.0]
+    lines = JudgeLines(cap=1, deadline_s=600, clock=lambda: now[0])
+    first = lines.take()
+    assert first is not None and lines.take() is None
+    now[0] = 600.5
+    second = lines.take()
+    assert second is not None and second != first
+
+
+def test_settings_read_the_higgs_cap(monkeypatch):
+    monkeypatch.setenv("HIGGS_MAX_SESSIONS", "3")
+    assert Settings.load().higgs_max_sessions == 3
+    monkeypatch.setenv("HIGGS_MAX_SESSIONS", "")
+    assert Settings.load().higgs_max_sessions == 5
