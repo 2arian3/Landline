@@ -24,7 +24,7 @@ The event runs from **Fri 23 Oct, 18:00** to **Sat 24 Oct, 16:00–17:00** (conf
 | Sat 12:30–15:00 | Rehearse ×3, record the video, write-ups, `gitleaks`, make repo public, pin SHA | — |
 | Sat 15:00–15:30 | Submit; 30 min buffer before a 16:00 deadline | Submission form done |
 
-**Cut order if behind** (first item goes first): Avatar debrief → listen-in audio → embeddings "vibe" search → Mandarin landlord persona → TTS voicemail → restart recovery (keep the per-session locks). **Never cut:** Higgs on both call legs, `finalize()` with deadlines, the allowlist, the live map, returning-caller memory.
+**Cut order if behind** (first item goes first): Profile call archive + avatar replay (A-10 / O-07 / U-11) → Avatar debrief (A-09) → listen-in audio → embeddings "vibe" search → Mandarin landlord persona → TTS voicemail → restart recovery (keep the per-session locks). **Never cut:** Higgs on both call legs, `finalize()` with deadlines, the allowlist, the live map, returning-caller memory.
 
 ---
 
@@ -61,6 +61,7 @@ The event runs from **Fri 23 Oct, 18:00** to **Sat 24 Oct, 16:00–17:00** (conf
 - [ ] **O-04 · Feedback loop**: `FeedbackGiven` → weight changes from the SCORING table, interactions saved, rejected listings excluded. **Done when** "too dark" on the focused card visibly sinks darker units in a test and on the map.
 - [ ] **O-05 · Profiles**: users by E.164, consent, `forget_me`, "new since last visit" query, the opening context for the Concierge (≤ 120 words). **Done when** a second call from the same number is greeted with the remembered brief in sim and on a real phone.
 - [ ] **O-06 · Narrator lines**: state diff → at most one spoken line per commit ("Dupont is really $3,470 with parking, so it drops to third"). **Done when** each diff type has a template and a test.
+- [ ] **O-07 · Call media in the schema (stretch, with A-10 / U-11)**: additive migration + contracts (all three approve): `audio_url`, `avatar_url` on `calls` (object-store URLs, not bytes in Postgres); keep speaker-tagged `call_turns` as the transcript. Profile read: list a user's calls with those fields. `forget_me` deletes the rows and the files. **Done when** repository tests write and read both URLs, and deleting the user removes the media.
 
 ## Danial: agents and voice
 
@@ -72,6 +73,7 @@ The event runs from **Fri 23 Oct, 18:00** to **Sat 24 Oct, 16:00–17:00** (conf
 - [ ] **A-07 · Auditor**: tagged turns + listing context → facts (quotes from landlord turns only, via `grounding.py`), reconcile tool vs transcript, conflicts with listing/City, red flags, viewing time to a datetime. **Done when** the extraction eval passes its thresholds.
 - [ ] **A-08 · Profiler**: preference normalization, anchor resolution (async → `AnchorResolved`), end-of-session memory summary. **Done when** a session's memory is ≤ 120 words, has only stated facts, and loads on the next call.
 - [ ] **A-09 · Debrief (stretch)**: Narrator summary → Higgs TTS → Higgs Avatar clip on the page. **Done when** a 20–30 s debrief plays in the renter's language after calls finish.
+- [ ] **A-10 · Call archive + avatar replay (stretch, with O-07 / U-11)**: after `finalize()`, persist each call's mixed audio and speaker-tagged transcript; render a Higgs Avatar replay of that conversation (renter Concierge leg and listing-agent Caller legs). Write the object URLs onto the Call via O-07. Off the hot path; never block a live turn. Honour `forget_me`. **Done when** a finished sim session has playable audio and an avatar URL on each call, and the profile transcript matches the tagged turns.
 
 ## Danial: evals
 
@@ -93,3 +95,4 @@ The event runs from **Fri 23 Oct, 18:00** to **Sat 24 Oct, 16:00–17:00** (conf
 - [ ] **U-08 · Returning-renter view**: landing state for a known number ("Welcome back, here's what changed"). **Done when** it shows on the second call in the demo.
 - [ ] **U-09 · Video and media**: 2–3 min demo video per `docs/DEMO.md`; README GIF. **Done when** the public link plays without an access request.
 - [ ] **U-10 · Submission**: write-ups (≤ 200 words each), team section, known limitations, `gitleaks`, repo public, SHA pinned. **Done when** the form is submitted (see the `submission` skill).
+- [ ] **U-11 · Profile call history (stretch, with A-10 / O-07)**: on the returning-renter / profile view, list each past call with its tagged transcript, an audio player, and the avatar replay, so the renter can see what Landline actually did. **Done when** a known number's profile shows two completed calls with playable audio, the transcript, and the avatar, without opening a live session.
