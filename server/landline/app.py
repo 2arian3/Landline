@@ -20,6 +20,8 @@ def create_app(settings: Settings | None = None, catalogue: Catalogue | None = N
         app.state.settings = settings
         app.state.catalogue = catalogue or Catalogue.load(settings.database_url)
         app.state.sessions = DemoSessions(app.state.catalogue)
+        # For /health. The voice layer (A-02) replaces it once it has reached Higgs.
+        app.state.higgs = "not configured"
         yield
 
     app = FastAPI(title="Landline", version="0.1.0", lifespan=lifespan)
