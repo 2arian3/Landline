@@ -80,7 +80,17 @@ The build sets `NEXT_PUBLIC_API_URL` and `API_URL` to `https://landline.134.87.8
 | `VERCEL_SCOPE` | variable | The team slug when the project lives under a team. Unset for a personal account |
 | `WEB_URL` | variable | The production URL. It is checked after each deploy; the same origin goes in `production.env` |
 
-Deployment Protection on new projects covers preview URLs only, so the production domain is public. Judges need no Vercel login.
+The project lives under the Vercel team **AAMEL**. `landline.vercel.app` belongs to someone else, so the production domain is the one the deploy summary prints.
+
+Vercel's default Standard Protection puts every URL except the production domain behind a Vercel login, including per-deploy URLs and `landline-aamel.vercel.app`. Share only the production domain; judges need no Vercel login there.
+
+**Commit author.** Vercel blocks a deploy ("the commit author doesn't have permission to create deployments for this project") when the author of the commit at the tip of `release` isn't a member of the AAMEL team. Commit with the email of your Vercel account, set for this repo only:
+
+```bash
+git config user.email <your Vercel account email>
+```
+
+If the tip of `release` is someone else's commit, that person must be a member of the team. A failed deploy prints Vercel's reason in the "Explain a failed deploy" step.
 
 ## The gateway is shared
 
