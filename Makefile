@@ -10,7 +10,7 @@ setup:
 	uv sync
 	cd web && npm install
 
-# Local Postgres 17 + PostGIS + pgvector on :54329 (the shared dev DB is Supabase).
+# Local Postgres 17 + PostGIS + pgvector on :54329 (production runs the same image on the VM).
 db-up:
 	docker compose up -d --build db
 

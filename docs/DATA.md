@@ -4,18 +4,18 @@ Owner: Arian. Reviewed by Danial (extraction quality) and Mahyar (what the UI sh
 
 ## Database decision
 
-**PostgreSQL 16 on Supabase (region ca-central-1) with PostGIS and pgvector.** The ranking hot path reads from an in-memory feature matrix, not from the database.
+**PostgreSQL 17 with PostGIS and pgvector, in Docker on the Landline VM, next to the API** ([deploy/README.md](../deploy/README.md)). The ranking hot path reads from an in-memory feature matrix, not from the database.
 
 | Need | Why this fits |
 |---|---|
-| Three people building against the same data from day one | One hosted URL; nothing to tunnel into |
+| Three people building against the same data from day one | One database on the VM, reachable through an SSH tunnel; the same image runs locally |
 | Geographic features (distance to work, neighbourhood polygons, nearest station, joining listings to City buildings) | PostGIS: `ST_DWithin`, `ST_Contains`, `ST_Distance` on `geography(Point)` with GiST indexes |
 | Structured filters (rent, beds, pets, parking) plus flexible per-source fields | Typed columns for anything we rank on; `jsonb` for raw source fields and provenance |
 | Renter profiles, sessions, calls, facts, an append-only event log | Transactions, foreign keys, `bigserial` event sequence |
 | "Bright, quiet, near a park" style wishes (stretch) | pgvector on description embeddings, used as one more weighted term |
 | Speed during a call | Listings (~1–2k rows) load into memory at boot; ranking is a pure function; writes are small transactions |
 
-We considered SQLite and dropped it: three machines writing to one file doesn't work, and it has no geo. A vector-only database was also dropped: the facts that decide a rental are structured, or come from phone calls, not from similarity. Local development uses the shared Supabase project. Each developer can create their own schema to experiment in.
+We considered SQLite and dropped it: three machines writing to one file doesn't work, and it has no geo. A vector-only database was also dropped: the facts that decide a rental are structured, or come from phone calls, not from similarity. Local development uses the same image in Docker (`make db-up`), so a migration that works locally works in production.
 
 ## Schema (first migration, `db/migrations/0001_init.sql`)
 
@@ -117,7 +117,7 @@ create table events (seq bigserial primary key, session_id text, call_id text, t
 
 ## Refresh workflow
 
-`.github/workflows/refresh-listings.yml` re-scrapes every 6 hours (and on demand from the Actions tab):
+The VM re-scrapes every 6 hours (`landline-refresh.timer`), next to the database it writes to. `.github/workflows/refresh-listings.yml` runs the same job on demand from the Actions tab, and every deploy that changes `pipeline/` or `db/migrations/` runs it too:
 
 1. `python -m pipeline run --source livrent --no-cache --min-listings 500 --load`
 2. **Check before load:** if the run finds fewer than 500 listings or under 90% have coordinates, it exits with code 3 and loads nothing. A site change or a block can't overwrite good data.
@@ -125,7 +125,7 @@ create table events (seq bigserial primary key, session_id text, call_id text, t
 4. Rows not seen in a **complete** run (the scraper reached the end of the results) are marked `stale`. A partial run never marks anything stale.
 5. Every run is recorded in `ingest_runs` (pages, fetched, inserted, updated, marked stale, status), and its JSONL and log are uploaded as an artifact for 7 days.
 
-It needs repository secrets `DATABASE_URL` (Supabase) and `SCRAPER_CONTACT_EMAIL`. Without the database secret it still scrapes and uploads the artifact.
+`DATABASE_URL` and `SCRAPER_CONTACT_EMAIL` come from `~/landline/.env` on the VM. After a load the API restarts so it serves the new catalogue.
 
 ## Caching (and why no Redis yet)
 

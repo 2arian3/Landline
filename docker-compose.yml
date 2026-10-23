@@ -1,5 +1,5 @@
-# Local development database. The shared dev database is Supabase; this is for
-# working offline and for testing migrations before applying them there.
+# Local development database, the same image as production (deploy/compose.yml on
+# the Landline VM). For working offline and testing migrations before they ship.
 #   docker compose up -d db
 #   DATABASE_URL=postgresql://landline:landline@localhost:54329/landline make db-migrate
 services:
