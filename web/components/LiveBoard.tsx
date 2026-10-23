@@ -123,7 +123,13 @@ export function LiveBoard({
         onSelect={select}
         onHover={setHover}
       />
-      {dev && view && sessionId && <DemoControls sessionId={sessionId} prefs={view.preferences} />}
+      {dev && view && sessionId && (
+        <DemoControls
+          sessionId={sessionId}
+          prefs={view.preferences}
+          calling={view.board.some((c) => c.status === "calling")}
+        />
+      )}
     </div>
   );
 

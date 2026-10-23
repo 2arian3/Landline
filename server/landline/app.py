@@ -23,6 +23,7 @@ def create_app(settings: Settings | None = None, catalogue: Catalogue | None = N
         # For /health. The voice layer (A-02) replaces it once it has reached Higgs.
         app.state.higgs = "not configured"
         yield
+        app.state.sessions.close()
 
     app = FastAPI(title="Landline", version="0.1.0", lifespan=lifespan)
     # The web app normally reaches the API through its own /api proxy (same origin, no CORS).
