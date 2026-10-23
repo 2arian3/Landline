@@ -47,6 +47,8 @@ make web             # web on :3000      (in another); open /?dev=1 for demo con
 
 No database? `make dev` falls back to the latest scrape, then to `web/lib/fixtures/listings.json`, so the web app works on any laptop.
 
+**Production:** https://landline.134.87.8.230.sslip.io (API and database on the Landline VM). Every push to `main` that passes CI deploys it. See [deploy/README.md](deploy/README.md).
+
 Read [AGENTS.md](AGENTS.md) before writing code, then take the next open task in your lane in [BACKLOG.md](BACKLOG.md).
 
 ## Prior work

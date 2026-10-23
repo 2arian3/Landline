@@ -128,9 +128,11 @@ stateDiagram-v2
 
 | Piece | Where |
 |---|---|
-| API + orchestrator + voice bridge | One always-on VM (Arbutus), systemd, Caddy for TLS, public WSS for Twilio |
-| Web | Vercel, proxying `/api/*` to the VM |
-| Database | Supabase Postgres (ca-central-1) with PostGIS and pgvector |
+| API + orchestrator + voice bridge | One always-on Arbutus VM (192.168.104.198, private), systemd, one uvicorn process |
+| Public entry | The shared gateway's nginx (134.87.8.230) with Let's Encrypt: https://landline.134.87.8.230.sslip.io, proxying HTTP, SSE and WSS to the VM |
+| Web | Vercel, proxying `/api/*` to the public URL (`API_URL`) |
+| Database | Postgres 17 with PostGIS and pgvector in Docker on the same VM, localhost only |
+| CI/CD | Every push to `main` that passes CI is rsynced to the VM through the gateway (SSH jump host), migrated and restarted. The VM's own timer re-scrapes every 6 h. See [deploy/README.md](../deploy/README.md) |
 | Models | Boson Higgs Realtime and Higgs TTS (Avatar is a stretch goal); a text LLM for extraction and memory, behind one provider interface |
 
 No tunnels in the demo path. The VM stays up until judging ends.
