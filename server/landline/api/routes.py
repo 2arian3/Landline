@@ -3,10 +3,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from landline.contracts import CataloguePoint, Listing, Preferences, SessionView
 
@@ -75,6 +76,20 @@ async def focus(session_id: str, body: FocusBody, request: Request) -> SessionVi
     if body.listing_id not in request.app.state.catalogue.by_id:
         raise HTTPException(404, "unknown listing")
     return await request.app.state.sessions.update(session_id, focus=body.listing_id)
+
+
+class FeedbackBody(BaseModel):
+    listing_id: str
+    reaction: Literal["like", "dislike", "reject"]
+    reason: str | None = Field(default=None, max_length=120)
+
+
+@router.post("/api/sessions/{session_id}/feedback", response_model=SessionView)
+async def feedback(session_id: str, body: FeedbackBody, request: Request) -> SessionView:
+    """CONTRACTS.md: {listing_id, reaction, reason?} -> FeedbackGiven. The demo store shows it on the card."""
+    if body.listing_id not in request.app.state.catalogue.by_id:
+        raise HTTPException(404, "unknown listing")
+    return await request.app.state.sessions.react(session_id, body.listing_id, body.reaction, body.reason)
 
 
 @router.post("/api/sessions/{session_id}/preferences", response_model=SessionView)
