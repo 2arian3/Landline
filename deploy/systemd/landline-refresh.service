@@ -1,0 +1,18 @@
+[Unit]
+Description=Landline listings refresh (scrape liv.rent, check, load into Postgres)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/home/ubuntu/landline
+EnvironmentFile=/home/ubuntu/landline/deploy/production.env
+Environment=PYTHONPATH=server:.
+# The run refuses to load fewer than 500 listings, so a block or a site change
+# never overwrites good data (exit 3). SCRAPER_CONTACT_EMAIL comes from .env.
+ExecStart=/home/ubuntu/landline/.venv/bin/python -m pipeline run --source livrent --no-cache \
+    --max-pages 40 --min-listings 500 --load
+# The API reads the catalogue at startup; restart it so new listings show up.
+ExecStartPost=+/usr/bin/systemctl try-restart landline-api.service
+TimeoutStartSec=30min

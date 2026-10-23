@@ -1,0 +1,79 @@
+# Deploy the API and the database to the Landline VM whenever main changes.
+#
+# Runs after CI passes on a push to main (or by hand). The VM has no public
+# address, so the job reaches it through the gateway as an SSH jump host. On the
+# gateway the deploy key can only open that one tunnel: no shell, no other
+# destinations. CI never changes the gateway's nginx; see deploy/README.md.
+#
+# Secrets: DEPLOY_SSH_KEY, DEPLOY_KNOWN_HOSTS.
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      refresh:
+        description: "Re-scrape listings after deploying (auto: only if pipeline/ or db/migrations changed, or the DB is empty)"
+        type: choice
+        options: [auto, "yes", "no"]
+        default: auto
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+      PUBLIC_URL: https://landline.134.87.8.230.sslip.io
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SHA }}
+          fetch-depth: 0
+
+      - uses: ./.github/actions/landline-ssh
+        with:
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          known-hosts: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+
+      - name: Decide whether to re-scrape
+        id: plan
+        env:
+          REFRESH: ${{ inputs.refresh || 'auto' }}
+        run: |
+          old=$(ssh landline 'cat landline/.deployed-sha 2>/dev/null' || true)
+          refresh=$REFRESH
+          if [ "$refresh" = auto ] && [ -n "$old" ] && git cat-file -e "$old^{commit}" 2>/dev/null \
+             && ! git diff --quiet "$old" "$SHA" -- pipeline db/migrations; then
+            refresh=yes
+          fi
+          echo "previous deploy: ${old:-none}, this one: $SHA, refresh: $refresh"
+          echo "refresh=$refresh" >> "$GITHUB_OUTPUT"
+
+      - name: Copy the code to the VM
+        run: rsync -az --delete --exclude-from=deploy/rsync-exclude.txt ./ landline:landline/
+
+      - name: Install, migrate, restart
+        run: ssh landline "bash landline/deploy/remote.sh ${{ steps.plan.outputs.refresh }} $SHA"
+
+      - name: Check the public endpoint
+        run: |
+          for _ in $(seq 1 20); do
+            if curl -fsS --max-time 5 "$PUBLIC_URL/health"; then echo; break; fi
+            sleep 3
+          done
+          curl -fsS --max-time 5 "$PUBLIC_URL/health" > /dev/null
+          # CORS is answered by the API through the gateway
+          curl -fsS -o /dev/null -D - -X OPTIONS "$PUBLIC_URL/api/catalogue" \
+            -H "Origin: $PUBLIC_URL" -H "Access-Control-Request-Method: GET" \
+            | grep -i "^access-control-allow-origin: $PUBLIC_URL"

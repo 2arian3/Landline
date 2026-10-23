@@ -1,0 +1,19 @@
+# What a deploy does not copy to ~/landline on the VM. Excluded paths are also
+# kept on the VM when rsync --delete runs: .env, the venv, scraped data, the
+# deployed-commit marker.
+.git/
+.github/
+.claude/
+.env
+.env.*
+.venv/
+.deployed-sha
+data/raw/
+data/stages/
+pipeline/cache/
+node_modules/
+.next/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.DS_Store

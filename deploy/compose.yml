@@ -1,0 +1,27 @@
+# Production database on the Landline VM: Postgres 17 + PostGIS + pgvector, the
+# same image as local development (db/local). Bound to 127.0.0.1, so only the API
+# and the refresh job on this VM can reach it; teammates use an SSH tunnel
+# (deploy/README.md). The password comes from ~/landline/.env.
+#   docker compose --env-file .env -f deploy/compose.yml up -d --wait db
+name: landline
+
+services:
+  db:
+    build: ../db/local
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: landline
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: landline
+    ports:
+      - "127.0.0.1:5432:5432"
+    shm_size: 256mb
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U landline -d landline"]
+      interval: 2s
+      retries: 30
+
+volumes:
+  pgdata:

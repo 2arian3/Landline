@@ -1,0 +1,40 @@
+name: Landline SSH
+description: >-
+  SSH config for the Landline VM (192.168.104.198). The VM has no public address,
+  so every connection jumps through the gateway (134.87.8.230). Afterwards
+  `ssh landline …`, `rsync … landline:` and `scp landline:…` work.
+inputs:
+  key:
+    description: Private deploy key (secrets.DEPLOY_SSH_KEY)
+    required: true
+  known-hosts:
+    description: Host keys of the gateway and the VM (secrets.DEPLOY_KNOWN_HOSTS)
+    required: true
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        KEY: ${{ inputs.key }}
+        KNOWN_HOSTS: ${{ inputs.known-hosts }}
+      run: |
+        install -d -m 700 ~/.ssh
+        printf '%s\n' "$KEY" > ~/.ssh/landline_deploy
+        chmod 600 ~/.ssh/landline_deploy
+        printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+        cat > ~/.ssh/config <<'EOF'
+        Host gateway
+          HostName 134.87.8.230
+        Host landline
+          HostName 192.168.104.198
+          ProxyJump gateway
+        Host *
+          User ubuntu
+          IdentityFile ~/.ssh/landline_deploy
+          IdentitiesOnly yes
+          StrictHostKeyChecking yes
+          BatchMode yes
+          ConnectTimeout 20
+          ServerAliveInterval 15
+        EOF
+        ssh landline true
