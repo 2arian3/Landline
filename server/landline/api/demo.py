@@ -20,6 +20,8 @@ class DemoSessions:
     def __init__(self, catalogue: Catalogue):
         self.catalogue = catalogue
         self.views: dict[str, SessionView] = {}
+        # What the renter said about a listing, shown on its card ("You: too dark").
+        self.reactions: dict[str, dict[str, str]] = {}
         self.changed = asyncio.Condition()
 
     def get(self, session_id: str) -> SessionView:
@@ -27,6 +29,12 @@ class DemoSessions:
             prefs = Preferences(max_monthly=2800, min_beds=1, priorities=["cost", "size"])
             self.views[session_id] = self._build(session_id, prefs, version=1, focus=None)
         return self.views[session_id]
+
+    async def react(self, session_id: str, listing_id: str, reaction: str, reason: str | None) -> SessionView:
+        """Demo hook for FeedbackGiven: records the reaction on the card. Re-ranking is O-04's job."""
+        said = reason or ("like it" if reaction == "like" else "not for me")
+        self.reactions.setdefault(session_id, {})[listing_id] = said
+        return await self.update(session_id)
 
     async def update(self, session_id: str, prefs: Preferences | None = None,
                      focus: str | None = None) -> SessionView:
@@ -41,6 +49,9 @@ class DemoSessions:
     def _build(self, session_id: str, prefs: Preferences, version: int, focus: str | None) -> SessionView:
         matches = [x for x in self.catalogue.listings if _fits(x, prefs) and x.lat is not None]
         board = _rank(matches, prefs)[:BOARD_SIZE]
+        said = self.reactions.get(session_id, {})
+        board = [c.model_copy(update={"reaction": said[c.listing_id]}) if c.listing_id in said else c
+                 for c in board]
         top = board[0].address if board else None
         says = (f"{len(matches)} places fit. {top} is on top." if top
                 else "Nothing fits yet. Want to widen the budget or the area?")

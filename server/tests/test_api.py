@@ -78,3 +78,18 @@ def test_focus_rejects_unknown_listing():
         assert c.post("/api/sessions/s1/focus", json={"listing_id": "nope"}).status_code == 404
         focused = c.post("/api/sessions/s1/focus", json={"listing_id": "t:2"}).json()
         assert focused["focus_listing_id"] == "t:2"
+
+
+def test_feedback_shows_on_the_card():
+    with _client() as c:
+        assert c.get("/api/sessions/s_fb").json()["board"][0]["reaction"] is None
+        r = c.post("/api/sessions/s_fb/feedback", json={"listing_id": "t:1", "reaction": "reject", "reason": "too dark"})
+        assert r.status_code == 200
+        card = next(b for b in r.json()["board"] if b["listing_id"] == "t:1")
+        assert card["reaction"] == "too dark"
+        assert r.json()["version"] == 2
+        # the reaction survives the next re-rank
+        later = c.post("/api/sessions/s_fb/preferences", json={"max_monthly": 3000, "min_beds": 1}).json()
+        assert next(b for b in later["board"] if b["listing_id"] == "t:1")["reaction"] == "too dark"
+        assert c.post("/api/sessions/s_fb/feedback", json={"listing_id": "nope", "reaction": "like"}).status_code == 404
+        assert c.post("/api/sessions/s_fb/feedback", json={"listing_id": "t:1", "reaction": "love"}).status_code == 422
