@@ -63,6 +63,25 @@ The deploy then reinstalls that version. Migrations are forward-only, so a rollb
 - On the VM it is accepted only from the gateway's private address (`from="192.168.104.213"`).
 - To rotate it, generate a new key, replace both `authorized_keys` lines (each tagged `landline-deploy`), and run `gh secret set DEPLOY_SSH_KEY < key`.
 
+## Web on Vercel
+
+`.github/workflows/deploy-web.yml` deploys `web/` to Vercel production when a push to `release` changes `web/`. It can also be run by hand on `release`.
+- The workflow typechecks and builds the app on the runner (`vercel build`), then uploads the prebuilt output (`vercel deploy --prebuilt --prod`).
+- A failed build deploys nothing.
+- On the first run it creates and links the Vercel project.
+- `web/vercel.json` turns off Vercel's own Git deploys, so connecting the repo in the Vercel dashboard can't cause a second deploy.
+
+The build sets `NEXT_PUBLIC_API_URL` and `API_URL` to `https://landline.134.87.8.230.sslip.io`, so the browser talks to the API directly. That keeps the event stream off Vercel's proxy. The production origin must therefore be allowed by CORS: set it as `WEB_URL` in `production.env` and ship it to `release` along with the first web deploy.
+
+| Setting | Kind | Value |
+|---|---|---|
+| `VERCEL_TOKEN` | secret | A Vercel access token (vercel.com → Account Settings → Tokens), scoped to the account or team that owns the project. Set it with `gh secret set VERCEL_TOKEN` so it never appears in chat or git |
+| `VERCEL_PROJECT` | variable | Project name; default `landline`, giving `https://landline.vercel.app` if that name is free |
+| `VERCEL_SCOPE` | variable | The team slug when the project lives under a team. Unset for a personal account |
+| `WEB_URL` | variable | The production URL. It is checked after each deploy; the same origin goes in `production.env` |
+
+Deployment Protection on new projects covers preview URLs only, so the production domain is public. Judges need no Vercel login.
+
 ## The gateway is shared
 
 Other services (CAIOS) are exposed on 134.87.8.230. Landline adds exactly three things there:
@@ -110,7 +129,7 @@ Then connect to `postgresql://landline:<password from ~/landline/.env>@localhost
 
 ## CORS
 
-The web app normally calls the API through its own `/api` proxy (`next.config.ts`, `API_URL`). That is same-origin, so it needs no CORS. When the browser should call the API directly, set `NEXT_PUBLIC_API_URL=https://landline.134.87.8.230.sslip.io` on Vercel. Do this, for example, to keep the event stream off Vercel's proxy. Then add the web app's origin to `CORS_ORIGINS`, or set it as `WEB_URL`, in `production.env`, and push. `localhost:3000` is always allowed. nginx adds no CORS headers of its own. The API answers preflights and leaves out `Access-Control-Allow-Origin` for any origin not listed.
+The production web app calls the API directly (`NEXT_PUBLIC_API_URL`, set by `deploy-web.yml`), so its origin must be listed. Without `NEXT_PUBLIC_API_URL`, the app calls its own `/api` proxy (`next.config.ts`, `API_URL`), which is same-origin and needs no CORS. When the browser should call the API directly, set `NEXT_PUBLIC_API_URL=https://landline.134.87.8.230.sslip.io` on Vercel. Do this, for example, to keep the event stream off Vercel's proxy. Then add the web app's origin to `CORS_ORIGINS`, or set it as `WEB_URL`, in `production.env`, and push. `localhost:3000` is always allowed. nginx adds no CORS headers of its own. The API answers preflights and leaves out `Access-Control-Allow-Origin` for any origin not listed.
 
 ## SevenTask (paused)
 

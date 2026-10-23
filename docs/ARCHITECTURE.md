@@ -130,7 +130,7 @@ stateDiagram-v2
 |---|---|
 | API + orchestrator + voice bridge | One always-on Arbutus VM (192.168.104.198, private), systemd, one uvicorn process |
 | Public entry | The shared gateway's nginx (134.87.8.230) with Let's Encrypt: https://landline.134.87.8.230.sslip.io, proxying HTTP, SSE and WSS to the VM |
-| Web | Vercel, proxying `/api/*` to the public URL (`API_URL`) |
+| Web | Vercel, deployed from `release` by `.github/workflows/deploy-web.yml` when `web/` changes. The browser calls the API's public URL directly (`NEXT_PUBLIC_API_URL`, CORS) |
 | Database | Postgres 17 with PostGIS and pgvector in Docker on the same VM, localhost only |
 | CI/CD | Work lands on `main`; shipping is `git push origin main:release`. Every push to `release` that passes CI is rsynced to the VM through the gateway (SSH jump host), migrated and restarted. The VM's own timer re-scrapes every 6 h. See [deploy/README.md](../deploy/README.md) |
 | Models | Boson Higgs Realtime and Higgs TTS (Avatar is a stretch goal); a text LLM for extraction and memory, behind one provider interface |

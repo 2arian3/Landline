@@ -8,7 +8,7 @@
 # destinations. CI never changes the gateway's nginx; see deploy/README.md.
 #
 # Secrets: DEPLOY_SSH_KEY, DEPLOY_KNOWN_HOSTS.
-name: Deploy
+name: Deploy API
 
 on:
   workflow_run:
