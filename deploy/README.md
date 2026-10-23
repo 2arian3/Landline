@@ -52,8 +52,8 @@ The deploy then reinstalls that version. Migrations are forward-only, so a rollb
 
 
 1. It connects to the VM through the gateway, using the gateway as an SSH jump host. The VM can't be reached any other way. The connection uses `.github/actions/landline-ssh` with secrets `DEPLOY_SSH_KEY` and `DEPLOY_KNOWN_HOSTS`.
-2. `rsync --delete` copies the commit to `~/landline`.
-3. `deploy/remote.sh` does the rest. If the commit changed `pipeline/` or `db/migrations/`, or the database has no listings, it also starts a re-scrape in the background.
+2. `rsync --delete` copies the commit to a staging copy, `~/landline.next`.
+3. `deploy/remote.sh` runs from there. It pauses the refresh timer and applies the commit's migrations. Only if they succeed does it copy the code into `~/landline`, sync dependencies and restart the API, so a failed migration leaves the running tree as it was. If the commit changed `pipeline/` or `db/migrations/`, or the database has no listings, it also starts a re-scrape in the background.
 4. It checks `https://landline.134.87.8.230.sslip.io/health` and the CORS preflight through the gateway.
 
 `.github/workflows/refresh-listings.yml` (manual only) runs the VM's refresh job now. It then attaches the log and the scrape as an artifact. The 6-hour schedule is the VM's own timer.
@@ -69,7 +69,7 @@ The deploy then reinstalls that version. Migrations are forward-only, so a rollb
 - The workflow typechecks and builds the app on the runner (`vercel build`), then uploads the prebuilt output (`vercel deploy --prebuilt --prod`).
 - A failed build deploys nothing.
 - On the first run it creates and links the Vercel project.
-- `web/vercel.json` turns off Vercel's own Git deploys, so connecting the repo in the Vercel dashboard can't cause a second deploy.
+- Keep the Git repository **disconnected** in the Vercel dashboard. `web/vercel.json` applies only to these CLI deploys from `web/`; a dashboard Git integration would read the repo root and deploy on its own.
 
 The build sets `NEXT_PUBLIC_API_URL` and `API_URL` to `https://landline.134.87.8.230.sslip.io`, so the browser talks to the API directly. That keeps the event stream off Vercel's proxy. The production origin must therefore be allowed by CORS: set it as `WEB_URL` in `production.env` and ship it to `release` along with the first web deploy.
 
@@ -125,9 +125,10 @@ On the VM:
 | Restart the API | `sudo systemctl restart landline-api` |
 | Refresh now / its log | `sudo systemctl start landline-refresh` / `journalctl -u landline-refresh -n 80` |
 | Next refresh | `systemctl list-timers landline-refresh.timer` |
-| **Before judging** | `sudo systemctl stop landline-refresh.timer`: a refresh restarts the API, which resets in-memory demo sessions. `start` it again afterwards |
+| **Before judging** | `sudo systemctl stop landline-refresh.timer`: a refresh restarts the API, which resets in-memory demo sessions. Deploys leave a stopped timer stopped and skip their own re-scrape. `start` it again afterwards; a slot missed while it was stopped then runs at once |
 | psql | `cd ~/landline && docker compose --env-file .env -f deploy/compose.yml exec db psql -U landline` |
 | Manual deploy of what's on disk | `bash ~/landline/deploy/remote.sh no` |
+| After a failed deploy | The live code is unchanged if a migration failed. The refresh timer stays stopped until a deploy succeeds; fix forward, or `sudo systemctl start landline-refresh.timer` |
 
 Database from your laptop, through a tunnel (the VM's Postgres listens only on localhost):
 
@@ -139,7 +140,7 @@ Then connect to `postgresql://landline:<password from ~/landline/.env>@localhost
 
 ## CORS
 
-The production web app calls the API directly (`NEXT_PUBLIC_API_URL`, set by `deploy-web.yml`), so its origin must be listed. Without `NEXT_PUBLIC_API_URL`, the app calls its own `/api` proxy (`next.config.ts`, `API_URL`), which is same-origin and needs no CORS. When the browser should call the API directly, set `NEXT_PUBLIC_API_URL=https://landline.134.87.8.230.sslip.io` on Vercel. Do this, for example, to keep the event stream off Vercel's proxy. Then add the web app's origin to `CORS_ORIGINS`, or set it as `WEB_URL`, in `production.env`, and push. `localhost:3000` is always allowed. nginx adds no CORS headers of its own. The API answers preflights and leaves out `Access-Control-Allow-Origin` for any origin not listed.
+The production web app calls the API directly (`NEXT_PUBLIC_API_URL`, set by `deploy-web.yml`), so its origin must be listed. Without `NEXT_PUBLIC_API_URL`, the app calls its own `/api` proxy (`next.config.ts`, `API_URL`), which is same-origin and needs no CORS. Both values are set in `deploy-web.yml`'s job `env` and baked in at build time on the runner. Change them there, not in the Vercel dashboard, which the build doesn't read for keys the job already sets. A new web origin goes in `CORS_ORIGINS`, or as `WEB_URL`, in `production.env`; push it to `release`. `localhost:3000` is always allowed. nginx adds no CORS headers of its own. The API answers preflights and leaves out `Access-Control-Allow-Origin` for any origin not listed.
 
 ## SevenTask (paused)
 

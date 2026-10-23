@@ -17,9 +17,9 @@ Owner: Arian. Reviewed by Danial (extraction quality) and Mahyar (what the UI sh
 
 We considered SQLite and dropped it: three machines writing to one file doesn't work, and it has no geo. A vector-only database was also dropped: the facts that decide a rental are structured, or come from phone calls, not from similarity. Local development uses the same image in Docker (`make db-up`), so a migration that works locally works in production.
 
-## Schema (first migration, `db/migrations/0001_init.sql`)
+## Schema (summary; `db/migrations/0001_init.sql` is the source of truth)
 
-Ranked fields are columns; everything else goes in `jsonb`. Every listing field the renter sees has an entry in `provenance`.
+This is the design sketch. The migration has more: the `ingest_runs` table, and listing columns such as `building_name`, `city`, `neighbourhood`, `building_type` and `amenities`. Ranked fields are columns; everything else goes in `jsonb`. Every listing field the renter sees has an entry in `provenance`.
 
 ```sql
 create extension if not exists postgis;
@@ -123,7 +123,7 @@ The VM re-scrapes every 6 hours (`landline-refresh.timer`), next to the database
 2. **Check before load:** if the run finds fewer than 500 listings or under 90% have coordinates, it exits with code 3 and loads nothing. A site change or a block can't overwrite good data.
 3. Upsert by `listing_id`; `first_seen` is kept, `last_seen` and the facts are updated, and provenance is merged.
 4. Rows not seen in a **complete** run (the scraper reached the end of the results) are marked `stale`. A partial run never marks anything stale.
-5. Every run is recorded in `ingest_runs` (pages, fetched, inserted, updated, marked stale, status), and its JSONL and log are uploaded as an artifact for 7 days.
+5. Every run is recorded in `ingest_runs` (pages, fetched, inserted, updated, marked stale, status), and its log is in `journalctl -u landline-refresh` on the VM. Runs started from the Refresh listings workflow also upload that run's JSONL and log as a 7-day artifact.
 
 `DATABASE_URL` and `SCRAPER_CONTACT_EMAIL` come from `~/landline/.env` on the VM. After a load the API restarts so it serves the new catalogue.
 
