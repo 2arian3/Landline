@@ -33,9 +33,13 @@ jobs:
           ssh landline "sudo journalctl -u landline-refresh --since '$start' --no-pager -o cat" | tee run.txt
           exit $status
 
-      - name: Fetch the scrape
+      - name: Fetch this run's scrape
         if: always()
-        run: scp landline:landline/data/stages/normalize/livrent-latest.jsonl . || true
+        # The newest timestamped file is this run's output, even when it failed its
+        # check; livrent-latest.jsonl is only replaced by runs that pass.
+        run: |
+          newest=$(ssh landline 'ls -t landline/data/stages/normalize/livrent-2*.jsonl 2> /dev/null | head -1' || true)
+          if [ -n "$newest" ]; then scp "landline:$newest" . || true; fi
 
       - name: Upload the run
         if: always()
@@ -44,6 +48,6 @@ jobs:
           name: listings-${{ github.run_id }}
           path: |
             run.txt
-            livrent-latest.jsonl
+            livrent-2*.jsonl
           if-no-files-found: ignore
           retention-days: 7
