@@ -30,6 +30,17 @@ def test_health_and_catalogue():
         assert {p["listing_id"] for p in points} == {"t:1", "t:2", "t:3", "t:4"}
 
 
+def test_health_counts_sessions_and_reports_higgs():
+    with _client() as c:
+        h = c.get("/health").json()
+        assert (h["status"], h["sessions"], h["transport"], h["higgs"]) == ("ok", 0, "stub", "not configured")
+        for sid in ("s_a", "s_b", "s_a"):
+            c.get(f"/api/sessions/{sid}")
+        assert c.get("/health").json()["sessions"] == 2
+        c.app.state.higgs = "ok"   # what the voice layer sets once it has reached Higgs
+        assert c.get("/health").json()["higgs"] == "ok"
+
+
 def test_session_board_follows_preferences_and_bumps_version():
     with _client() as c:
         first = c.get("/api/sessions/s1").json()

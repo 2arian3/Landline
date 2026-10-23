@@ -17,9 +17,13 @@ HEARTBEAT_S = 5   # well inside the page's 6.5 s "Reconnecting…" threshold
 
 @router.get("/health")
 def health(request: Request) -> dict:
-    cat = request.app.state.catalogue
+    """CONTRACTS.md: {status, listings, sessions, transport, higgs}. `sessions` counts the demo sessions
+    held in memory (a restart wipes them); `higgs` is whatever the voice layer last reported."""
+    state = request.app.state
+    cat = state.catalogue
     return {"status": "ok", "listings": len(cat.listings), "catalogue": cat.origin,
-            "transport": request.app.state.settings.transport}
+            "sessions": len(state.sessions.views), "transport": state.settings.transport,
+            "higgs": state.higgs}
 
 
 @router.get("/api/catalogue", response_model=list[CataloguePoint])
