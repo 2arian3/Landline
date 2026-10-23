@@ -64,10 +64,11 @@ jobs:
           echo "refresh=$refresh" >> "$GITHUB_OUTPUT"
 
       - name: Copy the code to the VM
-        run: rsync -az --delete --exclude-from=deploy/rsync-exclude.txt ./ landline:landline/
+        # Into a staging copy: remote.sh migrates from it and only then replaces ~/landline
+        run: rsync -az --delete --exclude-from=deploy/rsync-exclude.txt ./ landline:landline.next/
 
       - name: Install, migrate, restart
-        run: ssh landline "bash landline/deploy/remote.sh ${{ steps.plan.outputs.refresh }} $SHA"
+        run: ssh landline "bash landline.next/deploy/remote.sh ${{ steps.plan.outputs.refresh }} $SHA"
 
       - name: Check the public endpoint
         run: |
