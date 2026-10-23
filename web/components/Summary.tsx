@@ -81,6 +81,18 @@ export function Activity({ view, compact = false }: { view: SessionView | null; 
 }
 
 /**
+ * The first thing in the panel for a renter Landline knows (U-08). Landline
+ * usually opens a returning call with the welcome itself; where its last line
+ * shows (desktop), don't say it twice.
+ */
+export function Welcome({ view, compact = false }: { view: SessionView | null; compact?: boolean }) {
+  if (!view?.returning) return null;
+  if (!compact && /^welcome back/i.test(view.agent_says ?? "")) return null;
+  const welcome = `Welcome back${view.user_name ? `, ${view.user_name}` : ""}.`;
+  return <p className={`font-label text-ink ${compact ? "truncate text-support" : "text-fact"}`}>{welcome}</p>;
+}
+
+/**
  * What Landline heard and what it last said: the renter's half of the call, on
  * screen. `compact` (phones) keeps it to one line so the first place shows
  * above the fold of the sheet; the renter is hearing Landline already.
@@ -95,12 +107,10 @@ export function Heard({ view, compact = false }: { view: SessionView | null; com
     );
   }
   const heard = capitalize(heardLine(view.preferences).join(" · "));
-  const welcome = view.returning ? `Welcome back${view.user_name ? `, ${view.user_name}` : ""}.` : null;
 
   if (compact) {
     return (
-      <div className="min-w-0 space-y-0.5">
-        {welcome && <p className="truncate text-support font-label text-ink">{welcome}</p>}
+      <div className="min-w-0">
         {heard && (
           <p className="truncate text-support text-ink">
             <span className="text-ink-3">Heard </span>
@@ -111,11 +121,8 @@ export function Heard({ view, compact = false }: { view: SessionView | null; com
     );
   }
 
-  // Landline usually opens a returning call with the welcome itself; don't say it twice.
-  const saidWelcome = /^welcome back/i.test(view.agent_says ?? "");
   return (
     <div className="space-y-3">
-      {welcome && !saidWelcome && <p className="text-fact font-label text-ink">{welcome}</p>}
       {heard && (
         <div>
           <p className="text-meta text-ink-3">What I heard</p>

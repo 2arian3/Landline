@@ -1,27 +1,41 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { postJSON } from "@/lib/live";
 import type { Preferences } from "@/lib/types";
 
 /**
  * Shown with ?dev=1. Stands in for the voice agent's update_preferences and
  * call_listings calls until the Concierge exists, so the live loop (POST → SSE
- * → re-rank → map) and every call status can be exercised from a browser.
+ * → re-rank → map) and every call status can be exercised from a browser. The
+ * returning-renter switch stands in for a known phone number (O-05).
  */
 export function DemoControls({
   sessionId,
   prefs,
   calling,
+  returning,
+  userName,
 }: {
   sessionId: string;
   prefs: Preferences;
   calling: boolean;
+  returning: boolean;
+  userName: string | null;
 }) {
   const [budget, setBudget] = useState(prefs.max_monthly ?? 2800);
   const [beds, setBeds] = useState(prefs.min_beds ?? 1);
   const [busy, setBusy] = useState(false);
   const [dialing, setDialing] = useState(false);
+  // The renter from docs/DEMO.md's second call. The switch shows the tap at once; the server wins next version.
+  const [name, setName] = useState(userName ?? "Sara");
+  const [back, setBack] = useState(returning);
+  useEffect(() => setBack(returning), [returning]);
+
+  function welcome(on: boolean) {
+    setBack(on);
+    void postJSON(`/api/sessions/${encodeURIComponent(sessionId)}/returning`, { returning: on, name });
+  }
 
   async function apply() {
     setBusy(true);
@@ -96,6 +110,32 @@ export function DemoControls({
         Call the top 3
       </button>
       <p className="mt-1.5 text-meta text-ink-3">Three scripted agents answer. No phone rings.</p>
+      <div className="mt-3 flex items-center gap-3">
+        <label className="flex shrink-0 items-center gap-2 text-meta text-ink-2" htmlFor="demo-returning">
+          <input
+            id="demo-returning"
+            type="checkbox"
+            checked={back}
+            onChange={(e) => welcome(e.target.checked)}
+            className="h-4 w-4 accent-[var(--color-ink)]"
+          />
+          Returning renter
+        </label>
+        <input
+          aria-label="Returning renter's name"
+          value={name}
+          maxLength={40}
+          onChange={(e) => setName(e.target.value)}
+          onBlur={() => back && welcome(true)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              e.currentTarget.blur();
+            }
+          }}
+          className="min-w-0 flex-1 rounded-[10px] bg-press px-2 py-1.5 text-support text-ink"
+        />
+      </div>
     </form>
   );
 }

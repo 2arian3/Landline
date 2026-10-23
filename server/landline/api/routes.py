@@ -104,6 +104,19 @@ async def call_top(session_id: str, request: Request) -> SessionView:
     return await request.app.state.sessions.call_top(session_id)
 
 
+class ReturningBody(BaseModel):
+    returning: bool = True
+    name: str | None = Field(default=None, max_length=40)
+
+
+@router.post("/api/sessions/{session_id}/returning", response_model=SessionView)
+async def returning(session_id: str, body: ReturningBody, request: Request) -> SessionView:
+    """Demo hook: marks the session as a returning renter until profiles (O-05) recognise the phone
+    number. The panel then opens with "Welcome back, <name>."."""
+    name = (body.name or "").strip() or None
+    return await request.app.state.sessions.welcome_back(session_id, body.returning, name)
+
+
 @router.post("/api/sessions/{session_id}/preferences", response_model=SessionView)
 async def preferences(session_id: str, body: Preferences, request: Request) -> SessionView:
     """Demo hook: stands in for the Concierge's update_preferences until the voice layer exists."""

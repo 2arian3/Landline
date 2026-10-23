@@ -219,3 +219,17 @@ def test_settings_read_the_higgs_cap(monkeypatch):
     assert Settings.load().higgs_max_sessions == 3
     monkeypatch.setenv("HIGGS_MAX_SESSIONS", "")
     assert Settings.load().higgs_max_sessions == 5
+
+
+def test_returning_renter_is_welcomed_by_name():
+    with _client() as c:
+        assert c.get("/api/sessions/s_back").json()["returning"] is False
+        v = c.post("/api/sessions/s_back/returning", json={"name": "  Sara "}).json()
+        assert (v["returning"], v["user_name"], v["version"]) == (True, "Sara", 2)
+        # it survives the next re-rank
+        later = c.post("/api/sessions/s_back/preferences", json={"max_monthly": 3000}).json()
+        assert (later["returning"], later["user_name"]) == (True, "Sara")
+        off = c.post("/api/sessions/s_back/returning", json={"returning": False}).json()
+        assert (off["returning"], off["user_name"]) == (False, None)
+        assert c.post("/api/sessions/s_back/returning", json={"name": " "}).json()["user_name"] is None
+        assert c.post("/api/sessions/s_back/returning", json={"name": "x" * 41}).status_code == 422
