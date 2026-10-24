@@ -13,10 +13,12 @@ from datetime import datetime
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from landline.api.routes import Turn
 from landline.contracts import Preferences
+from landline.db.export import export
 from landline.db.pool import Database
 from landline.db.rows import ProfileRow
 from landline.orchestrator.profiles import preferences_of
@@ -206,6 +208,20 @@ async def call_audio(call_id: str, db: AdminDb, track: Literal["both", "caller",
     # Rendering a long call takes a moment; off the event loop, so live calls don't wait for it.
     wav = await asyncio.to_thread(render_wav, rows, CHANNELS[track], from_ms, to_ms)
     return Response(wav, media_type="audio/wav", headers={"Cache-Control": "no-store"})
+
+
+@router.get("/export", response_class=StreamingResponse,
+            responses={200: {"content": {"application/gzip": {}}}})
+async def export_db(db: AdminDb, audio: bool = False) -> StreamingResponse:
+    """The whole database as one consistent, read-only copy, for `make db-pull` (db/export.py has the
+    format). Call recordings only with `audio=true`."""
+    async def chunks():
+        async with db.pool.connection() as conn:
+            async for chunk in export(conn, audio=audio):
+                yield chunk
+    return StreamingResponse(chunks(), media_type="application/gzip",
+                             headers={"Cache-Control": "no-store",
+                                      "Content-Disposition": 'attachment; filename="landline-export.gz"'})
 
 
 # Shaping

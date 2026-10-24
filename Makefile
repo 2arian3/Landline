@@ -1,4 +1,4 @@
-.PHONY: setup db-up db-down db-migrate data data-report dev web test lint eval contracts-snapshot
+.PHONY: setup db-up db-down db-migrate db-pull data data-report dev web test lint eval contracts-snapshot
 
 # Windows Python splits PYTHONPATH on ";", everything else on ":".
 PATHSEP := $(if $(filter Windows_NT,$(OS)),;,:)
@@ -22,6 +22,11 @@ db-down:
 # Applies db/migrations/*.sql to $DATABASE_URL (or the local DB if unset).
 db-migrate:
 	DATABASE_URL=$${DATABASE_URL:-$(LOCAL_DB)} uv run python scripts/migrate.py
+
+# Production's data into the local DB, replacing what's there. Needs ADMIN_TOKEN in .env and `make db-up`.
+# ARGS=--audio copies the call recordings too.
+db-pull:
+	uv run python scripts/db_pull.py --database-url $(LOCAL_DB) $(ARGS)
 
 # Scrape liv.rent politely, check the result, load it, refresh the UI fixture.
 data:
