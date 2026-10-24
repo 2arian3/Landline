@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import logging
+import os
 from contextlib import asynccontextmanager
 
+import logfire
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -37,9 +39,30 @@ def _log_landline_info() -> None:
         logger.setLevel(logging.INFO)
 
 
+def _keep_session(match: logfire.ScrubMatch) -> object:
+    """Logfire hides any value that contains "session". Here that's a session id, the end_session tool or a
+    line about the renter's session, none of them secret. Its other patterns (passwords, keys, tokens) still
+    hide what they match."""
+    return match.value if match.pattern_match.group(0).lower() == "session" else None
+
+
+def _trace_to_logfire() -> None:
+    """With LOGFIRE_TOKEN set (.env), each tool call is a span (voice/bridge.py run_tool) and landline.* log
+    lines go along with it. Logfire exports from a background thread, so a call never waits on it. Without
+    the token nothing is configured or sent, as in tests and CI."""
+    if not os.getenv("LOGFIRE_TOKEN"):
+        return
+    logfire.configure(token=os.environ["LOGFIRE_TOKEN"], service_name="landline-api", console=False,
+                      inspect_arguments=False, scrubbing=logfire.ScrubbingOptions(callback=_keep_session))
+    logger = logging.getLogger("landline")
+    if not any(isinstance(h, logfire.LogfireLoggingHandler) for h in logger.handlers):
+        logger.addHandler(logfire.LogfireLoggingHandler())
+
+
 def create_app(settings: Settings | None = None, catalogue: Catalogue | None = None) -> FastAPI:
     settings = settings or Settings.load()
     _log_landline_info()
+    _trace_to_logfire()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
