@@ -103,6 +103,9 @@ async def _talk(higgs: Any, transport: Any, ctx: Any, turns: Turns, playback: Pl
 
     async def speak() -> str:
         spoke, said, called, sent_any = False, "", [], False
+        # The opening (the disclosure, hard rule 6) isn't cut: a "Hello?" over it doesn't clear Twilio's
+        # audio until its response is done and has played. Higgs answers that speech once it has.
+        opening, opened = True, False
         async for event in higgs.events():
             kind = event.get("type")
             if kind == "response.created":
@@ -115,6 +118,10 @@ async def _talk(higgs: Any, transport: Any, ctx: Any, turns: Turns, playback: Pl
                     sent_any = True
                     log.info("listing call %s: first audio out", ctx.call_id)
             elif kind == "input_audio_buffer.speech_started":
+                if opening and (not opened or playback.remaining() > 0):
+                    log.info("listing call %s: speech over the opening; it plays on", ctx.call_id)
+                    continue
+                opening = False
                 await transport.send_clear()
                 playback.clear()
             elif kind == "conversation.item.input_audio_transcription.completed":
@@ -129,6 +136,7 @@ async def _talk(higgs: Any, transport: Any, ctx: Any, turns: Turns, playback: Pl
                 await bridge.run_tool(higgs, event, ctx, spoke=spoke, agent=caller_tools)
                 called.append(str(event.get("name", "")))
             elif kind == "response.done":
+                opened = True   # the opening's response is over; its audio may still be playing
                 if bridge.ends_call(event, ctx):
                     await asyncio.sleep(playback.remaining() + HANG_UP_GRACE_S)
                     return ctx.end_reason or "done"

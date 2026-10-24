@@ -2,6 +2,7 @@
 Twilio runner (fake Twilio), a person answers, and the real Caller tools run on a fake Higgs over a fake
 media stream (voice/phone_caller.py)."""
 import asyncio
+import base64
 import json
 import logging
 from dataclasses import replace
@@ -14,6 +15,7 @@ from landline.contracts import CallPlan, CallsRequested, Listing, SessionEnded, 
 from landline.db.catalogue import Catalogue
 from landline.orchestrator import SessionRuntime
 from landline.voice import phone_caller
+from landline.voice.bridge import Playback
 from landline.voice.dispatch import Dial, Dispatcher
 from landline.voice.outbound import DISCLOSURE, OutboundCalls, TwilioRunner
 from landline.voice.phone_caller import PhoneCaller
@@ -108,7 +110,24 @@ def _tool(name, args, fc):
             "arguments": json.dumps(args), "response_id": f"r_{fc}"}
 
 
-async def _call(script, line):
+class ClockedHiggs(FakeHiggs):
+    """A FakeHiggs whose script can move the playback clock: {"type": "test.clock", "at": seconds}."""
+
+    def __init__(self, script, clock):
+        super().__init__(script)
+        self.clock = clock
+
+    async def events(self):
+        for event in self.script:
+            await asyncio.sleep(0)
+            if event["type"] == "test.clock":
+                self.clock[0] = event["at"]
+                continue
+            yield event
+        await asyncio.sleep(60)
+
+
+async def _call(script, line, higgs=None):
     """One brief with one picked place, ended; its call runs to the end. Returns the runtime, the
     CallEnded events and fake Higgs."""
     rt, settings, calls = _runtime(), _settings(), OutboundCalls()
@@ -117,7 +136,7 @@ async def _call(script, line):
     async def on_ended(event, _view):
         ended.append(event)
     rt.on("CallEnded", on_ended)
-    higgs, twilio_api = FakeHiggs(script), FakeTwilio(calls, line)
+    higgs, twilio_api = higgs or FakeHiggs(script), FakeTwilio(calls, line)
     runner = TwilioRunner(settings, calls, runtime=rt, converse=PhoneCaller(rt, higgs.connect, "k",
                                                                              clock=lambda: NOW),
                           client=httpx.AsyncClient(transport=httpx.MockTransport(twilio_api.handle)))
@@ -168,6 +187,31 @@ async def test_a_phone_call_records_what_the_agent_said_and_ends_once_after_the_
     said = [r.getMessage().split(": ")[-1] for r in caplog.records]
     assert [s for s in said if s in ("Higgs ready, opening sent", "first audio out")] == [
         "Higgs ready, opening sent", "first audio out"]
+
+
+async def test_speech_over_the_opening_lets_it_play_and_after_it_barges_in(monkeypatch):
+    """A "Hello?" while the disclosure is coming or still playing doesn't clear it (hard rule 6); once it
+    has played, speech barges in as before."""
+    monkeypatch.setattr(phone_caller, "HANG_UP_GRACE_S", 0)
+    clock = [0.0]
+    monkeypatch.setattr(phone_caller, "Playback", lambda rate: Playback(rate, clock=lambda: clock[0]))
+    one_second = base64.b64encode(bytes(8000)).decode()   # 8 kHz μ-law
+    script = [
+        {"type": "response.created"},
+        {"type": "response.output_audio.delta", "delta": one_second},
+        {"type": "input_audio_buffer.speech_started"},     # while the opening is still coming
+        {"type": "response.done", "response": {"id": "r1", "output": [{"type": "message"}]}},
+        {"type": "test.clock", "at": 0.5},
+        {"type": "input_audio_buffer.speech_started"},     # done, and still playing
+        {"type": "test.clock", "at": 2.0},
+        {"type": "input_audio_buffer.speech_started"},     # it has played: a barge-in
+        {"type": "response.created"},
+        _tool("end_call", {"reason": "refused"}, "fc1"),
+        {"type": "response.done", "response": {"id": "r2", "output": [{"type": "function_call"}]}},
+    ]
+    line = FakeLine()
+    _, ended, _, _ = await _call(script, line, higgs=ClockedHiggs(script, clock))
+    assert line.cleared == 1 and [e.reason for e in ended] == ["refused"]
 
 
 async def test_the_agent_hanging_up_ends_the_call_with_what_was_heard():
