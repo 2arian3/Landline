@@ -20,6 +20,7 @@ from landline.voice import higgs, outbound
 from landline.voice.calls import RenterCalls
 from landline.voice.dispatch import Dispatcher
 from landline.voice.line import Lines
+from landline.voice.routing import ByChannel
 from landline.voice.sim import SimRunner
 from landline.voice.sms import Texter
 
@@ -62,15 +63,19 @@ def create_app(settings: Settings | None = None, catalogue: Catalogue | None = N
         app.state.connect_higgs = higgs.connect
         # Texts the phone renter their board link. Tests swap it for a fake.
         app.state.texter = Texter(settings.twilio_account_sid, settings.twilio_auth_token)
-        # The hand-off (A-06): a brief that ends with a plan has its calls queued and run. With TRANSPORT=sim
-        # the Caller (A-05) talks to landlord personas in text (A-03), with no phone; with TRANSPORT=voice it
-        # phones listing agents over Twilio (A-02). Otherwise the plan is frozen and its calls stay queued.
+        # The hand-off (A-06): a brief that ends with a plan has its calls queued and run. A judge's calls
+        # always go to the Caller talking to landlord personas in text (A-03), with no phone. A phone renter's
+        # go over Twilio with TRANSPORT=voice (A-02), to the personas with TRANSPORT=sim, and otherwise stay
+        # queued.
         chat = auditor_llm.from_env()   # the Auditor's text LLM (A-07); None runs it on rules alone
         extractor = chat.json if chat else None
         app.state.outbound = outbound.install(app.state, settings, extractor=extractor)
-        runner = SimRunner(app.state.runtime, lambda key, cfg: app.state.connect_higgs(key, cfg),
-                           settings.boson_api_key or "", extractor=extractor,
-                           ) if settings.transport == "sim" else app.state.outbound.runner
+        # Hard rule 6: a judge's (or any browser brief's) calls always go to the sim landlords; only a phone
+        # renter's go over Twilio, and only with TRANSPORT=voice (voice/routing.py).
+        sim = SimRunner(app.state.runtime, lambda key, cfg: app.state.connect_higgs(key, cfg),
+                        settings.boson_api_key or "", extractor=extractor)
+        runner = ByChannel(app.state.runtime, phone=app.state.outbound.runner, sim=sim,
+                           sim_for_phone=settings.transport == "sim")
         app.state.dispatcher = Dispatcher(app.state.runtime, settings, runner=runner, texter=app.state.texter)
         yield
         await app.state.dispatcher.close()
