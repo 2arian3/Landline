@@ -40,8 +40,8 @@ async def twiml_renter(request: Request) -> Response:
 @router.websocket(MEDIA_PATH)
 async def twilio_media(ws: WebSocket) -> None:
     state = ws.app.state
-    await run_bridge(ws, calls=state.calls, connect_higgs=state.connect_higgs, settings=state.settings,
-                     set_status=lambda status: setattr(state, "higgs", status))
+    await run_bridge(ws, calls=state.calls, runtime=state.runtime, connect_higgs=state.connect_higgs,
+                     settings=state.settings, set_status=lambda status: setattr(state, "higgs", status))
 
 
 def _signed_url(request: Request) -> str:
