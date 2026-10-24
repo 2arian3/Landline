@@ -2,24 +2,27 @@
 
 import { useEffect, useState } from "react";
 import { postJSON } from "@/lib/live";
-import type { Preferences } from "@/lib/types";
+import type { Phase, Preferences } from "@/lib/types";
 
 /**
- * Shown with ?dev=1. Stands in for the voice agent's update_preferences and
- * call_listings calls until the Concierge exists, so the live loop (POST → SSE
- * → re-rank → map) and every call status can be exercised from a browser. The
+ * Shown with ?dev=1. Stands in for the voice agent until the Concierge exists:
+ * update_preferences, then docs/DEMO.md's hand-off (call_listings records the
+ * plan, the renter hangs up, the calls go out and come back as results), so the
+ * live loop and every call status can be exercised from a browser. The
  * returning-renter switch stands in for a known phone number (O-05).
  */
 export function DemoControls({
   sessionId,
   prefs,
-  calling,
+  phase,
+  planned,
   returning,
   userName,
 }: {
   sessionId: string;
   prefs: Preferences;
-  calling: boolean;
+  phase: Phase;
+  planned: number;
   returning: boolean;
   userName: string | null;
 }) {
@@ -47,9 +50,19 @@ export function DemoControls({
     setBusy(false);
   }
 
-  async function callTop() {
+  // One step of the hand-off at a time; the next one only once the server has moved the phase on.
+  const step =
+    phase === "open" && !planned
+      ? { path: "calls", label: "Call the top 4", note: "Records the plan. Nothing rings until you hang up." }
+      : phase === "open"
+        ? { path: "hang-up", label: "Hang up", note: "Then the calls go out to four scripted agents. No phone rings." }
+        : phase === "calling"
+          ? null
+          : { path: "reset", label: "Start over", note: "Back to the brief, with nothing planned." };
+
+  async function take(path: string) {
     setDialing(true);
-    await postJSON(`/api/sessions/${encodeURIComponent(sessionId)}/calls`, {});
+    await postJSON(`/api/sessions/${encodeURIComponent(sessionId)}/${path}`, {});
     setDialing(false);
   }
 
@@ -102,14 +115,16 @@ export function DemoControls({
       </button>
       <button
         type="button"
-        onClick={() => void callTop()}
-        disabled={calling || dialing}
+        onClick={() => step && void take(step.path)}
+        disabled={!step || dialing}
         className="mt-2 w-full rounded-[var(--radius-control)] bg-surface py-2 text-support font-label text-ink hover:bg-press disabled:opacity-60"
         style={{ boxShadow: "0 0 0 1px var(--color-line)" }}
       >
-        Call the top 3
+        {step ? step.label : "Calls under way"}
       </button>
-      <p className="mt-1.5 text-meta text-ink-3">Three scripted agents answer. No phone rings.</p>
+      <p className="mt-1.5 text-meta text-ink-3">
+        {step ? step.note : "Scripted agents, and the fourth doesn\u2019t pick up. No phone rings."}
+      </p>
       <div className="mt-3 flex items-center gap-3">
         <label className="flex shrink-0 items-center gap-2 text-meta text-ink-2" htmlFor="demo-returning">
           <input

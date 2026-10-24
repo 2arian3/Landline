@@ -1,17 +1,26 @@
 "use client";
 
 import { AnimatePresence, motion } from "motion/react";
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
+import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Drawer } from "vaul";
 import { Board } from "./Board";
 import { DemoControls } from "./DemoControls";
+import type { Mark } from "./ListingCard";
 import { ListingDetail, type Reaction } from "./ListingDetail";
-import { MapView, type Padding } from "./MapView";
+import type { Padding } from "./MapView";
+import { PEEK, Shell } from "./Shell";
 import { Activity, Brand, Heard, Welcome } from "./Summary";
 import { postJSON, useCatalogue, useLiveSession } from "@/lib/live";
 import { useMedia } from "@/lib/useMedia";
 
-const PEEK = "196px";
+// MapLibre is a 1 MB chunk. Loading it after the panel lets the places paint first on a slow phone;
+// until then the map's own land colour holds its spot.
+const MapView = dynamic(() => import("./MapView").then((m) => m.MapView), {
+  ssr: false,
+  loading: () => <div className="absolute inset-0 bg-map-land" aria-hidden />,
+});
+
 const SNAPS: (string | number)[] = [PEEK, 0.56, 1];
 
 /**
@@ -63,6 +72,19 @@ export function LiveBoard({
     [view, mine],
   );
 
+  // Where each planned place stands until its call has a result: picked during the brief, queued
+  // once the renter hangs up, then ringing. Live and finished calls speak through the card's status.
+  const marks = useMemo(() => {
+    const m: Record<string, Mark> = {};
+    for (const id of view?.plan ?? []) m[id] = "will_call";
+    for (const call of view?.calls ?? []) {
+      if (call.state === "queued") m[call.listing_id] = "queued";
+      else if (call.state === "dialing" || call.state === "ringing") m[call.listing_id] = "ringing";
+      else delete m[call.listing_id];
+    }
+    return m;
+  }, [view]);
+
   // Follow the server's focus (the voice agent saying "the Yorkville one") only
   // when it changes after the page opened; on open, frame the whole board.
   const openingFocus = useRef<string | null | undefined>(undefined);
@@ -97,18 +119,27 @@ export function LiveBoard({
     ? { top: 64, right: 64, bottom: 64, left: 64 }
     : { top: 84, right: 28, bottom: snap === PEEK ? 216 : Math.round(vh * 0.58), left: 28 };
 
-  const map = (
+  // The map's chunk waits for the first board, so on a slow line the places and their photos don't
+  // queue behind a megabyte of map. With no session to wait for (judge mode's intro), or once the API
+  // has gone quiet, it loads anyway; once loaded it stays.
+  const [mapOn, setMapOn] = useState(false);
+  if (!mapOn && (view || !sessionId || stale)) setMapOn(true);
+
+  const map = mapOn ? (
     <MapView
       points={points}
       matches={view?.matches ?? points.map((p) => p.listing_id)}
       board={board}
       focusId={focusId}
       hoverId={hover}
+      marks={marks}
       padding={padding}
       showZoom={desktop === true}
       onSelect={select}
       onHover={setHover}
     />
+  ) : (
+    <div className="absolute inset-0 bg-map-land" aria-hidden />
   );
 
   const list = (
@@ -121,6 +152,7 @@ export function LiveBoard({
         loading={!view}
         focusId={focusId}
         hoverId={hover}
+        marks={marks}
         onSelect={select}
         onHover={setHover}
       />
@@ -128,7 +160,8 @@ export function LiveBoard({
         <DemoControls
           sessionId={sessionId}
           prefs={view.preferences}
-          calling={view.board.some((c) => c.status === "calling")}
+          phase={view.phase}
+          planned={view.plan.length}
           returning={view.returning}
           userName={view.user_name ?? null}
         />
@@ -152,6 +185,7 @@ export function LiveBoard({
             <ListingDetail
               id={selected}
               card={selectedCard}
+              mark={marks[selected]}
               onBack={() => setSelected(null)}
               onReact={(reaction, reason) => react(selected, reaction, reason)}
             />
@@ -171,10 +205,10 @@ export function LiveBoard({
       </AnimatePresence>
     );
 
-  // Until the browser says which layout this is, show the ground and nothing else.
-  // The shell is `fixed inset-0`: nothing can scroll the page itself, not even
+  // Until the browser says which layout this is, show the shell the server sent.
+  // Both are `fixed inset-0`: nothing can scroll the page itself, not even
   // focus or scrollIntoView on something inside the panel.
-  if (desktop === null) return <div className="fixed inset-0 bg-ground" aria-busy="true" />;
+  if (desktop === null) return <Shell idle={!!intro && !sessionId} />;
 
   const idle = !!intro && !sessionId;
 
@@ -211,7 +245,7 @@ export function LiveBoard({
         style={{ paddingTop: "max(12px, env(safe-area-inset-top))" }}
       >
         <div
-          className="pointer-events-auto rounded-[var(--radius-card)] bg-surface/95 px-4 py-2.5 backdrop-saturate-150"
+          className="pointer-events-auto rounded-[var(--radius-card)] bg-surface/95 px-4 py-2.5"
           style={{ boxShadow: "0 0 0 1px var(--color-line), 0 4px 16px rgba(26,24,21,.08)" }}
         >
           <Brand stale={stale} connected={!!view} idle={idle} />
@@ -231,7 +265,15 @@ export function LiveBoard({
           <Drawer.Content
             aria-describedby={undefined}
             className="fixed inset-x-0 bottom-0 z-20 flex h-[96dvh] flex-col rounded-t-[22px] bg-ground outline-none"
-            style={{ boxShadow: "0 -1px 0 var(--color-line), 0 -8px 28px rgba(26,24,21,.10)" }}
+            style={
+              {
+                boxShadow: "0 -1px 0 var(--color-line), 0 -8px 28px rgba(26,24,21,.10)",
+                // vaul starts a sheet with snap points off screen and slides it to the first stop. Starting
+                // at the stop (the offset vaul computes: the viewport less PEEK) puts the panel on screen in
+                // its first frame, so the places paint where they'll stay.
+                "--initial-transform": `calc(100dvh - ${PEEK})`,
+              } as CSSProperties
+            }
           >
             <Drawer.Title className="sr-only">Places Landline found</Drawer.Title>
             <div aria-hidden className="mx-auto mb-2 mt-2.5 h-1 w-10 shrink-0 rounded-full bg-ink/20" />

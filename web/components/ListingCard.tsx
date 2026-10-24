@@ -1,7 +1,7 @@
 "use client";
 
 import { Money } from "./Money";
-import { money, specLine } from "@/lib/format";
+import { money, photoAt, specLine } from "@/lib/format";
 import type { Card } from "@/lib/types";
 
 export const STATUS: Partial<Record<Card["status"], { word: string; color: string }>> = {
@@ -13,6 +13,15 @@ export const STATUS: Partial<Record<Card["status"], { word: string; color: strin
   booked: { word: "Viewing booked", color: "var(--color-real)" },
 };
 
+/** Where a planned place stands before its call has a result: picked, queued after hang-up, ringing. */
+export type Mark = "will_call" | "queued" | "ringing";
+
+export const MARK: Record<Mark, { word: string; color: string }> = {
+  will_call: { word: "Will call", color: "var(--color-ink)" },
+  queued: { word: "Queued", color: "var(--color-ink-3)" },
+  ringing: { word: "Ringing", color: "var(--color-live)" },
+};
+
 /** "Up 2", "Down 1" or "New" for a few seconds after a re-rank; null when nothing moved. */
 export type Move = number | "new" | null;
 
@@ -21,6 +30,7 @@ export function ListingCard({
   focused,
   hovered,
   moved = null,
+  mark,
   onSelect,
   onHover,
 }: {
@@ -28,10 +38,11 @@ export function ListingCard({
   focused: boolean;
   hovered: boolean;
   moved?: Move;
+  mark?: Mark;
   onSelect: (id: string) => void;
   onHover: (id: string | null) => void;
 }) {
-  const status = STATUS[card.status];
+  const status = mark ? MARK[mark] : STATUS[card.status];
   const dead = card.status === "dead";
   const flag = card.red_flags[0];
   // What a person said on the phone. A red flag outranks it here; the detail shows both.
@@ -66,9 +77,20 @@ export function ListingCard({
 
       <span className="relative block h-[84px] w-[84px] overflow-hidden rounded-[var(--radius-photo)] bg-press">
         {card.photo && (
-          // Source photos stay on the source's CDN, attributed in the detail view.
+          // Source photos stay on the source's CDN, attributed in the detail view. The top card's is
+          // usually the largest thing on a phone's first screen, so it loads first rather than lazily.
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={card.photo} alt="" loading="lazy" className="h-full w-full object-cover" />
+          <img
+            src={photoAt(card.photo, 168)}
+            srcSet={`${photoAt(card.photo, 168)} 168w, ${photoAt(card.photo, 252)} 252w`}
+            sizes="84px"
+            width={84}
+            height={84}
+            alt=""
+            loading={card.rank === 1 ? "eager" : "lazy"}
+            fetchPriority={card.rank === 1 ? "high" : "auto"}
+            className="h-full w-full object-cover"
+          />
         )}
       </span>
 
@@ -104,7 +126,7 @@ export function ListingCard({
           <span className="mt-1 flex items-center gap-1.5 text-meta font-label" style={{ color: status.color }}>
             <span
               aria-hidden
-              className={`h-1.5 w-1.5 rounded-full ${card.status === "calling" ? "live-dot" : ""}`}
+              className={`h-1.5 w-1.5 rounded-full ${card.status === "calling" || mark === "ringing" ? "live-dot" : ""}`}
               style={{ background: status.color }}
             />
             {status.word}
