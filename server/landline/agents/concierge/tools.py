@@ -74,10 +74,6 @@ class ToolContext:
     # The response that called end_session without a word. A goodbye was asked for after it, and the call
     # ends when a later response is done.
     bye_response: str | None = None
-    # Phone calls only: texts the renter the link to their board, and says whether a text went out. The
-    # first update_preferences of the call uses it, so the renter can watch the listings as they talk.
-    text_link: Callable[[], bool] | None = None
-    preferences_seen: bool = False
 
 
 async def handle(name: str, arguments: str, tool_call_id: str, ctx: ToolContext) -> str:
@@ -156,9 +152,8 @@ def _misplaced_hint(name: str, keys: list[str]) -> str:
 
 async def update_preferences(args: PreferenceDelta, ctx: ToolContext, meta: dict) -> str:
     """The places the renter named are found in code first (`_places`), and their points go in the same
-    commit, so the board has moved by the time the agent hears the reply. The first one of a phone call
-    also texts the renter their board link. Its result then says so (`texted_link`), and the Concierge
-    tells them."""
+    commit, so the board has moved by the time the agent hears the reply. (A phone caller's board link is
+    texted when the call connects: voice/bridge.py.)"""
     args, points, lost = _places(args, ctx)
     sid = ctx.session_id
     version = ctx.runtime.get(sid).version
@@ -172,9 +167,6 @@ async def update_preferences(args: PreferenceDelta, ctx: ToolContext, meta: dict
     # With nothing changed, agent_says is still the last commit's line; only the missing place is news.
     said = " ".join(filter(None, [view.agent_says if view.version != version or not lost else None,
                                   _not_found(lost, ctx)]))
-    first, ctx.preferences_seen = not ctx.preferences_seen, True
-    if first and ctx.text_link is not None and ctx.text_link():
-        return json.dumps({"result": said, "texted_link": True})
     return said
 
 
