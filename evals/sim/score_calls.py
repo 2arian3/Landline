@@ -111,7 +111,8 @@ def score_call(case: CallCase, run: int, trace: SimTrace, state: SessionState, l
             b.covered(str(args.get("field", "")), str(args.get("value", "")))
         elif c["name"] == "record_available_from" and c["output"].startswith("Recorded"):   # #157
             b.covered("available_from")
-        elif c["name"] == "book_viewing" and c["output"].startswith("Booked"):
+        # Booked, or with no booking allowed the offered time noted for the renter (_note_offer).
+        elif c["name"] == "book_viewing" and (c["output"].startswith("Booked") or "I noted" in c["output"]):
             for item in b.items:
                 if item.key == "viewing":
                     item.done = True
