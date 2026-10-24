@@ -375,6 +375,8 @@ async def _higgs_to_renter(higgs: Any, transport: Transport, ctx: tools.ToolCont
         elif kind == "conversation.item.input_audio_transcription.completed":
             log.info("call %s renter: %s", ctx.call_id, event.get("transcript", ""))
             _said(ctx, recorder, "renter", event)
+            if event.get("transcript"):
+                ctx.agent_before = ctx.agent_said   # what a plain "Yes" answers (#174)
             ctx.renter_said = str(event.get("transcript") or "") or ctx.renter_said   # call_listings' guard
             if event.get("transcript"):
                 ctx.renter_lines.append(str(event["transcript"]))   # its viewing-times guard (#174)
