@@ -56,6 +56,12 @@ class Settings:
     contact_email: str | None = None
     # The admin panel (/admin) and its API need this token as a bearer header. Unset, they answer 404.
     admin_token: str | None = None
+    # The Concierge's face on the renter's board (A-11, voice/avatar.py): a Higgs Avatar lip-syncing the call
+    # in a LiveKit Cloud room. Off unless all three LiveKit values are set (and BOSON_API_KEY).
+    livekit_url: str | None = None
+    livekit_api_key: str | None = None
+    livekit_api_secret: str | None = None
+    higgs_avatar_id: str = "builtin_claire_v1"
 
     @classmethod
     def load(cls) -> Settings:
@@ -82,6 +88,10 @@ class Settings:
             call_concurrency=int(os.getenv("CALL_CONCURRENCY") or 0) or None,
             admin_token=os.getenv("ADMIN_TOKEN") or None,
             contact_email=os.getenv("SCRAPER_CONTACT_EMAIL") or None,
+            livekit_url=(os.getenv("LIVEKIT_URL") or "").strip() or None,
+            livekit_api_key=os.getenv("LIVEKIT_API_KEY") or None,
+            livekit_api_secret=os.getenv("LIVEKIT_API_SECRET") or None,
+            higgs_avatar_id=os.getenv("HIGGS_AVATAR_ID") or "builtin_claire_v1",
         )
 
     def allowed_origins(self) -> list[str]:
