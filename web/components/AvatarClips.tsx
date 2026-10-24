@@ -6,7 +6,7 @@ import type { AvatarClip } from "@/lib/avatars";
 const MAKING = new Set(["queued", "rendering"]);
 
 /**
- * Landline's clips in one row: the renter's call on the left ("With you"), then each listing call.
+ * One clip per call, both people side by side: the renter's call ("With you"), then each listing call.
  * A phone scrolls the row sideways. A clip that failed or was skipped is left out.
  */
 export function AvatarClips({
@@ -25,8 +25,8 @@ export function AvatarClips({
   return (
     <div className={`-mx-1 flex gap-3 overflow-x-auto px-1 pb-1 ${className}`}>
       {shown.map((clip) => (
-        <figure key={clip.call_id} className="w-[140px] shrink-0">
-          <div className="aspect-[3/4] overflow-hidden rounded-[var(--radius-card)] bg-map-land">
+        <figure key={clip.call_id} className="w-[280px] shrink-0">
+          <div className="aspect-[3/2] overflow-hidden rounded-[var(--radius-card)] bg-map-land">
             {clip.status === "ready" ? (
               <ClipVideo callId={clip.call_id} videoUrl={videoUrl} loadVideo={loadVideo} />
             ) : (
