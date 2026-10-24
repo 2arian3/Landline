@@ -189,7 +189,7 @@ async def test_a_shared_address_asks_with_numbers_then_reads_the_number_back():
         board = runtime.get(SID).board
         ranks = {c.listing_id: c.rank for c in board}
         reply = await _say(ctx, "call_listings", '{"listing_refs": ["30 Carabob Court"]}')
-        assert reply.startswith("Which one? 2 share 30 Carabob Court: number ")
+        assert reply.startswith("Which one? 2 places share 30 Carabob Court: number ")
         assert "$1,999" in reply and "$1,950" in reply and len(reply.split()) <= 25
         assert runtime.state(SID).request is None                      # nobody gets phoned on a guess
         await _say(ctx, "focus_listing", '{"listing_ref": "Carabob, the 1950 one"}', "fc_2")
