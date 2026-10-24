@@ -11,14 +11,12 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import json
 import logging
 from collections.abc import Callable
 from typing import Any
 
 from fastapi import WebSocket, WebSocketDisconnect
 
-from landline.agents.concierge import tools
 from landline.agents.concierge.prompt import GREETING, INSTRUCTIONS
 from landline.config import Settings
 from landline.voice import twilio
@@ -42,11 +40,11 @@ async def run_bridge(ws: WebSocket, *, calls: RenterCalls, connect_higgs: Connec
         await _close(ws, POLICY_VIOLATION)
         return
     stream_sid = str(start.get("streamSid", ""))
-    ctx = tools.ToolContext(session_id=call.session_id, call_id=call.call_id)
 
     try:
+        # No tools for now: the Concierge only talks.
         higgs = await connect_higgs(settings.boson_api_key or "", session_config(
-            instructions=INSTRUCTIONS, tools=tools.TOOLS, voice=settings.higgs_voice_renter))
+            instructions=INSTRUCTIONS, tools=[], voice=settings.higgs_voice_renter))
     except Exception as exc:
         log.exception("Higgs session failed for call %s", call.call_id)
         set_status(f"error: {exc}"[:200])
@@ -60,7 +58,7 @@ async def run_bridge(ws: WebSocket, *, calls: RenterCalls, connect_higgs: Connec
     try:
         await higgs.send({"type": "response.create", "response": {"instructions": GREETING}})
         pumps = {asyncio.create_task(_twilio_to_higgs(ws, higgs)),
-                 asyncio.create_task(_higgs_to_twilio(higgs, ws, stream_sid, ctx))}
+                 asyncio.create_task(_higgs_to_twilio(higgs, ws, stream_sid, call.call_id))}
         done, _ = await asyncio.wait(pumps, timeout=settings.renter_call_max_s,
                                      return_when=asyncio.FIRST_COMPLETED)
         reason = _why(done)
@@ -103,40 +101,21 @@ async def _twilio_to_higgs(ws: WebSocket, higgs: Any) -> str:
             return "hangup"
 
 
-async def _higgs_to_twilio(higgs: Any, ws: WebSocket, stream_sid: str, ctx: tools.ToolContext) -> str:
-    """The Concierge's audio back to the caller, barge-in, and tool calls. Ends when Higgs closes."""
+async def _higgs_to_twilio(higgs: Any, ws: WebSocket, stream_sid: str, call_id: str) -> str:
+    """The Concierge's audio back to the caller, and barge-in. Ends when Higgs closes."""
     async for event in higgs.events():
         kind = event.get("type")
         if kind == "response.output_audio.delta":
             await ws.send_json(twilio.media(stream_sid, event["delta"]))
         elif kind == "input_audio_buffer.speech_started":
             await ws.send_json(twilio.clear(stream_sid))
-        elif kind == "response.function_call_arguments.done":
-            await _run_tool(higgs, event, ctx)
         elif kind == "conversation.item.input_audio_transcription.completed":
-            log.info("call %s renter: %s", ctx.call_id, event.get("transcript", ""))
+            log.info("call %s renter: %s", call_id, event.get("transcript", ""))
         elif kind == "response.output_audio_transcript.done":
-            log.info("call %s concierge: %s", ctx.call_id, event.get("transcript", ""))
+            log.info("call %s concierge: %s", call_id, event.get("transcript", ""))
         elif kind == "error":
-            log.warning("call %s Higgs error: %s", ctx.call_id, event.get("error"))
+            log.warning("call %s Higgs error: %s", call_id, event.get("error"))
     return "higgs_closed"
-
-
-async def _run_tool(higgs: Any, event: dict[str, Any], ctx: tools.ToolContext) -> None:
-    # Higgs's own `call_id` here names this tool call, not our phone call.
-    tool_call_id = event.get("call_id")
-    try:
-        args = json.loads(event.get("arguments") or "{}")
-    except ValueError:
-        args = {}
-    try:
-        output = await tools.handle(str(event.get("name", "")), args if isinstance(args, dict) else {}, ctx)
-    except Exception:
-        log.exception("tool %s failed on call %s", event.get("name"), ctx.call_id)
-        output = "Sorry, something went wrong on my side."
-    await higgs.send({"type": "conversation.item.create",
-                      "item": {"type": "function_call_output", "call_id": tool_call_id, "output": output}})
-    await higgs.send({"type": "response.create"})
 
 
 def _why(done: set[asyncio.Task[str]]) -> str:
