@@ -28,7 +28,7 @@ from pydantic import ValidationError
 
 from landline.agents.auditor import grounding
 from landline.agents.auditor.flags import red_flags
-from landline.agents.auditor.values import bare, call_day, free_from, from_parts, spoken_day
+from landline.agents.auditor.values import bare, call_day, fee_name, free_from, from_parts, spoken_day
 from landline.agents.caller import slots
 from landline.agents.caller.brief import Brief, disclosure
 from landline.contracts import EndReason, Fact, FactRecorded, QuestionNoted, Shareable, ViewingBooked
@@ -201,6 +201,8 @@ async def _record(args: RecordFact, ctx: CallerContext, meta: dict) -> str:
     ctx.facts.append(Fact(field=args.field, value=stored, quote=args.quote, speaker="Agent heard",
                           at=meta["at"]))
     ctx.brief.covered(args.field, args.value)
+    if args.field == "fees" and fee_name(f"{args.value} {args.quote}") == "pet_fee":
+        ctx.brief.covered("pets")   # a pet fee answers whether pets are allowed; the Auditor files both
     when = ""
     if args.field == "available" and WHEN.search(args.quote) and \
             not any(f.field == "available_from" for f in ctx.facts):
