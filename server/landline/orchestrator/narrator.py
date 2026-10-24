@@ -175,8 +175,7 @@ def _place(state: SessionState, lid: str, view: SessionView, catalogue: Catalogu
         said.append(f"I left a message for {addr}'s agent." if out.end_reason == "voicemail"
                     else f"Nobody picked up at {addr}.")
     elif out.facts:
-        facts = [f"{FIELDS.get(f.field, f.field.replace('_', ' '))}: {f.value.rstrip('.')}"
-                 for f in out.facts if f.field != "available"][:MAX_FACTS]
+        facts = [_fact(f.field, f.value.rstrip(".")) for f in out.facts if f.field != "available"][:MAX_FACTS]
         said.append(f"At {addr}, {'; '.join(facts)}." if facts else f"{addr} is still available.")
     if out and out.conflicts:
         said.append(_conflict(out.conflicts[0]))
@@ -185,6 +184,14 @@ def _place(state: SessionState, lid: str, view: SessionView, catalogue: Catalogu
     asked = [*state.questions.get(lid, []), *(out.open_questions if out else [])]
     said += [f"Its agent asked, “{q.rstrip('?')}?” I said I'd check with you." for q in dict.fromkeys(asked)]
     return said
+
+
+def _fact(field: str, value: str) -> str:
+    """One heard fact in words. The move-in day is already words from the Auditor ("Sunday, October 25", or
+    "now"), never a date in digits."""
+    if field == "available_from":
+        return "available now" if value.lower() == "now" else f"free from {value}"
+    return f"{FIELDS.get(field, field.replace('_', ' '))}: {value}"
 
 
 def _conflict(c: Conflict) -> str:
