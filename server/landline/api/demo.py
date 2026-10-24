@@ -4,8 +4,9 @@ PLACEHOLDER RANKING. This is not the Matcher: it filters on beds and budget and
 orders by a simple cost/size heuristic. Task O-03 replaces `_rank` with the
 scoring in docs/SCORING.md; the session shape and the SSE versioning stay.
 
-SCRIPTED CALLS. `call_top` plays three canned listing agents so the board can
-show every call status before the Caller (A-05) exists. Nobody is dialled.
+SCRIPTED CALLS. `call_top` rings four canned listing agents (the fourth never
+picks up) so the board can show every call status before the Caller (A-05)
+exists. Nobody is dialled.
 """
 from __future__ import annotations
 
@@ -19,6 +20,7 @@ from landline.db.catalogue import Catalogue
 
 BOARD_SIZE = 6
 CALL_S = 3.0   # how long a scripted demo call rings before it hangs up
+CALLED = 4     # the demo rings the top four; the fourth never picks up
 
 
 @dataclass(frozen=True)
@@ -59,9 +61,10 @@ class DemoSessions:
         return await self.update(session_id)
 
     async def call_top(self, session_id: str) -> SessionView:
-        """Demo hook for CallsRequested ("call the top three"): the top three cards show "calling", and
-        call_s later each hangs up with a scripted outcome. Calling again restarts the walk."""
-        picked = [c.listing_id for c in self.get(session_id).board[:3]]
+        """Demo hook for CallsRequested: the top CALLED places with a map pin show "calling", and call_s
+        later each hangs up with a scripted outcome (the last with no answer). Calling again restarts
+        the walk."""
+        picked = [c.listing_id for c in self.get(session_id).board if _pinned(c)][:CALLED]
         if not picked:
             return self.get(session_id)
         if running := self.dialing.pop(session_id, None):
@@ -123,8 +126,8 @@ class DemoSessions:
 
 
 def _outcomes(at: datetime) -> list[DemoCall]:
-    """What the three scripted listing agents say, in rank order. Demo only: A-05's Caller records real
-    facts in the agent's own words, and A-07 decides what's suspect."""
+    """What the scripted listing agents say, in rank order; the fourth never picks up. Demo only: A-05's
+    Caller records real facts in the agent's own words, and A-07 decides what's suspect."""
     def heard(field: str, value: str, quote: str) -> Fact:
         return Fact(field=field, value=value, quote=quote, speaker="Agent heard", at=at)
 
@@ -138,7 +141,14 @@ def _outcomes(at: datetime) -> list[DemoCall]:
                  red_flags=("Wants a deposit by e-transfer before anyone sees the unit",)),
         DemoCall("verified", facts=(heard("pets", "Dogs are fine",
                                           "Dogs are fine. There are a couple in the building already."),)),
+        DemoCall("no_answer"),
     ]
+
+
+def _pinned(c: Card) -> bool:
+    """Inside the box MapView.tsx draws pins in. A place outside it (701 Don Mills Rd's flipped longitude
+    in the fixture) stays in the list without a pin, so the demo doesn't ring it: its status couldn't show."""
+    return c.lat is not None and c.lng is not None and 43.3 < c.lat < 44.4 and -80.3 < c.lng < -78.6
 
 
 def _with_call(card: Card, call: DemoCall, listing: Listing, p: Preferences) -> Card:
