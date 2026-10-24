@@ -82,6 +82,8 @@ export function MapView({
       attributionControl: false,
       dragRotate: false,
       pitchWithRotate: false,
+      // Many phones are 2.6–3×; drawing at 2× fills up to ~55% fewer pixels a frame and still looks sharp.
+      pixelRatio: Math.min(window.devicePixelRatio || 1, 2),
     });
     m.touchZoomRotate.disableRotation();
     m.addControl(new AttributionControl({ compact: true }), "bottom-left");

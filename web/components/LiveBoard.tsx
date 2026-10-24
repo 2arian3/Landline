@@ -227,7 +227,7 @@ export function LiveBoard({
         style={{ paddingTop: "max(12px, env(safe-area-inset-top))" }}
       >
         <div
-          className="pointer-events-auto rounded-[var(--radius-card)] bg-surface/95 px-4 py-2.5 backdrop-saturate-150"
+          className="pointer-events-auto rounded-[var(--radius-card)] bg-surface/95 px-4 py-2.5"
           style={{ boxShadow: "0 0 0 1px var(--color-line), 0 4px 16px rgba(26,24,21,.08)" }}
         >
           <Brand stale={stale} connected={!!view} idle={idle} />
