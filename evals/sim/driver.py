@@ -177,6 +177,8 @@ async def simulate(case_id: str, run: int, opponent: Opponent, *, catalogue: Cat
                 caught = await backstop.catch_up_calls(line, ctx)
                 if caught is not None:
                     trace.caught.append({"line": len(trace.lines) - 1, "output": caught})
+            if not ctx.hang_up:   # #188, as the bridge does: the language from the line's script
+                await backstop.save_language(line, ctx)
             trace.states.append(runtime.state(sid).model_dump(mode="json"))
         if ctx.hang_up:
             trace.end = "end_session"

@@ -21,6 +21,7 @@ import json
 import logging
 import re
 import unicodedata
+from collections import Counter
 from typing import Any
 
 from landline.agents.concierge import tools
@@ -58,6 +59,62 @@ def foreign(line: str) -> bool:
         return False
     latin = sum(1 for c in letters if unicodedata.name(c, "").startswith("LATIN"))
     return latin * 2 < len(letters)
+
+
+# ── The renter's language from their script (#188) ──────────────────────────
+#
+# A renter spoke Farsi all call, the Concierge called a tool every turn, and preferences.language stayed
+# null, so the results text went out in English (voice/translate.py translates only a saved language).
+# Code saves it from the script, whatever tools ran. Only a script that names one language counts: Latin
+# and Cyrillic don't, and in Arabic script the letters Persian and Urdu add tell them apart.
+
+_SCRIPT_LANGUAGE = {"HANGUL": "ko", "HIRAGANA": "ja", "KATAKANA": "ja", "CJK": "zh", "GURMUKHI": "pa",
+                    "DEVANAGARI": "hi", "BENGALI": "bn", "GUJARATI": "gu", "TAMIL": "ta", "THAI": "th",
+                    "HEBREW": "he", "GREEK": "el", "ARABIC": "ar"}
+_URDU = set("ٹڈڑںےھ")
+_PERSIAN = set("پچژگکی")   # Persian's letters that Arabic doesn't use (Urdu has most of them too)
+_SCRIPT_OF = {"zh": "han", "yue": "han", "ja": "japanese", "ar": "arabic", "fa": "arabic", "ur": "arabic"}
+
+
+def _script(c: str) -> str | None:
+    name = unicodedata.name(c, "")
+    return next((s for s in _SCRIPT_LANGUAGE if name.startswith(s)), None)
+
+
+def language_of(line: str) -> str | None:
+    """The language a line's script names: "آره لطفاً آپشن اولم رو بهم بگو" is fa, "مرحبا، أبحث عن شقة"
+    ar, "我想找一个两居室" zh, Japanese with any kana ja. None for Latin, Cyrillic, a short or mixed line."""
+    if not foreign(line):
+        return None
+    letters = [c for c in line if c.isalpha()]
+    scripts = Counter(_script(c) for c in letters)
+    script, n = scripts.most_common(1)[0]
+    if script is None or n * 2 < len(letters):
+        return None
+    if script == "ARABIC":
+        return "ur" if _URDU & set(line) else "fa" if _PERSIAN & set(line) else "ar"
+    if script == "CJK" and (scripts["HIRAGANA"] or scripts["KATAKANA"]):
+        return "ja"
+    return _SCRIPT_LANGUAGE[script]
+
+
+async def save_language(line: str, ctx: tools.ToolContext) -> str | None:
+    """Saves the language `line`'s script names, through update_preferences' own handler, unless one in
+    that script is already saved (the model's "yue" or "fa" stands). Returns what it saved. Never raises:
+    it runs beside the call."""
+    try:
+        lang = language_of(line)
+        saved = primary(ctx.runtime.get(ctx.session_id).preferences.language)
+        same_script = bool(saved) and _SCRIPT_OF.get(saved, saved) == _SCRIPT_OF.get(lang or "", lang)
+        if lang is None or saved == lang or same_script:
+            return None
+        log.info("call %s: the renter speaks %s; saving the language", ctx.call_id, lang)
+        arguments = json.dumps({"language": lang})
+        await tools.handle("update_preferences", arguments, f"language_{next(_ids)}", ctx)
+        return lang
+    except Exception:
+        log.exception("call %s: the renter's language couldn't be saved", ctx.call_id)
+        return None
 
 
 # A save the Concierge claimed without a tool (#96, #129): "I've updated your budget to three thousand
@@ -124,7 +181,7 @@ class Turn:
         self.heard: str | None = None
         self.said: str | None = None   # the start of the Concierge's reply to it
         self.replied = self.tooled = self.answered = self.taken = self.call_taken = False
-        self.claim_taken = False
+        self.claim_taken = self.language_taken = False
         self.tools: set[str] = set()
 
     def speech_started(self) -> None:
@@ -164,6 +221,14 @@ class Turn:
         if (self.heard and self.answered and not self.tooled and not self.claim_taken and self.said
                 and claims_save(self.said) and not foreign(self.heard)):
             self.claim_taken = True
+            return self.heard
+        return None
+
+    def language_line(self) -> str | None:
+        """The renter's line in a script that names a language, once its reply is done, whatever tools
+        ran (#188): save_language then keeps the language the model didn't."""
+        if self.heard and self.answered and not self.language_taken and language_of(self.heard):
+            self.language_taken = True
             return self.heard
         return None
 
