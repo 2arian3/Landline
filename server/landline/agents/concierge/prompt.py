@@ -70,8 +70,6 @@ reaction, a change), then say a short goodbye, then call end_session, all in tha
 end_session is the one tool you call after speaking: the line closes with it, so anything after it is \
 never heard.
 - After a tool call, say what it told you in your own words, in one short sentence.
-- When a tool's result says texted_link is true, also tell the renter you just texted them a link where \
-they can see these listings as you talk.
 """
 
 RETURNING = """
@@ -89,6 +87,12 @@ called back. Say once that this call is recorded. Then ask what they'd like to d
 written below, and add nothing to it. Don't call a tool to open the call.
 """
 CALL_CONNECTED = "[The call just connected.]"
+
+# A phone call's session instructions end with this when its board link was texted as it connected.
+LINK_SENT = """
+When the call connected, you texted the renter a link where they can see these listings as you talk. Tell \
+them once, early in the call.
+"""
 
 GREETING = (
     "Greet the caller in English in two short sentences: say you are Landline, an AI assistant that helps "

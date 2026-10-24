@@ -29,6 +29,7 @@ from landline.agents.concierge.prompt import (
     CALL_CONNECTED,
     GREETING,
     INSTRUCTIONS,
+    LINK_SENT,
     RETURNING,
     SPOKE_BEFORE,
     WELCOME_BACK,
@@ -97,8 +98,8 @@ async def converse(transport: Transport, call: RenterCall, *, calls: RenterCalls
                    lines: Lines | None = None) -> str:
     """Runs one claimed call to its end, finalizes it and ends its session. Returns why it ended. The
     caller owns the socket and closes it afterwards. With a `texter`, a phone caller is texted the link
-    to their board the first time their preferences change. With `lines`, map taps reach the Concierge
-    between turns (voice/line.py)."""
+    to their board once, when the call connects, whatever the Concierge does next (a returning caller's
+    board is already there). With `lines`, map taps reach the Concierge between turns (voice/line.py)."""
     reason = "error"
     # The call, its transcript and its audio are stored for the admin panel (orchestrator/calllog.py).
     kind = "voice" if transport.audio_format == PCMU else "browser"
@@ -172,6 +173,8 @@ async def _talk(transport: Transport, call: RenterCall, runtime: SessionRuntime,
     remembered = runtime.opening(call.session_id)
     language = runtime.state(call.session_id).preferences.language   # restored by Profiles, from code
     instructions, start = opening(remembered, language)
+    if text_link is not None:
+        instructions += LINK_SENT   # so the Concierge tells them; the text goes once Higgs is up
     try:
         higgs = await connect_higgs(settings.boson_api_key or "", session_config(
             instructions=instructions, tools=tools.TOOLS, voice=settings.higgs_voice_renter,
@@ -181,9 +184,10 @@ async def _talk(transport: Transport, call: RenterCall, runtime: SessionRuntime,
         set_status(f"error: {exc}"[:200])
         return "higgs_error"
     set_status("ok")
+    if text_link is not None:
+        text_link()
 
-    ctx = tools.ToolContext(session_id=call.session_id, call_id=call.call_id, runtime=runtime,
-                            text_link=text_link)
+    ctx = tools.ToolContext(session_id=call.session_id, call_id=call.call_id, runtime=runtime)
     playback = Playback(transport.bytes_per_second)
     pumps: set[asyncio.Task[str]] = set()
     keeper = asyncio.create_task(_keep_every(runtime, call.call_id, recorder, settings.record_audio))
