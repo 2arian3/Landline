@@ -116,7 +116,9 @@ async def test_the_brief_is_saved_and_the_next_call_starts_from_it(db):
     p = again.preferences
     assert (p.max_monthly, p.min_beds, p.pets, p.priorities, [a.label for a in p.anchors]) == (
         2600, 1, ["dog"], ["light"], ["King and Bay"])
-    assert {c.listing_id: c.reaction for c in again.board}["t:2"] == "too dark"
+    # The place they turned down stays off the board (O-04), and the reaction is still remembered.
+    assert "t:2" not in {c.listing_id for c in again.board}
+    assert rt.state("s_prof000003").reactions["t:2"].reason == "too dark"
     said = rt.opening("s_prof000003")
     assert said.startswith("This renter last called earlier today. What you know: Wants up to $2,600")
     # Ending the second call without new reactions stores nothing twice.
