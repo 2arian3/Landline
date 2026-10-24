@@ -22,6 +22,7 @@ from landline.contracts import (
     CallsRequested,
     CallsScheduled,
     CallStateChanged,
+    CallView,
     Fact,
     FactRecorded,
     FeedbackGiven,
@@ -37,6 +38,8 @@ from landline.contracts import (
 from landline.db.catalogue import Catalogue
 from landline.db.pool import Database
 from landline.orchestrator import Refused, SessionRuntime, UnknownSession
+from landline.orchestrator.board import _with_outcome
+from landline.orchestrator.state import SessionState
 
 URL = os.environ.get("TEST_DATABASE_URL")
 T0 = datetime(2026, 10, 23, 23, 0, tzinfo=UTC)
@@ -225,6 +228,7 @@ async def test_the_calls_walk_the_board_from_queued_to_done(rt):
                                field="pets", value="dogs ok", quote="Dogs are fine.", turn_idx=3))
     live = rt.get(SID)
     assert _card(live, "t:5").status == "calling" and live.calls[0].started_at == _at(4)
+    assert live.calls[0].outcome is None   # nothing settled until the Auditor's outcome
     assert [f.quote for f in _card(live, "t:5").facts] == ["Dogs are fine."]
 
     await rt.emit(CallEnded(session_id=SID, at=_at(6), idem_key=f"{SID}:{c1}:end", call_id=c1, reason="done"))
@@ -242,6 +246,7 @@ async def test_the_calls_walk_the_board_from_queued_to_done(rt):
     done = await rt.emit(CallsCompleted(session_id=SID, at=_at(12), idem_key=f"{SID}:completed",
                                         call_ids=[c1, c2]))
     assert done.phase == "done"
+    assert done.calls[0].outcome.viewing == booked and done.calls[1].outcome == rented   # on the read side
     assert done.board[0].listing_id == "t:5" and done.board[0].status == "booked"   # a booking pins
     assert _card(done, "t:6").status == "dead"   # filtered out of the ranking, still shown with its status
     if rt.db:
@@ -302,3 +307,12 @@ def test_the_api_sends_a_judge_session_through_the_runtime():
 
 def _card_json(view: dict, listing_id: str) -> dict:
     return next(b for b in view["board"] if b["listing_id"] == listing_id)
+
+
+def test_a_listing_called_again_never_shows_the_earlier_calls_outcome():
+    earlier = CallOutcome(call_id="c_earlier001", listing_id="t:1", end_reason="no_answer")
+    state = SessionState(session_id=SID, channel="browser", outcomes={"t:1": earlier})
+    again = CallView(call_id="c_again00001", listing_id="t:1", state="live")
+    assert _with_outcome(state, again).outcome is None
+    first = CallView(call_id="c_earlier001", listing_id="t:1", state="ended")
+    assert _with_outcome(state, first).outcome == earlier

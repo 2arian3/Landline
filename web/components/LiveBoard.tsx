@@ -198,6 +198,7 @@ export function LiveBoard({
               card={selectedCard}
               mark={marks[selected]}
               results={view?.phase === "done" ? view.results : null}
+              calls={view?.calls}
               onBack={() => setSelected(null)}
               onReact={(reaction, reason) => react(selected, reaction, reason)}
             />

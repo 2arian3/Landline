@@ -30,6 +30,7 @@ from zoneinfo import ZoneInfo
 from landline.api.judge import ID_CHARS
 from landline.contracts import (
     Area,
+    CallOutcome,
     CallView,
     Card,
     Fact,
@@ -38,6 +39,7 @@ from landline.contracts import (
     Phase,
     Preferences,
     SessionView,
+    Viewing,
     monthly_cost,
 )
 from landline.contracts.session import CardStatus
@@ -78,6 +80,7 @@ PARKING = "Parking's a hundred and eighty a month. It comes with the unit, it's 
 DEPOSIT = "I'll need first and last by e-transfer before I can show it to you."
 DOGS = "Dogs are fine. There are a couple in the building already."
 LEASE = "Would they sign a 12-month lease?"
+SLOT_SAID = "Saturday at two works."   # the booked viewing, in the agent's words
 
 
 @dataclass(frozen=True)
@@ -218,7 +221,9 @@ class DemoSessions:
         for lid in run.plan:   # one hang-up a tick, as each outcome comes in
             await asyncio.sleep(self.tick_s)
             run.outcomes[lid] = outcomes[lid]
-            run.calls[lid] = run.calls[lid].model_copy(update={"state": "ended"})
+            call = run.calls[lid]
+            run.calls[lid] = call.model_copy(update={"state": "ended",
+                                                     "outcome": _call_outcome(call, outcomes[lid])})
             await self.update(session_id)
         run.phase, run.results = "done", self._results(run)
         self.last_results[session_id] = run.results
@@ -341,7 +346,7 @@ def _outcomes(at: datetime) -> list[DemoCall]:
                        ("agent", "Are pets okay? My client has a dog."),
                        ("landlord", DOGS),
                        ("agent", "Could they see it Saturday afternoon?"),
-                       ("landlord", "Saturday at two works."),
+                       ("landlord", SLOT_SAID),
                        ("agent", f"{_when(viewing)}, then. I'll let my client know."))),
         DemoCall("no_answer"),
     ]
@@ -350,6 +355,16 @@ def _outcomes(at: datetime) -> list[DemoCall]:
 def _call_id() -> str:
     """`c_` + 10 url-safe characters (docs/CONTRACTS.md), as CallManager.create() mints them."""
     return "c_" + "".join(secrets.choice(ID_CHARS) for _ in range(10))
+
+
+def _call_outcome(call: CallView, out: DemoCall) -> CallOutcome:
+    """What a scripted call settled, in the Auditor's shape (A-07), for the read side's calls[]."""
+    return CallOutcome(
+        call_id=call.call_id, listing_id=call.listing_id,
+        end_reason="no_answer" if out.status == "no_answer" else "done",
+        facts=list(out.facts), red_flags=list(out.red_flags), open_questions=list(out.questions),
+        viewing=Viewing(starts_at=out.viewing, slot_text=SLOT_SAID) if out.viewing else None,
+    )
 
 
 def _when(at: datetime) -> str:

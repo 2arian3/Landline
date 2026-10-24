@@ -293,13 +293,61 @@
       "call_id": "c_fixture001",
       "listing_id": "livrent:100219",
       "state": "ended",
-      "started_at": "2026-10-24T18:31:00Z"
+      "started_at": "2026-10-24T18:31:00Z",
+      "outcome": {
+        "call_id": "c_fixture001",
+        "listing_id": "livrent:100219",
+        "end_reason": "done",
+        "facts": [
+          {
+            "field": "available",
+            "value": "yes",
+            "quote": "Yes, it's still available.",
+            "speaker": "Agent heard",
+            "at": "2026-10-24T18:30:00Z"
+          },
+          {
+            "field": "parking_cost",
+            "value": "$150 a month",
+            "quote": "Parking is a hundred fifty a month extra.",
+            "speaker": "Agent heard",
+            "at": "2026-10-24T18:30:00Z"
+          }
+        ],
+        "conflicts": [],
+        "red_flags": [],
+        "open_questions": [],
+        "viewing": {
+          "starts_at": "2026-10-24T18:00:00Z",
+          "slot_text": "Saturday at two works."
+        }
+      }
     },
     {
       "call_id": "c_fixture002",
       "listing_id": "livrent:100362",
       "state": "ended",
-      "started_at": "2026-10-24T18:32:00Z"
+      "started_at": "2026-10-24T18:32:00Z",
+      "outcome": {
+        "call_id": "c_fixture002",
+        "listing_id": "livrent:100362",
+        "end_reason": "done",
+        "facts": [
+          {
+            "field": "pets",
+            "value": "cats only",
+            "quote": "Cats are fine, but no dogs.",
+            "speaker": "Agent heard",
+            "at": "2026-10-24T18:30:00Z"
+          }
+        ],
+        "conflicts": [],
+        "red_flags": [],
+        "open_questions": [
+          "Would they sign a 12-month lease?"
+        ],
+        "viewing": null
+      }
     },
     {
       "call_id": "c_fixture003",
@@ -311,13 +359,41 @@
       "call_id": "c_fixture004",
       "listing_id": "livrent:100744",
       "state": "ended",
-      "started_at": "2026-10-24T18:34:00Z"
+      "started_at": "2026-10-24T18:34:00Z",
+      "outcome": {
+        "call_id": "c_fixture004",
+        "listing_id": "livrent:100744",
+        "end_reason": "no_answer",
+        "facts": [],
+        "conflicts": [],
+        "red_flags": [],
+        "open_questions": [],
+        "viewing": null
+      }
     },
     {
       "call_id": "c_fixture005",
       "listing_id": "livrent:100745",
       "state": "ended",
-      "started_at": "2026-10-24T18:35:00Z"
+      "started_at": "2026-10-24T18:35:00Z",
+      "outcome": {
+        "call_id": "c_fixture005",
+        "listing_id": "livrent:100745",
+        "end_reason": "done",
+        "facts": [
+          {
+            "field": "available",
+            "value": "no",
+            "quote": "Sorry, that one's been rented already.",
+            "speaker": "Agent heard",
+            "at": "2026-10-24T18:30:00Z"
+          }
+        ],
+        "conflicts": [],
+        "red_flags": [],
+        "open_questions": [],
+        "viewing": null
+      }
     }
   ],
   "results": null

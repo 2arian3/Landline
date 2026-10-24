@@ -11,7 +11,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from landline.contracts.session import EndReason, Fact
+from landline.contracts.session import CallView, EndReason, Fact, SessionView
 
 
 class Window(BaseModel):
@@ -65,3 +65,9 @@ class CallOutcome(BaseModel):
     red_flags: list[str] = Field(default_factory=list)
     open_questions: list[str] = Field(default_factory=list)   # landlord questions the brief couldn't answer
     viewing: Viewing | None = None
+
+
+# session.CallView carries a CallOutcome, but this module imports session.py, so CallView's reference is
+# resolved here, whichever of the two modules loads first.
+CallView.model_rebuild(_types_namespace={"CallOutcome": CallOutcome})
+SessionView.model_rebuild()
