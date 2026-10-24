@@ -3,6 +3,7 @@ stream → fake Higgs) and the browser (judge start → audio socket → fake Hi
 import asyncio
 import base64
 import json
+import logging
 import re
 import time
 from dataclasses import replace
@@ -267,6 +268,32 @@ def test_last_session_memory_is_not_appended_to_the_call():
         assert fake.sent[:2] == [{"type": "conversation.item.create", "item": {
             "type": "message", "role": "user", "content": [{"type": "input_text", "text": CALL_CONNECTED}]}},
             {"type": "response.create"}]
+
+
+def test_a_phone_call_s_greeting_never_waits_on_the_caller_s_profile(caplog):
+    """The session starts without reading anything about the caller (#144, #149): even a profile lookup that
+    would block for seconds is never awaited before the greeting, and the timing lines are logged."""
+    caplog.set_level(logging.INFO, logger=bridge.__name__)
+
+    class Stuck:
+        async def recall(self, phone):
+            await asyncio.sleep(5)
+
+    fake = FakeHiggs(script=[{"type": "response.output_audio.delta", "delta": "AAAA"}])
+    with _client() as c:
+        c.app.state.connect_higgs = fake.connect
+        c.app.state.runtime.profiles = Stuck()
+        call = c.app.state.calls.open(caller="+14165550100")
+        started = time.monotonic()
+        with c.websocket_connect("/twilio/media") as ws:
+            ws.send_json(_start(call.call_id))
+            assert ws.receive_json()["event"] == "media"   # the greeting's audio is out
+            assert time.monotonic() - started < 2
+            ws.send_json({"event": "stop", "streamSid": "MZ1"})
+    assert fake.sent   # the opening went to Higgs
+    logged = [r.getMessage() for r in caplog.records]
+    for line in ("stream started", ": Higgs ready, greeting sent", ": first audio out"):
+        assert f"call {call.call_id}{' ' if line[0] != ':' else ''}{line}" in logged, line
 
 
 def test_a_first_time_caller_opens_like_a_returning_one_with_no_response_object():

@@ -1,0 +1,47 @@
+{
+  "id": "nadia-terse",
+  "about": "From prod call c_mj3YCwq7Xx (77 Wellesley St E): one-word answers, 'Um.' before the move-in date, which is 'from tomorrow'; no viewing windows and no booking allowed. On prod the Caller asked 'Are pets allowed?' five times, saved no pets answer, and the move-in date was saved as 2025-09-02",
+  "listing_id": "livrent:101229",
+  "persona": {
+    "name": "Nadia",
+    "manner": "busy and terse. You answer in one to four words whenever you can ('Yeah, it is.', 'Yes.', 'Nope.'). The first time you're asked from when it's available, you only say 'Um.'; if they ask again, say 'It's available from tomorrow.'",
+    "knows": {
+      "availability": "Yeah, it is.",
+      "move-in date": "It's available from tomorrow.",
+      "pets": "Yes.",
+      "fees": "Nope."
+    },
+    "offers": [
+      "Tomorrow at 6 pm"
+    ],
+    "asks": [
+      "When does your client want to come see it?"
+    ]
+  },
+  "plan": {
+    "availability": [],
+    "may_book": false,
+    "questions": [],
+    "shareable": {
+      "move_in": "November 1",
+      "occupants": 1,
+      "pets": [
+        "dog"
+      ]
+    }
+  },
+  "gold": {
+    "facts": {
+      "available_from": [
+        "{tomorrow_date}"
+      ],
+      "pets": [
+        "allow"
+      ]
+    },
+    "booked": null,
+    "note_question": true,
+    "red_flags": false,
+    "status": "verified"
+  }
+}

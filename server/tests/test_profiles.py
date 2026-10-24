@@ -4,6 +4,7 @@ These run against Postgres in a throwaway schema (conftest.py) and skip without 
 """
 import asyncio
 import os
+import time
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -84,13 +85,15 @@ async def _hang_up(rt: SessionRuntime, sid: str) -> None:
     await rt.idle()   # the profile is written after the commit
 
 
-async def test_a_new_number_gets_a_user_and_its_session_is_linked(db):
+async def test_a_new_number_gets_a_user_and_its_session_is_linked_when_the_brief_ends(db):
     rt = _runtime(db)
     view = await _call(rt, "s_prof000001")
-    user = await db.users.by_phone(PHONE)
-    assert user is not None and (await db.sessions.get("s_prof000001")).user_id == user.user_id
+    assert await db.users.by_phone(PHONE) is None   # nothing is looked up or written before the greeting
     assert (view.returning, rt.opening("s_prof000001")) == (False, None)
     assert view.agent_says == "Tell me what you're looking for, and the map will follow."
+    await _hang_up(rt, "s_prof000001")
+    user = await db.users.by_phone(PHONE)
+    assert user is not None and (await db.sessions.get("s_prof000001")).user_id == user.user_id
 
 
 async def test_the_brief_is_saved_and_the_next_call_does_not_start_from_it(db):
@@ -226,28 +229,30 @@ async def test_places_new_since_the_last_call_are_not_appended(db):
     assert rt.opening("s_prof000008") is None   # new places since last time are not appended (#144)
 
 
-async def test_a_judge_session_and_a_failed_lookup_start_fresh(db, monkeypatch):
+async def test_a_judge_session_gets_no_user_and_a_phone_start_never_looks_the_caller_up(db, monkeypatch):
     rt = _runtime(db)
     judge = await _call(rt, "s_prof000009", phone=None, channel="judge")
+    await _hang_up(rt, "s_prof000009")
     assert not judge.returning and await db.users.by_phone(PHONE) is None
 
     async def down(phone):
         raise ConnectionError("database is down")
 
-    monkeypatch.setattr(rt.profiles, "recall", down)
+    monkeypatch.setattr(rt.profiles, "recall", down)   # never called: the start reads nothing about them
     view = await _call(rt, "s_prof000010")
     assert view.version == 1 and not view.returning and rt.state("s_prof000010").user_id is None
 
 
-async def test_a_slow_lookup_starts_the_call_fresh(db, monkeypatch):
+async def test_the_start_never_waits_on_the_caller_s_profile(db, monkeypatch):
     rt = _runtime(db)
-    monkeypatch.setattr("landline.orchestrator.runtime.RECALL_TIMEOUT_S", 0.05)
 
     async def slow(phone):
         await asyncio.sleep(1)
 
     monkeypatch.setattr(rt.profiles, "recall", slow)
+    started = time.monotonic()
     assert (await _call(rt, "s_prof000011")).returning is False
+    assert time.monotonic() - started < 0.5
 
 
 async def test_forget_me_removes_the_renter(db):

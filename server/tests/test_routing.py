@@ -163,7 +163,7 @@ async def test_a_sim_calls_lines_go_to_call_turns_for_captions():
     rows = []
 
     class FakeTurns:
-        async def append(self, call_id, idx, speaker, text):
+        async def append(self, call_id, idx, speaker, text, **_audio_span):
             await asyncio.sleep(0)
             rows.append((call_id, idx, speaker, text))
 

@@ -1,0 +1,50 @@
+{
+  "id": "dariush-farsi",
+  "about": "From prod call c_cIXCy7O779 (140 D'Arcy Street), where the landlord spoke Farsi: this landlord speaks only Persian the whole call. The Caller should switch to Persian, still save facts in English with digits, and book inside the window",
+  "listing_id": "livrent:100804",
+  "persona": {
+    "name": "Dariush",
+    "role": "landlord",
+    "manner": "warm, but you speak only Persian (Farsi, فارسی) from your first word to your last, whatever language the caller uses. Write amounts and times with Western digits ($120, 3)",
+    "knows": {
+      "availability": "بله، هنوز خالیه. از اول دسامبر آماده‌ست.",
+      "pets": "گربه مشکلی نداره، ولی سگ نه.",
+      "fees": "هزینه‌ی دیگه‌ای نیست. فقط اگه پارکینگ بخواید، ماهی $120."
+    },
+    "offers": [
+      "یکشنبه ساعت 3 بعدازظهر"
+    ],
+    "asks": []
+  },
+  "plan": {
+    "availability": [
+      {
+        "day": "sunday",
+        "from": "12:00",
+        "to": "17:00"
+      }
+    ],
+    "may_book": true,
+    "questions": [],
+    "shareable": {
+      "move_in": "December 1",
+      "occupants": 2,
+      "pets": [
+        "cat"
+      ]
+    }
+  },
+  "gold": {
+    "facts": {
+      "available_from": [
+        "december 1"
+      ],
+      "pets": [
+        "cat"
+      ]
+    },
+    "booked": "sunday 15:00",
+    "red_flags": false,
+    "status": "booked"
+  }
+}

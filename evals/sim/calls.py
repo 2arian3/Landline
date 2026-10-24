@@ -15,7 +15,9 @@ call, and what a good call should come back with.
 
 `gold.facts` maps a field to words that must all appear in the value the Caller recorded; only the fields
 the call's checklist asks about count. `booked` is the day and 24-hour time a booking should land on, or
-null when nothing should be booked. Personas in `holdout/personas/` are never used to tune the prompt.
+null when nothing should be booked. `{tomorrow_date}` (october 25) and `{tomorrow_day}` (sunday) in either
+stand for the day after the run, in Toronto. `results_avoid`: words the renter's results text must not say.
+Personas in `holdout/personas/` are never used to tune the prompt.
 """
 from __future__ import annotations
 
@@ -66,6 +68,7 @@ class Gold(_Strict):
     red_flags: bool = False
     status: Literal["booked", "verified", "suspect", "dead", "no_answer"]
     end: list[str] = Field(default_factory=lambda: ["done", "hangup"])
+    results_avoid: list[str] = Field(default_factory=list)   # words the renter's results text must not say
 
 
 class CallCase(_Strict):

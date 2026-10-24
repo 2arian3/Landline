@@ -17,8 +17,9 @@ from landline.orchestrator import SessionRuntime
 from landline.voice import phone_caller
 from landline.voice.bridge import Playback
 from landline.voice.dispatch import Dial, Dispatcher
-from landline.voice.outbound import DISCLOSURE, OutboundCalls, TwilioRunner
+from landline.voice.outbound import DISCLOSURE, RECORDED, OutboundCalls, TwilioRunner
 from landline.voice.phone_caller import PhoneCaller
+from landline.voice.recorder import CallRecorder
 
 NOW = datetime(2026, 10, 24, 15, 0, tzinfo=UTC)   # Saturday 11:00 in Toronto
 SID = "s_phone00001"
@@ -177,8 +178,9 @@ async def test_a_phone_call_records_what_the_agent_said_and_ends_once_after_the_
     assert [(f.field, f.quote) for f in out.facts] == [("parking_cost", "Parking is 150 a month")]
     assert higgs.session["session"]["audio"]["input"]["format"] == {"type": "audio/pcmu"}
     assert any(t["name"] == "record_fact" for t in higgs.session["session"]["tools"])
-    # The disclosure is in the session instructions, and no response.create carries a response object.
-    assert f'exactly: "{DISCLOSURE}"' in higgs.session["session"]["instructions"]
+    # The disclosure, then that the call is recorded, is in the session instructions, and no
+    # response.create carries a response object.
+    assert f'exactly: "{DISCLOSURE} {RECORDED}"' in higgs.session["session"]["instructions"]
     assert [e["type"] for e in higgs.sent[:2]] == ["conversation.item.create", "response.create"]
     assert all("response" not in e for e in higgs.sent if e["type"] == "response.create")
     assert {"type": "input_audio_buffer.append", "audio": "/w=="} in higgs.sent
@@ -344,3 +346,122 @@ async def test_a_call_still_talking_at_its_deadline_returns_its_outcome_first():
     result = await asyncio.wait_for(run(dial, FakeLine()), 5)
     assert result.end_reason == "timeout" and result.outcome.end_reason == "timeout" and higgs.closed
     assert calls.live == {}
+
+
+# ── recording (A-10) ─────────────────────────────────────────────────────────
+# In call_turns and call_audio, `landlord` is the listing agent on the line and `agent` is the Caller.
+
+class FakeTurnsRepo:
+    def __init__(self):
+        self.rows = {}   # idx -> (speaker, text, audio_start_ms, audio_end_ms)
+
+    async def append(self, call_id, idx, speaker, text, audio_start_ms=None, audio_end_ms=None):
+        await asyncio.sleep(0)   # a slow write: a move must still land after it
+        self.rows[idx] = (speaker, text, audio_start_ms, audio_end_ms)
+
+    async def place(self, call_id, idx, audio_start_ms, audio_end_ms):
+        assert idx in self.rows, "a line was moved before it was stored"
+        self.rows[idx] = (*self.rows[idx][:2], audio_start_ms, audio_end_ms)
+
+
+class FakeAudioRepo:
+    def __init__(self):
+        self.chunks = []   # (track, seq, start_ms, format, rate, audio)
+
+    async def append(self, call_id, track, seq, start_ms, fmt, rate, audio):
+        self.chunks.append((track, seq, start_ms, fmt, rate, audio))
+
+
+class WithDb:
+    """The runtime, with a fake database for what the call writes."""
+
+    def __init__(self, rt):
+        self._rt = rt
+        self.db = type("DB", (), {"turns": FakeTurnsRepo(), "audio": FakeAudioRepo()})()
+
+    def __getattr__(self, name):
+        return getattr(self._rt, name)
+
+
+FRAME = bytes(range(160))       # 20 ms of μ-law from the listing agent
+OPENING = bytes([0x55]) * 800   # 100 ms of the Caller
+ASK = bytes([0x66]) * 800       # 100 ms more
+ASKED = "Great. And does it come with parking"
+HELLO, SORRY = "Hi, this is Linda.", "Sorry, one second."
+
+
+def _b64(data):
+    return base64.b64encode(data).decode()
+
+
+def _at(seconds):
+    return {"type": "test.clock", "at": seconds}
+
+
+def _theirs(item_id, start_ms, end_ms, text):
+    """A line of the listing agent's, `start_ms` to `end_ms` into their audio as Higgs counts it."""
+    return [{"type": "input_audio_buffer.speech_started", "item_id": item_id, "audio_start_ms": start_ms},
+            {"type": "input_audio_buffer.speech_stopped", "item_id": item_id, "audio_end_ms": end_ms},
+            {"type": "conversation.item.input_audio_transcription.completed", "transcript": text,
+             "item_id": item_id}]
+
+
+def _callers(item_id, audio, text, response_id):
+    return [{"type": "response.created"},
+            {"type": "response.output_audio.delta", "delta": _b64(audio), "item_id": item_id},
+            {"type": "response.output_audio_transcript.done", "transcript": text, "item_id": item_id},
+            {"type": "response.done", "response": {"id": response_id, "output": [{"type": "message"}]}}]
+
+
+async def _recorded_call(monkeypatch, record_audio=True):
+    """The Caller opens (100 ms). The listing agent says hello over it at 40 ms, which doesn't cut it, and
+    answers once it has played. The Caller asks (100 ms from 1 s), they talk over that at 1.04 s, then hang
+    up. Returns the fake database, fake Higgs and the line."""
+    clock = [0.0]
+    monkeypatch.setattr(phone_caller, "Playback", lambda rate: Playback(rate, clock=lambda: clock[0]))
+    monkeypatch.setattr(phone_caller, "CallRecorder",
+                        lambda fmt, caller: CallRecorder(fmt, caller, clock=lambda: clock[0]))
+    script = [
+        *_callers("i_open", OPENING, DISCLOSURE, "r1"),
+        _at(0.04), *_theirs("i_hello", 20, 60, HELLO),     # over the opening: it plays on
+        _at(0.2), *_theirs("i_yes", 180, 400, HEARD),      # once it has played
+        _at(1.0), *_callers("i_ask", ASK, ASKED, "r2"),
+        _at(1.04), *_theirs("i_sorry", 1020, 1060, SORRY),  # a barge-in
+        _at(2.0),
+    ]
+    higgs, rt = ClockedHiggs(script, clock), WithDb(_runtime())
+    run = PhoneCaller(rt, higgs.connect, "k", clock=lambda: NOW, record_audio=record_audio)
+    plan = CallPlan(session_id=SID, listing_ids=["t:1"], created_at=NOW)
+    dial = Dial(call_id="c_phone00002", session_id=SID, listing_id="t:1", to=AGENT, plan=plan,
+                deadline=NOW + timedelta(seconds=60))
+    line = FakeLine([_b64(FRAME)] * 3, hang_up_after=0.3)
+    result = await asyncio.wait_for(run(dial, line), 5)
+    assert result.end_reason == "hangup"
+    return rt.db, higgs, line
+
+
+# Each line at its place: theirs where Higgs heard it, the Caller's where it played. The opening plays whole
+# under a hello; the question ends where they cut in.
+PLACED = {0: ("agent", DISCLOSURE, 0, 100), 1: ("landlord", HELLO, 20, 60), 2: ("landlord", HEARD, 180, 400),
+          3: ("agent", ASKED, 1000, 1040), 4: ("landlord", SORRY, 1020, 1060)}
+
+
+async def test_a_phone_call_stores_both_sides_of_its_audio_with_each_line_in_place(monkeypatch):
+    db, higgs, line = await _recorded_call(monkeypatch)
+    assert f'exactly: "{DISCLOSURE} {RECORDED}"' in higgs.session["session"]["instructions"]
+    assert db.turns.rows == PLACED
+    assert line.cleared == 2   # the answer after the opening, and the barge-in
+    assert {(fmt, rate) for _, _, _, fmt, rate, _ in db.audio.chunks} == {("pcmu", 8000)}
+    tracks = {}
+    for track, _seq, start_ms, _fmt, _rate, audio in sorted(db.audio.chunks):
+        tracks.setdefault(track, []).append((start_ms, audio))
+    assert tracks == {"landlord": [(0, FRAME * 3)],                  # all they said, from when it connected
+                      "agent": [(0, OPENING), (1000, ASK[:320])]}    # what played, cut at the barge-in
+
+
+async def test_with_record_audio_off_no_audio_is_stored_and_the_call_doesnt_say_it_is(monkeypatch):
+    db, higgs, _ = await _recorded_call(monkeypatch, record_audio=False)
+    instructions = higgs.session["session"]["instructions"]
+    assert f'exactly: "{DISCLOSURE}"' in instructions and RECORDED not in instructions
+    assert db.audio.chunks == []
+    assert db.turns.rows == PLACED   # the lines still get their place

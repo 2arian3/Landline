@@ -1,0 +1,39 @@
+{
+  "id": "tom-hangs-up",
+  "about": "From prod call c_cIXCy7O779 and issue #152: the landlord answers, hears the opening, says they're busy and hangs up before any question. The card stays no_answer (a contract), but the renter's text must say neither that nobody picked up nor that a message was left",
+  "listing_id": "livrent:100362",
+  "persona": {
+    "name": "Tom",
+    "manner": "impatient. After the caller's first message, you say 'Sorry, I'm busy right now, I can't talk.' and hang up in that same message. You never answer a question"
+  },
+  "plan": {
+    "availability": [
+      {
+        "day": "saturday",
+        "from": "10:00",
+        "to": "14:00"
+      }
+    ],
+    "may_book": true,
+    "questions": [],
+    "shareable": {
+      "move_in": "December 1",
+      "occupants": 1,
+      "pets": []
+    }
+  },
+  "gold": {
+    "facts": {},
+    "booked": null,
+    "red_flags": false,
+    "status": "no_answer",
+    "end": [
+      "hangup",
+      "refused"
+    ],
+    "results_avoid": [
+      "nobody picked up",
+      "left a message"
+    ]
+  }
+}
