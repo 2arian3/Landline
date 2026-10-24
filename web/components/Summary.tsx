@@ -3,9 +3,21 @@
 import { heardLine } from "@/lib/format";
 import type { Card, SessionView } from "@/lib/types";
 
-export function Brand({ stale, connected, idle = false }: { stale: boolean; connected: boolean; idle?: boolean }) {
-  const label = !connected ? "Connecting…" : stale ? "Reconnecting…" : "Live";
-  const color = connected && !stale ? "var(--color-real)" : "var(--color-ink-3)";
+export function Brand({
+  stale,
+  connected,
+  idle = false,
+  line = null,
+}: {
+  stale: boolean;
+  connected: boolean;
+  idle?: boolean;
+  line?: string | null;
+}) {
+  // Judge mode passes the voice line's state while it isn't live, so the header never says "Live" over a
+  // dropped call. Otherwise it's the board's own connection.
+  const label = line ?? (!connected ? "Connecting…" : stale ? "Reconnecting…" : "Live");
+  const color = !line && connected && !stale ? "var(--color-real)" : "var(--color-ink-3)";
   return (
     <div className="flex items-center justify-between gap-3">
       <div className="min-w-0">
@@ -100,16 +112,40 @@ export function Activity({ view, compact = false }: { view: SessionView | null; 
 }
 
 /**
+ * What the calls found, once they're all done: the results text (written by code from the outcomes,
+ * the same words the renter gets by text), at the top of the panel.
+ */
+export function Results({ view, compact = false }: { view: SessionView | null; compact?: boolean }) {
+  if (view?.phase !== "done" || !view.results) return null;
+  return (
+    <section aria-label="What the calls found">
+      <p className="text-meta text-ink-3">What the calls found</p>
+      <p className={`text-ink ${compact ? "text-support" : "text-fact"}`}>{view.results}</p>
+    </section>
+  );
+}
+
+/**
  * The first thing in the panel for a renter Landline knows (U-08). Landline
- * usually opens a returning call with the welcome itself; where its last line
- * shows (desktop), don't say it twice.
+ * opens a returning call with the welcome and what the last call's agents found
+ * ("Welcome back, Sara. I booked 412 Markham…"); the panel shows it here, once.
  */
 export function Welcome({ view, compact = false }: { view: SessionView | null; compact?: boolean }) {
   if (!view?.returning) return null;
-  if (!compact && /^welcome back/i.test(view.agent_says ?? "")) return null;
-  const welcome = `Welcome back${view.user_name ? `, ${view.user_name}` : ""}.`;
-  return <p className={`font-label text-ink ${compact ? "truncate text-support" : "text-fact"}`}>{welcome}</p>;
+  const opening = opensWithWelcome(view) ? view.agent_says : "";
+  const greeting =
+    /^Welcome back[^.!?]*[.!?]/i.exec(opening)?.[0] ?? `Welcome back${view.user_name ? `, ${view.user_name}` : ""}.`;
+  const news = opening.slice(greeting.length).trim();
+  return (
+    <div className="space-y-0.5">
+      <p className={`font-label text-ink ${compact ? "text-support" : "text-fact"}`}>{greeting}</p>
+      {news && <p className="text-support text-ink-2">{news}</p>}
+    </div>
+  );
 }
+
+/** Landline's last line is the returning renter's welcome: the panel shows it once, as the welcome. */
+const opensWithWelcome = (view: SessionView) => view.returning && /^welcome back/i.test(view.agent_says ?? "");
 
 /**
  * What Landline heard and what it last said: the renter's half of the call, on
@@ -148,7 +184,7 @@ export function Heard({ view, compact = false }: { view: SessionView | null; com
           <p className="text-support text-ink">{heard}</p>
         </div>
       )}
-      {view.agent_says && (
+      {view.agent_says && !opensWithWelcome(view) && (
         <blockquote className="m-0 border-0 p-0">
           <p className="text-meta text-ink-3">Landline said</p>
           <p className="text-fact">“{view.agent_says}”</p>

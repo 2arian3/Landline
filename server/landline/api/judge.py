@@ -8,6 +8,7 @@ import time
 from collections.abc import Callable, Mapping
 
 ID_CHARS = string.ascii_letters + string.digits + "-_"
+CONNECT_S = 15     # a judge's audio socket must open this soon after the start, or the line frees
 DEADLINE_S = 600   # a judge session holds its line at most this long, even if nobody hangs up
 
 
@@ -17,24 +18,42 @@ def new_session_id() -> str:
 
 
 class JudgeLines:
-    """Judge sessions holding a line now. A line frees when the browser transport calls `hang_up`, or
-    at its deadline if nothing does."""
+    """Judge sessions holding a line now. A line frees when someone calls `hang_up` (the browser
+    transport when a judge leaves, the page's Done, Start again or pagehide), `connect_s` after the start
+    if the transport never reported the socket open, or at its deadline if nothing else frees it. A freed
+    line stays freed: a late `connected` or a second `hang_up` changes nothing."""
 
-    def __init__(self, cap: int, deadline_s: float = DEADLINE_S, clock: Callable[[], float] = time.monotonic):
+    def __init__(self, cap: int, deadline_s: float = DEADLINE_S, connect_s: float = CONNECT_S,
+                 clock: Callable[[], float] = time.monotonic):
         self.cap = cap
         self.deadline_s = deadline_s
+        self.connect_s = connect_s
         self.clock = clock
         self.open: dict[str, float] = {}   # session_id -> when its line frees at the latest
 
-    def take(self) -> str | None:
-        """A new session id with a line held for it, or None when every line is taken."""
+    def _expire(self) -> float:
         now = self.clock()
         self.open = {sid: until for sid, until in self.open.items() if until > now}
+        return now
+
+    def take(self) -> str | None:
+        """A new session id with a line held for it, or None when every line is taken."""
+        now = self._expire()
         if len(self.open) >= self.cap:
             return None
         session_id = new_session_id()
-        self.open[session_id] = now + self.deadline_s
+        self.open[session_id] = now + self.connect_s
         return session_id
+
+    def connected(self, session_id: str) -> bool:
+        """For the browser transport (A-03), when the judge's audio socket opens: the line is held up to
+        the deadline. False if the line already freed; the transport should then refuse the socket, since
+        another judge may hold that line by now."""
+        now = self._expire()
+        if session_id not in self.open:
+            return False
+        self.open[session_id] = now + self.deadline_s
+        return True
 
     def hang_up(self, session_id: str) -> None:
         self.open.pop(session_id, None)

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { LiveBoard } from "./LiveBoard";
 import { askForMic, useJudgeLine } from "@/lib/judgeAudio";
 import { api } from "@/lib/live";
@@ -68,18 +68,36 @@ export function JudgeMode() {
     }
   }
 
+  // Starting over ends the old session first, so its line is free for the next start.
   function again() {
+    if (sessionId) hangUp(sessionId);
     setSessionId(null);
     setPhase("intro");
   }
+
+  // So does leaving the page, instead of holding the line until the server's timeout.
+  useEffect(() => {
+    if (!sessionId) return;
+    const leave = () => hangUp(sessionId, true);
+    window.addEventListener("pagehide", leave);
+    return () => window.removeEventListener("pagehide", leave);
+  }, [sessionId]);
 
   return (
     <LiveBoard
       sessionId={sessionId}
       intro={<Intro phase={phase} waitMin={waitMin} onStart={begin} />}
       dock={<VoiceBar line={line} onDone={done} onAgain={again} />}
+      line={line.state === "connecting" ? "Connecting…" : line.state === "dropped" ? "Line dropped" : null}
     />
   );
+}
+
+/** Frees the judge's line now. Fire and forget; `beacon` for a page that's going away. */
+function hangUp(sessionId: string, beacon = false) {
+  const url = api(`/api/judge/${encodeURIComponent(sessionId)}/hang-up`);
+  if (beacon && navigator.sendBeacon?.(url)) return;
+  void fetch(url, { method: "POST", keepalive: true }).catch(() => null);
 }
 
 function Intro({ phase, waitMin, onStart }: { phase: Phase; waitMin: number; onStart: () => void }) {
