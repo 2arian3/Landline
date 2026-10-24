@@ -16,7 +16,7 @@ from landline.config import Settings
 from landline.db.catalogue import Catalogue
 from landline.db.pool import Database
 from landline.orchestrator import SessionRuntime
-from landline.voice import higgs
+from landline.voice import higgs, outbound
 from landline.voice.calls import RenterCalls
 from landline.voice.dispatch import Dispatcher
 from landline.voice.sim import SimRunner
@@ -60,15 +60,18 @@ def create_app(settings: Settings | None = None, catalogue: Catalogue | None = N
         # Texts the phone renter their board link. Tests swap it for a fake.
         app.state.texter = Texter(settings.twilio_account_sid, settings.twilio_auth_token)
         # The hand-off (A-06): a brief that ends with a plan has its calls queued and run. With TRANSPORT=sim
-        # the Caller (A-05) talks to landlord personas in text (A-03), with no phone; otherwise the plan is
-        # frozen and its calls stay queued until a phone runner exists.
+        # the Caller (A-05) talks to landlord personas in text (A-03), with no phone; with TRANSPORT=voice it
+        # phones listing agents over Twilio (A-02). Otherwise the plan is frozen and its calls stay queued.
         chat = auditor_llm.from_env()   # the Auditor's text LLM (A-07); None runs it on rules alone
+        extractor = chat.json if chat else None
+        app.state.outbound = outbound.install(app.state, settings, extractor=extractor)
         runner = SimRunner(app.state.runtime, lambda key, cfg: app.state.connect_higgs(key, cfg),
-                           settings.boson_api_key or "", extractor=chat.json if chat else None,
-                           ) if settings.transport == "sim" else None
+                           settings.boson_api_key or "", extractor=extractor,
+                           ) if settings.transport == "sim" else app.state.outbound.runner
         app.state.dispatcher = Dispatcher(app.state.runtime, settings, runner=runner, texter=app.state.texter)
         yield
         await app.state.dispatcher.close()
+        await outbound.uninstall(app.state.outbound)
         await app.state.texter.close()
         app.state.sessions.close()
         await app.state.runtime.close()

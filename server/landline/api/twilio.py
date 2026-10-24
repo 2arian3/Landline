@@ -2,6 +2,7 @@
 our media stream; the stream runs the Concierge bridge (landline/voice/bridge.py)."""
 from __future__ import annotations
 
+import asyncio
 import logging
 from urllib.parse import parse_qsl
 
@@ -9,7 +10,8 @@ from fastapi import APIRouter, HTTPException, Request, WebSocket
 from fastapi.responses import Response
 
 from landline.voice import twilio
-from landline.voice.bridge import run_bridge
+from landline.voice.bridge import POLICY_VIOLATION, TwilioTransport, _wait_for_start, close_socket, run_bridge
+from landline.voice.outbound import MACHINE
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -17,6 +19,7 @@ router = APIRouter()
 NOT_READY = "Sorry, Landline isn't taking calls right now. Please try again later."
 BUSY = "All our lines are busy. Please call again in a minute."
 MEDIA_PATH = "/twilio/media"
+OUTBOUND_MEDIA_PATH = "/twilio/outbound/media"
 
 
 @router.post("/twiml/renter")
@@ -43,6 +46,68 @@ async def twilio_media(ws: WebSocket) -> None:
     await run_bridge(ws, calls=state.calls, runtime=state.runtime, connect_higgs=state.connect_higgs,
                      settings=state.settings, set_status=lambda status: setattr(state, "higgs", status),
                      texter=state.texter)
+
+
+# ── listing calls (outbound, voice/outbound.py) ─────────────────────────────
+
+@router.post("/twiml/outbound/{call_id}")
+async def twiml_outbound(call_id: str, request: Request) -> Response:
+    """Twilio asks what to do once a listing call is answered and machine detection has decided."""
+    params = await _signed_params(request)
+    calls = request.app.state.outbound
+    if calls.runner is None or calls.get(call_id) is None:
+        return _xml(twilio.twiml_hangup())
+    answered_by = params.get("AnsweredBy", "")
+    log.info("listing call %s answered by %s", call_id, answered_by or "?")
+    if answered_by in MACHINE:
+        await calls.set_state(call_id, "voicemail")
+    return _xml(calls.runner.answered_twiml(call_id, answered_by, _ws_base(request) + OUTBOUND_MEDIA_PATH))
+
+
+@router.post("/twilio/outbound/status/{call_id}", status_code=204)
+async def outbound_status(call_id: str, request: Request) -> Response:
+    """Twilio's status callback for a listing call: ringing, then how it ended."""
+    params = await _signed_params(request)
+    calls = request.app.state.outbound
+    status = params.get("CallStatus", "")
+    if status == "ringing":
+        await calls.set_state(call_id, "ringing")
+    elif (reason := calls.end_reason(call_id, status)) is not None:
+        calls.finalize(call_id, reason)
+    return Response(status_code=204)
+
+
+@router.websocket(OUTBOUND_MEDIA_PATH)
+async def outbound_media(ws: WebSocket) -> None:
+    """The media stream of an answered listing call. It hands the line to the runner that dialled it and
+    stays open until that call ends."""
+    calls = ws.app.state.outbound
+    await ws.accept()
+    start = await _wait_for_start(ws)
+    call_id = str(((start or {}).get("customParameters") or {}).get("call_id", ""))
+    call = calls.claim(call_id) if start else None
+    if call is None:
+        log.warning("outbound media stream refused: unknown or reused call_id %r", call_id)
+        await close_socket(ws, POLICY_VIOLATION)
+        return
+    try:
+        await calls.set_state(call_id, "live")
+        if not call.media.done():
+            call.media.set_result(TwilioTransport(ws, str(start.get("streamSid", ""))))
+        await asyncio.shield(call.ended)
+    finally:
+        await close_socket(ws)
+
+
+async def _signed_params(request: Request) -> dict[str, str]:
+    """The POST fields of a webhook Twilio signed; anything else is refused with 403."""
+    settings = request.app.state.settings
+    params = dict(parse_qsl((await request.body()).decode(), keep_blank_values=True))
+    signed = request.headers.get("X-Twilio-Signature", "")
+    if not settings.twilio_auth_token or not twilio.valid_signature(
+            settings.twilio_auth_token, _signed_url(request), params, signed):
+        raise HTTPException(403, "invalid Twilio signature")
+    return params
 
 
 def _signed_url(request: Request) -> str:
