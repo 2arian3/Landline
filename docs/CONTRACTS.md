@@ -116,6 +116,9 @@ Only into the Concierge, only between turns, as one `user` `input_text` item, qu
 | GET | `/api/calls/{call_id}/turns` | live captions for a call |
 | POST | `/api/judge/start` | `{session_id, ws_url}` for browser audio |
 | GET | `/health` | `{status, listings, sessions, transport, higgs}` |
+| GET | `/api/admin/users` | Admin: every renter with counts (needs `Authorization: Bearer $ADMIN_TOKEN`; 404 when unset) |
+| GET | `/api/admin/users/{user_id}` | Admin: one renter's saved search, chosen places, sessions and calls |
+| GET | `/api/admin/calls/{call_id}` | Admin: one call with its transcript and the facts heard |
 
 `SessionView` = `{session_id, version, phase, user_name?, returning, preferences, focus_listing_id?, focus_area?, matches: [listing_id], board: [Card], agent_says, plan: [listing_id], calls: [{call_id, listing_id, state, started_at?}], results?}`. `phase` is `open` / `calling` / `done` / `closed`. Call `state` is `queued` / `blocked` / `dialing` / `ringing` / `live` / `voicemail` / `ended` (the call lifecycle in ARCHITECTURE.md). `focus_area` is `{label, lat, lng, zoom}`. `results` is the Narrator's results text for the page, set once the phase is `done`. `preferences` also carries `anchors[]` (`{label, lat?, lng?}`, coordinates filled by `AnchorResolved`), `move_in?`, `occupants?` and `language?`.
 

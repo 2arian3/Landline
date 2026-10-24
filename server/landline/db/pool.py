@@ -19,6 +19,7 @@ from contextlib import asynccontextmanager
 from psycopg import AsyncConnection
 from psycopg_pool import AsyncConnectionPool
 
+from landline.db.admin import Admin
 from landline.db.listings import IngestRuns, Listings
 from landline.db.people import Interactions, Profiles, Users
 from landline.db.reference import Buildings, Neighbourhoods, Stations
@@ -48,6 +49,8 @@ class Database:
         self.neighbourhoods = Neighbourhoods(pool)
         self.stations = Stations(pool)
         self.buildings = Buildings(pool)
+        # read-only, for the admin panel
+        self.admin = Admin(pool)
 
     @classmethod
     async def open(cls, url: str, *, schema: str | None = None, min_size: int = 1, max_size: int = 10,

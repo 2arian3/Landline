@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from landline.api import browser_audio, twilio
+from landline.api import admin, browser_audio, twilio
 from landline.api.demo import DemoSessions
 from landline.api.judge import JudgeLines, StartLimit
 from landline.api.routes import router
@@ -71,10 +71,11 @@ def create_app(settings: Settings | None = None, catalogue: Catalogue | None = N
         allow_origins=settings.allowed_origins(),
         allow_origin_regex=settings.cors_origin_regex,
         allow_methods=["GET", "POST"],
-        allow_headers=["Content-Type"],
+        allow_headers=["Content-Type", "Authorization"],   # Authorization: the admin panel's token
         max_age=600,
     )
     app.include_router(router)
+    app.include_router(admin.router)
     app.include_router(twilio.router)
     app.include_router(browser_audio.router)
     return app
