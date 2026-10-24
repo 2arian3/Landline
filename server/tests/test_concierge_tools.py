@@ -493,3 +493,37 @@ async def test_show_me_the_options_near_a_place_ranks_by_it_where_the_map_went(c
     area, anchor = _view(ctx).focus_area, ctx.runtime.state(SID).preferences.anchors[0]
     assert _places_now(ctx) == [("Bloor", True)] and (anchor.lat, anchor.lng) == (area.lat, area.lng)
     assert "Bloor" in _view(ctx).board[0].address
+
+
+
+# ── "what are my top options?" names the top three (#183) ────────────────────
+
+def _three(ctx) -> str:
+    return "Top three: " + "; ".join(f"{c.rank}. {c.address}, ${c.monthly_cost:,}, "
+                                     f"{'1 bedroom' if c.beds == 1 else f'{int(c.beds)} bedrooms'}"
+                                     for c in _view(ctx).board[:3]) + "."
+
+
+async def test_asking_for_the_top_options_gets_the_top_three_named(ctx):
+    ctx.renter_said = "Up to 3,000. What are my top options now?"
+    reply = await _say(ctx, "update_preferences", '{"max_monthly": 3000}')
+    assert reply.endswith(_three(ctx)) and reply.count(";") == 2
+
+
+async def test_a_board_change_not_asking_for_options_names_none(ctx):
+    ctx.renter_said = "Up to 3,000 a month."
+    assert "Top three" not in await _say(ctx, "update_preferences", '{"max_monthly": 3000}')
+
+
+async def test_a_reaction_and_a_question_for_the_best_ones_names_them(ctx):
+    ctx.renter_said = "The first one is too pricey. What are the best ones now?"
+    reply = await _say(ctx, "give_feedback",
+                       '{"reaction": "dislike", "attribute": "cost", "listing_ref": "1"}')
+    assert reply.startswith("Noted for ") and reply.endswith(_three(ctx))
+
+
+async def test_show_me_the_options_near_a_place_names_the_new_top_three(ctx):
+    ctx.renter_said = "Can you show me the options near Bloor?"
+    reply = await _say(ctx, "focus_area", '{"place": "Bloor"}')
+    assert reply.startswith("Showing Bloor, and the list now ranks by it.") and reply.endswith(_three(ctx))
+    assert "Bloor" in _view(ctx).board[0].address
