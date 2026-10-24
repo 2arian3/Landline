@@ -102,7 +102,12 @@ async def test_dial_asks_twilio_for_amd_a_status_callback_and_our_own_urls():
     assert form["To"] == AGENT and form["From"] == "+12892765257"
     assert form["Url"] == f"{PUBLIC}/twiml/outbound/c_test000001"
     assert form["StatusCallback"] == f"{PUBLIC}/twilio/outbound/status/c_test000001"
-    assert form["MachineDetection"] == "DetectMessageEnd"
+    assert form["MachineDetection"] == "DetectMessageEnd"   # a machine still waits for the beep
+    # AMD's waits are dead air for a person who answers: 2 s for a quiet pickup (Twilio's minimum), 0.8 s
+    # after a "Hello?". The speech threshold is left at Twilio's default, so a long hello stays a person.
+    assert form["MachineDetectionSilenceTimeout"] == "2000"
+    assert form["MachineDetectionSpeechEndThreshold"] == "800"
+    assert "MachineDetectionSpeechThreshold" not in form
     assert set(form["StatusCallbackEvent"]) == {"initiated", "ringing", "answered", "completed"}
 
 
