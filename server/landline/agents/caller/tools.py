@@ -159,9 +159,7 @@ def readback(field: str, value: str) -> str | None:
 
 
 async def note_question(args: NoteQuestion, ctx: CallerContext, meta: dict) -> str:
-    await ctx.runtime.emit(QuestionNoted(**meta, call_id=ctx.call_id, question=args.question))
-    if args.question not in ctx.questions:
-        ctx.questions.append(args.question)
+    await _note(ctx, args.question, meta["idem_key"], meta["at"])
     left = ctx.brief.missing()
     also = (f" If that same turn of theirs also told you {left[0].ask}, record_fact it now, from their words."
             if left else "")
@@ -198,6 +196,7 @@ async def book_viewing(args: BookViewing, ctx: CallerContext, meta: dict) -> str
     await ctx.runtime.emit(ViewingBooked(**meta, call_id=ctx.call_id, listing_id=ctx.listing_id, starts_at=at,
                                          slot_text=args.slot))
     ctx.booked, ctx.slot_text = at, args.slot
+    ctx.questions = [q for q in ctx.questions if not about_viewing(q)]   # the booking answered them
     for item in b.items:
         if item.key == "viewing":
             item.done = True
@@ -254,14 +253,36 @@ async def kept_promise(ctx: CallerContext, caller_said: str, called: list[str]) 
         question = repeated[-1]
     else:
         return None
-    if _noted(question, ctx.questions):
+    if _noted(question, ctx.questions) or (about_viewing(question) and ctx.booked is not None):
         return None
-    await ctx.runtime.emit(QuestionNoted(session_id=ctx.session_id, at=ctx.clock(), call_id=ctx.call_id,
-                                         idem_key=f"{ctx.call_id}:promised:{len(ctx.said)}",
-                                         question=question))
-    ctx.questions.append(question)
+    await _note(ctx, question, f"{ctx.call_id}:promised:{len(ctx.said)}", ctx.clock())
     ctx.noted_by_code += 1
     return question
+
+
+# A landlord asking to set up a viewing ("Would you like to schedule a viewing?", "When can you come by?").
+VIEWING_QUESTION = re.compile(
+    r"\b(view(ing)?|visit|tour|showing|come (by|see|over|and see)|see (it|the (unit|place|apartment))|"
+    r"schedul\w*|book\w*|appointment|open house)\b", re.I)
+
+
+def about_viewing(question: str) -> bool:
+    return bool(VIEWING_QUESTION.search(question))
+
+
+async def _note(ctx: CallerContext, question: str, idem_key: str, at: datetime) -> None:
+    """Keep a landlord's question for the renter. One about setting up a viewing stays with this call
+    only until the call ends, so a viewing booked in the same call closes it: it reaches the renter
+    through the outcome when nothing was booked, and is dropped when something was. Any other question
+    is noted on the session at once."""
+    if about_viewing(question):
+        if ctx.booked is None and question not in ctx.questions:
+            ctx.questions.append(question)
+        return
+    await ctx.runtime.emit(QuestionNoted(session_id=ctx.session_id, at=at, call_id=ctx.call_id,
+                                         idem_key=idem_key, question=question))
+    if question not in ctx.questions:
+        ctx.questions.append(question)
 
 
 def _questions(turn: str) -> list[str]:
