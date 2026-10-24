@@ -12,6 +12,7 @@ from landline.agents.concierge.backstop import (
     asks_for_calls,
     catch_up,
     catch_up_calls,
+    claims_save,
     foreign,
     refs_in,
 )
@@ -243,3 +244,66 @@ async def test_through_the_bridge_a_reply_with_no_call_listings_records_the_plan
     notes = [e["item"]["content"][0]["text"] for e in sent if e["type"] == "conversation.item.create"]
     assert len(notes) == 1 and notes[0].startswith(f"{PLANNED} I'll call ")
     assert sent[-1] == {"type": "response.create"}
+
+
+# ── A save the Concierge claimed without a tool (#96, #129) ─────────────────
+
+CLAIMS = ["I've updated your budget to three thousand dollars.", "Perfect, I've saved that for you.",
+          "Okay, I’ve noted that you have a dog.", "Got it, two bedrooms under three thousand.",
+          "I have set your move-in date to December first."]
+NO_CLAIMS = ["Got it.", "What's your budget?", "I can't call the landlord directly.",
+             "Sure! How many bedrooms do you need?", "You said you've updated your plans?", ""]
+BUDGET = "My max budget is three k per month."
+BUDGET_READ = {"max_monthly": 3000, "min_beds": None, "pets": [], "areas": [], "must_have": [],
+               "move_in": None, "occupants": None, "language": "en"}
+NOT_A_TOOL = {"type": "response.done", "response": {"status": "completed", "output": [{"type": "message"}]}}
+
+
+def test_only_a_reply_that_starts_by_claiming_a_save_counts():
+    for reply in CLAIMS:
+        assert claims_save(reply), reply
+    for reply in NO_CLAIMS:
+        assert not claims_save(reply), reply
+
+
+def _turn(renter: str, agent: str, *, tool: str | None = None) -> list[dict]:
+    events = [{"type": "input_audio_buffer.speech_started", "item_id": "u1", "audio_start_ms": 0},
+              {"type": "input_audio_buffer.speech_stopped", "item_id": "u1", "audio_end_ms": 900},
+              {"type": "conversation.item.input_audio_transcription.completed", "item_id": "u1",
+               "transcript": renter}]
+    if tool:
+        events += [{"type": "response.created"},
+                   {"type": "response.function_call_arguments.done", "name": tool, "call_id": "fc_1",
+                    "arguments": '{"max_monthly": 3000}'},
+                   {"type": "response.done", "response": {"status": "completed",
+                                                          "output": [{"type": "function_call"}]}}]
+    return events + [{"type": "response.created"},
+                     {"type": "response.output_audio_transcript.done", "item_id": "a1", "transcript": agent},
+                     NOT_A_TOOL]
+
+
+async def _through_the_bridge(ctx, events, reader) -> None:
+    await bridge._higgs_to_renter(_Higgs(events), _NoAudio(), ctx, bridge.Playback(8000),
+                                  CallRecorder(PCMU_8K), reader=reader)
+    await asyncio.gather(*list(bridge._CATCHING))
+
+
+async def test_a_claimed_save_with_no_tool_reads_the_line_and_saves_it_once():
+    ctx, reader = await _ctx(), FakeReader(BUDGET_READ)
+    claim = "I've updated your budget to three thousand dollars."
+    events = _turn(BUDGET, claim) + [{"type": "response.created"},   # a second reply in the same turn
+                                     {"type": "response.output_audio_transcript.done", "item_id": "a2",
+                                      "transcript": claim}, NOT_A_TOOL]
+    await _through_the_bridge(ctx, events, reader)
+    assert reader.asked == [BUDGET]
+    assert ctx.runtime.state(SID).preferences.max_monthly == 3000
+
+
+async def test_no_read_when_a_tool_ran_or_the_reply_claims_nothing():
+    ctx, reader = await _ctx(), FakeReader(BUDGET_READ)
+    await _through_the_bridge(ctx, _turn(BUDGET, "I've updated your budget to three thousand dollars.",
+                                         tool="update_preferences"), reader)
+    assert reader.asked == []   # the tool saved it itself
+    ctx, reader = await _ctx(), FakeReader(BUDGET_READ)
+    await _through_the_bridge(ctx, _turn(BUDGET, "What area are you looking in?"), reader)
+    assert reader.asked == [] and ctx.runtime.state(SID).preferences.max_monthly is None
