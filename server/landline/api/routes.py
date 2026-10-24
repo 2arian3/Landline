@@ -248,6 +248,21 @@ async def judge_start(request: Request) -> JudgeStart | JSONResponse:
     return JudgeStart(session_id=session_id, ws_url=ws_url)
 
 
+@router.post("/api/judge/{session_id}/done", response_model=SessionView)
+async def judge_done(session_id: str, request: Request) -> SessionView | JSONResponse:
+    """The judge's Done button ends the brief (SessionEnded), the way hanging up ends a phone call: with a
+    plan the session goes on to its calls, with nothing planned it closes. A stand-in until the browser
+    transport (A-03) ends the brief itself, so it's behind the same JUDGE_AUDIO_READY gate as
+    /api/judge/start. The judge's line is free again for the next judge."""
+    state = request.app.state
+    if not state.settings.judge_audio_ready:
+        return _refused(503, "closed", CLOSED)
+    if not _live(request, session_id):
+        raise HTTPException(404, "unknown session")
+    state.judges.hang_up(session_id)
+    return await _emit(request, SessionEnded(**_meta(session_id, "ended"), reason="end_session"))
+
+
 def _live(request: Request, session_id: str) -> bool:
     """A session the runtime (O-02) owns: one that voice or judge mode started. Any other id is a demo
     session, which the demo store creates on first sight. Each session has exactly one writer."""
