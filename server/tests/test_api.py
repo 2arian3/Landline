@@ -42,6 +42,13 @@ def test_health_and_catalogue():
         assert {p["listing_id"] for p in points} == {"t:1", "t:2", "t:3", "t:4"}
 
 
+def test_the_bare_domain_sends_people_to_the_web_app():
+    with _client() as c:
+        r = c.get("/", follow_redirects=False)
+        assert r.status_code == 307 and r.headers["location"] == c.app.state.settings.web_url
+        assert "/" not in c.get("/openapi.json").json()["paths"]
+
+
 def test_health_says_higgs_is_ready_with_a_key_before_any_call():
     cat = Catalogue([_listing(1, 2400, 1)], "test")
     settings = Settings(database_url=None, web_url="http://localhost:3000", transport="stub",
