@@ -1,0 +1,49 @@
+{
+  "id": "call-named-no-book-parking",
+  "about": "Names two listings by street, adds a parking question, gives two evenings and refuses booking",
+  "lines": [
+    {
+      "say": "I'm looking for a two bedroom, up to 3,200."
+    },
+    {
+      "say": "Please call the one on Keele Street and the one on Exbury Road."
+    },
+    {
+      "say": "Ask them whether parking is included in the rent."
+    },
+    {
+      "say": "I'm free Tuesday or Thursday evening, from 6 to 8."
+    },
+    {
+      "say": "Don't book anything yet, just find out and text me."
+    },
+    {
+      "say": "Thanks, bye."
+    }
+  ],
+  "final": {
+    "request": {
+      "listings": [
+        "addr:Keele",
+        "addr:Exbury"
+      ],
+      "availability": [
+        {
+          "day": "tuesday",
+          "from": "18:00",
+          "to": "20:00"
+        },
+        {
+          "day": "thursday",
+          "from": "18:00",
+          "to": "20:00"
+        }
+      ],
+      "may_book": false,
+      "questions": [
+        "parking"
+      ]
+    },
+    "ended": true
+  }
+}
