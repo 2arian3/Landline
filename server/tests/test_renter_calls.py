@@ -13,7 +13,14 @@ from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from landline.agents.concierge import tools
-from landline.agents.concierge.prompt import CALL_CONNECTED, GREETING, INSTRUCTIONS, RETURNING, WELCOME_BACK
+from landline.agents.concierge.prompt import (
+    CALL_CONNECTED,
+    GREETING,
+    INSTRUCTIONS,
+    LINK_SENT,
+    RETURNING,
+    WELCOME_BACK,
+)
 from landline.api.browser_audio import JUDGE_AUDIO_PATH
 from landline.api.twilio import BUSY, NOT_READY
 from landline.app import create_app
@@ -276,28 +283,29 @@ def _outputs(fake: FakeHiggs) -> list[str]:
     return [e["item"]["output"] for e in fake.sent if e["type"] == "conversation.item.create"]
 
 
-def test_the_first_preferences_of_a_phone_call_text_the_board_link():
+def test_a_phone_call_texts_the_board_link_once_when_it_connects_whatever_the_tools():
+    # A returning caller (#97): their board is already there, so the Concierge may only plan calls.
     fake = FakeHiggs(script=[
-        _tool_call("update_preferences", {"max_monthly": 3000}, "fc_1"),
-        _tool_call("update_preferences", {"min_beds": 2}, "fc_2"),
+        _tool_call("call_listings", {}, "fc_1"),
+        _tool_call("call_listings", {"may_book": True}, "fc_2"),
         {"type": "response.output_audio.delta", "delta": "AAAA"},   # both tools ran before this
     ])
     texter = FakeTexter()
     with _client() as c:
         c.app.state.connect_higgs, c.app.state.texter = fake.connect, texter
+        c.app.state.runtime.opening = lambda sid: "This renter last called yesterday."
         call = c.app.state.calls.open(caller="+14165550100", called="+12892765257")
         with c.websocket_connect("/twilio/media") as ws:
             ws.send_json(_start(call.call_id))
             assert ws.receive_json()["event"] == "media"
-            view = c.app.state.runtime.get(call.session_id)
             ws.send_json({"event": "stop", "streamSid": "MZ1"})
-    first, second = _outputs(fake)
-    # The Narrator's line for the first change (O-06), with the texted link flagged beside it.
-    reply = json.loads(first)
-    assert reply["texted_link"] is True and reply["result"].startswith("Got it: up to $3,000.")
-    assert second == view.agent_says   # only the first one of the call texts
     assert texter.sent == [("+14165550100", "+12892765257",
                             bridge.LINK_TEXT.format(link=f"http://localhost:3000/s/{call.session_id}"))]
+    # The Concierge is told in its instructions, so the tools' replies stay plain.
+    assert fake.session["session"]["instructions"].endswith(LINK_SENT)
+    items = [e["item"] for e in fake.sent if e["type"] == "conversation.item.create"]
+    outputs = [i["output"] for i in items if i["type"] == "function_call_output"]
+    assert len(outputs) == 2 and all("texted_link" not in out for out in outputs)
 
 
 def test_a_browser_call_is_never_texted():
@@ -312,7 +320,7 @@ def test_a_browser_call_is_never_texted():
         with c.websocket_connect(start["ws_url"]) as ws:
             ws.receive_bytes()
             _hang_up_and_wait(c, ws, start["session_id"])
-    assert texter.sent == [] and "texted_link" not in _outputs(fake)[0]
+    assert texter.sent == [] and LINK_SENT not in fake.session["session"]["instructions"]
 
 
 def test_twiml_remembers_the_number_the_renter_dialled():
