@@ -60,6 +60,10 @@ def test_a_spoken_slot_becomes_a_toronto_datetime(said, want):
     assert slots.parse(said, NOW, [SAT]) == want
 
 
+def test_booking_keeps_a_time_already_past_today_as_today():
+    assert slots.parse("Saturday at 10 am", NOW, [SAT], keep_past_today=True) == _at(24, 10)
+
+
 @pytest.mark.parametrize("said", ["the 31st at 2pm", "Saturday", "sometime next week", ""])
 def test_a_slot_needs_a_day_and_a_time(said):
     assert slots.parse(said, NOW, [SAT]) is None
@@ -206,6 +210,54 @@ async def test_record_fact_keeps_only_what_the_landlord_said():
     assert reply.startswith("Recorded available: yes.") and "also record available_from" in reply
     assert [f.field for f in ctx.runtime.state(ctx.session_id).heard["t:1"]] == ["available"]
     assert ctx.brief.items[0].done
+
+
+# Saturday 24 Oct at 11:53 in Toronto, the renter free Saturday 10 am to 2 pm (the live-demo case).
+SAT_1153 = datetime(2026, 10, 24, 11, 53, tzinfo=TO)
+SAT_10_2 = Window(start=_at(24, 10), end=_at(24, 14))
+SUN_1_5 = Window(start=_at(25, 13), end=_at(25, 17))
+
+
+async def _clocked(now: datetime, windows: list[Window]) -> tools.CallerContext:
+    ctx = await _ctx(_plan(windows=windows), said=["I can show it Saturday at 11 am, or 1 pm."])
+    ctx.clock = lambda: now
+    return ctx
+
+
+async def test_a_time_already_past_today_is_refused_as_passed_and_the_time_left_today_is_offered():
+    ctx = await _clocked(SAT_1153, [SAT_10_2])
+    reply = await _say(ctx, "book_viewing", {"slot": "Saturday at 11 am"})
+    assert reply == ("That time has already passed. Offer them a time between 12 pm and 2 pm today. "
+                     "Don't repeat your last question.")
+    assert ctx.booked is None
+    reply = await _say(ctx, "book_viewing", {"slot": "Saturday at 1 pm"}, 2)
+    assert reply.startswith("Booked for Saturday at 1 pm.") and ctx.booked == _at(24, 13)
+
+
+async def test_once_todays_window_has_passed_the_next_window_is_offered():
+    ctx = await _clocked(datetime(2026, 10, 24, 15, 0, tzinfo=TO), [SAT_10_2, SUN_1_5])
+    reply = await _say(ctx, "book_viewing", {"slot": "Saturday at 1 pm"})
+    assert reply == ("That time has already passed. Offer them a time Sunday between 1 pm and 5 pm. "
+                     "Don't repeat your last question.")
+    outside = await _say(ctx, "book_viewing", {"slot": "Monday at 6 pm"}, 2)
+    assert outside.startswith("Monday at 6 pm is outside the renter's times. Offer them a time Sunday")
+
+
+async def test_the_same_unbookable_time_offered_again_is_noted_and_the_caller_moves_on():
+    ctx = await _ctx(_plan(windows=[SAT_10_2]), said=["I can only do Sunday at 2 pm."])
+    ctx.clock = lambda: SAT_1153
+    first = await _say(ctx, "book_viewing", {"slot": "Sunday at 2 pm"})
+    assert first.startswith("Sunday at 2 pm is outside the renter's times. Offer them a time between 12 pm")
+    again = await _say(ctx, "book_viewing", {"slot": "Sunday at 2 pm"}, 2)
+    assert again.startswith("Not booked: they keep offering Sunday at 2 pm, which the renter can't make")
+    assert "Don't offer times again" in again and ctx.booked is None
+    assert [(f.field, f.value) for f in ctx.facts] == [("other", "viewing offered: Sunday at 2 pm")]
+
+
+async def test_with_every_window_passed_it_says_not_to_book():
+    ctx = await _clocked(datetime(2026, 10, 24, 15, 0, tzinfo=TO), [SAT_10_2])
+    reply = await _say(ctx, "book_viewing", {"slot": "Saturday at 1 pm"})
+    assert "have all passed, so don't book" in reply and ctx.booked is None
 
 
 async def test_book_viewing_books_only_inside_the_renters_windows():
