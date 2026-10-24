@@ -166,7 +166,7 @@ async def _caller(said: str) -> tools.CallerContext:
     plan = CallPlan(session_id=SID, listing_ids=["t:1"], created_at=CALLED)
     await rt.emit(CallsScheduled(**meta, idem_key=f"{SID}:scheduled", call_ids=[CALL], plan=plan))
     return tools.CallerContext(session_id=SID, call_id=CALL, listing_id="t:1", brief=brief(_listing(), plan),
-                               runtime=rt, clock=lambda: CALLED, said=[said])
+                               runtime=rt, clock=lambda: CALLED, said=[said], opened=True)   # mid-call
 
 
 def _record(said: str, facts) -> CallRecord:
