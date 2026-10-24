@@ -3,6 +3,7 @@
   run      fetch + normalize one source, write JSONL, print coverage; --load upserts to Postgres
   load     upsert an existing JSONL file into Postgres
   report   print coverage for a JSONL file
+  light    the light estimate (D-07): floor and light words, photo brightness; --load updates Postgres
 """
 from __future__ import annotations
 
@@ -40,7 +41,15 @@ def main(argv: list[str] | None = None) -> int:
     rp = sub.add_parser("report", help="coverage for a JSONL file")
     rp.add_argument("path", type=Path)
 
+    lt = sub.add_parser("light", help="estimate each listing's natural light")
+    lt.add_argument("--photos", type=int, default=2, help="photos measured per listing (0: rules only)")
+    lt.add_argument("--limit", type=int, default=0, help="only the first N listings (0: all)")
+    lt.add_argument("--load", action="store_true", help="update light_score and floor in $DATABASE_URL")
+
     args = parser.parse_args(argv)
+
+    if args.cmd == "light":
+        return _light(args)
 
     if args.cmd == "report":
         print(stages.report(stages.read_jsonl(args.path)))
@@ -81,6 +90,48 @@ def main(argv: list[str] | None = None) -> int:
     if args.load:
         print("load:", stages.load(result, started))
     return 0 if result.listings else 1
+
+
+def _light(args) -> int:
+    """Rules over the latest snapshot's descriptions, then each listing's photos, one pixel apiece."""
+    from pipeline import light
+    from pipeline.sources import livrent
+
+    listings = stages.read_jsonl(stages.DATA / "stages" / "normalize" / "livrent-latest.jsonl")
+    if args.limit:
+        listings = listings[: args.limit]
+    days = sorted(p for p in (stages.DATA / "raw" / "livrent").iterdir() if p.is_dir())
+    texts: dict[str, str] = {}
+    for page in sorted(days[-1].glob("*.html")) if days else []:
+        texts.update(livrent.descriptions(page.read_text()))
+    clues = {x.listing_id: light.read_clues(x.listing_id, texts.get(x.source_id), x.unit_type)
+             for x in listings}
+    described = sum(1 for x in listings if x.source_id in texts)
+    with_words = sum(1 for c in clues.values() if c.cues or c.floor is not None)
+    print(f"light: {len(listings)} listings, {described} descriptions, "
+          f"{with_words} with a floor or light words")
+    if args.photos:
+        contact = os.getenv("SCRAPER_CONTACT_EMAIL")
+        if not contact:
+            print("Set SCRAPER_CONTACT_EMAIL for the photo requests' User-Agent.", file=sys.stderr)
+            return 2
+        client = PoliteClient(contact=contact)
+        try:
+            photos = {x.listing_id: x.photos for x in listings}
+            light.measure_photos(clues, photos, client.get_bytes, args.photos)
+        finally:
+            client.close()
+    out = light.rows(clues)
+    path = light.write(out, stages.DATA / "stages" / "light" / "livrent-latest.jsonl")
+    measured = sum(1 for r in out if r["light_basis"]["photos"])
+    print(f"wrote {path.relative_to(stages.ROOT)}: {len(out)} scores, {measured} with photos")
+    if args.load:
+        url = os.getenv("DATABASE_URL")
+        if not url:
+            print("Set DATABASE_URL to load.", file=sys.stderr)
+            return 2
+        print(f"updated {light.load(out, url)} listings")
+    return 0
 
 
 def _no_cache(client: PoliteClient, max_pages: int, started):

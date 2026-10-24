@@ -1,0 +1,47 @@
+{
+  "id": "budget-beds-goodbye",
+  "about": "States budget, beds, move-in and occupants one by one, then leaves without asking for calls",
+  "lines": [
+    {
+      "say": "Hi! I'm looking for a one bedroom, and my budget is 2,400 a month at most.",
+      "expect": {
+        "prefs": {
+          "max_monthly": 2400,
+          "min_beds": 1
+        },
+        "tools": [
+          "update_preferences"
+        ]
+      }
+    },
+    {
+      "say": "I'd like to move in at the start of December.",
+      "expect": {
+        "prefs": {
+          "move_in": "December"
+        }
+      }
+    },
+    {
+      "say": "It'll just be me living there.",
+      "expect": {
+        "prefs": {
+          "occupants": 1
+        }
+      }
+    },
+    {
+      "say": "That's all I needed for now, thanks. Bye!"
+    }
+  ],
+  "final": {
+    "prefs": {
+      "max_monthly": 2400,
+      "min_beds": 1,
+      "move_in": "December",
+      "occupants": 1
+    },
+    "no_request": true,
+    "ended": true
+  }
+}

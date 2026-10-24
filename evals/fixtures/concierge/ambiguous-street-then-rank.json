@@ -1,0 +1,45 @@
+{
+  "id": "ambiguous-street-then-rank",
+  "about": "Names a street two cards share, so the Concierge must ask which; then picks by rank and likes it",
+  "lines": [
+    {
+      "say": "One bedroom, 2,400 max please."
+    },
+    {
+      "say": "What can you tell me about the one on Carabob Court?"
+    },
+    {
+      "say": "The first one on the list.",
+      "expect": {
+        "focus": {
+          "ref": "rank:1"
+        }
+      }
+    },
+    {
+      "say": "Okay, I like that one. Bye!",
+      "expect": {
+        "reactions": [
+          {
+            "ref": "rank:1",
+            "reaction": "like"
+          }
+        ]
+      }
+    }
+  ],
+  "final": {
+    "focus": {
+      "ref": "rank:1",
+      "at": 2
+    },
+    "reactions": [
+      {
+        "ref": "rank:1",
+        "at": 3,
+        "reaction": "like"
+      }
+    ],
+    "ended": true
+  }
+}

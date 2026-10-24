@@ -1,3 +1,4 @@
+import type { CSSProperties, ReactNode } from "react";
 import { Brand } from "./Summary";
 
 /** How much of the phone sheet shows at its lowest stop. */
@@ -7,10 +8,29 @@ export const PEEK = "196px";
  * Where the split layout takes over from the bottom sheet: tablets, desktops, and phones held sideways.
  * The same query as the `split` variant in app/globals.css, which this shell's CSS uses.
  */
-export const SPLIT = "(min-width: 768px), (min-width: 640px) and (max-height: 520px)";
+export const SPLIT = "(min-width: 768px), (orientation: landscape) and (max-height: 520px)";
+
+/** A short screen (a phone on its side): the `short` variant in app/globals.css. */
+export const SHORT = "(max-height: 520px)";
 
 /** The split layout's panel: 440px on a desktop, narrower on a tablet or a phone on its side. */
 export const PANEL_WIDTH = "w-[clamp(340px,42vw,440px)]";
+
+/** The split layout's panel, clear of a phone's notch when it's held sideways. */
+export const PANEL_STYLE: CSSProperties = {
+  boxShadow: "-1px 0 0 var(--color-line)",
+  paddingRight: "env(safe-area-inset-right)",
+};
+
+/** The split layout's panel header: the brand line, and the tagline where there's room for it. */
+export function PanelHeader({ brand }: { brand: ReactNode }) {
+  return (
+    <div className="px-4 pb-4 pt-5 short:pb-1 short:pt-3">
+      {brand}
+      <p className="mt-0.5 text-meta text-ink-3 short:hidden">Toronto rentals, checked by phone</p>
+    </div>
+  );
+}
 
 /**
  * The first paint, sent as HTML before any script runs: the brand and the panel, with grey places where
@@ -37,16 +57,8 @@ export function Shell({ idle = false }: { idle?: boolean }) {
     <div className="fixed inset-0 overflow-hidden bg-map-land" aria-busy="true">
       <div className="hidden h-full split:flex">
         <div className="min-w-0 flex-1" />
-        <aside
-          className={`flex ${PANEL_WIDTH} shrink-0 flex-col bg-ground`}
-          style={{ boxShadow: "-1px 0 0 var(--color-line)" }}
-        >
-          <div className="px-4 pb-4 pt-5 [@media(max-height:520px)]:pb-1 [@media(max-height:520px)]:pt-3">
-            <Brand stale={false} connected={false} idle={idle} />
-            <p className="mt-0.5 text-meta text-ink-3 [@media(max-height:520px)]:hidden">
-              Toronto rentals, checked by phone
-            </p>
-          </div>
+        <aside className={`flex ${PANEL_WIDTH} shrink-0 flex-col bg-ground`} style={PANEL_STYLE}>
+          <PanelHeader brand={<Brand stale={false} connected={false} idle={idle} />} />
           {places}
         </aside>
       </div>

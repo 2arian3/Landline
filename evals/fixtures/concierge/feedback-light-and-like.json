@@ -1,0 +1,58 @@
+{
+  "id": "feedback-light-and-like",
+  "about": "Dislikes one listing for its light and likes another, both by their rank on the list",
+  "lines": [
+    {
+      "say": "I'm after a one bedroom for up to 2,600."
+    },
+    {
+      "say": "The second one looks really dark in the photos, I don't like that.",
+      "expect": {
+        "reactions": [
+          {
+            "ref": "rank:2",
+            "reaction": "dislike",
+            "attribute": "light"
+          }
+        ],
+        "tools": [
+          "give_feedback"
+        ]
+      }
+    },
+    {
+      "say": "But I love the third one.",
+      "expect": {
+        "reactions": [
+          {
+            "ref": "rank:3",
+            "reaction": "like"
+          }
+        ]
+      }
+    },
+    {
+      "say": "Bye for now, thanks!"
+    }
+  ],
+  "final": {
+    "prefs": {
+      "max_monthly": 2600,
+      "min_beds": 1
+    },
+    "reactions": [
+      {
+        "ref": "rank:2",
+        "at": 1,
+        "reaction": "dislike",
+        "attribute": "light"
+      },
+      {
+        "ref": "rank:3",
+        "at": 2,
+        "reaction": "like"
+      }
+    ],
+    "ended": true
+  }
+}

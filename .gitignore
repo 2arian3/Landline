@@ -30,3 +30,6 @@ pipeline/cache/
 .DS_Store
 *.log
 web/public/maplibre/
+
+# eval traces (the summary and report under evals/reports/ are committed)
+evals/runs/

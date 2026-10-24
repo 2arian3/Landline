@@ -1,0 +1,53 @@
+{
+  "id": "call-top3-saturday-book",
+  "about": "Asks for the top three to be called, gives a Saturday window, and only then allows booking",
+  "lines": [
+    {
+      "say": "Hi, I need a one bedroom, up to 2,800 a month."
+    },
+    {
+      "say": "I have a dog.",
+      "expect": {
+        "prefs": {
+          "pets": [
+            "dog"
+          ]
+        }
+      }
+    },
+    {
+      "say": "Could you call the top three for me?"
+    },
+    {
+      "say": "I can do viewings on Saturday between 10 and 2."
+    },
+    {
+      "say": "Yes, you can book a viewing for me."
+    },
+    {
+      "say": "That's everything, thank you. Bye!"
+    }
+  ],
+  "may_book_from": 4,
+  "final": {
+    "prefs": {
+      "max_monthly": 2800,
+      "min_beds": 1,
+      "pets": [
+        "dog"
+      ]
+    },
+    "request": {
+      "listings": "top:3",
+      "availability": [
+        {
+          "day": "saturday",
+          "from": "10:00",
+          "to": "14:00"
+        }
+      ],
+      "may_book": true
+    },
+    "ended": true
+  }
+}

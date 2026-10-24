@@ -24,7 +24,7 @@ from typing import Any, Protocol
 from fastapi import WebSocket, WebSocketDisconnect
 
 from landline.agents.concierge import tools
-from landline.agents.concierge.prompt import GREETING, INSTRUCTIONS, RETURNING, WELCOME_BACK
+from landline.agents.concierge.prompt import CALL_CONNECTED, GREETING, INSTRUCTIONS, RETURNING, WELCOME_BACK
 from landline.config import Settings
 from landline.contracts import SessionEnded, SessionStarted
 from landline.orchestrator import SessionRuntime
@@ -111,12 +111,23 @@ def _link_texter(texter: Texter | None, call: RenterCall, settings: Settings) ->
     return text
 
 
+def opening(remembered: str | None) -> tuple[str, list[dict[str, Any]]]:
+    """The Concierge's session instructions for a call, and the events that start it. A first-time caller
+    gets GREETING as the first response's instructions, which is all it needs. A returning caller (O-05)
+    gets the welcome in the session instructions next to what code remembers, and the call starts with a
+    quoted note and a plain response.create: instructions on response.create would replace the session's,
+    and the welcome then ignored the memory and made one up (docs/EVAL_FINDINGS.md)."""
+    if not remembered:
+        return INSTRUCTIONS, [{"type": "response.create", "response": {"instructions": GREETING}}]
+    note = {"type": "message", "role": "user", "content": [{"type": "input_text", "text": CALL_CONNECTED}]}
+    return (f"{INSTRUCTIONS}{WELCOME_BACK}{RETURNING}{remembered}",
+            [{"type": "conversation.item.create", "item": note}, {"type": "response.create"}])
+
+
 async def _talk(transport: Transport, call: RenterCall, runtime: SessionRuntime, connect_higgs: ConnectHiggs,
                 settings: Settings, set_status: Callable[[str], None],
                 text_link: Callable[[], bool] | None) -> str:
-    # A returning caller (O-05): the Concierge gets what the runtime remembers, and welcomes them back.
-    remembered = runtime.opening(call.session_id)
-    instructions = f"{INSTRUCTIONS}{RETURNING}{remembered}" if remembered else INSTRUCTIONS
+    instructions, start = opening(runtime.opening(call.session_id))
     try:
         higgs = await connect_higgs(settings.boson_api_key or "", session_config(
             instructions=instructions, tools=tools.TOOLS, voice=settings.higgs_voice_renter,
@@ -132,8 +143,8 @@ async def _talk(transport: Transport, call: RenterCall, runtime: SessionRuntime,
     playback = Playback(transport.bytes_per_second)
     pumps: set[asyncio.Task[str]] = set()
     try:
-        greeting = WELCOME_BACK if remembered else GREETING
-        await higgs.send({"type": "response.create", "response": {"instructions": greeting}})
+        for event in start:
+            await higgs.send(event)
         pumps = {asyncio.create_task(_renter_to_higgs(transport, higgs)),
                  asyncio.create_task(_higgs_to_renter(higgs, transport, ctx, playback))}
         done, _ = await asyncio.wait(pumps, timeout=settings.renter_call_max_s,
@@ -245,17 +256,21 @@ async def _higgs_to_renter(higgs: Any, transport: Transport, ctx: tools.ToolCont
                            playback: Playback) -> str:
     """The Concierge's audio back to the renter, barge-in and tool calls. Ends when Higgs closes, or once
     the goodbye has played after end_session."""
+    spoke = False   # whether the response under way has sent any audio yet
     async for event in higgs.events():
         kind = event.get("type")
-        if kind == "response.output_audio.delta":
+        if kind == "response.created":
+            spoke = False
+        elif kind == "response.output_audio.delta":
+            spoke = True
             await transport.send_audio(event["delta"])
             playback.sent(event["delta"])
         elif kind == "input_audio_buffer.speech_started":
             await transport.send_clear()
             playback.clear()
         elif kind == "response.function_call_arguments.done":
-            await _run_tool(higgs, event, ctx)
-        elif kind == "response.done" and ctx.hang_up:
+            await run_tool(higgs, event, ctx, spoke=spoke)
+        elif kind == "response.done" and ends_call(event, ctx):
             await asyncio.sleep(playback.remaining() + HANG_UP_GRACE_S)
             return "end_session"
         elif kind == "conversation.item.input_audio_transcription.completed":
@@ -269,7 +284,10 @@ async def _higgs_to_renter(higgs: Any, transport: Transport, ctx: tools.ToolCont
     return "higgs_closed"
 
 
-async def _run_tool(higgs: Any, event: dict[str, Any], ctx: tools.ToolContext) -> None:
+async def run_tool(higgs: Any, event: dict[str, Any], ctx: tools.ToolContext, *,
+                   spoke: bool = True) -> None:
+    """Runs one tool call and answers Higgs. `spoke` says whether this response said anything before the
+    call, which matters only for end_session."""
     # Higgs's own `call_id` here names this tool call, not our phone call.
     tool_call_id = str(event.get("call_id", ""))
     try:
@@ -278,10 +296,24 @@ async def _run_tool(higgs: Any, event: dict[str, Any], ctx: tools.ToolContext) -
     except Exception:
         log.exception("tool %s failed on call %s", event.get("name"), ctx.call_id)
         output = tools.BROKEN
+    # end_session with nothing said yet: one more response for the goodbye, or the renter hears the line
+    # drop. Asked once. The request goes in the tool's answer, not in response instructions, which would
+    # replace the Concierge's own (it then greets: "Hello! How can I help you today?").
+    say_bye = ctx.hang_up and not spoke and ctx.bye_response is None
+    if say_bye:
+        output, ctx.bye_response = tools.SAY_GOODBYE, str(event.get("response_id") or "")
     await higgs.send({"type": "conversation.item.create",
                       "item": {"type": "function_call_output", "call_id": tool_call_id, "output": output}})
-    if not ctx.hang_up:   # after end_session there's nothing more to say: the goodbye is already out
+    if not ctx.hang_up or say_bye:   # otherwise the goodbye is already out, and nothing more is said
         await higgs.send({"type": "response.create"})
+
+
+def ends_call(done: dict[str, Any], ctx: tools.ToolContext) -> bool:
+    """Whether this `response.done` is the last thing said: after end_session, unless it is the response
+    that called end_session silently and a goodbye is still coming."""
+    if not ctx.hang_up:
+        return False
+    return ctx.bye_response is None or (done.get("response") or {}).get("id") != ctx.bye_response
 
 
 def _why(done: set[asyncio.Task[str]]) -> str:

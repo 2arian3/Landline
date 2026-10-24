@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import math
 import secrets
@@ -177,8 +178,8 @@ class ReturningBody(BaseModel):
 
 @router.post("/api/sessions/{session_id}/returning", response_model=SessionView)
 async def returning(session_id: str, body: ReturningBody, request: Request) -> SessionView:
-    """Demo hook: marks the session as a returning renter until profiles (O-05) recognise the phone
-    number. The panel then opens with "Welcome back, <name>."."""
+    """Demo hook: marks a demo session as a returning renter, the way profiles (O-05) recognise a phone
+    call's number for a runtime session. The panel then opens with "Welcome back, <name>."."""
     name = (body.name or "").strip() or None
     _demo_only(request, session_id)
     return await request.app.state.sessions.welcome_back(session_id, body.returning, name)
@@ -243,15 +244,16 @@ async def judge_start(request: Request) -> JudgeStart | JSONResponse:
 @router.post("/api/judge/{session_id}/done", response_model=SessionView)
 async def judge_done(session_id: str, request: Request) -> SessionView | JSONResponse:
     """The judge's Done button ends the brief (SessionEnded), the way hanging up ends a phone call: with a
-    plan the session goes on to its calls, with nothing planned it closes. A stand-in until the browser
-    transport (A-03) ends the brief itself, so it's behind the same JUDGE_AUDIO_READY gate as
-    /api/judge/start. The judge's line is free again for the next judge."""
+    plan the session goes on to its calls, with nothing planned it closes. The audio socket closing ends it
+    too (the bridge, under the same idem key, so the brief ends once); this covers a judge whose audio never
+    connected, and gives the page's line back. Only a judge session: a renter's phone call isn't this
+    endpoint's to end. Behind the same JUDGE_AUDIO_READY gate as /api/judge/start."""
     state = request.app.state
     if not state.settings.judge_audio_ready:
         return _refused(503, "closed", CLOSED)
-    if not _live(request, session_id):
-        raise HTTPException(404, "unknown session")
-    state.judges.hang_up(session_id)
+    if not _live(request, session_id) or state.runtime.state(session_id).channel != "judge":
+        raise HTTPException(404, "unknown judge session")
+    state.judges.release(session_id)   # an open socket's line frees when the socket closes
     return await _emit(request, SessionEnded(**_meta(session_id, "ended"), reason="end_session"))
 
 
@@ -286,10 +288,15 @@ async def _emit(request: Request, event: Event) -> SessionView:
 
 @router.post("/api/judge/{session_id}/hang-up", status_code=204)
 async def judge_hang_up(session_id: str, request: Request) -> Response:
-    """/try leaving (a beacon on pagehide) or starting again: the judge's line frees at once instead of at
-    its timeout. Only the line: unlike Done, nothing gets called. Ungated and idempotent, because freeing
-    a line is always safe and a beacon can arrive after Done already freed it."""
-    request.app.state.judges.hang_up(session_id)
+    """/try leaving (a beacon on pagehide) or starting again. A line whose socket never opened frees at
+    once instead of at its timeout, and a brief with nothing requested closes, since nothing else would
+    close it; nothing gets called from here. An open socket's line frees when the socket closes, and the
+    bridge ends that brief. Ungated and idempotent: a beacon can arrive after Done or the socket."""
+    state = request.app.state
+    freed = state.judges.release(session_id)
+    if freed and _live(request, session_id) and state.runtime.state(session_id).request is None:
+        with contextlib.suppress(HTTPException):   # already ended: nothing to do
+            await _emit(request, SessionEnded(**_meta(session_id, "ended"), reason="closed"))
     return Response(status_code=204)
 
 
