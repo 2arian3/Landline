@@ -6,7 +6,8 @@
 `recall` returns the user for that number, created on the first call, with what they asked for last time,
 their reactions to listings and their last session's results. `remember` writes the profile, the memory
 summary and the listing interactions. The summary is a template over the stored fields, so it can only say
-what the renter said. `opening` is what the Concierge is told about a returning caller (≤ 120 words).
+what the renter said. `opening` is a ≤ 120-word brief of a returning caller. The call does not append it:
+a renter's next session starts with nothing from earlier ones (#144).
 """
 from __future__ import annotations
 

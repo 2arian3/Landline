@@ -246,12 +246,12 @@ def test_a_line_in_another_script_answered_with_no_tool_is_read_and_saved(monkey
         assert (p.max_monthly, p.min_beds, p.language) == (3000, 2, "ko") and reader.asked == [korean]
 
 
-def test_a_returning_caller_is_welcomed_back_with_what_the_runtime_remembers():
+def test_last_session_memory_is_not_appended_to_the_call():
     fake = FakeHiggs()
     remembered = "This renter last called yesterday. What you know: Wants up to $2,600 a month."
     with _client() as c:
         c.app.state.connect_higgs = fake.connect
-        # Profiles (O-05) need Postgres (see test_profiles.py), so stand in for what they remember.
+        # Even if a runtime still has an opening, the call does not append it (#144).
         c.app.state.runtime.opening = lambda sid: remembered
         call = c.app.state.calls.open(caller="+14165550100")
         with c.websocket_connect("/twilio/media") as ws:
@@ -259,8 +259,11 @@ def test_a_returning_caller_is_welcomed_back_with_what_the_runtime_remembers():
             ws.send_json({"event": "stop", "streamSid": "MZ1"})
             with pytest.raises(WebSocketDisconnect):
                 ws.receive_json()
-        assert fake.session["session"]["instructions"].endswith(f"{WELCOME_BACK}{RETURNING}{remembered}")
-        # No instructions on response.create: they would replace the session's, memory and all.
+        instructions = fake.session["session"]["instructions"]
+        assert instructions.endswith(FIRST_CALL)
+        assert remembered not in instructions
+        assert WELCOME_BACK not in instructions and RETURNING not in instructions
+        # No instructions on response.create: they would replace the session's.
         assert fake.sent[:2] == [{"type": "conversation.item.create", "item": {
             "type": "message", "role": "user", "content": [{"type": "input_text", "text": CALL_CONNECTED}]}},
             {"type": "response.create"}]
@@ -294,7 +297,7 @@ def _outputs(fake: FakeHiggs) -> list[str]:
 
 
 def test_a_phone_call_texts_the_board_link_once_when_it_connects_whatever_the_tools():
-    # A returning caller (#97): their board is already there, so the Concierge may only plan calls.
+    # The Concierge may only plan calls; the link is still texted once.
     fake = FakeHiggs(script=[
         _tool_call("call_listings", {}, "fc_1"),
         _tool_call("call_listings", {"may_book": True}, "fc_2"),
@@ -303,7 +306,6 @@ def test_a_phone_call_texts_the_board_link_once_when_it_connects_whatever_the_to
     texter = FakeTexter()
     with _client() as c:
         c.app.state.connect_higgs, c.app.state.texter = fake.connect, texter
-        c.app.state.runtime.opening = lambda sid: "This renter last called yesterday."
         call = c.app.state.calls.open(caller="+14165550100", called="+12892765257")
         with c.websocket_connect("/twilio/media") as ws:
             ws.send_json(_start(call.call_id))

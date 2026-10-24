@@ -7,7 +7,7 @@
         await tx.apply(CallsScheduled(...))
         await db.calls.create(..., conn=tx.conn)
     runtime.on("SessionEnded", dispatcher.on_session_ended)   # runs after the commit
-    runtime.opening(sid)                              # what the Concierge remembers about a returning caller
+    runtime.opening(sid)                              # None: last-session memory is not put on the call
 
 `session_tx` holds the session's lock, applies each event to a working copy, then
 re-ranks, appends the events, saves the snapshot and bumps the version in one
@@ -17,8 +17,9 @@ After the commit, SSE subscribers wake on `changed` and each subscriber to the
 committed event types runs as a background task, so none of them blocks a turn.
 
 With Postgres, a phone call's number is looked up when its session starts (Profiles, O-05): a new number
-gets a user, and a returning one gets back its search, its reactions and its last results. The profile
-is saved when the brief ends and again when the calls are done, after those commits.
+gets a user, and a known number is linked to the same user. Nothing from earlier sessions is copied onto
+this call (#144). The profile is saved when the brief ends and again when the calls are done, after those
+commits.
 """
 from __future__ import annotations
 
@@ -38,9 +39,9 @@ from landline.db.pool import Database
 from landline.orchestrator import board, handlers, narrator
 from landline.orchestrator.calllog import CallLog
 from landline.orchestrator.places import Places
-from landline.orchestrator.profiles import Profiles, Remembered, opening
+from landline.orchestrator.profiles import Profiles, Remembered
 from landline.orchestrator.state import SessionState
-from landline.scoring import FeatureMatrix, rank
+from landline.scoring import FeatureMatrix
 
 log = logging.getLogger(__name__)
 
@@ -110,7 +111,7 @@ class SessionRuntime:
         # Places the renter names become points in the background, then AnchorResolved re-ranks (D-04).
         self.places = places or Places(self.matrix.named, contact=contact)
         self.on("PreferencesUpdated", self._resolve_places)
-        self.on("SessionStarted", self._resolve_places)   # a returning caller's saved places
+        self.on("SessionStarted", self._resolve_places)
 
     def __len__(self) -> int:
         return len(self._live)
@@ -126,7 +127,7 @@ class SessionRuntime:
         return self._get(session_id).state.model_copy(deep=True)
 
     def opening(self, session_id: str) -> str | None:
-        """What the Concierge is told about a returning caller (≤ 120 words); None for a new one."""
+        """Last-session memory for the Concierge. Always None: a call does not append it (#144)."""
         return self._get(session_id).state.opening
 
     def on(self, event_type: str, fn: Subscriber) -> None:
@@ -230,19 +231,8 @@ class SessionRuntime:
             return None
 
     def _returning(self, state: SessionState, r: Remembered) -> None:
-        """Start the session from what this number told us before."""
+        """Link this number's user. Earlier calls stay in the profile and are not copied onto this one."""
         state.user_id = r.user_id
-        if not r.returning:
-            return
-        state.returning, state.user_name = True, r.name
-        state.preferences = r.preferences
-        state.reactions, state.recalled = dict(r.reactions), dict(r.reactions)
-        state.previous_results = None if r.calls_running else r.last_results
-        new = 0
-        if r.last_seen_at is not None:
-            fits, by_id = rank(self.matrix, r.preferences).order, self.catalogue.by_id
-            new = sum(by_id[lid].first_seen > r.last_seen_at for lid in fits)
-        state.opening = opening(r, new, datetime.now(UTC))
 
     async def _resolve_places(self, event: Event, view: SessionView) -> None:
         for anchor in view.preferences.anchors:
