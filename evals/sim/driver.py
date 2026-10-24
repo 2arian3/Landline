@@ -18,11 +18,11 @@ from datetime import UTC, datetime
 from typing import Any, Protocol
 
 from landline.agents.concierge import tools
-from landline.agents.concierge.prompt import GREETING, INSTRUCTIONS
-from landline.contracts import SessionStarted
+from landline.contracts import PreferencesUpdated, SessionStarted
+from landline.contracts.tools import PreferenceDelta
 from landline.db.catalogue import Catalogue
 from landline.orchestrator import SessionRuntime
-from landline.voice.bridge import ends_call, run_tool
+from landline.voice.bridge import ends_call, opening, run_tool
 from landline.voice.higgs import ConnectHiggs, session_config
 
 TURN_TIMEOUT_S = 30   # one agent turn, tools included
@@ -115,21 +115,28 @@ class Recorded:
 
 async def simulate(case_id: str, run: int, opponent: Opponent, *, catalogue: Catalogue,
                    connect_higgs: ConnectHiggs, api_key: str = "", max_lines: int = MAX_LINES,
-                   turn_timeout_s: float = TURN_TIMEOUT_S) -> Trace:
+                   turn_timeout_s: float = TURN_TIMEOUT_S, remembered: str | None = None,
+                   prefs: dict[str, Any] | None = None) -> Trace:
     """One conversation between the Concierge and `opponent`, to its end. Never raises for what the
-    agent or Higgs did: that goes in the trace."""
+    agent or Higgs did: that goes in the trace. With `remembered` (what Profiles would say about this
+    number) and `prefs` (the search it would restore), the caller is a returning one."""
     sid = f"s_sim_{case_id}_{run}"          # ids come from code, never from the model
     runtime = SessionRuntime(catalogue)
     await runtime.start(SessionStarted(session_id=sid, at=datetime.now(UTC), idem_key=f"{sid}:started",
                                        channel="judge"))
+    if prefs:   # Profiles restores a returning caller's search before the call opens
+        await runtime.emit(PreferencesUpdated(session_id=sid, at=datetime.now(UTC),
+                                              idem_key=f"{sid}:remembered", delta=PreferenceDelta(**prefs)))
     trace = Trace(case_id=case_id, run=run, session_id=sid)
     ctx = tools.ToolContext(session_id=sid, call_id=f"c_sim_{case_id}_{run}", runtime=runtime)
     higgs: Recorded | None = None
     try:
+        instructions, start = opening(remembered)   # the bridge's own: greeting or welcome back
         higgs = Recorded(await connect_higgs(api_key, session_config(
-            instructions=INSTRUCTIONS, tools=tools.TOOLS, modality="text")))
+            instructions=instructions, tools=tools.TOOLS, modality="text")))
         stream = higgs.events().__aiter__()
-        await higgs.send({"type": "response.create", "response": {"instructions": GREETING}})
+        for event in start:
+            await higgs.send(event)
         said = await _agent_turn(stream, higgs, ctx, trace, -1, turn_timeout_s)
         while not ctx.hang_up:
             if len(trace.lines) >= max_lines:

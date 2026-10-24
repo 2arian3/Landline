@@ -73,6 +73,14 @@ class Want(_Strict):
     tools: list[str] | None = None   # `expect` only: tools the agent must call in that turn
     ended: bool | None = None        # `final` only: the Concierge called end_session
     replies_in: str | None = None    # `final` only: once the renter writes in this script, so does the agent
+    greeting_says: list[str] | None = None    # `final` only: words the agent's first turn must contain
+    greeting_avoids: list[str] | None = None  # `final` only: words it must not (made-up or misread facts)
+
+
+class Returning(_Strict):
+    """A returning caller (O-05): what Profiles would tell the Concierge, and the search it restores."""
+    opening: str
+    prefs: dict[str, object] | None = None
 
 
 class Line(_Strict):
@@ -86,6 +94,7 @@ class Case(_Strict):
     lines: list[Line]
     final: Want
     may_book_from: int | None = None   # call_listings may set may_book only from this line on
+    returning: Returning | None = None
 
 
 def load_set(name: str) -> list[Case]:

@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from landline.agents.concierge import tools
-from landline.agents.concierge.prompt import GREETING, RETURNING, WELCOME_BACK
+from landline.agents.concierge.prompt import CALL_CONNECTED, GREETING, INSTRUCTIONS, RETURNING, WELCOME_BACK
 from landline.api.browser_audio import JUDGE_AUDIO_PATH
 from landline.api.twilio import BUSY, NOT_READY
 from landline.app import create_app
@@ -204,8 +204,17 @@ def test_a_returning_caller_is_welcomed_back_with_what_the_runtime_remembers():
             ws.send_json({"event": "stop", "streamSid": "MZ1"})
             with pytest.raises(WebSocketDisconnect):
                 ws.receive_json()
-        assert fake.session["session"]["instructions"].endswith(f"{RETURNING}{remembered}")
-        assert fake.sent[0] == {"type": "response.create", "response": {"instructions": WELCOME_BACK}}
+        assert fake.session["session"]["instructions"].endswith(f"{WELCOME_BACK}{RETURNING}{remembered}")
+        # No instructions on response.create: they would replace the session's, memory and all.
+        assert fake.sent[:2] == [{"type": "conversation.item.create", "item": {
+            "type": "message", "role": "user", "content": [{"type": "input_text", "text": CALL_CONNECTED}]}},
+            {"type": "response.create"}]
+
+
+def test_a_first_time_caller_is_greeted_with_the_greeting_alone():
+    instructions, start = bridge.opening(None)
+    assert instructions == INSTRUCTIONS and WELCOME_BACK not in instructions
+    assert start == [{"type": "response.create", "response": {"instructions": GREETING}}]
 
 
 class FakeTexter:
