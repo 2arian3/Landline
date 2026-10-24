@@ -322,7 +322,7 @@ def about_renter(question: str, share: Shareable) -> bool:
 # A landlord asking to set up a viewing ("Would you like to schedule a viewing?", "When can you come by?").
 VIEWING_QUESTION = re.compile(
     r"\b(view(ing)?|visit|tour|showing|come (by|see|over|and see)|see (it|the (unit|place|apartment))|"
-    r"schedul\w*|book\w*|appointment|open house)\b", re.I)
+    r"schedul\w*|book\w*|appointment|open house|(that|this|what) time)\b", re.I)
 
 
 def about_viewing(question: str) -> bool:
