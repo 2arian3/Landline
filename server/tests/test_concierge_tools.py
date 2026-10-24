@@ -256,6 +256,55 @@ async def test_a_slow_lookup_answers_at_once_and_moves_the_map_when_it_lands(pla
     assert (area.label, area.lat, area.lng) == ("Christie Pits", *CHRISTIE_PITS)
 
 
+ASKED = "Would you like me to book a viewing if they have a time that works?"
+TOMORROW_9_5 = [{"day": "tomorrow", "from": "09:00", "to": "17:00"}]
+
+
+# The renter's line decides may_book, and the call's timing leads the reply (#154).
+@pytest.mark.parametrize(("renter", "agent", "args", "stored", "says"), [
+    ("I really like the first one. Let's call the landlord to see if it's available tomorrow for a check.",
+     None, {"listing_refs": ["1"], "may_book": True, "availability": TOMORROW_9_5}, False,
+     "Booking: not allowed yet. Ask whether you may book a viewing."),
+    ("Call them and book a viewing Saturday afternoon.", None, {"listing_refs": ["1"], "may_book": True},
+     True, "Booking: I may book one."),
+    ("Yes, go ahead and book it.", ASKED, {"listing_refs": ["1"], "may_book": True}, True,
+     "Booking: I may book one."),
+    ("No, just ask, don't book.", ASKED, {"listing_refs": ["1"], "may_book": False}, False,
+     "Booking: I won't book."),
+    ("Call the top three.", None, {}, False, "right after you hang up"),
+    ("Tomorrow 9 to 5.", None, {"listing_refs": ["1"], "availability": TOMORROW_9_5}, False,
+     "Viewing window: tomorrow 9 am to 5 pm."),
+])
+async def test_call_listings_books_only_with_the_renters_yes_and_says_the_calls_go_out_now(
+        ctx, renter, agent, args, stored, says):
+    ctx.renter_said, ctx.agent_said = renter, agent
+    reply = await _say(ctx, "call_listings", json.dumps(args))
+    assert ctx.runtime.state(SID).request.may_book is stored
+    assert reply.startswith("Calling ") and " right after you hang up, " in reply and says in reply
+    assert "9 am to 5 pm, " not in reply.split(".")[0]   # never a time of day for the calls themselves
+
+
+async def test_a_booking_allowed_earlier_stays_when_a_later_call_leaves_it_out(ctx):
+    ctx.renter_said, ctx.agent_said = "Yes, book one.", ASKED
+    await _say(ctx, "call_listings", '{"listing_refs": ["1"], "may_book": true}')
+    ctx.renter_said = "Also ask if parking is included."
+    reply = await _say(ctx, "call_listings", '{"extra_questions": ["Is parking included?"]}', "fc_2")
+    assert ctx.runtime.state(SID).request.may_book and reply.endswith("Booking: I may book one.")
+
+
+async def test_a_phone_renters_calls_after_hours_go_out_at_9_am():
+    runtime = SessionRuntime(CATALOGUE)
+    await runtime.start(SessionStarted(session_id=SID, at=T0, idem_key=f"{SID}:started", channel="phone"))
+    ctx = tools.ToolContext(session_id=SID, call_id="c_tools00009", runtime=runtime)
+    try:
+        night = datetime(2026, 10, 24, 21, 30, tzinfo=tools.TORONTO)
+        meta = {"session_id": SID, "at": night, "idem_key": f"{SID}:night"}
+        reply = await tools.call_listings(tools.CallListings(), ctx, meta)
+        assert " at 9 am tomorrow, when calling hours start, and texting you" in reply
+    finally:
+        await runtime.close()
+
+
 async def test_call_listings_plans_the_top_three_and_reads_them_back(ctx):
     top = [c.listing_id for c in _view(ctx).board[:3]]
     reply = await _say(ctx, "call_listings", '{"availability": [{"day": "saturday", "from": "13:00", '
@@ -264,8 +313,9 @@ async def test_call_listings_plans_the_top_three_and_reads_them_back(ctx):
     request = ctx.runtime.state(SID).request
     assert request.may_book and request.availability[0].from_ == "13:00"
     addresses = [CATALOGUE.by_id[lid].address for lid in top]
-    assert reply == f"I'll call {addresses[0]}, {addresses[1]} and {addresses[2]} after you hang up, " \
-                    "and text you what they say. Viewings Saturday 1 pm to 5 pm. I may book one."
+    assert reply == f"Calling {addresses[0]}, {addresses[1]} and {addresses[2]} right after you hang up, " \
+                    "and texting you what they say. Viewing window: Saturday 1 pm to 5 pm. " \
+                    "Booking: I may book one."
     assert await _say(ctx, "call_listings", '{"listing_refs": ["Spadina"]}', "fc_2") == tools.WHICH
 
 
@@ -287,7 +337,7 @@ async def test_a_shared_address_asks_with_numbers_then_reads_the_number_back():
         assert runtime.get(SID).focus_listing_id == "t:2"
         reply = await _say(ctx, "call_listings", '{"listing_refs": ["30 Carabob Court"]}', "fc_3")
         assert runtime.state(SID).request.listing_ids == ["t:2"]       # the one being talked about
-        assert reply.startswith(f"I'll call 30 Carabob Court, number {ranks['t:2']}, after you hang up")
+        assert reply.startswith(f"Calling 30 Carabob Court, number {ranks['t:2']}, right after you hang up")
         await _say(ctx, "give_feedback", '{"reaction": "like", "listing_ref": "30 Carabob Court"}', "fc_4")
         assert runtime.state(SID).reactions["t:2"].reaction == "like"
     finally:
@@ -310,7 +360,7 @@ async def test_calling_again_updates_the_plan_instead_of_replacing_it(ctx):
     request = ctx.runtime.state(SID).request
     assert request.listing_ids == [board[1].listing_id]          # not the top three
     assert request.questions == ["Is parking included?"] and not request.may_book
-    assert reply.endswith("Viewings Tuesday 6 pm to 8:30 pm. I won't book.")
+    assert reply.endswith("Viewing window: Tuesday 6 pm to 8:30 pm. Booking: I won't book.")
     await _say(ctx, "call_listings", '{"may_book": true, "extra_questions": ["Dogs ok?"]}', "fc_3")
     request = ctx.runtime.state(SID).request
     assert request.may_book and request.availability[0].day == "tuesday"

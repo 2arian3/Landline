@@ -11,9 +11,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from functools import cache
 from typing import Any
 
@@ -42,6 +43,7 @@ from landline.contracts.tools import (
 )
 from landline.orchestrator import Refused, SessionRuntime, UnknownSession
 from landline.orchestrator.places import load_stations
+from landline.voice.dispatch import TORONTO, until_open
 
 log = logging.getLogger(__name__)
 
@@ -78,6 +80,10 @@ class ToolContext:
     bye_response: str | None = None
     # Place lookups that outlasted their turn (focus_area): each moves the map when it lands.
     lookups: set[asyncio.Task] = field(default_factory=set)
+    # The latest lines on the call, from the bridge's transcripts; None off the phone or before any. A
+    # booking is only allowed when the renter's line agrees to one (call_listings, #154).
+    renter_said: str | None = None
+    agent_said: str | None = None
 
 
 async def handle(name: str, arguments: str, tool_call_id: str, ctx: ToolContext) -> str:
@@ -307,13 +313,56 @@ async def call_listings(args: CallListings, ctx: ToolContext, meta: dict) -> str
     questions = list(dict.fromkeys([*(before.questions if before else []), *(args.extra_questions or [])]))
     availability = args.availability or (before.availability if before else [])
     may_book = args.may_book if args.may_book is not None else bool(before and before.may_book)
+    unasked = args.may_book is True and not _agrees_to_book(ctx.renter_said, ctx.agent_said)
+    if unasked:   # the model set it, but the renter didn't say yes to a booking (#154)
+        may_book = bool(before and before.may_book)
     await ctx.runtime.emit(CallsRequested(**meta, listing_ids=ids, extra_questions=questions,
                                           availability=availability, may_book=may_book))
     addresses = [_told_apart(ctx, lid, board) for lid in ids]
-    times = f"Viewings {_join([_window(a) for a in availability])}." if availability \
+    # The call's timing comes first, so a viewing window is never read back as when the calls go out.
+    times = f"Viewing window: {_join([_window(a) for a in availability])}." if availability \
         else "No viewing times yet."
-    booking = "I may book one." if may_book else "I won't book."
-    return f"I'll call {_join(addresses)} after you hang up, and text you what they say. {times} {booking}"
+    booking = ("Booking: not allowed yet. Ask whether you may book a viewing." if unasked and not may_book
+               else "Booking: I may book one." if may_book else "Booking: I won't book.")
+    return (f"Calling {_join(addresses)} {_calls_go_out(ctx, meta['at'])}, and texting you what they say. "
+            f"{times} {booking}")
+
+
+# A renter's line that agrees to a booking, or turns one down. Checked in code: the model set may_book on
+# "see if it's available tomorrow for a check" (#154).
+_NO_BOOKING = re.compile(r"\b(don'?t|do not|no need to|not|without)\b[^.?!]{0,25}\b(book|reserv|schedul)",
+                         re.I)
+_BOOKING = re.compile(r"\b(book|reserv)\w*|\bgo ahead\b|"
+                      r"\b(schedule|arrange|set up)\b[^.?!]{0,12}\b(viewing|visit|tour|showing)", re.I)
+_PLAIN_YES = re.compile(r"^\W*(yes|yeah|yep|yup|sure|please|ok(ay)?|go ahead|do it|sounds good|s[ií]|oui)\b",
+                        re.I)
+
+
+def _agrees_to_book(renter: str | None, agent: str | None) -> bool:
+    """Whether the renter's latest line says yes to booking a viewing: it asks for one ("book a viewing",
+    "go ahead and book it"), or it's a plain yes right after the agent asked about booking. With no line to
+    go by (not on the phone, or the transcript isn't in yet), or a line in another script, the model's
+    word stands, rather than asking the same thing in a loop."""
+    from landline.agents.concierge.backstop import foreign  # backstop imports this module
+    if not renter or foreign(renter):
+        return True
+    if _NO_BOOKING.search(renter):
+        return False
+    if _BOOKING.search(renter):
+        return True
+    asked = bool(agent) and "?" in agent and re.search(r"\bbook|\bviewing", agent, re.I) is not None
+    return asked and _PLAIN_YES.search(renter) is not None
+
+
+def _calls_go_out(ctx: ToolContext, now: datetime) -> str:
+    """When the listing calls go out, in words. A phone renter's calls wait for business hours
+    (voice/dispatch.py); every other session's go out right away."""
+    wait = until_open(now) if ctx.runtime.state(ctx.session_id).channel == "phone" else 0
+    if not wait:
+        return "right after you hang up"
+    opens = (now + timedelta(seconds=wait)).astimezone(TORONTO)
+    day = "today" if opens.date() == now.astimezone(TORONTO).date() else "tomorrow"
+    return f"at 9 am {day}, when calling hours start"
 
 
 async def end_session(args: BaseModel, ctx: ToolContext, meta: dict) -> str:
@@ -366,7 +415,8 @@ def _money(amount: int) -> str:
 
 
 def _window(a: Availability) -> str:
-    return f"{a.day.capitalize()} {_clock(a.from_)} to {_clock(a.to)}"
+    day = a.day if a.day in ("today", "tomorrow") else a.day.capitalize()
+    return f"{day} {_clock(a.from_)} to {_clock(a.to)}"
 
 
 def _clock(hhmm: str) -> str:

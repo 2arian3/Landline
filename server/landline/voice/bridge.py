@@ -338,10 +338,12 @@ async def _higgs_to_renter(higgs: Any, transport: Transport, ctx: tools.ToolCont
         elif kind == "conversation.item.input_audio_transcription.completed":
             log.info("call %s renter: %s", ctx.call_id, event.get("transcript", ""))
             _said(ctx, recorder, "renter", event)
+            ctx.renter_said = str(event.get("transcript") or "") or ctx.renter_said   # call_listings' guard
             turn.transcript(str(event.get("transcript") or ""))
         elif kind == "response.output_audio_transcript.done":
             log.info("call %s concierge: %s", ctx.call_id, event.get("transcript", ""))
             _said(ctx, recorder, "agent", event)
+            ctx.agent_said = str(event.get("transcript") or "") or ctx.agent_said
             turn.agent_said(str(event.get("transcript") or ""))
         elif kind == "error":
             log.warning("call %s Higgs error: %s", ctx.call_id, event.get("error"))
