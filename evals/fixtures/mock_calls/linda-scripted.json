@@ -1,0 +1,28 @@
+{
+  "id": "linda-scripted",
+  "about": "Sample mock call: an honest agent with fixed lines. Answers the checklist, asks a question the brief can't answer, offers a time inside the renter's Sunday window. The booking check fails if run on a Sunday between 2 and 4 pm Toronto time: 2 pm has passed, so it means next Sunday, while the window is still today's",
+  "listing_id": "livrent:145662",
+  "name": "Linda",
+  "lines": [
+    "Hello, Linda speaking.",
+    {"when": ["available", "availability"], "say": "Yes, it's still available, from November 1st."},
+    {"when": ["pet", "cat"], "say": "Cats are fine, but no dogs, sorry."},
+    {"when": ["fee", "on top of the rent", "extra"], "say": "No monthly fees, just a $50 key deposit when you move in."},
+    {"when": ["quiet", "noise", "noisy"], "say": "It's a quiet building at night; most tenants are professionals. Does your client have a guarantor?"},
+    {"when": ["view", "showing", "see the place", "see it", "come by"], "say": "I could show it Sunday at 2 pm."},
+    "Perfect, see you Sunday at 2. Bye! [hang up]"
+  ],
+  "plan": {
+    "availability": [{"day": "sunday", "from": "12:00", "to": "16:00"}],
+    "may_book": true,
+    "questions": ["Is the building quiet at night?"],
+    "shareable": {"move_in": "December 1", "occupants": 1, "pets": ["cat"]}
+  },
+  "gold": {
+    "facts": {"available_from": ["nov"], "pets": ["cat"]},
+    "booked": "sunday 14:00",
+    "note_question": true,
+    "red_flags": false,
+    "status": "booked"
+  }
+}
