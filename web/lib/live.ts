@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { sessionPath } from "./sessionPath";
 import type { CataloguePoint, SessionView } from "./types";
 
 /**
@@ -73,7 +74,7 @@ export function useLiveSession(sessionId: string | null) {
       if (inFlight) return;
       inFlight = true;
       try {
-        const res = await fetch(api(`/api/sessions/${encodeURIComponent(sessionId)}`), {
+        const res = await fetch(api(sessionPath(sessionId, window.location.search)), {
           cache: "no-store",
           signal: AbortSignal.any([left.signal, AbortSignal.timeout(4000)]),
         });

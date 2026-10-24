@@ -68,9 +68,28 @@ def test_health_counts_sessions_and_reports_higgs():
         assert c.get("/health").json()["higgs"] == "ok"
 
 
+def test_a_new_session_shows_nothing_heard_until_the_renter_speaks():
+    with _client() as c:
+        first = c.get("/api/sessions/s_fresh").json()   # the home page's own demo session, or a stray link
+        assert first["preferences"]["max_monthly"] is None and first["preferences"]["priorities"] == []
+        assert first["agent_says"] == "Tell me what you're looking for, and the map will follow."
+
+
+def test_the_dev_demo_still_opens_with_its_brief_even_when_its_stream_asked_first():
+    with _client() as c:
+        c.get("/api/sessions/s_race")   # made empty, as the stream's first look would
+        dev = c.get("/api/sessions/s_race", params={"dev": 1}).json()
+        brief = dev["preferences"]
+        assert brief["max_monthly"] == 2800 and brief["priorities"] == ["cost", "size"]
+        assert "places fit" in dev["agent_says"]
+        c.post("/api/sessions/s_race/preferences", json={"max_monthly": 4000})
+        again = c.get("/api/sessions/s_race", params={"dev": 1}).json()
+        assert again["preferences"]["max_monthly"] == 4000   # a changed session is never re-seeded
+
+
 def test_session_board_follows_preferences_and_bumps_version():
     with _client() as c:
-        first = c.get("/api/sessions/s1").json()
+        first = c.get("/api/sessions/s1", params={"dev": 1}).json()   # the ?dev=1 demo's brief
         assert first["version"] == 1
         assert [b["listing_id"] for b in first["board"]] == ["t:1", "t:2"]   # beds >= 1, within 2800 * 1.1
 
