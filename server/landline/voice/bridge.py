@@ -24,7 +24,7 @@ from typing import Any, Protocol
 from fastapi import WebSocket, WebSocketDisconnect
 
 from landline.agents.concierge import tools
-from landline.agents.concierge.prompt import GREETING, INSTRUCTIONS, RETURNING, WELCOME_BACK
+from landline.agents.concierge.prompt import CALL_CONNECTED, GREETING, INSTRUCTIONS, RETURNING, WELCOME_BACK
 from landline.config import Settings
 from landline.contracts import SessionEnded, SessionStarted
 from landline.orchestrator import SessionRuntime
@@ -111,12 +111,23 @@ def _link_texter(texter: Texter | None, call: RenterCall, settings: Settings) ->
     return text
 
 
+def opening(remembered: str | None) -> tuple[str, list[dict[str, Any]]]:
+    """The Concierge's session instructions for a call, and the events that start it. A first-time caller
+    gets GREETING as the first response's instructions, which is all it needs. A returning caller (O-05)
+    gets the welcome in the session instructions next to what code remembers, and the call starts with a
+    quoted note and a plain response.create: instructions on response.create would replace the session's,
+    and the welcome then ignored the memory and made one up (docs/EVAL_FINDINGS.md)."""
+    if not remembered:
+        return INSTRUCTIONS, [{"type": "response.create", "response": {"instructions": GREETING}}]
+    note = {"type": "message", "role": "user", "content": [{"type": "input_text", "text": CALL_CONNECTED}]}
+    return (f"{INSTRUCTIONS}{WELCOME_BACK}{RETURNING}{remembered}",
+            [{"type": "conversation.item.create", "item": note}, {"type": "response.create"}])
+
+
 async def _talk(transport: Transport, call: RenterCall, runtime: SessionRuntime, connect_higgs: ConnectHiggs,
                 settings: Settings, set_status: Callable[[str], None],
                 text_link: Callable[[], bool] | None) -> str:
-    # A returning caller (O-05): the Concierge gets what the runtime remembers, and welcomes them back.
-    remembered = runtime.opening(call.session_id)
-    instructions = f"{INSTRUCTIONS}{RETURNING}{remembered}" if remembered else INSTRUCTIONS
+    instructions, start = opening(runtime.opening(call.session_id))
     try:
         higgs = await connect_higgs(settings.boson_api_key or "", session_config(
             instructions=instructions, tools=tools.TOOLS, voice=settings.higgs_voice_renter,
@@ -132,8 +143,8 @@ async def _talk(transport: Transport, call: RenterCall, runtime: SessionRuntime,
     playback = Playback(transport.bytes_per_second)
     pumps: set[asyncio.Task[str]] = set()
     try:
-        greeting = WELCOME_BACK if remembered else GREETING
-        await higgs.send({"type": "response.create", "response": {"instructions": greeting}})
+        for event in start:
+            await higgs.send(event)
         pumps = {asyncio.create_task(_renter_to_higgs(transport, higgs)),
                  asyncio.create_task(_higgs_to_renter(higgs, transport, ctx, playback))}
         done, _ = await asyncio.wait(pumps, timeout=settings.renter_call_max_s,

@@ -13,6 +13,9 @@
                            "to": "14:00"}], "may_book": true, "questions": ["parking"]},
                "ended": true}}
 
+A returning caller (O-05) adds `"returning": {"opening": "<what Profiles would say>", "prefs": {...}}`, and
+`final` can then check the welcome with `"greeting_says": ["Erskine"]` and `"greeting_avoids": [...]`.
+
 `expect` is checked on the state right after its line (did the agent act on time). `final` is checked on
 the state at the end and decides whether the case passes. Listing refs are symbolic so the case tests the
 Concierge, not the ranker: `rank:N` and `top:N` resolve against the board the renter saw before line `at`
@@ -73,6 +76,14 @@ class Want(_Strict):
     tools: list[str] | None = None   # `expect` only: tools the agent must call in that turn
     ended: bool | None = None        # `final` only: the Concierge called end_session
     replies_in: str | None = None    # `final` only: once the renter writes in this script, so does the agent
+    greeting_says: list[str] | None = None    # `final` only: words the agent's first turn must contain
+    greeting_avoids: list[str] | None = None  # `final` only: words it must not (made-up or misread facts)
+
+
+class Returning(_Strict):
+    """A returning caller (O-05): what Profiles would tell the Concierge, and the search it restores."""
+    opening: str
+    prefs: dict[str, object] | None = None
 
 
 class Line(_Strict):
@@ -86,6 +97,7 @@ class Case(_Strict):
     lines: list[Line]
     final: Want
     may_book_from: int | None = None   # call_listings may set may_book only from this line on
+    returning: Returning | None = None
 
 
 def load_set(name: str) -> list[Case]:
