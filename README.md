@@ -6,6 +6,8 @@ Call it and say what you want, in whatever language you speak. A live map of Tor
 
 Built on Boson AI's **Higgs Realtime** (the renter's call and every listing call) and **Higgs TTS** (voicemail), with Higgs Avatar as a stretch goal, by Team AAMEL for the Boson AI Higgs Audio Hackathon, 23–24 October 2026.
 
+![The ?dev=1 demo: the board re-ranks, four calls go out at once, and a viewing comes back booked](media/landline-demo.gif)
+
 ## Try it
 
 - **Call +1 (289) 512-2338** and say what you want, in any language: *"A one-bedroom near Bloor under $2,600. I have a dog."*
@@ -31,6 +33,42 @@ Everything else is plain code that manages the session:
 - The **web app** shows a live map and list that follow the conversation; tapping a listing tells the agent what you're looking at.
 
 Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · [docs/DATA.md](docs/DATA.md) · [docs/SCORING.md](docs/SCORING.md) · [docs/CONTRACTS.md](docs/CONTRACTS.md)
+
+## Example: one call, start to finish
+
+From the `?dev=1` demo, where the listing agents are scripted (`server/landline/api/demo.py`). The renter asked for a one-bedroom under $2,800, picked the top four and hung up. Landline's call to 650 Briar Hill Avenue, as its captions show it:
+
+> **Landline:** Hi, I'm an AI assistant calling for a renter about the place at 650 Briar Hill Avenue. Is it still available?<br>
+> **Listing agent:** Yes.<br>
+> **Landline:** Are pets okay? My client has a dog.<br>
+> **Listing agent:** Dogs are fine. There are a couple in the building already.<br>
+> **Landline:** Could they see it Saturday afternoon?<br>
+> **Listing agent:** Saturday at two works.<br>
+> **Landline:** Saturday at 2 pm, then. I'll let my client know.
+
+The place's card afterwards (`GET /api/sessions/{id}`, trimmed). The fact keeps the agent's exact words:
+
+```json
+{
+  "listing_id": "livrent:101529",
+  "address": "650 Briar Hill Avenue",
+  "monthly_cost": 2500,
+  "status": "booked",
+  "reasons": ["999 sq ft", "$300 under budget"],
+  "facts": [
+    {
+      "field": "pets",
+      "value": "Dogs are fine",
+      "quote": "Dogs are fine. There are a couple in the building already.",
+      "speaker": "Agent heard"
+    }
+  ]
+}
+```
+
+And the results the renter gets once all four calls are done, written by code from the outcomes:
+
+> I booked 650 Briar Hill Avenue for Saturday at 2 pm, inside your Saturday afternoon. 30 Carabob Court is really $2,179 a month with parking. The agent at 30 Carabob Court asked, "Would they sign a 12-month lease?" I said I'd check with you. 701 Don Mills Rd wants a deposit by e-transfer before anyone sees the unit, so I'd skip it. Nobody picked up at 1915 Martin Grove Rd.
 
 ## API
 
