@@ -36,6 +36,7 @@ from landline.config import Settings
 from landline.contracts import SessionEnded, SessionStarted
 from landline.orchestrator import SessionRuntime
 from landline.voice import twilio
+from landline.voice.avatar import Avatar, Avatars
 from landline.voice.calls import RenterCall, RenterCalls
 from landline.voice.higgs import PCMU, ConnectHiggs, session_config
 from landline.voice.line import Item, Line, Lines
@@ -91,22 +92,26 @@ class Playback:
 async def converse(transport: Transport, call: RenterCall, *, calls: RenterCalls, runtime: SessionRuntime,
                    connect_higgs: ConnectHiggs, settings: Settings,
                    set_status: Callable[[str], None] = lambda _: None, texter: Texter | None = None,
-                   lines: Lines | None = None) -> str:
+                   lines: Lines | None = None, avatars: Avatars | None = None) -> str:
     """Runs one claimed call to its end, finalizes it and ends its session. Returns why it ended. The
     caller owns the socket and closes it afterwards. With a `texter`, a phone caller is texted the link
     to their board once, when the call connects, whatever the Concierge does next (a returning caller's
-    board is already there). With `lines`, map taps reach the Concierge between turns (voice/line.py)."""
+    board is already there). With `lines`, map taps reach the Concierge between turns (voice/line.py).
+    With `avatars`, a board open during the call can show the Concierge lip-syncing it (voice/avatar.py)."""
     reason = "error"
     # The call, its transcript and its audio are stored for the admin panel (orchestrator/calllog.py).
     kind = "voice" if transport.audio_format == PCMU else "browser"
     recorder = CallRecorder(format_of(transport.audio_format))
     runtime.calls.started(call.call_id, call.session_id, kind,
                           deadline_at=datetime.now(UTC) + timedelta(seconds=settings.renter_call_max_s))
+    avatar = None if avatars is None else avatars.open(call.call_id, call.session_id, transport.audio_format)
     try:
         reason = await _talk(transport, call, runtime, connect_higgs, settings, set_status,
-                             _link_texter(texter, call, settings), recorder, lines)
+                             _link_texter(texter, call, settings), recorder, lines, avatar)
     finally:
         calls.finalize(call.call_id, reason)
+        if avatar is not None:   # in the background: the goodbye plays out, then the avatar leaves
+            avatars.end(call.session_id, avatar, play_out=reason == "end_session")
         try:   # before it ends, and never in the way of ending it
             _keep(runtime, call.call_id, recorder, recorder.finish(), settings.record_audio)
         except Exception:
@@ -160,7 +165,7 @@ def hint(remembered: str | None, language: str | None) -> str | None:
 async def _talk(transport: Transport, call: RenterCall, runtime: SessionRuntime, connect_higgs: ConnectHiggs,
                 settings: Settings, set_status: Callable[[str], None],
                 text_link: Callable[[], bool] | None, recorder: CallRecorder,
-                lines: Lines | None = None) -> str:
+                lines: Lines | None = None, avatar: Avatar | None = None) -> str:
     instructions, start = opening(None)
     if text_link is not None:
         instructions += LINK_SENT   # so the Concierge tells them; the text goes once Higgs is up
@@ -187,7 +192,7 @@ async def _talk(transport: Transport, call: RenterCall, runtime: SessionRuntime,
         log.info("call %s: Higgs ready, greeting sent", call.call_id)
         pumps = {asyncio.create_task(_renter_to_higgs(transport, higgs, recorder)),
                  asyncio.create_task(_higgs_to_renter(higgs, transport, ctx, playback, recorder, line,
-                                                     reader=_reader()))}
+                                                     reader=_reader(), avatar=avatar))}
         done, _ = await asyncio.wait(pumps, timeout=settings.renter_call_max_s,
                                      return_when=asyncio.FIRST_COMPLETED)
         return _why(done)
@@ -242,10 +247,12 @@ class TwilioTransport:
 async def run_bridge(ws: WebSocket, *, calls: RenterCalls, runtime: SessionRuntime,
                      connect_higgs: ConnectHiggs, settings: Settings,
                      set_status: Callable[[str], None] = lambda _: None,
-                     texter: Texter | None = None, lines: Lines | None = None) -> None:
+                     texter: Texter | None = None, lines: Lines | None = None,
+                     avatars: Avatars | None = None) -> None:
     """A Twilio media stream for a call that /twiml/renter minted; its id comes back in `start`. The call
     starts its session in the runtime, the way /api/judge/start does for the browser. With a `texter`,
-    the caller gets their board link by text; with `lines`, map taps reach the Concierge."""
+    the caller gets their board link by text; with `lines`, map taps reach the Concierge; with `avatars`,
+    the board can show the Concierge's face."""
     await ws.accept()
     start = await _wait_for_start(ws)
     call_id = str(((start or {}).get("customParameters") or {}).get("call_id", ""))
@@ -269,7 +276,7 @@ async def run_bridge(ws: WebSocket, *, calls: RenterCalls, runtime: SessionRunti
     try:
         transport = TwilioTransport(ws, str(start.get("streamSid", "")))
         await converse(transport, call, calls=calls, runtime=runtime, connect_higgs=connect_higgs,
-                       settings=settings, set_status=set_status, texter=texter, lines=lines)
+                       settings=settings, set_status=set_status, texter=texter, lines=lines, avatars=avatars)
     finally:
         await close_socket(ws)
 
@@ -301,12 +308,13 @@ async def _renter_to_higgs(transport: Transport, higgs: Any, recorder: CallRecor
 
 async def _higgs_to_renter(higgs: Any, transport: Transport, ctx: tools.ToolContext,
                            playback: Playback, recorder: CallRecorder, line: Line | None = None,
-                           reader: Any | None = None) -> str:
+                           reader: Any | None = None, avatar: Avatar | None = None) -> str:
     """The Concierge's audio back to the renter, barge-in and tool calls. Ends when Higgs closes, or once
     the goodbye has played after end_session. `line` sees every event, to deliver map taps between turns.
     With `reader` (a text model), a renter line in another script that got a reply with no tool, or one
     whose reply claimed a save with no tool, is read for its preferences in the background
-    (agents/concierge/backstop.py)."""
+    (agents/concierge/backstop.py). `avatar` gets each response's audio too, and stops when the renter
+    talks over it (voice/avatar.py); none of that waits on the network."""
     spoke = False   # whether the response under way has sent any audio yet
     heard_any = False   # whether any audio has gone out on this call, for the timing log
     turn = backstop.Turn()
@@ -319,9 +327,13 @@ async def _higgs_to_renter(higgs: Any, transport: Transport, ctx: tools.ToolCont
         if kind == "response.created":
             spoke = False
             turn.response_created()
+            if avatar is not None:
+                avatar.response_started()
         elif kind == "response.output_audio.delta":
             spoke = True
             await transport.send_audio(event["delta"])
+            if avatar is not None:
+                avatar.audio(event["delta"])
             if not heard_any:
                 heard_any = True
                 log.info("call %s: first audio out", ctx.call_id)
@@ -330,6 +342,8 @@ async def _higgs_to_renter(higgs: Any, transport: Transport, ctx: tools.ToolCont
         elif kind == "input_audio_buffer.speech_started":
             await transport.send_clear()
             playback.clear()
+            if avatar is not None:
+                avatar.barge_in()
             recorder.cut()
             recorder.speech_started(event.get("item_id"), event.get("audio_start_ms"))
             turn.speech_started()
@@ -339,6 +353,8 @@ async def _higgs_to_renter(higgs: Any, transport: Transport, ctx: tools.ToolCont
             turn.tool_called(str(event.get("name", "")))
             await run_tool(higgs, event, ctx, spoke=spoke)
         elif kind == "response.done":
+            if avatar is not None:
+                avatar.response_done()
             if ends_call(event, ctx):
                 await asyncio.sleep(playback.remaining() + HANG_UP_GRACE_S)
                 return "end_session"

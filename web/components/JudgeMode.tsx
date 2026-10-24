@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { AvatarTile } from "./AvatarTile";
 import { LiveBoard } from "./LiveBoard";
 import { askForMic, useJudgeLine } from "@/lib/judgeAudio";
 import { api } from "@/lib/live";
@@ -101,6 +102,15 @@ export function JudgeMode() {
       intro={<Intro phase={phase} waitMin={waitMin} onStart={begin} />}
       dock={<VoiceBar line={line} doneFailed={doneFailed} onDone={done} onAgain={again} />}
       line={line.state === "connecting" || line.state === "dropped" ? LINE_WORDS[line.state] : null}
+      face={
+        sessionId ? (
+          <AvatarTile
+            sessionId={sessionId}
+            active={line.state === "live"}
+            voice={{ talking: line.talking, quiet: line.quiet }}
+          />
+        ) : null
+      }
     />
   );
 }
