@@ -57,3 +57,46 @@ test("no regex lookbehind, which Safari before 16.4 can't parse", () => {
   const source = readFileSync(new URL("./outcome.ts", import.meta.url), "utf8");
   assert.equal(/\(\?<[=!]/.test(source), false);
 });
+
+const called = (address: string, status: Card["status"] = "verified") => ({ address, status }) as Card;
+
+test("only a place that was called: a booking isn't shown on every unit sharing the address", () => {
+  const text = "I booked 30 Carabob Court for Saturday at 2 pm.";
+  assert.deepEqual(callNotes(called("30 Carabob Court", "booked"), text), { viewing: "Saturday at 2 pm", questions: [] });
+  assert.deepEqual(callNotes(called("30 Carabob Court", "pending"), text), { viewing: null, questions: [] });
+});
+
+test("a number and a capital in a question doesn't end the place's run", () => {
+  const text = "I booked 5 Main St for Saturday at 2 pm. Its agent asked, “Can you move in by 1 November?” " +
+    "I said I'd check with you. Its agent asked, “Is the 2 Bedroom okay?” I said I'd check with you.";
+  assert.deepEqual(callNotes(called("5 Main St"), text).questions, ["Can you move in by 1 November?", "Is the 2 Bedroom okay?"]);
+});
+
+test("an abbreviation inside the address doesn't split it", () => {
+  for (const address of ["100 Queen St. W", "12-26 Rosseau Rd."]) {
+    const text = `I booked ${address} for Saturday at 2 pm. Its agent asked, “Is a cat okay?” I said I'd check with you.`;
+    assert.deepEqual(callNotes(called(address), text), { viewing: "Saturday at 2 pm", questions: ["Is a cat okay?"] }, address);
+  }
+});
+
+test("an address is named only as a whole", () => {
+  const text = "I booked 112 King St W for Saturday at 2 pm. Its agent asked, “Is a cat okay?” I said I'd check with you.";
+  assert.deepEqual(callNotes(called("12 King St W"), text), { viewing: null, questions: [] });
+  assert.deepEqual(callNotes(called("112 King St W"), text), { viewing: "Saturday at 2 pm", questions: ["Is a cat okay?"] });
+});
+
+test("a question with two sentences in it stays whole", () => {
+  const text = "At 5 Main St, pets: dogs ok. Its agent asked, “Do you have pets? What kind?” I said I'd check with you.";
+  assert.deepEqual(callNotes(called("5 Main St"), text).questions, ["Do you have pets? What kind?"]);
+});
+
+test("a place the Narrator couldn't name ends the run before its agent's question", () => {
+  const text = "I booked 5 Main St for Saturday at 2 pm. I couldn't reach that place in time. " +
+    "Its agent asked, “Is a cat okay?” I said I'd check with you.";
+  assert.deepEqual(callNotes(called("5 Main St"), text), { viewing: "Saturday at 2 pm", questions: [] });
+});
+
+test("a window clause with a period in it", () => {
+  const text = "I booked 5 Main St for Saturday at 2 pm, inside your Sat. afternoon.";
+  assert.equal(callNotes(called("5 Main St"), text).viewing, "Saturday at 2 pm");
+});
