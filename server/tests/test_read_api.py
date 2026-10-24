@@ -3,14 +3,17 @@
 Each read endpoint answers in its contract's shape, the web app calls only the
 endpoints docs/CONTRACTS.md lists (plus the demo hooks), and a call's captions
 (/api/calls/{id}/turns) come from the demo store's script or, for any other
-call, from call_turns. The database test skips without TEST_DATABASE_URL, as in
+call, from call_turns. A session the runtime no longer holds reads from its
+stored snapshot. The database tests skip without TEST_DATABASE_URL, as in
 test_db.py.
 """
+import asyncio
 import os
 import re
 import secrets
 import time
 from datetime import UTC, datetime
+from types import SimpleNamespace
 
 import psycopg
 import pytest
@@ -20,7 +23,7 @@ from psycopg.conninfo import make_conninfo
 from pydantic import TypeAdapter
 
 from landline.api.demo import DemoSessions
-from landline.api.routes import JudgeStart, Turn
+from landline.api.routes import JudgeStart, Turn, stream
 from landline.app import create_app
 from landline.config import ROOT, Settings
 from landline.contracts import (
@@ -30,6 +33,8 @@ from landline.contracts import (
     CataloguePoint,
     Listing,
     OutcomeReady,
+    PreferenceDelta,
+    PreferencesUpdated,
     SessionEnded,
     SessionStarted,
     SessionView,
@@ -37,7 +42,7 @@ from landline.contracts import (
 )
 from landline.db.catalogue import Catalogue
 from landline.db.migrations import apply
-from landline.db.rows import TurnRow
+from landline.db.rows import SessionRow, TurnRow
 from landline.orchestrator.profiles import Remembered
 
 NOW = datetime(2026, 10, 22, tzinfo=UTC)
@@ -353,10 +358,11 @@ class _Calls:
 
 
 class _Db:
-    """The two repositories of landline.db.pool.Database that the turns endpoint reads."""
+    """The repositories of landline.db.pool.Database that the read side uses: the turns endpoint's two,
+    and sessions, with none stored."""
 
     def __init__(self, rows: list[TurnRow], call_ids: set[str]):
-        self.turns, self.calls = _Turns(rows), _Calls(call_ids)
+        self.turns, self.calls, self.sessions = _Turns(rows), _Calls(call_ids), StoredSessions()
 
     async def close(self) -> None:
         pass
@@ -421,6 +427,66 @@ def test_turns_endpoint_reads_call_turns_from_postgres(db_url):
         assert [t["idx"] for t in c.get("/api/calls/c_turnsapi01/turns?after=0").json()] == [1]
         assert c.get("/api/calls/c_turnsapi02/turns").json() == []
         assert c.get("/api/calls/c_unknown000/turns").status_code == 404
+
+
+# A session the runtime no longer holds: an API restart forgets every live session, and Postgres keeps
+# each one's last snapshot
+
+
+WRITES = (("focus", {"listing_id": "t:1"}), ("feedback", {"listing_id": "t:1", "reaction": "like"}),
+          ("preferences", {"max_monthly": 2000}), ("calls", {}), ("hang-up", {}),
+          ("area", {"place": "the annex"}), ("reset", {}), ("returning", {"name": "Sara"}))
+
+
+class StoredSessions:
+    """db.sessions as Postgres keeps them after a restart: each session's last snapshot, by id."""
+
+    def __init__(self, *views: SessionView):
+        self.rows = {v.session_id: SessionRow(session_id=v.session_id, user_id=None, channel="judge",
+                                              status=v.phase, version=v.version, started_at=NOW, ended_at=NOW,
+                                              snapshot={"state": {}, "view": v.model_dump(mode="json")})
+                     for v in views}
+
+    async def get(self, session_id: str, conn=None) -> SessionRow | None:
+        return self.rows.get(session_id)
+
+
+def test_a_session_the_runtime_lost_reads_from_its_stored_snapshot_and_stays_read_only():
+    done = asyncio.run(_walk(DemoSessions(_one_bedrooms(), tick_s=0, now=lambda: NOW)))
+    stored = done.model_copy(update={"session_id": "s_storedone1", "version": 42})
+    with _client() as c:
+        c.app.state.db = SimpleNamespace(sessions=StoredSessions(stored))
+        sid, demo = stored.session_id, c.app.state.sessions
+        assert SessionView.model_validate(c.get(f"/api/sessions/{sid}").json()) == stored
+        # Its stream sends the stored version, as for any session the page opens.
+        disconnected = iter((False, True))
+        request = SimpleNamespace(app=c.app, is_disconnected=lambda: asyncio.sleep(0, next(disconnected)))
+        events = c.portal.call(stream, sid, request).body_iterator
+        assert c.portal.call(events.__anext__) == 'data: {"version": 42}\n\n'
+        c.portal.call(events.aclose)
+        # Read-only: a tap or a demo hook is turned down, and never starts a demo session under its id.
+        for path, body in WRITES:
+            assert c.post(f"/api/sessions/{sid}/{path}", json=body).status_code == 409, path
+        assert sid not in demo.views
+        # An id stored nowhere is still a demo session, as the ?dev=1 demo needs.
+        fresh = c.get("/api/sessions/s_neverseen01").json()
+        assert (fresh["version"], fresh["phase"], fresh["results"]) == (1, "open", None)
+        assert "s_neverseen01" in demo.views
+
+
+def test_after_a_restart_a_session_reads_from_postgres(db_url):
+    sid = "s_restarted1"
+    with TestClient(create_app(_settings(database_url=db_url), _one_bedrooms())) as c:
+        rt = c.app.state.runtime
+        c.portal.call(rt.start, SessionStarted(**_meta(sid, 0), channel="judge"))
+        c.portal.call(rt.emit, PreferencesUpdated(**_meta(sid, 1), delta=PreferenceDelta(max_monthly=2400)))
+        before = c.get(f"/api/sessions/{sid}").json()
+    assert before["preferences"]["max_monthly"] == 2400
+    with TestClient(create_app(_settings(database_url=db_url), _one_bedrooms())) as c:   # the API restarted
+        assert not c.app.state.runtime.has(sid)
+        assert c.get(f"/api/sessions/{sid}").json() == before
+        assert c.post(f"/api/sessions/{sid}/focus", json={"listing_id": "t:1"}).status_code == 409
+        assert sid not in c.app.state.sessions.views
 
 
 # A returning caller (U-08): what the read side carries for the second call from a number
