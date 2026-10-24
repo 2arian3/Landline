@@ -2,7 +2,7 @@
 
 The tools are in agents/concierge/tools.py. remember_me and forget_me wait for profiles (O-05), so the
 prompt doesn't mention them yet. A returning caller's call adds RETURNING and what the runtime remembers
-(orchestrator/profiles.py) to the instructions, and opens with WELCOME_BACK instead of GREETING.
+(orchestrator/profiles.py) to the instructions, and opens with WELCOME_BACK instead of FIRST_CALL.
 """
 
 INSTRUCTIONS = """\
@@ -94,11 +94,15 @@ When the call connected, you texted the renter a link where they can see these l
 them once, early in the call.
 """
 
-GREETING = (
-    "Greet the caller in English in two short sentences: say you are Landline, an AI assistant that helps "
-    "renters find a place in Toronto, and that this call is recorded; then say they can talk to you in any "
-    "language, and ask what they are looking for."
-)
+# The end of a first-time caller's session instructions; the call then starts with CALL_CONNECTED, like a
+# returning caller's. It used to be GREETING on response.create, whose instructions replace the session's:
+# those calls then called no tools for the whole call (#129).
+FIRST_CALL = """
+How this call opens: when the call connects, greet the caller in English in two short sentences. Say you \
+are Landline, an AI assistant that helps renters find a place in Toronto, and that this call is recorded; \
+then say they can talk to you in any language, and ask what they are looking for. Don't call a tool to open \
+the call.
+"""
 
 # A returning caller who spoke another language last time: part of the session instructions, before
 # WELCOME_BACK. Code writes the language from their stored preferences; the model never supplies it.

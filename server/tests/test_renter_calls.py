@@ -15,7 +15,7 @@ from starlette.websockets import WebSocketDisconnect
 from landline.agents.concierge import tools
 from landline.agents.concierge.prompt import (
     CALL_CONNECTED,
-    GREETING,
+    FIRST_CALL,
     INSTRUCTIONS,
     LINK_SENT,
     RETURNING,
@@ -33,6 +33,13 @@ from landline.voice.calls import CLAIM_WITHIN_S, RenterCalls
 PUBLIC = "https://landline.test"
 TOKEN = "test-token"
 T0 = datetime(2026, 10, 23, tzinfo=UTC)
+
+
+# How every call starts (bridge.opening): a quoted note, then a bare response.create. Never a response
+# object on response.create: its instructions replace the session's (#129).
+STARTS = [{"type": "conversation.item.create", "item": {
+    "type": "message", "role": "user", "content": [{"type": "input_text", "text": CALL_CONNECTED}]}},
+    {"type": "response.create"}]
 
 
 def _listing(i: int, rent: int, beds: float) -> Listing:
@@ -164,7 +171,7 @@ def test_bridge_passes_audio_both_ways_and_ends_the_phone_session():
         assert [t["name"] for t in session["tools"]] == [t["name"] for t in tools.TOOLS]
         assert session["tool_choice"] == "auto"
         assert fake.sent == [
-            {"type": "response.create", "response": {"instructions": GREETING}},
+            *STARTS,
             {"type": "input_audio_buffer.append", "audio": "//8="},
         ]
         assert fake.closed
@@ -191,7 +198,7 @@ def test_a_tool_call_changes_the_session_and_speaks_its_board():
             ws.send_json({"event": "stop", "streamSid": "MZ1"})
         assert (view.preferences.max_monthly, view.preferences.min_beds) == (3000, 2)
         assert [b.listing_id for b in view.board] == ["t:2"]
-        assert fake.sent[1:3] == [
+        assert fake.sent[2:4] == [
             {"type": "conversation.item.create",
              "item": {"type": "function_call_output", "call_id": "fc_1", "output": view.agent_says}},
             {"type": "response.create"},
@@ -259,10 +266,13 @@ def test_a_returning_caller_is_welcomed_back_with_what_the_runtime_remembers():
             {"type": "response.create"}]
 
 
-def test_a_first_time_caller_is_greeted_with_the_greeting_alone():
+def test_a_first_time_caller_opens_like_a_returning_one_with_no_response_object():
     instructions, start = bridge.opening(None)
-    assert instructions == INSTRUCTIONS and WELCOME_BACK not in instructions
-    assert start == [{"type": "response.create", "response": {"instructions": GREETING}}]
+    assert instructions == INSTRUCTIONS + FIRST_CALL and WELCOME_BACK not in instructions
+    assert "How this call opens" in instructions and "this call is recorded" in instructions
+    # No response object on response.create: its instructions replace the session's (#129).
+    assert start == STARTS
+    assert all("response" not in event for event in start)
 
 
 class FakeTexter:
@@ -386,7 +396,7 @@ def test_browser_call_streams_pcm_both_ways_and_frees_the_judge_line():
         pcm = {"type": "audio/pcm", "rate": 24000}
         assert session["audio"]["input"]["format"] == pcm and session["audio"]["output"]["format"] == pcm
         assert fake.sent == [
-            {"type": "response.create", "response": {"instructions": GREETING}},
+            *STARTS,
             {"type": "input_audio_buffer.append", "audio": base64.b64encode(b"\x03\x00\x04\x00").decode()},
         ]
         ended = c.app.state.calls.recent[-1]
