@@ -1,0 +1,26 @@
+{
+  "id": "area-street-no-type",
+  "about": "Names a street with no 'Avenue' or intersection (\"up around Wilson\"): the board moves to North York",
+  "lines": [
+    {
+      "say": "I'm after a one bedroom, 2,000 max."
+    },
+    {
+      "say": "I'd like to live up around Wilson, that's where my family is.",
+      "expect": {
+        "placed": ["Wilson"],
+        "near": {"lat": 43.7246, "lng": -79.4897, "km": 4.0, "top": 3}
+      }
+    },
+    {
+      "say": "Perfect, that's all. Bye."
+    }
+  ],
+  "final": {
+    "prefs": {"max_monthly": 2000, "min_beds": 1},
+    "placed": ["Wilson"],
+    "near": {"lat": 43.7246, "lng": -79.4897, "km": 4.0, "top": 3},
+    "no_request": true,
+    "ended": true
+  }
+}

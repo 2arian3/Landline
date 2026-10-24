@@ -20,6 +20,12 @@ does, and the Concierge hears the same `[renter is looking at] …` note as on a
 A returning caller (O-05) adds `"returning": {"opening": "<what Profiles would say>", "prefs": {...}}`, and
 `final` can then check the welcome with `"greeting_says": ["Erskine"]` and `"greeting_avoids": [...]`.
 
+A line the renter garbles (`"say": "Purple the fridge seventeen"`) can expect `no_tools`, `says_any`
+(["catch", "again"]) and `says_none` (["fridge", "Carabob"]): the agent asks again instead of guessing what
+the words meant or which listing they were about. A place the renter names can expect
+`placed` (["Wilson"]: the search uses it as a point or a neighbourhood) and `near` (the board's top cards
+are within `km` of a point, on average).
+
 `expect` is checked on the state right after its line (did the agent act on time). `final` is checked on
 the state at the end and decides whether the case passes. Listing refs are symbolic so the case tests the
 Concierge, not the ranker: `rank:N` and `top:N` resolve against the board the renter saw before line `at`
@@ -70,6 +76,14 @@ class FocusWant(_Strict):
     at: int | None = None
 
 
+class Near(_Strict):
+    """The board's top cards sit near a point: their mean distance to it is at most `km`."""
+    lat: float
+    lng: float
+    km: float
+    top: int = 3
+
+
 class Want(_Strict):
     prefs: dict[str, object] | None = None
     reactions: list[ReactionWant] | None = None
@@ -84,6 +98,11 @@ class Want(_Strict):
     greeting_avoids: list[str] | None = None  # `final` only: words it must not (made-up or misread facts)
     no_reactions: list[FocusWant] | None = None   # cards that must hold no reaction (a tap is not a like)
     replies_avoid: list[str] | None = None    # `final` only: words no agent turn may contain
+    no_tools: bool | None = None     # `expect` only: the agent called no tool in that turn
+    says_any: list[str] | None = None   # `expect` only: the agent's reply holds at least one of these
+    says_none: list[str] | None = None  # `expect` only: words that reply must not hold (a guessed meaning)
+    placed: list[str] | None = None  # places the search uses: an anchor with a point, or a neighbourhood
+    near: Near | None = None         # the board's top cards are near this point
 
 
 class Returning(_Strict):

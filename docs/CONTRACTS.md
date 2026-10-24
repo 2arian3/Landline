@@ -116,6 +116,7 @@ Only into the Concierge, only between turns, as one `user` `input_text` item, qu
 | GET | `/api/calls/{call_id}/turns` | live captions for a call |
 | POST | `/api/judge/start` | `{session_id, ws_url}` for browser audio |
 | GET | `/health` | `{status, listings, sessions, transport, higgs}` |
+| POST | `/api/me` | `{phone}` → that number's saved search, chosen places, sessions and calls (the admin user shape). 422 when `phone` isn't a number; 404 when it isn't stored or there is no database. Transcripts and recordings stay on the admin routes. |
 | GET | `/api/admin/users` | Admin: every renter with counts (needs `Authorization: Bearer $ADMIN_TOKEN`; 404 when unset) |
 | GET | `/api/admin/users/{user_id}` | Admin: one renter's saved search, chosen places, sessions and calls |
 | GET | `/api/admin/calls/{call_id}` | Admin: one call with its transcript (each line with `audio_start_ms`/`audio_end_ms` when known), the facts heard, and `audio` (whether it has a recording) |

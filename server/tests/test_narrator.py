@@ -93,6 +93,16 @@ def test_the_acknowledgement_names_the_first_two_changes():
     assert said(language="fa") is None   # nothing the renter would hear back
 
 
+def test_a_priority_nothing_ranks_by_is_not_acknowledged():
+    def said(**delta):
+        return acknowledge([PreferencesUpdated(session_id=SID, at=T0, idem_key="k",
+                                               delta=PreferenceDelta(**delta))])
+
+    assert said(priorities=["buzzer"]) == "I can't rank by buzzer."
+    assert said(max_monthly=2600, priorities=["Buzzer", "light"]) == (
+        "Got it: up to $2,600, light first. I can't rank by buzzer.")
+
+
 # The calls: one template per kind of outcome, through the runtime
 
 

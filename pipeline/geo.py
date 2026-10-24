@@ -6,8 +6,12 @@ station with the walk to it.
   boundaries touch; the published shapes leave hairline gaps, so "touch" allows about 15 m.
 - Stations: TTC subway stations from OpenStreetMap (pipeline/data/ttc_subway_stations.json, ODbL). The walk
   is the straight-line distance × 1.3 at 80 m a minute (docs/DATA.md).
+- Median rents: each neighbourhood's median monthly cost by bedrooms (0, 1, 2, 3+) over the active listings
+  in it, kept only where at least 5 share a neighbourhood and a bedroom count; then each listing's
+  price_vs_median, its monthly cost over its group's median.
 
-PostGIS does the geometry. Nothing here is a guess: a listing outside every neighbourhood keeps none.
+PostGIS does the geometry. Nothing here is a guess: a listing outside every neighbourhood keeps none, and one
+whose group is too small for a median keeps no price_vs_median.
 
     python -m pipeline geo --load      # into $DATABASE_URL, then prints the join rates
 """
@@ -22,6 +26,7 @@ HOODS_URL = ("https://ckan0.cf.opendata.inter.prod-toronto.ca/datastore/dump/"
 STATIONS = Path(__file__).resolve().parent / "data" / "ttc_subway_stations.json"
 TOUCH_M = 15          # boundaries this close count as touching
 WALK_FACTOR, WALK_M_PER_MIN = 1.3, 80
+MEDIAN_MIN = 5        # listings a neighbourhood needs at a bedroom count before its median means anything
 
 
 def parse_neighbourhoods(dump: str) -> list[dict]:
@@ -80,17 +85,47 @@ set transit_walk_min = round((ST_Distance(l.geom, s.geom) * %(factor)s / %(pace)
 from stations s where s.id = l.transit_station_id
 """
 
+# Bedrooms as the medians group them: "0" to "2", and "3" for three or more.
+BEDS = "least(floor(l.beds), 3)::int::text"
+
+MEDIANS = f"""
+update neighbourhoods n set median_rent = coalesce((
+  select jsonb_object_agg(g.beds, g.median) from (
+    select {BEDS} as beds, round(percentile_cont(0.5) within group (order by l.monthly_cost)) as median
+    from listings l
+    where l.status = 'active' and l.neighbourhood_id = n.id and l.monthly_cost is not null
+      and l.beds is not null
+    group by 1 having count(*) >= %(min)s) g), '{{}}')
+"""
+
+VALUE = f"""
+update listings l set price_vs_median = case when n.median_rent ? {BEDS} and l.monthly_cost is not null
+    then round(l.monthly_cost / (n.median_rent ->> {BEDS})::numeric, 3) end,
+  provenance = case when n.median_rent ? {BEDS} and l.monthly_cost is not null
+    then l.provenance || jsonb_build_object('price_vs_median',
+      jsonb_build_object('source', 'derived', 'at', now(), 'version', %(version)s::text))
+    else l.provenance - 'price_vs_median' end
+from neighbourhoods n where n.id = l.neighbourhood_id
+"""
+
+UNPLACED = """
+update listings set price_vs_median = null, provenance = provenance - 'price_vs_median'
+where neighbourhood_id is null and price_vs_median is not null
+"""
+
 COVERAGE = """
 select count(*) as listings, count(geom) as located, count(neighbourhood_id) as neighbourhood,
   count(transit_walk_min) as station, count(*) filter (where transit_walk_min <= 15) as within_15_min,
+  count(price_vs_median) as price_vs_median,
   (select count(*) from neighbourhoods) as neighbourhoods,
   (select count(*) from neighbourhoods where cardinality(adjacent) > 0) as with_neighbours,
+  (select count(*) from neighbourhoods where median_rent <> '{}') as with_median,
   (select count(*) from stations) as stations
 from listings where status = 'active'
 """
 
 
-def load(conn, hoods: list[dict], station_rows: list[dict]) -> dict:
+def load(conn, hoods: list[dict], station_rows: list[dict], median_min: int = MEDIAN_MIN) -> dict:
     """Load the reference data and tag every located listing, in one transaction. Returns the join rates."""
     with conn.transaction(), conn.cursor() as cur:
         cur.executemany(LOAD_HOOD, hoods)
@@ -99,6 +134,9 @@ def load(conn, hoods: list[dict], station_rows: list[dict]) -> dict:
         cur.execute(TAG, {"version": VERSION})
         cur.execute(NEAREST)
         cur.execute(WALK, {"factor": WALK_FACTOR, "pace": WALK_M_PER_MIN, "version": VERSION})
+        cur.execute(MEDIANS, {"min": median_min})
+        cur.execute(VALUE, {"version": VERSION})
+        cur.execute(UNPLACED)
         cur.execute(COVERAGE)
         cols = [d.name for d in cur.description]
         return dict(zip(cols, cur.fetchone(), strict=True))
@@ -113,4 +151,7 @@ def report(c: dict) -> str:
         f"  listings: {c['listings']} active, {c['located']} located",
         f"  in a neighbourhood: {pct(c['neighbourhood'])}",
         f"  nearest station: {pct(c['station'])}, within a 15 min walk: {pct(c['within_15_min'])}",
+        f"  median rent: {c['with_median']} neighbourhoods with at least {MEDIAN_MIN} listings at a bedroom "
+        f"count; price vs median: {pct(c['price_vs_median'])}",
+        "  City building records (RentSafeTO): not joined",
     ])

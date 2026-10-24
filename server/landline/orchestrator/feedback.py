@@ -19,6 +19,7 @@ from __future__ import annotations
 import re
 from collections import defaultdict
 from dataclasses import dataclass, field
+from typing import Any
 
 from landline.contracts import Preferences
 from landline.db.catalogue import Catalogue
@@ -80,9 +81,10 @@ def adjustments(state: SessionState, catalogue: Catalogue) -> Adjustments:
     return adj
 
 
-def ranked(state: SessionState, catalogue: Catalogue, matrix: FeatureMatrix, status: dict):
+def ranked(state: SessionState, catalogue: Catalogue, matrix: FeatureMatrix, status: dict,
+           overrides: dict[str, dict[str, Any]] | None = None):
     """The Matcher's ranking with the feedback applied: the boosts, then +0.5 to each loved place's two
-    strongest features, ranked again."""
+    strongest features, ranked again. `overrides` are what calls heard (orchestrator/overrides.py)."""
     adj = adjustments(state, catalogue)
     prefs: Preferences = state.preferences
     if adj.must_have:
@@ -92,7 +94,7 @@ def ranked(state: SessionState, catalogue: Catalogue, matrix: FeatureMatrix, sta
 
     def run(boosts: dict[str, float]):
         return rank(matrix, prefs, weights=weights_for(prefs, boosts), previous=state.board, status=status,
-                    rejected=adj.rejected, desired_sqft=adj.desired_sqft, **extra)
+                    rejected=adj.rejected, desired_sqft=adj.desired_sqft, overrides=overrides, **extra)
 
     ranking = run(adj.boosts)
     loved = [lid for lid in adj.liked if lid in ranking.scores]

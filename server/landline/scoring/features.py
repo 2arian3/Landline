@@ -109,11 +109,15 @@ class FeatureMatrix:
 
     def named(self, areas: Iterable[str]) -> list[Hood]:
         """The neighbourhoods an area names: every word of it in the neighbourhood's name, so
-        "Liberty Village" finds "Fort York-Liberty Village" and "the Annex" finds "Annex"."""
+        "Liberty Village" finds "Fort York-Liberty Village" and "the Annex" finds "Annex". A name the City
+        doesn't use for one neighbourhood ("downtown Toronto") finds the ones ALIASES lists for it."""
         out = []
         for area in areas:
             wanted = _words(area) - _FILLER
-            if wanted:
+            alias = ALIASES.get(next(iter(wanted))) if len(wanted) == 1 else None
+            if alias:
+                out += [h for h in self.hoods.values() if h.name.lower() in alias and h not in out]
+            elif wanted:
                 out += [h for h in self.hoods.values() if wanted <= _words(h.name) and h not in out]
         return out
 
@@ -138,11 +142,23 @@ def _known(value: str) -> str | None:
     return None if value == "unknown" else value
 
 
+_APOSTROPHE = re.compile(r"['’]")   # "O'Connor", "O’Connor" and "OConnor" are one word
+
+
 def _words(text: str) -> set[str]:
-    return set(re.findall(r"[a-z0-9]+", text.lower().replace("st.", "st")))
+    return set(re.findall(r"[a-z0-9]+", _APOSTROPHE.sub("", text.lower()).replace("st.", "st")))
 
 
-_FILLER = {"the", "area", "neighbourhood", "neighborhood", "around", "near", "in"}
+_FILLER = {"the", "area", "neighbourhood", "neighborhood", "around", "near", "in", "toronto", "city", "core"}
+# Names a renter uses for several City neighbourhoods, by the City's names (D-05). Downtown is the City's
+# Downtown Plan area, Bathurst to the Don and the lake to the rail corridor, as its 2022 neighbourhoods.
+ALIASES = {
+    "downtown": frozenset(name.lower() for name in (
+        "Yonge-Bay Corridor", "Bay-Cloverhill", "Downtown Yonge East", "Church-Wellesley",
+        "St Lawrence-East Bayfront-The Islands", "Harbourfront-CityPlace", "Wellington Place",
+        "Kensington-Chinatown", "University", "Moss Park", "Regent Park", "North St.James Town",
+        "Cabbagetown-South St.James Town")),
+}
 _DERIVED = {"index", "strong_rows", "hoods", "_distances", "_utilities"}
 _PARKING = {"parking", "secured underground parking", "underground parking"}
 _IN_SUITE = {"insuite laundry", "in-suite laundry", "in suite laundry", "ensuite laundry"}
