@@ -27,6 +27,7 @@ from landline.contracts import (
     CallsRequested,
     Card,
     FeedbackGiven,
+    Listing,
     ListingFocused,
     PreferencesUpdated,
     SessionView,
@@ -44,6 +45,7 @@ from landline.contracts.tools import (
 )
 from landline.orchestrator import Refused, SessionRuntime, UnknownSession
 from landline.orchestrator.places import load_stations
+from landline.scoring.reasons import to_station
 from landline.voice.dispatch import TORONTO, until_open
 
 log = logging.getLogger(__name__)
@@ -284,7 +286,18 @@ async def focus_listing(args: FocusListing, ctx: ToolContext, meta: dict) -> str
     if card is None:
         return _which(found)
     await ctx.runtime.emit(ListingFocused(**meta, listing_id=card.listing_id, origin="voice"))
-    return f"{card.address}: {_beds(card.beds)}, {_money(card.monthly_cost)} a month."
+    return f"{card.address}: {', '.join(about(card, ctx.runtime.catalogue.by_id.get(card.listing_id)))}."
+
+
+def about(card: Card, listing: Listing | None) -> list[str]:
+    """What the agent may say about a place, from code: beds, monthly cost, neighbourhood and the walk to the
+    nearest station, as the card shows them (#166), so a question about the TTC isn't guessed."""
+    parts = [_beds(card.beds), f"{_money(card.monthly_cost)} a month"]
+    if card.neighbourhood:
+        parts.append(f"in {card.neighbourhood}")
+    if listing and (walk := to_station(listing.transit_walk_min, listing.transit_station)):
+        parts.append(walk)
+    return parts
 
 
 async def focus_area(args: FocusArea, ctx: ToolContext, meta: dict) -> str:

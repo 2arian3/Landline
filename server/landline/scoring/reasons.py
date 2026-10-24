@@ -32,6 +32,14 @@ def _location(good: bool, r: dict[str, Any]) -> str | None:
     return f"in {r['neighbourhood']}" if good and r["neighbourhood"] else None
 
 
+def to_station(minutes: float | None, station: str | None) -> str | None:
+    """The nearest subway station, for the agent to say ("4 min walk to Wellesley station", "next to Union
+    station"); None when the listing has none in the data, so nothing is guessed (#166)."""
+    if not station or minutes is None:
+        return None
+    return f"next to {station} station" if minutes < 1 else f"{round(minutes)} min walk to {station} station"
+
+
 def _transit(good: bool, r: dict[str, Any]) -> str:
     if r["transit_min"] < 1:   # rounding would say "0 min walk"
         return f"next to {r['station']} station" if r["station"] else "next to the subway"
