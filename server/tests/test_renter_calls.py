@@ -3,6 +3,8 @@ stream → fake Higgs) and the browser (judge start → audio socket → fake Hi
 import asyncio
 import base64
 import re
+import time
+from collections.abc import Callable
 from dataclasses import replace
 
 import pytest
@@ -63,6 +65,14 @@ def _client(**overrides) -> TestClient:
 def _start(call_id: str, sid: str = "MZ1") -> dict:
     return {"event": "start", "streamSid": sid,
             "start": {"streamSid": sid, "callSid": "CA1", "customParameters": {"call_id": call_id}}}
+
+
+def _until(done: Callable[[], object], timeout_s: float = 2.0) -> None:
+    """Wait for the app, which TestClient runs on another thread, to get somewhere."""
+    deadline = time.monotonic() + timeout_s
+    while not done():
+        assert time.monotonic() < deadline, "timed out waiting for the app"
+        time.sleep(0.01)
 
 
 def _ring(c: TestClient, params: dict | None = None, token: str = TOKEN):
@@ -189,6 +199,10 @@ def test_browser_call_streams_pcm_both_ways_and_frees_the_judge_line():
             assert ws.receive_bytes() == spoken
             assert ws.receive_json() == {"type": "clear"}
             ws.send_bytes(b"\x03\x00\x04\x00")   # the judge's microphone
+            ws.close()                            # the judge hangs up
+            # Leaving this block cancels the app's handler, which would cut its cleanup short, so wait
+            # inside it until the call has ended and the judge line is free.
+            _until(lambda: c.app.state.calls.recent and start["session_id"] not in c.app.state.judges.open)
         session = fake.session["session"]
         pcm = {"type": "audio/pcm", "rate": 24000}
         assert session["audio"]["input"]["format"] == pcm and session["audio"]["output"]["format"] == pcm
