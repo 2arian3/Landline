@@ -316,6 +316,49 @@ async def test_call_listings_books_only_with_the_renters_yes_and_says_the_calls_
     assert "9 am to 5 pm, " not in reply.split(".")[0]   # never a time of day for the calls themselves
 
 
+async def test_a_day_alone_keeps_default_bounds_and_is_never_spoken_as_hours(ctx):
+    """#218: "can you check if it's available tomorrow?" The model sent 9 to 5. Code stores the day with
+    the default bounds, and neither the reply nor the Caller says hours the renter never gave."""
+    from datetime import date
+
+    from landline.agents.caller.brief import brief, instructions
+    from landline.agents.caller.slots import TORONTO, WEEKDAYS, within
+    from landline.agents.caller.tools import _ask_time
+    from landline.voice.dispatch import freeze
+
+    said = "can you check if it's available tomorrow?"
+    ctx.renter_said, ctx.renter_lines = said, [said]
+    reply = await _say(ctx, "call_listings", json.dumps({
+        "listing_refs": ["1"],
+        "availability": [{"day": "tomorrow", "from": "09:00", "to": "17:00"}],
+    }))
+    request = ctx.runtime.state(SID).request
+    assert [(a.day, a.from_, a.to) for a in request.availability] == [("tomorrow", "09:00", "18:00")]
+    for phrase in ("9 am", "5 pm", "6 pm", "9:00", "09:00", "17:00", "18:00"):
+        assert phrase not in reply.lower(), phrase
+    assert "tomorrow" in reply.lower() and "don't name any" in reply
+
+    now = datetime(2026, 10, 24, 15, 0, tzinfo=UTC)   # Saturday 11:00 in Toronto; tomorrow is Sunday
+    plan = freeze(ctx.runtime.state(SID), now)
+    start = plan.windows[0].start.astimezone(TORONTO)
+    end = plan.windows[0].end.astimezone(TORONTO)
+    assert (WEEKDAYS[start.weekday()], start.date(), start.hour, start.minute) == (
+        "sunday", date(2026, 10, 25), 9, 0)
+    assert (end.hour, end.minute) == (18, 0)
+    sunday_10 = datetime(2026, 10, 25, 10, 0, tzinfo=TORONTO)
+    sunday_8pm = datetime(2026, 10, 25, 20, 0, tzinfo=TORONTO)
+    assert within(sunday_10, plan.windows) and not within(sunday_8pm, plan.windows)
+
+    text = instructions(brief(ctx.runtime.catalogue.by_id[request.listing_ids[0]], plan))
+    assert "The renter can view: Sunday." in text and "what time on Sunday works" in text
+    for phrase in ("9 am", "5 pm", "6 pm", "9:00", "09:00", "17:00", "18:00", "between 9"):
+        assert phrase not in text.lower(), phrase
+    asked = _ask_time(date(2026, 10, 25), plan.windows, now)
+    assert "Ask what time on Sunday works" in asked
+    for phrase in ("9 am", "5 pm", "6 pm", "between 9"):
+        assert phrase not in asked.lower(), phrase
+
+
 async def test_a_booking_allowed_earlier_stays_when_a_later_call_leaves_it_out(ctx):
     ctx.renter_said, ctx.agent_said = "Yes, book one.", ASKED
     await _say(ctx, "call_listings", '{"listing_refs": ["1"], "may_book": true}')
