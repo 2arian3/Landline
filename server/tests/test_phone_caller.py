@@ -192,6 +192,46 @@ async def test_a_phone_call_records_what_the_agent_said_and_ends_once_after_the_
         "Higgs ready, opening sent", "first audio out"]
 
 
+class BrokenRecorder:
+    """A recorder whose every call fails."""
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def __getattr__(self, name):
+        def broken(*args, **kwargs):
+            raise RuntimeError(f"recorder.{name} broke")
+        return broken
+
+
+async def test_a_recorder_that_fails_never_ends_the_call(monkeypatch, caplog):
+    monkeypatch.setattr(phone_caller, "HANG_UP_GRACE_S", 0)
+    monkeypatch.setattr(phone_caller, "CallRecorder", BrokenRecorder)
+    caplog.set_level(logging.ERROR, logger=phone_caller.__name__)
+    script = [
+        {"type": "response.created"},
+        {"type": "response.output_audio.delta", "delta": "AAAA"},
+        {"type": "response.output_audio_transcript.done", "transcript": DISCLOSURE},
+        {"type": "response.done", "response": {"id": "r1", "output": [{"type": "message"}]}},
+        {"type": "input_audio_buffer.speech_started"},
+        {"type": "input_audio_buffer.speech_stopped"},
+        {"type": "conversation.item.input_audio_transcription.completed", "transcript": HEARD},
+        {"type": "response.created"},
+        _tool("record_fact", {"field": "parking_cost", "value": "$150 a month",
+                               "quote": "Parking is 150 a month"}, "fc1"),
+        {"type": "response.done", "response": {"id": "r2", "output": [{"type": "function_call"}]}},
+        {"type": "response.created"},
+        _tool("end_call", {"reason": "refused"}, "fc2"),
+        {"type": "response.done", "response": {"id": "r3", "output": [{"type": "function_call"}]}},
+    ]
+    rt, ended, _, _ = await _call(script, FakeLine(["/w=="]))
+    assert [e.reason for e in ended] == ["refused"]   # the Caller's own end, never "failed"
+    facts = rt.state(SID).outcomes["t:1"].facts
+    assert [(f.field, f.quote) for f in facts] == [("parking_cost", "Parking is 150 a month")]
+    failed = [r for r in caplog.records if "the recorder failed" in r.getMessage()]
+    assert len(failed) == 1   # logged once, then the recorder stays off
+
+
 async def test_speech_over_the_opening_lets_it_play_and_after_it_barges_in(monkeypatch):
     """A "Hello?" while the disclosure is coming or still playing doesn't clear it (hard rule 6); once it
     has played, speech barges in as before."""
