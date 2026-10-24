@@ -423,6 +423,8 @@ async def run_tool(higgs: Any, event: dict[str, Any], ctx: Any, *, spoke: bool =
     name, arguments = str(event.get("name", "")), event.get("arguments") or "{}"
     # One Logfire span per tool call: the arguments as the model sent them, the tool's answer, how long it
     # took, or the exception it raised. Nothing is sent without LOGFIRE_TOKEN (app.py).
+    if hasattr(ctx, "spoke"):   # the Caller's end_call: what it said this response may be its goodbye (#175)
+        ctx.spoke = spoke
     try:
         with logfire.span("tool {name}", name=name, call_id=ctx.call_id, session_id=ctx.session_id,
                           tool_call_id=tool_call_id, arguments=arguments) as span:
@@ -439,7 +441,12 @@ async def run_tool(higgs: Any, event: dict[str, Any], ctx: Any, *, spoke: bool =
         output, ctx.bye_response = agent.SAY_GOODBYE, str(event.get("response_id") or "")
     await higgs.send({"type": "conversation.item.create",
                       "item": {"type": "function_call_output", "call_id": tool_call_id, "output": output}})
-    if not ctx.hang_up or say_bye:   # otherwise the goodbye is already out, and nothing more is said
+    # One response.create per response, however many tools it called: the first already answers them all,
+    # and a second has nothing new, so Higgs refuses it ("No user input", #175).
+    response_id = str(event.get("response_id") or "")
+    answered = bool(response_id) and getattr(ctx, "answered_response", None) == response_id
+    if (not ctx.hang_up or say_bye) and not answered:   # else the goodbye is out, and nothing more is said
+        ctx.answered_response = response_id
         await higgs.send({"type": "response.create"})
 
 
