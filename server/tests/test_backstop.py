@@ -141,10 +141,20 @@ def test_a_tool_call_an_english_line_or_a_cut_off_reply_gives_nothing():
 ASKS = ["Can you can you call the first one? I really like it.", "Can you call them?", "Call the top three.",
         "Let's let's set a house visit for the first one.", "Book a viewing for number two.",
         "Contact the landlord.", "Could you call the second and the third?",
-        "Can you check if it's still available?", "Set up a viewing for the last one, please."]
+        "Can you check if it's still available?", "Set up a viewing for the last one, please.",
+        # A hedge before the ask is still an ask (#133 review).
+        "I'm not yet sure, but call the first one.", "I'm not sure, but call the first one.",
+        "Please call the top three for me. I'm free Saturday afternoon, and you can book a viewing."]
 NOT_ASKS = ["I'll call you back", "What do you call that area?", "Call me Sara", "Don't call yet",
             "Don't call them yet.", "I really like the first one.", "I called the landlord last week.",
-            "Yeah, yeah. Let's do that.", "Who should I call?", "그 집에 전화해 주세요"]
+            "Yeah, yeah. Let's do that.", "Who should I call?", "그 집에 전화해 주세요",
+            # The renter doing it, naming something, or another sense of the word (#133 review).
+            "Should I call the landlord myself?", "I'll call them myself.", "What do you call those?",
+            "Can you set the map to only showing two-bedrooms?",
+            "Is it close enough that I can get to visit my mom?",
+            # The demo brief's other lines.
+            "Hi. I'm looking for a one bedroom in Toronto, under twenty eight hundred dollars a month.",
+            "Yes, please go ahead.", "That's everything, thanks."]
 CALL_FIRST = "Can you can you call the first one? I really like it."
 
 
@@ -166,6 +176,19 @@ async def test_the_listings_come_from_the_line_or_the_card_in_focus():
     await ctx.runtime.emit(ListingFocused(session_id=SID, at=NOW, idem_key=f"{SID}:tap", origin="ui",
                                           listing_id=fourth.listing_id))
     assert refs_in("Contact the landlord.", ctx) == [str(fourth.rank)]
+    # Only the words the request is about (#133 review), and a plural target is never the card in focus.
+    for said, refs in [("Can you call the first one? I'd like to move in on the third.", ["1"]),
+                       ("Call the first one, I saw it last week.", ["1"]),
+                       ("Can you call them? I really like it.", []),
+                       ("Call the top one.", []), ("Can you call the place on Markham?", [])]:
+        assert refs_in(said, ctx) == refs, said
+
+
+async def test_a_target_it_cant_read_or_a_plan_not_recorded_gives_no_note():
+    ctx = await _ctx()
+    for said in ["Can you call them?", "Call the top one.", "Could you call number nine?", "Call #9."]:
+        assert await catch_up_calls(said, ctx) is None, said   # never the top three by default
+    assert ctx.runtime.state(SID).request is None
 
 
 def _answered(turn: Turn, said: str, tools_called: tuple[str, ...] = ()) -> None:
@@ -249,10 +272,15 @@ async def test_through_the_bridge_a_reply_with_no_call_listings_records_the_plan
 # ── A save the Concierge claimed without a tool (#96, #129) ─────────────────
 
 CLAIMS = ["I've updated your budget to three thousand dollars.", "Perfect, I've saved that for you.",
-          "Okay, I’ve noted that you have a dog.", "Got it, two bedrooms under three thousand.",
-          "I have set your move-in date to December first."]
+          "Okay, I’ve noted that you have a dog.", "I have set your move-in date to December first.",
+          # Explicit claims after a filler (#135 review).
+          "Got it. I've updated your budget to 3000.", "Got it! I've saved that.",
+          "So, I've updated your search.", "Okay, so I've updated your budget."]
 NO_CLAIMS = ["Got it.", "What's your budget?", "I can't call the landlord directly.",
-             "Sure! How many bedrooms do you need?", "You said you've updated your plans?", ""]
+             "Sure! How many bedrooms do you need?", "You said you've updated your plans?", "",
+             # An acknowledgement isn't a claim to have saved anything (#135 review).
+             "Got it, two bedrooms under three thousand.", "Got it, just you. What's your budget?",
+             "Got it, what area are you looking in?"]
 BUDGET = "My max budget is three k per month."
 BUDGET_READ = {"max_monthly": 3000, "min_beds": None, "pets": [], "areas": [], "must_have": [],
                "move_in": None, "occupants": None, "language": "en"}
@@ -307,3 +335,32 @@ async def test_no_read_when_a_tool_ran_or_the_reply_claims_nothing():
     ctx, reader = await _ctx(), FakeReader(BUDGET_READ)
     await _through_the_bridge(ctx, _turn(BUDGET, "What area are you looking in?"), reader)
     assert reader.asked == [] and ctx.runtime.state(SID).preferences.max_monthly is None
+
+
+async def test_a_catch_up_adds_to_lists_instead_of_replacing_them():
+    ctx = await _ctx()
+    await ctx.runtime.emit(PreferencesUpdated(session_id=SID, at=NOW, idem_key=f"{SID}:p0",
+                                              delta=PreferenceDelta(pets=["dog"], must_have=["laundry"])))
+    read = {**BUDGET_READ, "max_monthly": None, "pets": ["cat", "dog"], "must_have": ["parking"]}
+    await catch_up(FakeReader(read), "We have a cat too, and I need parking.", ctx, claimed=True)
+    p = ctx.runtime.state(SID).preferences
+    assert (p.pets, p.must_have) == (["dog", "cat"], ["laundry", "parking"])
+
+
+class SlowReader(FakeReader):
+    """Reads "three k" while the renter corrects it to 3500 and the Concierge saves that."""
+
+    def __init__(self, out, ctx):
+        super().__init__(out)
+        self.ctx = ctx
+
+    async def json(self, system, user, schema, name="result"):
+        await self.ctx.runtime.emit(PreferencesUpdated(session_id=SID, at=NOW, idem_key=f"{SID}:newer",
+                                                       delta=PreferenceDelta(max_monthly=3500)))
+        return await super().json(system, user, schema, name)
+
+
+async def test_a_catch_up_that_lands_after_a_newer_save_is_dropped():
+    ctx = await _ctx()
+    assert await catch_up(SlowReader(BUDGET_READ, ctx), BUDGET, ctx, claimed=True) is None
+    assert ctx.runtime.state(SID).preferences.max_monthly == 3500
