@@ -13,7 +13,7 @@ import psycopg
 import pytest
 
 from landline.contracts import CallOutcome, OutcomeReady, SessionStarted
-from landline.db.migrations import apply
+from landline.db.migrations import MIGRATIONS, apply
 from landline.db.pool import Database
 from landline.db.rows import BoardEntry
 from landline.db.runtime import StaleVersion
@@ -45,7 +45,8 @@ def _started(sid: str, key: str = "start") -> SessionStarted:
 
 def test_migrations_apply_once_then_do_nothing(schema):
     name, applied = schema
-    assert applied == ["0001_init.sql", "0002_call_audio.sql"]
+    assert applied == sorted(p.name for p in MIGRATIONS.glob("*.sql"))   # every file, in order
+    assert applied[0] == "0001_init.sql"
     with psycopg.connect(URL, autocommit=True) as conn:
         assert apply(conn, schema=name) == []
 
