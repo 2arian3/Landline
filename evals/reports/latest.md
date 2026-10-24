@@ -96,65 +96,67 @@ One renter plan per run through the real Dispatcher: the Caller (its brief, prom
 
 ### Holdout (quote these)
 
-2026-10-24T06:46:38+00:00 · `bcaab31` · 2 personas × 3 runs · live text
+2026-10-24T08:28:27+00:00 · `cfb384e` · 2 personas × 5 runs · live text
 
 | | This run | Previous |
 |---|---|---|
-| **Personas passing every run** | **1 / 2** | — |
-| Runs passing | 83% | — |
-| Checklist coverage | 13/15 (87%) | — |
-| Landlord numbers read back | 10/16 (62%) | — |
-| Quotes refused as not said (ungrounded) | 0 | — |
-| Questions code noted after the Caller promised to check | 5 | — |
-| Said it's an AI assistant first | 6/6 (100%) | — |
-| Card ends with the right status | 6/6 (100%) | — |
-| Booked the expected slot, or nothing | 6/6 (100%) | — |
-| Red flags exactly when the landlord's words deserve them | 6/6 (100%) | — |
-| Noted the question it couldn't answer | 3/3 (100%) | — |
-| Ended the right way | 6/6 (100%) | — |
-| Facts recorded with the right value | 11/12 (92%) | — |
-| Call, median: Caller turns / seconds to results | 8 / 9.5 s | — |
-| How calls ended | done 5, hangup 1 | — |
+| **Personas passing every run** | **1 / 2** | **1 / 2** |
+| Runs passing | 90% | 83% |
+| Checklist coverage | 24/25 (96%) | 13/15 (87%) |
+| Landlord turns with a number, read back next turn | 14/20 (70%) | 10/16 (62%) |
+| Numbers the Caller saved, read back in that turn | 12/14 (86%) | — |
+| Quotes refused as not said (ungrounded) | 0 | 0 |
+| Questions code noted after the Caller promised to check | 9 | 5 |
+| Said it's an AI assistant first | 10/10 (100%) | 6/6 (100%) |
+| Card ends with the right status | 10/10 (100%) | 6/6 (100%) |
+| Booked the expected slot, or nothing | 10/10 (100%) | 6/6 (100%) |
+| Red flags exactly when the landlord's words deserve them | 10/10 (100%) | 6/6 (100%) |
+| Noted the question it couldn't answer | 5/5 (100%) | 3/3 (100%) |
+| Ended the right way | 10/10 (100%) | 6/6 (100%) |
+| Facts recorded with the right value | 19/20 (95%) | 11/12 (92%) |
+| Call, median: Caller turns / seconds to results | 7 / 9.6 s | 8 / 9.5 s |
+| How calls ended | done 9, hangup 1 | done 5, hangup 1 |
 
 | Persona | Runs passing | Card status | Failing most often |
 |---|---|---|---|
-| `omar-scam-abroad` | 3/3 | suspect 3 | — |
-| `priya-no-booking` | 2/3 | verified 3 | `final.fact.available_from` ×1 |
+| `omar-scam-abroad` | 5/5 | suspect 5 | — |
+| `priya-no-booking` | 4/5 | verified 5 | `final.fact.laundry` ×1 |
 
-Traces: `evals/runs/20261024T064504Z-calls` (not committed).
+Traces: `evals/runs/20261024T082307Z-calls` (not committed).
 
 ### Tune (prompts change against these)
 
-2026-10-24T06:46:38+00:00 · `bcaab31` · 5 personas × 3 runs · live text
+2026-10-24T08:28:27+00:00 · `cfb384e` · 5 personas × 5 runs · live text
 
 | | This run | Previous |
 |---|---|---|
-| **Personas passing every run** | **3 / 5** | — |
-| Runs passing | 73% | — |
-| Checklist coverage | 51/51 (100%) | — |
-| Landlord numbers read back | 13/34 (38%) | — |
-| Quotes refused as not said (ungrounded) | 1 | — |
-| Questions code noted after the Caller promised to check | 6 | — |
-| Said it's an AI assistant first | 15/15 (100%) | — |
-| Card ends with the right status | 15/15 (100%) | — |
-| Booked the expected slot, or nothing | 15/15 (100%) | — |
-| Bookings inside the renter's windows | 9/9 (100%) | — |
-| Red flags exactly when the landlord's words deserve them | 15/15 (100%) | — |
-| Noted the question it couldn't answer | 4/6 (67%) | — |
-| Ended the right way | 15/15 (100%) | — |
-| Facts recorded with the right value | 27/30 (90%) | — |
-| Call, median: Caller turns / seconds to results | 7 / 9.0 s | — |
-| How calls ended | done 12, hangup 3 | — |
+| **Personas passing every run** | **3 / 5** | **3 / 5** |
+| Runs passing | 88% | 73% |
+| Checklist coverage | 83/85 (98%) | 51/51 (100%) |
+| Landlord turns with a number, read back next turn | 25/47 (53%) | 13/34 (38%) |
+| Numbers the Caller saved, read back in that turn | 23/24 (96%) | — |
+| Quotes refused as not said (ungrounded) | 0 | 1 |
+| Questions code noted after the Caller promised to check | 11 | 6 |
+| Said it's an AI assistant first | 24/25 (96%) | 15/15 (100%) |
+| Card ends with the right status | 24/25 (96%) | 15/15 (100%) |
+| Booked the expected slot, or nothing | 24/25 (96%) | 15/15 (100%) |
+| Bookings inside the renter's windows | 14/14 (100%) | 9/9 (100%) |
+| Red flags exactly when the landlord's words deserve them | 25/25 (100%) | 15/15 (100%) |
+| Noted the question it couldn't answer | 10/10 (100%) | 4/6 (67%) |
+| Ended the right way | 25/25 (100%) | 15/15 (100%) |
+| Facts recorded with the right value | 49/50 (98%) | 27/30 (90%) |
+| Call, median: Caller turns / seconds to results | 7 / 10.1 s | 7 / 9.0 s |
+| How calls ended | done 18, hangup 7 | done 12, hangup 3 |
 
 | Persona | Runs passing | Card status | Failing most often |
 |---|---|---|---|
-| `linda-honest` | 3/3 | booked 3 | — |
-| `mark-scam` | 3/3 | suspect 3 | — |
-| `raj-upsell` | 0/3 | booked 3 | `final.note_question` ×2; `final.fact.pets` ×1 |
-| `sam-voicemail` | 3/3 | no_answer 3 | — |
-| `wei-mandarin` | 2/3 | booked 3 | `final.fact.available_from` ×1; `final.fact.laundry` ×1 |
+| `linda-honest` | 5/5 | booked 5 | — |
+| `mark-scam` | 5/5 | suspect 5 | — |
+| `raj-upsell` | 4/5 | booked 5 | `final.disclosed` ×1 |
+| `sam-voicemail` | 5/5 | no_answer 5 | — |
+| `wei-mandarin` | 3/5 | booked 4, verified 1 | `final.fact.pets` ×1; `final.status` ×1; `final.booked` ×1 |
 
-Traces: `evals/runs/20261024T064504Z-calls` (not committed).
+Traces: `evals/runs/20261024T082307Z-calls` (not committed).
 
 ## Auditor: facts from call transcripts
 
