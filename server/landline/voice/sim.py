@@ -26,8 +26,8 @@ from typing import Any
 from landline.agents import auditor
 from landline.agents.auditor.extract import Complete
 from landline.agents.caller import tools as caller_tools
-from landline.agents.caller.brief import brief, instructions
-from landline.contracts import Listing, Viewing
+from landline.agents.caller.brief import brief, instructions, wants
+from landline.contracts import Listing, Preferences, Viewing
 from landline.orchestrator import SessionRuntime
 from landline.voice.bridge import ends_call, run_tool
 from landline.voice.dispatch import CallResult, Dial, Report
@@ -93,10 +93,14 @@ class SimRunner:
         self.max_turns, self.turn_timeout_s = max_turns, turn_timeout_s
         self.traces: OrderedDict[str, SimTrace] = OrderedDict()
 
+    def _preferences(self, session_id: str) -> Preferences | None:
+        """The renter's preferences, for what the checklist asks; None once the session is gone."""
+        return self.runtime.state(session_id).preferences if self.runtime.has(session_id) else None
+
     async def place(self, dial: Dial, report: Report) -> CallResult:
         listing = self.runtime.catalogue.by_id[dial.listing_id]
         persona = self.persona_for(dial, listing)
-        b = brief(listing, dial.plan)
+        b = brief(listing, dial.plan, wants(self._preferences(dial.session_id)))
         ctx = caller_tools.CallerContext(session_id=dial.session_id, call_id=dial.call_id,
                                          listing_id=dial.listing_id, brief=b, runtime=self.runtime,
                                          clock=self.clock)

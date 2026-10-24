@@ -1,7 +1,9 @@
 """The Caller's brief for one listing (A-05): its checklist and its instructions, built in code at dial time.
 
-The checklist is what the listing doesn't say (its unknown fields, the most useful first, at most
-MAX_GAPS so a call stays short), the renter's extra questions, and a viewing. The instructions carry what
+The checklist follows the renter, not the holes in our data: whether it's still available, the monthly
+fees, pets only when the renter has them, parking, utilities or laundry only when the renter asked for
+them and the listing doesn't say (at most MAX_GAPS of these, so a call stays short), the renter's own
+questions, and a viewing when the renter allowed booking. The instructions carry what
 the listing says, the checklist, the renter's viewing windows, and only the answers the renter agreed to
 share (`CallPlan.shareable`). Nothing about the renter reaches the Caller any other way: nothing is
 injected mid-call.
@@ -12,7 +14,8 @@ import re
 from dataclasses import dataclass, field
 
 from landline.agents.caller import slots
-from landline.contracts import CallPlan, Listing
+from landline.contracts import CallPlan, Listing, Preferences
+from landline.scoring.weights import feature_key
 
 MAX_GAPS = 3   # besides availability, the renter's questions and the viewing
 
@@ -50,33 +53,45 @@ class Brief:
             return
 
 
-def brief(listing: Listing, plan: CallPlan) -> Brief:
+def brief(listing: Listing, plan: CallPlan, wants: frozenset[str] = frozenset()) -> Brief:
+    """`wants`: what the renter asked for that a call can check (`wants()`); the plan doesn't carry it."""
     items = [Item("available", "whether it's still available, and from when",
                   ["available", "available_from"])]
     gaps: list[Item] = []
-    pets = plan.shareable.pets
-    if pets or listing.pets == "unknown":
-        ask = f"whether pets are allowed (the renter has {_join([f'a {p}' for p in pets])})" if pets \
-            else "whether pets are allowed"
-        gaps.append(Item("pets", ask, ["pets"]))
-    if listing.parking == "unknown" or (listing.parking == "extra" and listing.parking_cost is None):
+    if pets := plan.shareable.pets:   # even when the listing says, so the landlord hears what they have
+        has = _join([f"a {p}" for p in pets])
+        gaps.append(Item("pets", f"whether pets are allowed (the renter has {has})", ["pets"]))
+    if "parking" in wants and (listing.parking == "unknown"
+                               or (listing.parking == "extra" and listing.parking_cost is None)):
         gaps.append(Item("parking", "whether parking comes with it, and what it costs a month",
                          ["parking", "parking_cost"]))
-    if not listing.utilities_included:
+    if "utilities" in wants and not listing.utilities_included:
         gaps.append(Item("utilities", "which utilities are included in the rent", ["utilities_included"]))
-    if listing.laundry == "unknown":
+    if "laundry" in wants and listing.laundry == "unknown":
         gaps.append(Item("laundry", "where the laundry is", ["laundry"]))
-    gaps.append(Item("fees", "any monthly fees on top of the rent", ["fees"]))
-    items += gaps[:MAX_GAPS]
+    # Fees change what the place costs, which every renter cares about, so they always stay.
+    items += [*gaps[:MAX_GAPS - 1], Item("fees", "any monthly fees on top of the rent", ["fees"])]
     for n, question in enumerate(plan.questions, start=1):
         items.append(Item(f"q{n}", f"the renter's question: {question} (record their answer as other)",
                           ["other"]))
     if plan.may_book and plan.windows:
         items.append(Item("viewing", "a viewing inside the renter's times, booked with book_viewing", []))
-    else:
-        items.append(Item("viewing", "which viewing times they could offer (record them as other)",
-                          ["other"]))
     return Brief(listing, plan, items)
+
+
+def wants(prefs: Preferences | None) -> frozenset[str]:
+    """What the renter named as a must-have or a priority that a call can check: parking, utilities,
+    laundry."""
+    out: set[str] = set()
+    for said in [*prefs.must_have, *prefs.priorities] if prefs else []:
+        word, key = said.lower(), feature_key(said)
+        if key == "parking" or "parking" in word:
+            out.add("parking")
+        if key == "laundry" or "laundry" in word or "washer" in word:
+            out.add("laundry")
+        if re.search(r"utilit|heat|hydro|water|electric", word):
+            out.add("utilities")
+    return frozenset(out)
 
 
 def instructions(b: Brief) -> str:
@@ -87,7 +102,7 @@ def instructions(b: Brief) -> str:
     booking = ("You may book one viewing: call book_viewing with the time they offer, in their words. "
                "Book only a time inside the renter's windows; the reply tells you if it's booked.") \
         if plan.may_book and plan.windows else \
-        "You may not book anything. Ask which viewing times they could offer and record them as other."
+        "You may not book anything, so don't ask about viewings."
     return CALLER.format(address=_place(x), listing=_listing(x), checklist=checklist, windows=windows,
                          share=share, booking=booking)
 
@@ -124,7 +139,7 @@ with done, all in that same turn. Don't argue and don't book.
 For example, they say "Parking is one spot, $150 a month, and there's in-suite laundry." You call \
 record_fact (field parking_cost, value "$150 a month", quote "Parking is one spot, $150 a month"), then \
 record_fact (field laundry, value "in-suite", quote "there's in-suite laundry"), then you say: "So parking \
-is $150 a month, and laundry is in the unit. Are pets allowed?"
+is $150 a month, and laundry is in the unit. Are there any other monthly fees?"
 
 What you may say about the renter: {share} Nothing else. If they ask anything else (income, credit, \
 references, a deposit, documents), say "I'll check with my client and get back to you," and call \
@@ -133,7 +148,7 @@ anything for the renter.
 
 What the listing says: {listing}
 
-Your checklist, in order (skip what they have already told you):
+Your checklist, in order (skip what they have already told you). Ask nothing that isn't on it:
 {checklist}
 
 The renter can view: {windows}. {booking}
