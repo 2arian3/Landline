@@ -1,7 +1,7 @@
 "use client";
 
 import { Money } from "./Money";
-import { money, specLine } from "@/lib/format";
+import { money, photoAt, specLine } from "@/lib/format";
 import type { Card } from "@/lib/types";
 
 export const STATUS: Partial<Record<Card["status"], { word: string; color: string }>> = {
@@ -66,9 +66,20 @@ export function ListingCard({
 
       <span className="relative block h-[84px] w-[84px] overflow-hidden rounded-[var(--radius-photo)] bg-press">
         {card.photo && (
-          // Source photos stay on the source's CDN, attributed in the detail view.
+          // Source photos stay on the source's CDN, attributed in the detail view. The top card's is
+          // usually the largest thing on a phone's first screen, so it loads first rather than lazily.
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={card.photo} alt="" loading="lazy" className="h-full w-full object-cover" />
+          <img
+            src={photoAt(card.photo, 168)}
+            srcSet={`${photoAt(card.photo, 168)} 168w, ${photoAt(card.photo, 252)} 252w`}
+            sizes="84px"
+            width={84}
+            height={84}
+            alt=""
+            loading={card.rank === 1 ? "eager" : "lazy"}
+            fetchPriority={card.rank === 1 ? "high" : "auto"}
+            className="h-full w-full object-cover"
+          />
         )}
       </span>
 

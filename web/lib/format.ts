@@ -52,3 +52,11 @@ export function heardLine(p: Preferences): string[] {
 }
 
 export const sourceName = (s: string) => (s === "livrent" ? "liv.rent" : s);
+
+/**
+ * A liv.rent photo cropped to `px` square. Their CDN resizes on the fly (cdn.liv.rent/<w>x<h>/…),
+ * so an 84 px thumbnail doesn't download the 800 px original. Other hosts come back unchanged.
+ */
+export function photoAt(url: string, px: number): string {
+  return url.replace(/^(https:\/\/cdn\.liv\.rent\/)\d+x\d*\//, `$1${px}x${px}/`);
+}
