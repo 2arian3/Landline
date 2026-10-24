@@ -6,8 +6,10 @@ code's: the speaker-tagged turns, the listing, what the Caller recorded live (`r
 it noted and the viewing it booked. The model, when there is one, only proposes facts.
 
 1. Facts. Every quote must be in a *landlord* turn (`grounding.find`, exact or fuzzy ≥ 0.85), so the
-   agent's own words, read-backs included, never count (PORTING #15). The value is read from that quote
-   in code (`values.settle`), amounts included (#12, #13). The rest are dropped and counted as ungrounded.
+   agent's own words never count on their own (PORTING #15). A bare "Yeah." is ignored when another quote
+   for the field already states an amount. When that yes is the only quote, and it confirms a read-back
+   whose amounts the landlord also said, the read-back turn is the fact's source. The value is read from
+   that quote in code (`values.settle`), amounts included (#12, #13). The rest are dropped as ungrounded.
 2. Reconcile. The Caller's live facts and the transcript's are merged per field; the later turn wins, so a
    corrected read-back replaces the first answer. Each live fact is reported kept, corrected or dropped.
 3. Conflicts. A heard value that differs from the listing, and a monthly cost recomputed in code from the
@@ -31,7 +33,18 @@ from typing import Any
 from landline.agents.auditor import extract as extractor
 from landline.agents.auditor import grounding, when
 from landline.agents.auditor.flags import Flag, red_flags
-from landline.agents.auditor.values import Refused, Value, asks, bare, call_day, fee_name, free_from, settle
+from landline.agents.auditor.numbers import amounts
+from landline.agents.auditor.values import (
+    MONEY_FIELDS,
+    Refused,
+    Value,
+    asks,
+    bare,
+    call_day,
+    fee_name,
+    free_from,
+    settle,
+)
 from landline.agents.caller import slots
 from landline.contracts import CallOutcome, Conflict, EndReason, Fact, Viewing
 
@@ -174,8 +187,13 @@ def build(call: CallRecord, candidates: Sequence[extractor.Candidate], status: s
         return None
 
     day = call_day(call.ended_at)   # "tomorrow" counts from the call's own day (#138)
+    said = [t.text for t in landlord]
     live: list[Heard] = []
     for tf in call.tool_facts:
+        amount_quotes = [o.quote for o in call.tool_facts if o.field == tf.field and o.quote != tf.quote]
+        amount_quotes += [c.quote for c in candidates if c.field == tf.field]
+        if _amount_elsewhere(tf.quote, amount_quotes, said):
+            continue   # a bare "Yeah." adds nothing once a real amount quote is grounded (#216)
         turn = ground(tf.field, tf.quote, "tool")
         if turn is None:
             continue
@@ -183,30 +201,40 @@ def build(call: CallRecord, candidates: Sequence[extractor.Candidate], status: s
         # A live move-in day is code's words ("Sunday, October 25"), from the Caller's tools, never a model's
         # date (#157), so it stands when the quote's own words name no day ("after Halloween").
         parts = free_from(tf.value, day) if tf.field == "available_from" else None
+        quote, src = tf.quote, turn
+        if (rb := _readback_turn(call.turns, turn, tf.field, tf.quote)) is not None:
+            quote, src = rb.text, rb
         try:
-            v = settle(tf.field, tf.value, tf.quote, today=day, question=_asked(call.turns, turn),
+            v = settle(tf.field, tf.value, quote, today=day, question=_asked(call.turns, turn),
                        parts=parts)
-            live.append(Heard(v, tf.quote, turn.idx, "tool"))
+            live.append(Heard(v, quote, src.idx, "tool"))
         except Refused as e:
             result.dropped.append(Dropped(tf.field, tf.quote, "tool", f"unreadable: {e}"))
     read: list[Heard] = []
     for c in candidates:
+        amount_quotes = [o.quote for o in call.tool_facts if o.field == c.field]
+        amount_quotes += [o.quote for o in candidates if o.field == c.field and o.quote != c.quote]
+        if _amount_elsewhere(c.quote, amount_quotes, said):
+            continue
         turn = ground(c.field, c.quote, "transcript")
         if turn is None:
             continue
         turn = _answering(call.turns, landlord, turn, c.field, c.quote)
+        quote, src = c.quote, turn
+        if (rb := _readback_turn(call.turns, turn, c.field, c.quote)) is not None:
+            quote, src = rb.text, rb
         try:
-            v = settle(c.field, c.value, c.quote, amount=c.amount, count=c.count, each=c.each,
+            v = settle(c.field, c.value, quote, amount=c.amount, count=c.count, each=c.each,
                        period=c.period, mandatory=c.mandatory, name=c.name, today=day,
                        question=_asked(call.turns, turn))
         except Refused as e:
             result.dropped.append(Dropped(c.field, c.quote, "transcript", f"unreadable: {e}"))
             continue
-        read.append(Heard(v, c.quote, turn.idx, "transcript"))
+        read.append(Heard(v, quote, src.idx, "transcript"))
         if c.field == "parking" and c.amount is not None:   # a price said with "parking" is the spot's price
             try:
-                read.append(Heard(settle("parking_cost", c.value, c.quote, amount=c.amount, count=c.count,
-                                         each=c.each), c.quote, turn.idx, "transcript"))
+                read.append(Heard(settle("parking_cost", c.value, quote, amount=c.amount, count=c.count,
+                                         each=c.each), quote, src.idx, "transcript"))
             except Refused:
                 pass
 
@@ -257,6 +285,30 @@ def with_pet_fee(heard: list[Heard]) -> list[Heard]:
                      pets.source)
         heard = [told if h is pets else h for h in heard]
     return sorted(heard, key=lambda h: h.turn)
+
+
+def _amount_elsewhere(quote: str, others: Sequence[str], landlord: Sequence[str]) -> bool:
+    """A quote that is only "Yeah." when some other quote for the field already states an amount and is
+    in the landlord's words. The yes is not a second amount, and it must not replace the one that is."""
+    if bare(quote) != "yes":
+        return False
+    return any(bare(q) is None and amounts(q) and grounding.find(q, landlord) is not None for q in others)
+
+
+def _readback_turn(turns: Sequence[Turn], turn: Turn, field: str, quote: str) -> Turn | None:
+    """The agent's read-back just before a bare yes, when every amount in it was also said by the landlord.
+    That turn is the fact's source. A number only the agent said is still the agent's words (PORTING #15)."""
+    if field not in MONEY_FIELDS or bare(quote) != "yes":
+        return None
+    before = [t for t in turns if t.idx < turn.idx]
+    if not before or before[-1].speaker == LANDLORD:
+        return None
+    asked = before[-1]
+    need = set(amounts(asked.text))
+    said = {n for t in turns if t.speaker == LANDLORD for n in amounts(t.text)}
+    if not need or not need <= said:
+        return None
+    return asked
 
 
 def _asked(turns: Sequence[Turn], turn: Turn) -> str | None:

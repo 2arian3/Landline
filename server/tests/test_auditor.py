@@ -56,6 +56,19 @@ def test_grounding_matches_inside_one_source_only():
     assert grounding.find("rent is 2690", src).source == 0
 
 
+def test_a_spoken_amount_matches_the_same_amount_in_digits():
+    """#216: "one fifty" and "$150" are one claim. A different amount still is not."""
+    said = ("Yeah, there's an extra charge for parking if you want. "
+            "It is one fifty, one fifty, one hundred fifty dollars per month.")
+    assert grounding.verify("It is $150 per month.", [said])
+    assert grounding.verify(
+        "Yeah, there's an extra charge for parking if you want. It is $150 per month.", [said])
+    assert grounding.verify("It is one hundred and fifty dollars per month.", [said])
+    assert not grounding.verify("It is $180 per month.", [said])
+    assert grounding.verify("parking is $180 a month", ["Parking is a hundred and eighty a month."])
+    assert grounding.verify("$180", ["a hundred and eighty"])
+
+
 def test_grounding_mandarin_by_character():
     src = ["停车位一个月一百八十，不能养宠物。"]
     assert grounding.verify("停车位一个月一百八十", src)
@@ -71,6 +84,10 @@ def test_grounding_mandarin_by_character():
     ("twenty-six fifty plus utilities", [2650]),
     ("eighteen hundred", [1800]),
     ("a hundred and eighty a month", [180]),
+    ("one fifty", [150]),
+    ("one hundred fifty dollars", [150]),
+    ("a hundred and eighty", [180]),
+    ("It is one fifty, one fifty, one hundred fifty dollars per month.", [150, 150, 150]),
     ("2 grand deposit", [2000]),
     ("2.5k", [2500]),
     ("房租两千六", [2600]),
@@ -136,6 +153,17 @@ def test_two_spots_for_360_is_divided_in_code():
     assert (v.amount, v.count) == (180, 2)
 
 
+SPOKEN_PARKING = ("Yeah, there's an extra charge for parking if you want. "
+                  "It is one fifty, one fifty, one hundred fifty dollars per month.")
+PARKING_BACK = "Just to confirm, is the parking fee exactly one hundred and fifty dollars per month?"
+
+
+def test_a_model_amount_of_150_is_in_the_spoken_quote():
+    """The live drop: '$150 isn't in the quote' for the landlord's own words (#216)."""
+    quote = "It is one fifty, one fifty, one hundred fifty dollars per month."
+    assert settle("parking_cost", "$150 per month", quote, amount=150).amount == 150
+
+
 def test_model_amount_must_be_in_the_quote():
     with pytest.raises(Refused):
         settle("rent", "2700", "The rent is twenty-six ninety.", amount=2700)
@@ -154,6 +182,34 @@ def test_deposit_is_one_time():
 
 
 # The audit
+
+def test_a_bare_yes_does_not_replace_a_real_amount_quote():
+    """#216: ignore a quote of only "Yeah." when a real amount quote is already grounded."""
+    tidied = "Yeah, there's an extra charge for parking if you want. It is $150 per month."
+    c = call([("agent", "What does parking cost?"), ("landlord", SPOKEN_PARKING),
+              ("agent", PARKING_BACK), ("landlord", "Yeah.")],
+             tool_facts=[ToolFact("parking_cost", "$150 per month", tidied),
+                         ToolFact("parking_cost", "$150 per month", "Yeah.")])
+    a = build(c, [])
+    assert [(f.field, f.quote) for f in a.outcome.facts] == [("parking_cost", tidied)]
+    assert a.heard[0].value.amount == 150
+
+
+def test_a_confirmed_read_back_is_the_source_when_yeah_is_the_only_quote():
+    c = call([("agent", "What does parking cost?"), ("landlord", SPOKEN_PARKING),
+              ("agent", PARKING_BACK), ("landlord", "Yeah.")],
+             tool_facts=[ToolFact("parking_cost", "$150 per month", "Yeah.")])
+    a = build(c, [])
+    assert [(f.field, f.quote) for f in a.outcome.facts] == [("parking_cost", PARKING_BACK)]
+    assert a.heard[0].value.amount == 150
+    assert a.heard[0].turn == 2
+
+
+def test_a_yes_does_not_keep_a_number_the_landlord_never_said():
+    c = call([("agent", "So it's listed at $2,690 with parking, right?"), ("landlord", "Yeah.")],
+             tool_facts=[ToolFact("rent", "2690", "Yeah.")])
+    assert build(c, []).outcome.facts == []
+
 
 def test_live_facts_from_agent_turns_are_dropped():
     """PORTING #15: a read-back the landlord only agrees to is the agent's words, not a fact."""

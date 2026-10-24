@@ -1,4 +1,4 @@
-"""The extraction eval (E-02): the Auditor on 20 call transcripts with gold facts. Part of `make eval`.
+"""The extraction eval (E-02): the Auditor on call transcripts with gold facts. Part of `make eval`.
 
     uv run python -m evals.run_extraction             # the extractor's recorded answers: no key, no network
     uv run python -m evals.run_extraction --live      # call the LLM and re-record its answers
@@ -35,6 +35,8 @@ import httpx
 
 from evals import report
 from landline.agents.auditor import Audit, CallRecord, ListingContext, ToolFact, Turn, audit, grounding, llm
+from landline.agents.auditor.numbers import amounts
+from landline.agents.auditor.values import bare
 from landline.config import ROOT
 
 FIXTURES = ROOT / "evals" / "fixtures"
@@ -79,7 +81,9 @@ def record(case: dict[str, Any]) -> CallRecord:
 def gold_pairs(gold: dict[str, Any]) -> set[tuple[str, str]]:
     out: set[tuple[str, str]] = set()
     for f, v in gold.items():
-        if f == "fees":
+        if f == "fees" and v == "none":
+            out.add(("fees", "none"))   # "no other monthly fees" (#187, #216)
+        elif f == "fees":
             out |= {("fees", f"{x['name']}:{x['amount']}:{x['period']}") for x in v}
         elif f == "red_flags":
             out |= {("red_flags", code) for code in v}
@@ -96,10 +100,29 @@ def predicted_pairs(a: Audit) -> set[tuple[str, str]]:
     return out
 
 
+def _grounded(quote: str, turns: list[dict[str, Any]]) -> bool:
+    """The quote is in a landlord turn, or it is the read-back a landlord confirmed and every amount in it
+    is one the landlord also said (#216). A yes to a number nobody said is still ungrounded."""
+    landlord = [t["text"] for t in turns if t["speaker"] == "landlord"]
+    if grounding.verify(quote, landlord):
+        return True
+    need = set(amounts(quote))
+    said = {n for text in landlord for n in amounts(text)}
+    if not need or not need <= said:
+        return False
+    for i, t in enumerate(turns):
+        if t["speaker"] == "landlord" or not grounding.verify(quote, [t["text"]]):
+            continue
+        nxt = next((u for u in turns[i + 1:] if u["speaker"] == "landlord"), None)
+        if nxt is not None and bare(nxt["text"]) == "yes":
+            return True
+    return False
+
+
 def score(case: dict[str, Any], a: Audit) -> Score:
-    landlord = [t["text"] for t in case["turns"] if t["speaker"] == "landlord"]
-    ungrounded = [f.quote for f in a.outcome.facts if not grounding.verify(f.quote, landlord)]
-    ungrounded += [c.quote for c in a.outcome.conflicts if not grounding.verify(c.quote, landlord)]
+    turns = case["turns"]
+    ungrounded = [f.quote for f in a.outcome.facts if not _grounded(f.quote, turns)]
+    ungrounded += [c.quote for c in a.outcome.conflicts if not _grounded(c.quote, turns)]
     dropped: dict[str, int] = defaultdict(int)
     for d in a.dropped:
         dropped[d.why.split(":")[0]] += 1
