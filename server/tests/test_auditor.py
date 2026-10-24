@@ -288,3 +288,44 @@ def test_mandarin_laundry_and_street_parking():
 
 def test_utilities_split_on_but():
     assert settle("utilities_included", "", "Heat is included but hydro is extra.").value == "heat"
+
+
+# A bare yes or no answers the Caller's question (#139)
+
+PETS_Q, PARKING_Q = "Are pets allowed in the unit?", "Does parking come with it?"
+
+
+@pytest.mark.parametrize(("question", "field", "value", "quote", "stored", "shown"), [
+    (PETS_Q, "pets", "yes", "Yes.", "allowed", "pets allowed"),
+    (PETS_Q, "pets", "no", "No.", "no_pets", "no pets"),
+    (PETS_Q, "pets", "cats only", "Cats only.", "cats_only", "cats only"),
+    (PETS_Q, "pets", "small dogs ok", "Small dogs are fine.", "small_only", "small pets only"),
+    (PETS_Q, "pets", "case by case", "We decide case by case.", "case_by_case", "pets case by case"),
+    (PARKING_Q, "parking", "yes", "Yes.", "included", "parking included"),
+    (PARKING_Q, "parking", "no", "No.", "none", "no parking"),
+    ("Are utilities included?", "utilities_included", "yes", "Yes, all of them.", "included",
+     "utilities included"),
+])
+def test_a_bare_yes_or_no_answers_the_question_asked(question, field, value, quote, stored, shown):
+    got = settle(field, value, quote, question=question)
+    assert (got.value, got.display) == (stored, shown)
+
+
+@pytest.mark.parametrize(("question", "quote"), [
+    (None, "Yes."),                              # no question: nothing to answer
+    ("Is it still available?", "Yes."),          # a yes to another question isn't about pets
+    (PETS_Q, "No problem."),                     # not a no
+])
+def test_a_bare_yes_or_no_without_its_question_is_still_refused(question, quote):
+    with pytest.raises(Refused):
+        settle("pets", "yes", quote, question=question)
+
+
+def test_the_last_of_several_answers_to_the_same_question_is_kept():
+    turns = [("agent", "Is it still available?"), ("landlord", "Yes."),
+             ("agent", PETS_Q), ("landlord", "Yes."), ("agent", PETS_Q), ("landlord", "Yes."),
+             ("agent", PETS_Q), ("landlord", "No.")]
+    facts = (ToolFact("available", "yes", "Yes."), ToolFact("pets", "yes", "Yes."),
+             ToolFact("pets", "yes", "Yes."), ToolFact("pets", "no", "No."))
+    out = build(call(turns, facts), []).outcome
+    assert [(f.field, f.value) for f in out.facts] == [("available", "still available"), ("pets", "no pets")]

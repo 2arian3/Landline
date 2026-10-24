@@ -67,13 +67,14 @@ class Refused(Exception):
 
 def settle(field: str, value: str, quote: str, *, amount: float | None = None, count: int | None = None,
            each: bool | None = None, period: str | None = None, mandatory: bool | None = None,
-           name: str | None = None, today: date | None = None) -> Value:
+           name: str | None = None, today: date | None = None, question: str | None = None) -> Value:
     """`value` and the structured hints are claims; the quote decides. Raises `Refused`. `today` is the
-    call's day in Toronto (`call_day`), which a date like "tomorrow" counts from; the current day if None."""
+    call's day in Toronto (`call_day`), which a date like "tomorrow" counts from; the current day if None.
+    `question` is the Caller's line just before the quote: a bare "Yes." or "No." answers it (#139)."""
     if field in MONEY_FIELDS:
         return _money(field, value, quote, amount, count, each, period, mandatory, name)
     if field in CATEGORIES:
-        said = category(field, quote)
+        said = category(field, quote) or answer(field, quote, question)
         exact = _category_word(field, value)   # a category named outright ("allowed") is a claim to check
         if exact and said and exact != said:
             raise Refused(f"the quote says {said}, not {exact}")
@@ -82,6 +83,10 @@ def settle(field: str, value: str, quote: str, *, amount: float | None = None, c
             raise Refused(f"can't tell {field} from the words")
         return Value(field, got, _DISPLAY.get((field, got), got.replace("_", " ")))
     if field == "utilities_included":
+        if answer(field, quote, question) == "yes":   # "Yes, all of them." to "Are utilities included?"
+            named = sorted(u for u, pat in UTILITIES.items() if re.search(pat, question or "", re.I))
+            return (Value(field, ",".join(named), ", ".join(named) + " included") if named
+                    else Value(field, "included", "utilities included"))
         quoted = {u for clause in _CLAUSE.split(quote) if not _NOT_INCLUDED.search(clause)
                   for u, pat in UTILITIES.items() if re.search(pat, clause, re.I)}
         claimed = {u for u, pat in UTILITIES.items() if re.search(pat, value, re.I)} or quoted
@@ -112,6 +117,38 @@ def settle(field: str, value: str, quote: str, *, amount: float | None = None, c
             raise Refused("the quote names no day")
         return Value(field, "now" if day <= today else f"{day:%m-%d}", spoken_day(day, today))
     return Value(field, value.strip(), value.strip())   # light, outdoor_space, other: words, kept as said
+
+
+def bare(quote: str) -> str | None:
+    """"yes" or "no" when the words are only an answer ("Yes.", "Yep, they are", "Nope"), else None."""
+    t = quote.strip().lower().replace("’", "'")
+    if _BARE_NO.search(t):
+        return "no"
+    if _BARE_YES.search(t):
+        return "yes"
+    return None
+
+
+def asks(field: str, question: str | None) -> bool:
+    """The Caller's line asks about this field."""
+    pattern = _ASKS.get(field)
+    return bool(question and pattern and re.search(pattern, question, re.I))
+
+
+def answer(field: str, quote: str, question: str | None) -> str | None:
+    """The category a bare yes or no gives, as the answer to the Caller's question about this field; None
+    when the words say more than yes or no, or the question was about something else (or there was none)."""
+    said = bare(quote)
+    if said is None or not asks(field, question):
+        return None
+    if field == "pets":
+        return "allowed" if said == "yes" else "no_pets"
+    if field == "parking":
+        if said == "no":
+            return "none"
+        included = re.search(r"includ|come with|comes with|free", question or "", re.I)
+        return "included" if included else "available"
+    return said   # available, furnished, ac, elevator, utilities_included: yes or no
 
 
 def category(field: str, text: str) -> str | None:
@@ -304,6 +341,23 @@ _RULES: dict[str, tuple[tuple[str, str], ...]] = {
     "elevator": (("no", r"no elevator|walk[- ]up|stairs only|没有电梯"), ("yes", r"elevator|lift|电梯")),
     "step_free": (("no", r"stairs|steps up|not accessible"),
                   ("yes", r"step[- ]free|wheelchair|no stairs|ground level")),
+}
+
+# A bare answer (#139): the whole reply is a yes or a no, maybe with a filler ("Yep, they are."). "No problem"
+# and "no worries" are a yes in effect, so they aren't read as no. Only for fields asked as yes-or-no.
+_BARE_YES = re.compile(r"^(yes|yeah|yep|yup|sure|of course|absolutely|definitely|correct|they are|it is|"
+                       r"it does|they do|we do)\b[^.!?]{0,20}[.!?]?$")
+_BARE_NO = re.compile(r"^(no|nope|nah)\b(?!\s*(problem|worries|issue))[^.!?]{0,20}[.!?]?$|"
+                      r"^(not really|it isn't|it's not|they aren't|they're not|it doesn't|we don't|"
+                      r"they don't)\b[^.!?]{0,20}[.!?]?$")
+_ASKS = {
+    "available": r"available|still (on the market|open|free)|rented",
+    "pets": r"\bpets?\b|\bdogs?\b|\bcats?\b|animal",
+    "parking": r"parking|\bspots?\b|garage",
+    "furnished": r"furnish|furniture",
+    "ac": r"\bac\b|a/c|air condition",
+    "elevator": r"elevator|\blift\b",
+    "utilities_included": r"utilit|hydro|heat|water|electric|internet|wi-?fi|\bgas\b",
 }
 
 _DISPLAY = {   # "not available" is one of the words card status reads as gone (orchestrator/state.py GONE)

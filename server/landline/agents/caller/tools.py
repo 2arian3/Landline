@@ -107,6 +107,14 @@ async def record_fact(args: RecordFact, ctx: CallerContext, meta: dict) -> str:
         ctx.ungrounded += 1
         return ("Not recorded: that quote isn't what they said. Use their exact words, or ask again if you "
                 "aren't sure.")
+    value = args.value.strip().lower()
+    if any(f.field == args.field and f.value.strip().lower() == value for f in ctx.facts):
+        # The same answer again: the Caller asked twice (#139). A different answer is a correction and is
+        # recorded; the Auditor keeps the last.
+        left = ctx.brief.missing()
+        nxt = f"Don't ask about it again. Ask {left[0].ask} next." if left else \
+            "That's the checklist: thank them and end the call."
+        return f"Already recorded {args.field.replace('_', ' ')}: {args.value}. {nxt}"
     await ctx.runtime.emit(FactRecorded(**meta, call_id=ctx.call_id, field=args.field, value=args.value,
                                         quote=args.quote, turn_idx=len(ctx.said) - 1))
     ctx.facts.append(Fact(field=args.field, value=args.value, quote=args.quote, speaker="Agent heard",
