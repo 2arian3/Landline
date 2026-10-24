@@ -18,24 +18,27 @@ from websockets.exceptions import ConnectionClosed
 
 WS_URL = "wss://api.boson.ai/v1/realtime?model=higgs-realtime"
 CONNECT_TIMEOUT_S = 20
+PCMU = {"type": "audio/pcmu"}                     # Twilio: G.711 μ-law, 8 kHz
+PCM_24K = {"type": "audio/pcm", "rate": 24000}    # the browser: PCM16 little-endian mono, 24 kHz
 
 
 class HiggsError(RuntimeError):
     """Higgs refused the session or closed before it was ready."""
 
 
-def session_config(*, instructions: str, tools: list[dict[str, Any]],
-                   voice: str = "default") -> dict[str, Any]:
-    """The `session.update` that opens every session: pcmu in and out, server VAD, tools on."""
+def session_config(*, instructions: str, tools: list[dict[str, Any]], voice: str = "default",
+                   audio_format: dict[str, Any] = PCMU) -> dict[str, Any]:
+    """The `session.update` that opens every session: the same audio format in and out (pcmu for a
+    phone, 24 kHz PCM for a browser), server VAD, and tools when there are any."""
     return {"type": "session.update", "session": {
         "model": "higgs-realtime",
         "instructions": instructions,
         "output_modalities": ["audio"],
         "audio": {
-            "input": {"format": {"type": "audio/pcmu"},
+            "input": {"format": dict(audio_format),
                       "transcription": {"model": "higgs-stt-3.1"},
                       "turn_detection": {"type": "server_vad"}},
-            "output": {"format": {"type": "audio/pcmu"}, "voice": voice},
+            "output": {"format": dict(audio_format), "voice": voice},
         },
         "tools": tools,
         "tool_choice": "auto" if tools else "none",

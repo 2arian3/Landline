@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from landline.api import twilio
+from landline.api import browser_audio, twilio
 from landline.api.demo import DemoSessions
 from landline.api.judge import JudgeLines, StartLimit
 from landline.api.routes import router
@@ -70,6 +70,7 @@ def create_app(settings: Settings | None = None, catalogue: Catalogue | None = N
     )
     app.include_router(router)
     app.include_router(twilio.router)
+    app.include_router(browser_audio.router)
     return app
 
 
