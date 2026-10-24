@@ -180,6 +180,7 @@ Open http://localhost:3000/?dev=1. The demo controls stand in for the voice agen
 To check the API, run `curl localhost:8000/health`. It should show `"catalogue":"postgres"` and `"listings"` around 1,000.
 
 - **No Docker?** Skip `db-up`, `db-migrate` and `data`, and leave `DATABASE_URL` commented out. `make dev` then falls back to the latest scrape, and after that to `web/lib/fixtures/listings.json` (400 listings, `"catalogue":"fixture"`), so the demo runs on any laptop.
+- **Talking to it locally** on http://localhost:3000/try needs a Boson key: set `BOSON_API_KEY` and `JUDGE_AUDIO_READY=1` in `.env`. Its listing calls go to the simulated landlords, so no phone rings.
 - `make data` also rewrites `web/lib/fixtures/listings.json`. Commit that file only on purpose.
 - `make test` runs the Python tests, the web typecheck and the web tests with no keys, phones or network. Without a database, the tests that need Postgres are skipped.
 

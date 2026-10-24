@@ -42,6 +42,14 @@ def test_health_and_catalogue():
         assert {p["listing_id"] for p in points} == {"t:1", "t:2", "t:3", "t:4"}
 
 
+def test_health_says_higgs_is_ready_with_a_key_before_any_call():
+    cat = Catalogue([_listing(1, 2400, 1)], "test")
+    settings = Settings(database_url=None, web_url="http://localhost:3000", transport="stub",
+                        boson_api_key="k")
+    with TestClient(create_app(settings, cat)) as c:
+        assert c.get("/health").json()["higgs"] == "ready (no call since restart)"
+
+
 def test_health_counts_sessions_and_reports_higgs():
     with _client() as c:
         h = c.get("/health").json()
