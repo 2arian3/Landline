@@ -255,6 +255,20 @@ async def test_a_call_that_never_ends_is_cut_at_the_deadline_and_hung_up():
     assert result == "timeout" and twilio_api.hung_up == ["CA1"] and calls.live == {}
 
 
+async def test_a_call_cut_before_anyone_answers_leaves_no_task_behind():
+    async def converse(dial, transport, higgs=None):
+        return CallResult("done")
+
+    async def prepare(dial):
+        return object()
+    converse.prepare = prepare   # a Caller that opens Higgs early, so place() waits for the answer
+    before = asyncio.all_tasks()
+    runner = TwilioRunner(_settings(), OutboundCalls(), client=FakeTwilio().client(), converse=converse)
+    assert await _place_with_deadline(runner, 0.05) == "timeout"   # nobody answers, no status comes
+    await asyncio.sleep(0)
+    assert [t for t in asyncio.all_tasks() - before if not t.done()] == []
+
+
 async def _place_with_deadline(runner, seconds):
     try:
         async with asyncio.timeout(seconds):
