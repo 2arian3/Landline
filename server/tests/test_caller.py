@@ -445,3 +445,17 @@ def test_a_time_alone_answers_the_renters_question_but_a_day_and_a_time_doesnt()
     assert next(i for i in b.items if i.key == "q1").done
     b.covered("other", "Thursday at 6:30 pm")               # a viewing time, which answers neither
     assert not next(i for i in b.items if i.key == "q2").done
+
+
+async def test_record_fact_says_an_answer_is_already_recorded_and_moves_on():
+    ctx = await _ctx(_plan(pets=["dog"]), said=("Yes.", "Yes.", "No."))   # pets asked: a renter with a dog
+    pets = next(i for i in ctx.brief.items if "pets" in i.fields)
+    first = await _say(ctx, "record_fact", {"field": "pets", "value": "yes", "quote": "Yes."})
+    assert first.startswith("Recorded pets: yes.") and pets.done
+    again = await _say(ctx, "record_fact", {"field": "pets", "value": "yes", "quote": "Yes."}, 2)
+    assert again.startswith("Already recorded pets: yes. Don't ask about it again.")
+    assert pets.ask not in again   # the next item, not pets again (#139)
+    assert len(ctx.facts) == 1 and len(ctx.runtime.state(ctx.session_id).heard["t:1"]) == 1
+    # A different answer is a correction: recorded, and the Auditor keeps the last one.
+    changed = await _say(ctx, "record_fact", {"field": "pets", "value": "no", "quote": "No."}, 3)
+    assert changed.startswith("Recorded pets: no.") and len(ctx.facts) == 2
