@@ -54,7 +54,8 @@ async def test_too_dark_on_the_focused_card_sinks_darker_units():
     await rt.emit(ListingFocused(session_id=SID, at=NOW, idem_key=f"{SID}:focus", listing_id="t:1",
                                  origin="ui"))
     after = await _react(rt, "t:1", "dislike", "too dark")   # a tap on the page: a reason, no attribute
-    assert _order(after) == ["t:3", "t:2", "t:1", "t:4"]      # the brightest rises; both dark ones sink
+    # The brightest rises, both dark ones sink, and the one called too dark no longer counts its light.
+    assert _order(after) == ["t:3", "t:2", "t:4", "t:1"]
     card = next(c for c in after.board if c.listing_id == "t:1")
     assert card.reaction == "too dark"
     assert after.agent_says == "3 Feedback St moves to the top. 2 Feedback St drops to second."
@@ -84,6 +85,36 @@ async def test_too_far_tightens_distance_and_too_small_raises_the_size_wanted():
     await _react(rt, "t:1", "dislike", "a bit far from work", key="f3")
     adj = adjustments(rt.state(SID), rt.catalogue)
     assert adj.boosts == {"size": 1.0, "location": 1.0} and adj.decay_km == 1.8
+
+
+async def test_a_dislike_with_no_reason_takes_the_card_off_the_top():
+    # "Just not for me": no feature to move, so the card itself drops, and no weight changes.
+    rt = await _session([_listing(1, 0.5, rent=1400), _listing(2, 0.5, rent=1450),
+                         _listing(3, 0.5, rent=1500)])
+    assert _order(rt.get(SID)) == ["t:1", "t:2", "t:3"]
+    after = await _react(rt, "t:1", "dislike", "just not for me")
+    assert _order(after) == ["t:2", "t:3", "t:1"]
+    adj = adjustments(rt.state(SID), rt.catalogue)
+    assert adj.disliked == {"t:1": None} and adj.boosts == {}
+
+
+async def test_too_small_on_a_unit_whose_size_is_unknown_still_drops_it_and_keeps_it_shown():
+    # Nothing to zero for its size, so it takes the flat penalty; the board still explains it.
+    rt = await _session([_listing(1, 0.5, rent=1400, sqft=None)] +
+                        [_listing(n, 0.5, rent=1400 + 50 * n, sqft=600) for n in range(2, 9)])
+    assert _order(rt.get(SID))[0] == "t:1"
+    after = await _react(rt, "t:1", "dislike", "too small")
+    assert _order(after)[-1] == "t:1"   # last of eight, so below the top six, and still on the board
+
+
+async def test_too_expensive_centres_the_cost_curve_on_that_price_but_keeps_the_budget():
+    rt = await _session([_listing(1, 0.5, rent=2500), _listing(2, 0.5, rent=2000),
+                         _listing(3, 0.5, rent=3200)])
+    await _react(rt, "t:1", "dislike", "too expensive")
+    adj = adjustments(rt.state(SID), rt.catalogue)
+    assert adj.cost_budget == 2500 and adj.boosts == {"cost": 1.0}
+    assert _order(rt.get(SID))[0] == "t:2"
+    assert "t:3" in _order(rt.get(SID))   # over that price but inside the stated $3,000 + 10%: still shown
 
 
 async def test_needing_parking_makes_it_a_must_have():

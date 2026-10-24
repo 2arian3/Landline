@@ -6,13 +6,17 @@ board can be rebuilt from the stored state at any time and a changed mind replac
 | "too dark"      | light     | light +1, so darker units (a basement is ≤ 0.25) sink         |
 | "too far"       | location  | location +1, and distance counts sooner (2.5 → 1.8 km)       |
 | "too small"     | size      | size +1, and the size wanted is that unit's × 1.15           |
-| "too expensive" | cost      | cost +1; the budget stays as said                            |
+| "too expensive" | cost      | cost +1, and the cost curve centres on that place's price    |
 | "I need parking"| parking   | parking becomes a must-have                                  |
 | "love this one" | —         | its two strongest features get +0.5                          |
 
-A dislike or a reject with a reason does the same; a reject also takes the place off the board. Weights are
-capped at 5 (scoring/weights.py). The Concierge passes the attribute; a tap on the page passes only the
-reason, so the reason's words decide it.
+A dislike or a reject with a reason does the same; a reject also takes the place off the board. The budget
+filter always keeps the budget as said. A disliked card never stays first. With a reason, the feature it
+was faulted on counts as 0 for it, so "too dark" takes it off the top even when it led by a lot, and only
+cards that are better on that feature pass it; with no reason, or one whose feature is unweighted or
+unknown for that card, it loses DISLIKED_PENALTY points (scoring/rank.py). Weights
+are capped at 5 (scoring/weights.py). The Concierge passes the attribute; a tap on the page passes only
+the reason, so the reason's words decide it.
 """
 from __future__ import annotations
 
@@ -45,9 +49,11 @@ class Adjustments:
     boosts: dict[str, float] = field(default_factory=dict)
     decay_km: float | None = None
     desired_sqft: int | None = None
+    cost_budget: int | None = None   # the cheapest monthly cost the renter called too expensive
     must_have: list[str] = field(default_factory=list)
     rejected: set[str] = field(default_factory=set)
     liked: list[str] = field(default_factory=list)
+    disliked: dict[str, str | None] = field(default_factory=dict)   # card → the feature it was faulted on
 
 
 def attribute_of(attribute: str | None, reason: str | None) -> str | None:
@@ -69,14 +75,19 @@ def adjustments(state: SessionState, catalogue: Catalogue) -> Adjustments:
         if said.reaction == "reject":
             adj.rejected.add(lid)
         attr = attribute_of(said.attribute, said.reason)
+        if said.reaction == "dislike":
+            adj.disliked[lid] = attr if attr != "parking" else None
         if attr == "parking":
             adj.must_have.append("parking")
         elif attr:
             boosts[attr] += STEP
+        x = catalogue.by_id.get(lid)
         if attr == "location":
             adj.decay_km = TIGHTER_KM
-        if attr == "size" and (x := catalogue.by_id.get(lid)) and x.sqft:
+        if attr == "size" and x and x.sqft:
             adj.desired_sqft = max(adj.desired_sqft or 0, round(x.sqft * SIZE_UP))
+        if attr == "cost" and x:
+            adj.cost_budget = min(adj.cost_budget or x.monthly_cost, x.monthly_cost)
     adj.boosts = dict(boosts)
     return adj
 
@@ -94,7 +105,8 @@ def ranked(state: SessionState, catalogue: Catalogue, matrix: FeatureMatrix, sta
 
     def run(boosts: dict[str, float]):
         return rank(matrix, prefs, weights=weights_for(prefs, boosts), previous=state.board, status=status,
-                    rejected=adj.rejected, desired_sqft=adj.desired_sqft, overrides=overrides, **extra)
+                    rejected=adj.rejected, desired_sqft=adj.desired_sqft, cost_budget=adj.cost_budget,
+                    disliked=adj.disliked, overrides=overrides, **extra)
 
     ranking = run(adj.boosts)
     loved = [lid for lid in adj.liked if lid in ranking.scores]

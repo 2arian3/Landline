@@ -27,6 +27,7 @@ UNKNOWN = 0.5            # an unknown value scores neutral and is never a reason
 CITED = 0.1              # a reason needs u ≥ 0.6, a watch-out u ≤ 0.4
 VERIFIED_BONUS = 7.0     # on the 100-point scale
 SUSPECT_PENALTY = 25.0
+DISLIKED_PENALTY = 10.0  # a card disliked with no reason (O-04): more than a confirming call is worth
 LOCATION_DECAY_KM = 2.5  # feedback "too far" tightens this to 1.8 (O-04)
 NEXT_DOOR = 0.6          # a neighbourhood touching a named one (D-05)
 AREA_DECAY_KM = 2.0      # beyond that, from the named neighbourhood's middle
@@ -84,21 +85,28 @@ def rank(matrix: FeatureMatrix, prefs: Preferences, *, weights: dict[str, float]
          previous: list[str] | tuple[str, ...] = (), rejected: set[str] | frozenset[str] = frozenset(),
          status: dict[str, CardStatus] | None = None, overrides: dict[str, dict[str, Any]] | None = None,
          desired_sqft: int | None = None, decay_km: float = LOCATION_DECAY_KM, today: date | None = None,
+         cost_budget: int | None = None, disliked: dict[str, str | None] | None = None,
          keep_all: bool = False) -> Ranking:
     """Rank the catalogue for one renter.
 
     `previous` is the last board order (for ties), `rejected` the listings the renter turned down,
     `status` each card's call status, and `overrides` values calls found, by matrix column name
     (`{"livrent:1": {"monthly_cost": 2180}}`); they replace the listing's and count as call evidence.
-    `desired_sqft` and `decay_km` are where feedback (O-04) tightens size and distance. `keep_all`
-    skips the hard filters, to explain one card whatever its fit.
+    `desired_sqft`, `decay_km` and `cost_budget` are where feedback (O-04) tightens size, distance and
+    cost; `cost_budget` moves only the cost curve, and the budget filter keeps the stated budget.
+    `disliked` maps each card the renter disliked to the feature they faulted it on, or None. Such a card
+    never stays first. When the feature is weighted and its value known for that card, it counts as 0
+    for it; otherwise the card loses DISLIKED_PENALTY points. `keep_all` skips the hard filters, to explain
+    one card whatever its fit.
     """
     status = status or {}
+    disliked = disliked or {}
     weights = weights if weights is not None else weights_for(prefs, today=today)
-    ctx = _Context(matrix, prefs, weights, overrides or {}, desired_sqft, decay_km, today)
+    ctx = _Context(matrix, prefs, weights, overrides or {}, desired_sqft, decay_km, today, cost_budget)
     if "location" in weights and not ctx.located():
         # Areas that name nothing would make location a constant that only flattens every score.
         weights = ctx.weights = {f: w for f, w in weights.items() if f != "location"}
+    ctx.fault(disliked)
     rows = list(range(len(matrix))) if keep_all else ctx.passing(rejected, status)
 
     # Weighted sum over the whole matrix from cached columns, then the passing rows once. A column that
@@ -112,11 +120,15 @@ def rank(matrix: FeatureMatrix, prefs: Preferences, *, weights: dict[str, float]
             acc = [a + w * v for a, v in zip(acc, scored, strict=True)]
         else:
             constant += w * same
-    for i in ctx.overridden:
+    for i in ctx.overridden | set(ctx.faults):
         acc[i] = sum(w * ctx.scored(f, [i])[0] for f, w in weights.items()) - constant
     k = 100 / total if total else 0.0
     ids = [matrix.ids[i] for i in rows]
     score = [(acc[i] + constant) * k for i in rows] if total else [50.0] * len(rows)
+    if disliked:
+        for j, lid in enumerate(ids):
+            if lid in disliked and matrix.index[lid] not in ctx.faults:
+                score[j] -= DISLIKED_PENALTY
     if status:
         for j, lid in enumerate(ids):
             st = status.get(lid)
@@ -144,6 +156,11 @@ def rank(matrix: FeatureMatrix, prefs: Preferences, *, weights: dict[str, float]
             if first:
                 order.remove(first)
                 order.insert(0, first)
+    if disliked and order and order[0] in disliked and status.get(order[0]) != "booked":
+        first = next((lid for lid in order if lid not in disliked and status.get(lid) != "suspect"), None)
+        if first:
+            order.remove(first)
+            order.insert(0, first)
     return Ranking(order, ids, score, ctx)
 
 
@@ -157,16 +174,18 @@ def explain(listing: Listing, prefs: Preferences, weights: dict[str, float] | No
 
 
 class _Context:
-    """One ranking's inputs, with the columns calls have overridden."""
+    """One ranking's inputs, with the columns calls have overridden and the features the renter faulted."""
 
     def __init__(self, matrix: FeatureMatrix, prefs: Preferences, weights: dict[str, float],
                  overrides: dict[str, dict[str, Any]], desired_sqft: int | None, decay_km: float,
-                 today: date | None):
+                 today: date | None, cost_budget: int | None = None):
         self.matrix, self.prefs, self.weights = matrix, prefs, weights
         self.overrides = {lid: vals for lid, vals in overrides.items() if lid in matrix.index}
         self.overridden = {matrix.index[lid] for lid in self.overrides}
+        self.faults: dict[int, str] = {}   # row → the feature the renter faulted it on (see `fault`)
         self.desired_sqft, self.decay_km = desired_sqft, decay_km
-        self.budget = prefs.max_monthly
+        self.budget = prefs.max_monthly   # what the filter and the card's words use
+        self.cost_budget = min(self.budget, cost_budget) if self.budget and cost_budget else self.budget
         self.species = u.species(prefs.pets)
         self.wanted = move_in_date(prefs.move_in, today)
         resolved = [a for a in prefs.anchors if a.lat is not None and a.lng is not None]
@@ -189,6 +208,14 @@ class _Context:
                     base[i] = value
             self._cols[name] = base
         return self._cols[name]
+
+    def fault(self, disliked: dict[str, str | None]) -> None:
+        """The renter's own verdict on a card ("too dark") replaces our estimate of that feature for it,
+        where there is one to replace: the feature is weighted and its value known."""
+        for lid, f in disliked.items():
+            i = self.matrix.index.get(lid)
+            if f in self.weights and i is not None and self._compute(f, [i], self.col)[0] is not None:
+                self.faults[i] = f
 
     # Filters (docs/SCORING.md §1)
 
@@ -240,9 +267,11 @@ class _Context:
         return self._patch(f, rows, out, scored=True)
 
     def _patch(self, f: str, rows: list[int], out: list, scored: bool) -> list:
-        if self.overridden:
+        if self.overridden or self.faults:
             for pos, i in enumerate(rows):
-                if i in self.overridden:
+                if self.faults.get(i) == f:
+                    out[pos] = 0.0
+                elif i in self.overridden:
                     v = self._compute(f, [i], self.col)[0]
                     out[pos] = UNKNOWN if scored and v is None else v
         return out
@@ -263,7 +292,7 @@ class _Context:
     def _params(self, f: str) -> tuple:
         """What besides the catalogue feature `f` depends on: the cache key."""
         return {
-            "cost": (self.budget,),
+            "cost": (self.cost_budget,),
             "location": (self.anchor_key, self.areas, self.decay_km),
             "size": (self.desired_sqft,),
             "pets": (self.species,),
@@ -272,7 +301,7 @@ class _Context:
 
     def _compute(self, f: str, rows, col: Callable[[str], list]) -> list[float | None]:
         if f == "cost":
-            c, b = col("monthly_cost"), self.budget
+            c, b = col("monthly_cost"), self.cost_budget
             return [u.cost(c[i], b) for i in rows] if b else [None] * len(rows)
         if f == "location":
             return self._location(rows)

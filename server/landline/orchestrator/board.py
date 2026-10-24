@@ -27,6 +27,9 @@ def build(state: SessionState, version: int, catalogue: Catalogue, matrix: Featu
     requested = state.request.listing_ids if state.request else []
     called = [c.listing_id for c in state.calls.values()] + requested
     shown += [lid for lid in dict.fromkeys(called) if lid not in shown and lid in by_id]
+    # A card the renter disliked stays too, below the rest, so its "You: too dark" shows after it sinks.
+    shown += [lid for lid in matches if lid not in shown and (said := state.reactions.get(lid))
+              and said.reaction == "dislike"]
     passed = ranking.scores
     board = [_card(state, by_id[lid], n, ranking.explain(lid) if lid in passed
                    else explain(by_id[lid], state.preferences, overrides=heard.get(lid)), heard.get(lid, {}))
