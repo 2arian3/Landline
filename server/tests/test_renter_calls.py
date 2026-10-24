@@ -1,5 +1,7 @@
-"""The renter's phone call end to end, without a network: TwiML webhook → media stream → (fake) Higgs."""
+"""The renter's call end to end, without a network, both ways in: the phone (TwiML webhook → Twilio media
+stream → fake Higgs) and the browser (judge start → audio socket → fake Higgs)."""
 import asyncio
+import base64
 import re
 from dataclasses import replace
 
@@ -8,6 +10,7 @@ from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from landline.agents.concierge.prompt import GREETING
+from landline.api.browser_audio import JUDGE_AUDIO_PATH
 from landline.api.twilio import BUSY, NOT_READY
 from landline.app import create_app
 from landline.config import Settings
@@ -169,6 +172,47 @@ def test_bridge_frees_the_line_when_higgs_fails():
                 ws.receive_json()
         assert c.app.state.calls.recent[-1].end_reason == "higgs_error"
         assert c.get("/health").json()["higgs"].startswith("error")
+
+
+# ── browser audio socket ↔ Higgs ────────────────────────────────────────────
+
+def test_browser_call_streams_pcm_both_ways_and_frees_the_judge_line():
+    spoken = b"\x01\x00\x02\x00"   # PCM16 the Concierge says
+    fake = FakeHiggs(script=[
+        {"type": "response.output_audio.delta", "delta": base64.b64encode(spoken).decode()},
+        {"type": "input_audio_buffer.speech_started"},
+    ])
+    with _client(judge_audio_ready=True) as c:
+        c.app.state.connect_higgs = fake.connect
+        start = c.post("/api/judge/start").json()
+        with c.websocket_connect(start["ws_url"]) as ws:
+            assert ws.receive_bytes() == spoken
+            assert ws.receive_json() == {"type": "clear"}
+            ws.send_bytes(b"\x03\x00\x04\x00")   # the judge's microphone
+        session = fake.session["session"]
+        pcm = {"type": "audio/pcm", "rate": 24000}
+        assert session["audio"]["input"]["format"] == pcm and session["audio"]["output"]["format"] == pcm
+        assert fake.sent == [
+            {"type": "response.create", "response": {"instructions": GREETING}},
+            {"type": "input_audio_buffer.append", "audio": base64.b64encode(b"\x03\x00\x04\x00").decode()},
+        ]
+        ended = c.app.state.calls.recent[-1]
+        assert (ended.session_id, ended.end_reason) == (start["session_id"], "hangup")
+        assert start["session_id"] not in c.app.state.judges.open and fake.closed
+
+
+def test_browser_socket_refuses_a_session_without_a_judge_line():
+    fake = FakeHiggs()
+    with _client(judge_audio_ready=True) as c:
+        c.app.state.connect_higgs = fake.connect
+        with c.websocket_connect("/api/judge/s_notstarted/audio") as ws:
+            with pytest.raises(WebSocketDisconnect) as closed:
+                ws.receive_bytes()
+        assert closed.value.code == 1008 and fake.session is None
+
+
+def test_judge_start_hands_out_the_socket_this_route_serves():
+    assert Settings(database_url=None, web_url="", transport="stub").judge_ws_path == JUDGE_AUDIO_PATH
 
 
 # ── pieces ──────────────────────────────────────────────────────────────────
