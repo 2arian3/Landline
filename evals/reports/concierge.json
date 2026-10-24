@@ -1,6 +1,376 @@
 {
  "tune": {
   "current": {
+   "at": "2026-10-24T14:32:06+00:00",
+   "sha": "e738796",
+   "runs": 3,
+   "mode": "live text",
+   "catalogue": "listings.json (400 listings)",
+   "traces": "evals/runs/20261024T142942Z",
+   "cases": 21,
+   "run_count": 63,
+   "cases_all_runs": 6,
+   "run_pass_rate": 0.6190476190476191,
+   "on_time": [
+    217,
+    228
+   ],
+   "checks": {
+    "reaction": [
+     17,
+     18
+    ],
+    "focus": [
+     12,
+     12
+    ],
+    "ended": [
+     47,
+     62
+    ],
+    "ended.goodbye": [
+     47,
+     62
+    ],
+    "prefs": [
+     145,
+     153
+    ],
+    "replies_in": [
+     12,
+     15
+    ],
+    "no_request": [
+     30,
+     30
+    ],
+    "placed": [
+     6,
+     6
+    ],
+    "near": [
+     6,
+     6
+    ],
+    "request": [
+     12,
+     12
+    ],
+    "case": [
+     0,
+     1
+    ],
+    "request.listings": [
+     11,
+     11
+    ],
+    "request.availability": [
+     11,
+     11
+    ],
+    "request.may_book": [
+     11,
+     11
+    ],
+    "request.question": [
+     2,
+     2
+    ],
+    "may_book": [
+     6,
+     6
+    ],
+    "area": [
+     3,
+     3
+    ],
+    "replies_avoid": [
+     30,
+     30
+    ],
+    "greeting.says": [
+     2,
+     6
+    ],
+    "greeting.avoids": [
+     3,
+     3
+    ],
+    "no_reaction": [
+     3,
+     3
+    ]
+   },
+   "hygiene": {
+    "long_turns": 170,
+    "claims_without_tool": 13,
+    "ids_read": 0,
+    "markdown": 0,
+    "not_caught": 0,
+    "which": 9,
+    "unknown_tool": 0,
+    "broken": 0,
+    "higgs_errors": 0
+   },
+   "agent_turns": 315,
+   "ms_p50": 860,
+   "ms_p90": 1234,
+   "ends": {
+    "end_session": 48,
+    "script_done": 15
+   },
+   "per_case": {
+    "ambiguous-street-then-rank": {
+     "passed": 3,
+     "runs": 3,
+     "failing": []
+    },
+    "arabic-renter": {
+     "passed": 2,
+     "runs": 3,
+     "failing": [
+      [
+       "final.ended",
+       1
+      ],
+      [
+       "final.ended.goodbye",
+       1
+      ]
+     ]
+    },
+    "area-queens": {
+     "passed": 1,
+     "runs": 3,
+     "failing": [
+      [
+       "final.ended",
+       2
+      ],
+      [
+       "final.ended.goodbye",
+       2
+      ]
+     ]
+    },
+    "area-street-no-type": {
+     "passed": 3,
+     "runs": 3,
+     "failing": []
+    },
+    "budget-beds-goodbye": {
+     "passed": 1,
+     "runs": 3,
+     "failing": [
+      [
+       "final.prefs.max_monthly",
+       1
+      ],
+      [
+       "final.prefs.min_beds",
+       1
+      ],
+      [
+       "final.prefs.move_in",
+       1
+      ]
+     ]
+    },
+    "call-named-no-book-parking": {
+     "passed": 1,
+     "runs": 3,
+     "failing": [
+      [
+       "final.case",
+       1
+      ],
+      [
+       "final.ended",
+       1
+      ],
+      [
+       "final.ended.goodbye",
+       1
+      ]
+     ]
+    },
+    "call-top3-saturday-book": {
+     "passed": 2,
+     "runs": 3,
+     "failing": [
+      [
+       "final.ended",
+       1
+      ],
+      [
+       "final.ended.goodbye",
+       1
+      ]
+     ]
+    },
+    "change-mind-budget": {
+     "passed": 2,
+     "runs": 3,
+     "failing": [
+      [
+       "final.ended",
+       1
+      ],
+      [
+       "final.ended.goodbye",
+       1
+      ]
+     ]
+    },
+    "farsi-switch": {
+     "passed": 1,
+     "runs": 3,
+     "failing": [
+      [
+       "final.replies_in.fa",
+       2
+      ]
+     ]
+    },
+    "feedback-light-and-like": {
+     "passed": 3,
+     "runs": 3,
+     "failing": []
+    },
+    "focus-rank-street-area": {
+     "passed": 2,
+     "runs": 3,
+     "failing": [
+      [
+       "final.ended",
+       1
+      ],
+      [
+       "final.ended.goodbye",
+       1
+      ]
+     ]
+    },
+    "korean-switch": {
+     "passed": 1,
+     "runs": 3,
+     "failing": [
+      [
+       "final.ended",
+       2
+      ],
+      [
+       "final.ended.goodbye",
+       2
+      ]
+     ]
+    },
+    "like-looks-amazing-dislike-far": {
+     "passed": 2,
+     "runs": 3,
+     "failing": [
+      [
+       "final.reaction.rank:2",
+       1
+      ]
+     ]
+    },
+    "nonsense-first-line": {
+     "passed": 1,
+     "runs": 3,
+     "failing": [
+      [
+       "final.prefs.max_monthly",
+       2
+      ],
+      [
+       "final.prefs.min_beds",
+       2
+      ]
+     ]
+    },
+    "nonsense-mid-brief": {
+     "passed": 3,
+     "runs": 3,
+     "failing": []
+    },
+    "punjabi-renter": {
+     "passed": 0,
+     "runs": 3,
+     "failing": [
+      [
+       "final.ended",
+       2
+      ],
+      [
+       "final.ended.goodbye",
+       2
+      ],
+      [
+       "final.replies_in.pa",
+       1
+      ]
+     ]
+    },
+    "returning-results-ready": {
+     "passed": 1,
+     "runs": 3,
+     "failing": [
+      [
+       "final.greeting.says.Erskine",
+       2
+      ],
+      [
+       "final.greeting.says.Saturday",
+       2
+      ],
+      [
+       "final.ended",
+       1
+      ]
+     ]
+    },
+    "shared-address-ask-by-price": {
+     "passed": 3,
+     "runs": 3,
+     "failing": []
+    },
+    "shared-address-focused-then-call": {
+     "passed": 2,
+     "runs": 3,
+     "failing": [
+      [
+       "final.ended",
+       1
+      ],
+      [
+       "final.ended.goodbye",
+       1
+      ]
+     ]
+    },
+    "spanish-renter": {
+     "passed": 3,
+     "runs": 3,
+     "failing": []
+    },
+    "tap-is-not-a-like": {
+     "passed": 2,
+     "runs": 3,
+     "failing": [
+      [
+       "final.ended",
+       1
+      ],
+      [
+       "final.ended.goodbye",
+       1
+      ]
+     ]
+    }
+   }
+  },
+  "previous": {
    "at": "2026-10-24T08:42:35+00:00",
    "sha": "9ca2759",
    "runs": 3,
@@ -241,274 +611,173 @@
      "failing": []
     }
    }
-  },
-  "previous": {
-   "at": "2026-10-24T08:40:29+00:00",
-   "sha": "7db6070",
-   "runs": 3,
-   "mode": "live text",
-   "catalogue": "listings.json (400 listings)",
-   "traces": "evals/runs/20261024T083902Z",
-   "cases": 13,
-   "run_count": 39,
-   "cases_all_runs": 4,
-   "run_pass_rate": 0.5128205128205128,
-   "on_time": [
-    84,
-    99
-   ],
-   "checks": {
-    "reaction": [
-     14,
-     18
-    ],
-    "focus": [
-     12,
-     12
-    ],
-    "ended": [
-     28,
-     39
-    ],
-    "ended.goodbye": [
-     28,
-     39
-    ],
-    "prefs": [
-     42,
-     54
-    ],
-    "no_request": [
-     18,
-     18
-    ],
-    "request": [
-     12,
-     12
-    ],
-    "request.listings": [
-     11,
-     12
-    ],
-    "request.availability": [
-     12,
-     12
-    ],
-    "request.may_book": [
-     12,
-     12
-    ],
-    "request.question": [
-     3,
-     3
-    ],
-    "may_book": [
-     6,
-     6
-    ],
-    "replies_in": [
-     0,
-     3
-    ],
-    "area": [
-     3,
-     3
-    ],
-    "greeting.says": [
-     5,
-     6
-    ],
-    "greeting.avoids": [
-     3,
-     3
-    ],
-    "no_reaction": [
-     1,
-     3
-    ],
-    "replies_avoid": [
-     9,
-     15
-    ]
-   },
-   "hygiene": {
-    "long_turns": 115,
-    "claims_without_tool": 11,
-    "ids_read": 0,
-    "markdown": 0,
-    "not_caught": 0,
-    "which": 7,
-    "unknown_tool": 0,
-    "broken": 0,
-    "higgs_errors": 0
-   },
-   "agent_turns": 213,
-   "ms_p50": 906,
-   "ms_p90": 1172,
-   "ends": {
-    "end_session": 28,
-    "script_done": 11
-   },
-   "per_case": {
-    "ambiguous-street-then-rank": {
-     "passed": 3,
-     "runs": 3,
-     "failing": []
-    },
-    "budget-beds-goodbye": {
-     "passed": 2,
-     "runs": 3,
-     "failing": [
-      [
-       "final.ended",
-       1
-      ],
-      [
-       "final.ended.goodbye",
-       1
-      ]
-     ]
-    },
-    "call-named-no-book-parking": {
-     "passed": 3,
-     "runs": 3,
-     "failing": []
-    },
-    "call-top3-saturday-book": {
-     "passed": 3,
-     "runs": 3,
-     "failing": []
-    },
-    "change-mind-budget": {
-     "passed": 0,
-     "runs": 3,
-     "failing": [
-      [
-       "final.ended",
-       3
-      ],
-      [
-       "final.ended.goodbye",
-       3
-      ]
-     ]
-    },
-    "farsi-switch": {
-     "passed": 0,
-     "runs": 3,
-     "failing": [
-      [
-       "final.prefs.max_monthly",
-       3
-      ],
-      [
-       "final.prefs.min_beds",
-       3
-      ],
-      [
-       "final.prefs.pets",
-       3
-      ]
-     ]
-    },
-    "feedback-light-and-like": {
-     "passed": 2,
-     "runs": 3,
-     "failing": [
-      [
-       "final.reaction.rank:2",
-       1
-      ]
-     ]
-    },
-    "focus-rank-street-area": {
-     "passed": 0,
-     "runs": 3,
-     "failing": [
-      [
-       "final.ended",
-       3
-      ],
-      [
-       "final.ended.goodbye",
-       3
-      ]
-     ]
-    },
-    "like-looks-amazing-dislike-far": {
-     "passed": 0,
-     "runs": 3,
-     "failing": [
-      [
-       "final.reaction.rank:2",
-       3
-      ],
-      [
-       "final.ended",
-       1
-      ],
-      [
-       "final.ended.goodbye",
-       1
-      ]
-     ]
-    },
-    "returning-results-ready": {
-     "passed": 2,
-     "runs": 3,
-     "failing": [
-      [
-       "final.ended",
-       1
-      ],
-      [
-       "final.ended.goodbye",
-       1
-      ],
-      [
-       "final.greeting.says.Saturday",
-       1
-      ]
-     ]
-    },
-    "shared-address-ask-by-price": {
-     "passed": 3,
-     "runs": 3,
-     "failing": []
-    },
-    "shared-address-focused-then-call": {
-     "passed": 2,
-     "runs": 3,
-     "failing": [
-      [
-       "final.request.listings",
-       1
-      ]
-     ]
-    },
-    "tap-is-not-a-like": {
-     "passed": 0,
-     "runs": 3,
-     "failing": [
-      [
-       "final.replies_avoid.your interest",
-       3
-      ],
-      [
-       "final.replies_avoid.noted",
-       3
-      ],
-      [
-       "final.no_reaction.rank:3",
-       2
-      ]
-     ]
-    }
-   }
   }
  },
  "holdout": {
   "current": {
+   "at": "2026-10-24T14:32:06+00:00",
+   "sha": "e738796",
+   "runs": 3,
+   "mode": "live text",
+   "catalogue": "listings.json (400 listings)",
+   "traces": "evals/runs/20261024T142942Z",
+   "cases": 8,
+   "run_count": 24,
+   "cases_all_runs": 6,
+   "run_pass_rate": 0.8333333333333334,
+   "on_time": [
+    96,
+    99
+   ],
+   "checks": {
+    "prefs": [
+     72,
+     72
+    ],
+    "no_request": [
+     12,
+     12
+    ],
+    "placed": [
+     3,
+     3
+    ],
+    "near": [
+     3,
+     3
+    ],
+    "ended": [
+     24,
+     24
+    ],
+    "ended.goodbye": [
+     24,
+     24
+    ],
+    "reaction": [
+     6,
+     9
+    ],
+    "request": [
+     5,
+     6
+    ],
+    "request.listings": [
+     4,
+     5
+    ],
+    "request.availability": [
+     5,
+     5
+    ],
+    "request.may_book": [
+     5,
+     5
+    ],
+    "may_book": [
+     3,
+     3
+    ],
+    "replies_in": [
+     3,
+     3
+    ],
+    "replies_avoid": [
+     9,
+     9
+    ],
+    "focus": [
+     3,
+     3
+    ],
+    "greeting.says": [
+     3,
+     3
+    ],
+    "greeting.avoids": [
+     6,
+     6
+    ]
+   },
+   "hygiene": {
+    "long_turns": 61,
+    "claims_without_tool": 0,
+    "ids_read": 0,
+    "markdown": 0,
+    "not_caught": 0,
+    "which": 5,
+    "unknown_tool": 0,
+    "broken": 0,
+    "higgs_errors": 0
+   },
+   "agent_turns": 117,
+   "ms_p50": 875,
+   "ms_p90": 1250,
+   "ends": {
+    "end_session": 24
+   },
+   "per_case": {
+    "area-over-by-cosburn": {
+     "passed": 3,
+     "runs": 3,
+     "failing": []
+    },
+    "cat-like-call-top2-friday": {
+     "passed": 1,
+     "runs": 3,
+     "failing": [
+      [
+       "final.reaction.rank:1",
+       2
+      ]
+     ]
+    },
+    "mandarin-renter": {
+     "passed": 3,
+     "runs": 3,
+     "failing": []
+    },
+    "nonsense-then-cat": {
+     "passed": 3,
+     "runs": 3,
+     "failing": []
+    },
+    "parking-must-and-focus": {
+     "passed": 3,
+     "runs": 3,
+     "failing": []
+    },
+    "returning-calls-running": {
+     "passed": 3,
+     "runs": 3,
+     "failing": []
+    },
+    "studio-near-work": {
+     "passed": 3,
+     "runs": 3,
+     "failing": []
+    },
+    "too-expensive-then-call-default": {
+     "passed": 1,
+     "runs": 3,
+     "failing": [
+      [
+       "final.reaction.rank:1",
+       1
+      ],
+      [
+       "final.request.listings",
+       1
+      ],
+      [
+       "final.request",
+       1
+      ]
+     ]
+    }
+   }
+  },
+  "previous": {
    "at": "2026-10-24T08:42:35+00:00",
    "sha": "9ca2759",
    "runs": 3,
@@ -651,153 +920,6 @@
       ],
       [
        "final.prefs.max_monthly",
-       1
-      ]
-     ]
-    }
-   }
-  },
-  "previous": {
-   "at": "2026-10-24T08:40:29+00:00",
-   "sha": "7db6070",
-   "runs": 3,
-   "mode": "live text",
-   "catalogue": "listings.json (400 listings)",
-   "traces": "evals/runs/20261024T083902Z",
-   "cases": 6,
-   "run_count": 18,
-   "cases_all_runs": 3,
-   "run_pass_rate": 0.7777777777777778,
-   "on_time": [
-    48,
-    51
-   ],
-   "checks": {
-    "reaction": [
-     6,
-     9
-    ],
-    "request": [
-     6,
-     6
-    ],
-    "request.listings": [
-     5,
-     6
-    ],
-    "request.availability": [
-     6,
-     6
-    ],
-    "request.may_book": [
-     6,
-     6
-    ],
-    "ended": [
-     17,
-     18
-    ],
-    "ended.goodbye": [
-     17,
-     18
-    ],
-    "may_book": [
-     3,
-     3
-    ],
-    "prefs": [
-     48,
-     48
-    ],
-    "replies_in": [
-     3,
-     3
-    ],
-    "focus": [
-     3,
-     3
-    ],
-    "no_request": [
-     6,
-     6
-    ],
-    "greeting.says": [
-     3,
-     3
-    ],
-    "greeting.avoids": [
-     6,
-     6
-    ]
-   },
-   "hygiene": {
-    "long_turns": 46,
-    "claims_without_tool": 0,
-    "ids_read": 0,
-    "markdown": 0,
-    "not_caught": 0,
-    "which": 3,
-    "unknown_tool": 0,
-    "broken": 0,
-    "higgs_errors": 0
-   },
-   "agent_turns": 90,
-   "ms_p50": 921,
-   "ms_p90": 1141,
-   "ends": {
-    "end_session": 17,
-    "script_done": 1
-   },
-   "per_case": {
-    "cat-like-call-top2-friday": {
-     "passed": 2,
-     "runs": 3,
-     "failing": [
-      [
-       "final.reaction.rank:1",
-       1
-      ]
-     ]
-    },
-    "mandarin-renter": {
-     "passed": 3,
-     "runs": 3,
-     "failing": []
-    },
-    "parking-must-and-focus": {
-     "passed": 3,
-     "runs": 3,
-     "failing": []
-    },
-    "returning-calls-running": {
-     "passed": 2,
-     "runs": 3,
-     "failing": [
-      [
-       "final.ended",
-       1
-      ],
-      [
-       "final.ended.goodbye",
-       1
-      ]
-     ]
-    },
-    "studio-near-work": {
-     "passed": 3,
-     "runs": 3,
-     "failing": []
-    },
-    "too-expensive-then-call-default": {
-     "passed": 1,
-     "runs": 3,
-     "failing": [
-      [
-       "final.reaction.rank:1",
-       2
-      ],
-      [
-       "final.request.listings",
        1
       ]
      ]
