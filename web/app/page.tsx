@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { LiveBoard } from "@/components/LiveBoard";
+import { Shell } from "@/components/Shell";
 
 /**
  * The root URL opens a demo session of its own for each browser, so judges and
@@ -28,6 +29,6 @@ export default function Home() {
     setSessionId(id);
   }, []);
 
-  if (!sessionId) return <div className="fixed inset-0 bg-ground" aria-busy="true" />;
+  if (!sessionId) return <Shell />;
   return <LiveBoard sessionId={sessionId} />;
 }
