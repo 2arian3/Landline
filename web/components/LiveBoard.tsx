@@ -212,6 +212,7 @@ export function LiveBoard({
               id={selected}
               card={selectedCard}
               mark={marks[selected]}
+              call={view?.calls.findLast((c) => c.listing_id === selected)}
               results={view?.phase === "done" ? view.results : null}
               onBack={() => setSelected(null)}
               onReact={(reaction, reason) => react(selected, reaction, reason)}
