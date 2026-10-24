@@ -4,14 +4,31 @@ from __future__ import annotations
 import asyncio
 import json
 import math
+import secrets
+from datetime import UTC, datetime
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
+from landline.api.demo import PLANNED, _pinned
 from landline.api.judge import client_ip
-from landline.contracts import CataloguePoint, Listing, Preferences, SessionView
+from landline.contracts import (
+    CallsRequested,
+    CataloguePoint,
+    Event,
+    FeedbackGiven,
+    Listing,
+    ListingFocused,
+    PreferenceDelta,
+    Preferences,
+    PreferencesUpdated,
+    SessionEnded,
+    SessionStarted,
+    SessionView,
+)
+from landline.orchestrator import Refused
 
 router = APIRouter()
 HEARTBEAT_S = 5   # well inside the page's 6.5 s "Reconnecting…" threshold
@@ -26,7 +43,7 @@ def health(request: Request) -> dict:
     state = request.app.state
     cat = state.catalogue
     return {"status": "ok", "listings": len(cat.listings), "catalogue": cat.origin,
-            "sessions": len(state.sessions.views), "transport": state.settings.transport,
+            "sessions": len(state.sessions.views) + len(state.runtime), "transport": state.settings.transport,
             "higgs": state.higgs}
 
 
@@ -49,14 +66,14 @@ def listing(listing_id: str, request: Request) -> Listing:
 
 @router.get("/api/sessions/{session_id}", response_model=SessionView)
 def session(session_id: str, request: Request) -> SessionView:
-    return request.app.state.sessions.get(session_id)
+    return _store(request, session_id).get(session_id)
 
 
 @router.get("/api/sessions/{session_id}/stream")
 async def stream(session_id: str, request: Request) -> StreamingResponse:
     """Server-sent events: `{"version": n}` whenever the session changes, and a `ping` event every
     few seconds so the page can tell a quiet session from a dead connection."""
-    sessions = request.app.state.sessions
+    sessions = _store(request, session_id)
 
     async def events():
         sent = 0
@@ -83,6 +100,9 @@ class FocusBody(BaseModel):
 async def focus(session_id: str, body: FocusBody, request: Request) -> SessionView:
     if body.listing_id not in request.app.state.catalogue.by_id:
         raise HTTPException(404, "unknown listing")
+    if _live(request, session_id):
+        tap = ListingFocused(**_meta(session_id), listing_id=body.listing_id, origin="ui")
+        return await _emit(request, tap)
     return await request.app.state.sessions.update(session_id, focus=body.listing_id)
 
 
@@ -97,6 +117,9 @@ async def feedback(session_id: str, body: FeedbackBody, request: Request) -> Ses
     """CONTRACTS.md: {listing_id, reaction, reason?} -> FeedbackGiven. The demo store shows it on the card."""
     if body.listing_id not in request.app.state.catalogue.by_id:
         raise HTTPException(404, "unknown listing")
+    if _live(request, session_id):
+        return await _emit(request, FeedbackGiven(**_meta(session_id), listing_id=body.listing_id,
+                                                  reaction=body.reaction, reason=body.reason))
     return await request.app.state.sessions.react(session_id, body.listing_id, body.reaction, body.reason)
 
 
@@ -129,19 +152,28 @@ async def call_turns(call_id: str, request: Request, after: int = -1) -> list[Tu
 async def plan_calls(session_id: str, request: Request) -> SessionView:
     """Demo hook: stands in for the Concierge's call_listings until the voice layer exists. The top four
     places with a pin become the plan; nothing dials until the renter hangs up."""
+    if _live(request, session_id):
+        top = [c.listing_id for c in request.app.state.runtime.get(session_id).board if _pinned(c)][:PLANNED]
+        if not top:
+            raise HTTPException(409, "nothing on the board to call")
+        return await _emit(request, CallsRequested(**_meta(session_id), listing_ids=top))
     return await request.app.state.sessions.plan_top(session_id)
 
 
 @router.post("/api/sessions/{session_id}/hang-up", response_model=SessionView)
 async def hang_up(session_id: str, request: Request) -> SessionView:
     """Demo hook: stands in for the renter hanging up (SessionEnded) until the voice layer exists. The
-    planned calls queue, ring and finish, scripted, and the session ends with its results."""
+    planned calls queue, ring and finish, scripted, and the session ends with its results. A runtime
+    session goes on to `calling` with its plan, and waits there for the Dispatcher (A-06)."""
+    if _live(request, session_id):
+        return await _emit(request, SessionEnded(**_meta(session_id), reason="hangup"))
     return await request.app.state.sessions.hang_up(session_id)
 
 
 @router.post("/api/sessions/{session_id}/reset", response_model=SessionView)
 async def reset(session_id: str, request: Request) -> SessionView:
     """Demo hook: back to an open brief with nothing planned, to run the demo again."""
+    _demo_only(request, session_id)
     return await request.app.state.sessions.reset(session_id)
 
 
@@ -155,12 +187,17 @@ async def returning(session_id: str, body: ReturningBody, request: Request) -> S
     """Demo hook: marks the session as a returning renter until profiles (O-05) recognise the phone
     number. The panel then opens with "Welcome back, <name>."."""
     name = (body.name or "").strip() or None
+    _demo_only(request, session_id)
     return await request.app.state.sessions.welcome_back(session_id, body.returning, name)
 
 
 @router.post("/api/sessions/{session_id}/preferences", response_model=SessionView)
 async def preferences(session_id: str, body: Preferences, request: Request) -> SessionView:
-    """Demo hook: stands in for the Concierge's update_preferences until the voice layer exists."""
+    """Demo hook: stands in for the Concierge's update_preferences until the voice layer exists. For a
+    runtime session the fields sent are the delta."""
+    if _live(request, session_id):
+        delta = PreferenceDelta.model_validate(body.model_dump(exclude_unset=True))
+        return await _emit(request, PreferencesUpdated(**_meta(session_id), delta=delta))
     return await request.app.state.sessions.update(session_id, prefs=body)
 
 
@@ -188,9 +225,38 @@ async def judge_start(request: Request) -> JudgeStart | JSONResponse:
     if session_id is None:
         return _refused(503, "busy", BUSY, 60)
     state.judge_limit.record(ip)
-    state.sessions.get(session_id)   # SessionStarted, until O-02's runtime owns it
+    await state.runtime.start(SessionStarted(**_meta(session_id, "started"), channel="judge"))
     ws_url = state.settings.judge_ws_path.format(session_id=session_id)
     return JudgeStart(session_id=session_id, ws_url=ws_url)
+
+
+def _live(request: Request, session_id: str) -> bool:
+    """A session the runtime (O-02) owns: one that voice or judge mode started. Any other id is a demo
+    session, which the demo store creates on first sight. Each session has exactly one writer."""
+    return request.app.state.runtime.has(session_id)
+
+
+def _store(request: Request, session_id: str):
+    state = request.app.state
+    return state.runtime if _live(request, session_id) else state.sessions
+
+
+def _demo_only(request: Request, session_id: str) -> None:
+    if _live(request, session_id):
+        raise HTTPException(409, "only demo sessions can do that")
+
+
+def _meta(session_id: str, key: str | None = None) -> dict:
+    """What every event carries. A tap is a new event each time, so its idem_key is minted here."""
+    return {"session_id": session_id, "at": datetime.now(UTC),
+            "idem_key": f"{session_id}:{key or 'ui:' + secrets.token_urlsafe(8)}"}
+
+
+async def _emit(request: Request, event: Event) -> SessionView:
+    try:
+        return await request.app.state.runtime.emit(event)
+    except Refused as e:
+        raise HTTPException(409, str(e)) from e
 
 
 def _refused(status: int, reason: str, message: str, retry_after_s: int | None = None) -> JSONResponse:
