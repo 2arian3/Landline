@@ -42,7 +42,7 @@ from landline.orchestrator import SessionRuntime
 from landline.voice import twilio
 from landline.voice.calls import RenterCall, RenterCalls
 from landline.voice.higgs import PCMU, ConnectHiggs, session_config
-from landline.voice.line import Line, Lines
+from landline.voice.line import Item, Line, Lines
 from landline.voice.recorder import CallRecorder, Chunk, Placed, format_of
 from landline.voice.sms import Texter
 
@@ -338,7 +338,7 @@ async def _higgs_to_renter(higgs: Any, transport: Transport, ctx: tools.ToolCont
         elif kind == "input_audio_buffer.speech_stopped":
             recorder.speech_stopped(event.get("item_id"), event.get("audio_end_ms"))
         elif kind == "response.function_call_arguments.done":
-            turn.tool_called()
+            turn.tool_called(str(event.get("name", "")))
             await run_tool(higgs, event, ctx, spoke=spoke)
         elif kind == "response.done":
             if ends_call(event, ctx):
@@ -358,7 +358,22 @@ async def _higgs_to_renter(higgs: Any, transport: Transport, ctx: tools.ToolCont
             task = asyncio.create_task(backstop.catch_up(reader, said, ctx))   # off the voice path
             _CATCHING.add(task)   # held until done, even after the call ends
             task.add_done_callback(_CATCHING.discard)
+        if not ctx.hang_up and (asked := turn.call_line()) is not None:
+            task = asyncio.create_task(_calls_asked(asked, ctx, line))
+            _CATCHING.add(task)
+            task.add_done_callback(_CATCHING.discard)
     return "higgs_closed"
+
+
+async def _calls_asked(said: str, ctx: tools.ToolContext, line: Line | None) -> None:
+    """The renter asked for calls or a viewing and the Concierge ran no call_listings (#127): code records
+    the plan, and the Concierge hears call_listings' reply between turns, to read it back."""
+    try:
+        reply = await backstop.catch_up_calls(said, ctx)
+        if reply is not None and line is not None:
+            await line.push(Item("plan", f"{backstop.PLANNED} {reply}", line.clock()))
+    except Exception:
+        log.exception("call %s: the calls the renter asked for couldn't be recorded", ctx.call_id)
 
 
 def _said(ctx: tools.ToolContext, recorder: CallRecorder, speaker: str, event: dict[str, Any]) -> None:

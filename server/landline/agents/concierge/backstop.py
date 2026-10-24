@@ -1,5 +1,6 @@
-"""The one gap code fills for the Concierge (A-04): a renter line in another writing system that the
-Concierge answered without a tool.
+"""The gaps code fills for the Concierge (A-04): a renter line in another writing system that the
+Concierge answered without a tool, and a renter asking for calls or a viewing that the Concierge answered
+without call_listings (#127, at the end of this file).
 
 Seen in the eval (docs/EVAL_FINDINGS.md): after a renter switches to Korean or Farsi, the Concierge answers
 in their language ("a two-bedroom up to $3,000, got it") but calls no tool, so nothing is saved and the map
@@ -15,6 +16,7 @@ import asyncio
 import itertools
 import json
 import logging
+import re
 import unicodedata
 from typing import Any
 
@@ -90,7 +92,8 @@ class Turn:
 
     def _reset(self) -> None:
         self.heard: str | None = None
-        self.replied = self.tooled = self.answered = self.taken = False
+        self.replied = self.tooled = self.answered = self.taken = self.call_taken = False
+        self.tools: set[str] = set()
 
     def speech_started(self) -> None:
         self._reset()
@@ -98,8 +101,9 @@ class Turn:
     def response_created(self) -> None:
         self.replied = True
 
-    def tool_called(self) -> None:
+    def tool_called(self, name: str = "") -> None:
         self.tooled = True
+        self.tools.add(name)
 
     def response_done(self, event: dict[str, Any]) -> None:
         response = event.get("response") or {}
@@ -116,3 +120,92 @@ class Turn:
             self.taken = True
             return self.heard
         return None
+
+    def call_line(self) -> str | None:
+        """The renter's line when it asked for calls or a viewing and the reply ran no call_listings, once."""
+        if (self.heard and self.answered and "call_listings" not in self.tools and not self.call_taken
+                and asks_for_calls(self.heard)):
+            self.call_taken = True
+            return self.heard
+        return None
+
+
+# ── Calls the renter asked for (#127) ───────────────────────────────────────
+#
+# On a real call the renter said "Can you call the first one? I really like it." and the Concierge answered
+# "I can't call the landlord directly", with no call_listings. The prompt now says Landline makes the calls;
+# this is the catch for when the model still doesn't. Only English, and only lines that plainly ask for a
+# call, a viewing or availability about listings: no model, so nothing is guessed. call_listings' own
+# handler records the plan (with its validation and events), and the Concierge reads its reply back.
+
+PLANNED = "[calls recorded]"   # the note the Concierge gets, through the Line, with call_listings' reply
+_WORD_NUMBERS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6}
+_ORDINALS = {"first": 1, "1st": 1, "second": 2, "2nd": 2, "third": 3, "3rd": 3, "fourth": 4, "4th": 4,
+             "fifth": 5, "5th": 5, "sixth": 6, "6th": 6}
+_ORD = r"(?:first|second|third|fourth|fifth|sixth|last|1st|2nd|3rd|4th|5th|6th)"
+_TARGET = (rf"(?:them|those|these|both|all\s+of\s+them|all\s+three|number\s+\w+|#\s?\d"
+           rf"|(?:this|that)\s+(?:one|place|listing|landlord|building)"
+           rf"|the\s+(?:{_ORD}|top\s+\w+|landlords?|agents?|owners?|listings?|places?|buildings?|ones?)"
+           rf"|{_ORD}\s+one)")
+_CALL = re.compile(rf"\b(?:call|phone|ring|contact|reach(?:\s+out\s+to)?)\s+(?:up\s+)?{_TARGET}", re.I)
+_VISIT = re.compile(r"\b(?:set(?:\s+up)?|book|arrange|schedule|organi[sz]e|get)\b[^.?!]{0,30}?"
+                    r"\b(?:visit|viewing|showing|tour)s?\b", re.I)
+_AVAILABLE = re.compile(r"\bcheck\s+(?:if|whether)\s+(?:it|they|this|that|the\s+\w+\s+one)(?:'s|’s|\s+is"
+                        r"|\s+are)\s+(?:still\s+)?available\b", re.I)
+_NOT = re.compile(r"\b(?:don't|don’t|dont|do\s+not|no\s+need\s+to|won't|never)\b[^.?!]{0,12}"
+                  r"\b(?:call|phone|contact|book|set)\b|\bnot\s+yet\b|\bcall\b[^.?!]{0,20}\byet\b", re.I)
+
+
+def asks_for_calls(line: str) -> bool:
+    """Whether an English line plainly asks Landline to call about listings or set up a viewing:
+    "can you call the first one", "call the top three", "set a house visit for the first one", "book a
+    viewing for number two", "contact the landlord". Not "I'll call you back", "call me Sara", "what do you
+    call that area" or "don't call yet"."""
+    if foreign(line) or _NOT.search(line):
+        return False
+    return bool(_CALL.search(line) or _VISIT.search(line) or _AVAILABLE.search(line))
+
+
+def refs_in(line: str, ctx: tools.ToolContext) -> list[str]:
+    """The listings the line names, as call_listings' refs: "the first one" is "1", "the top three" is
+    "1", "2", "3", "number two" is "2". "This one" or "the landlord" with a card in focus is that card.
+    Nothing named gives no refs, so call_listings keeps a plan already made or takes the top three."""
+    text = line.lower()
+    top = re.search(r"\b(?:top|first)\s+(two|three|four|five|2|3|4|5)\b", text)
+    if top:
+        n = _WORD_NUMBERS.get(top.group(1)) or int(top.group(1))
+        return [str(i) for i in range(1, n + 1)]
+    found: list[str] = []
+    for m in re.finditer(r"\b(?:number\s+(\w+)|#\s?(\d)|(" + _ORD + r"))\b", text):
+        word = m.group(1) or m.group(2) or m.group(3)
+        if word == "last":
+            ref = "last"
+        elif word in _ORDINALS:
+            ref = str(_ORDINALS[word])
+        elif word.isdigit():
+            ref = word
+        elif word in _WORD_NUMBERS:
+            ref = str(_WORD_NUMBERS[word])
+        else:
+            continue
+        if ref not in found:
+            found.append(ref)
+    if found:
+        return found
+    view = ctx.runtime.get(ctx.session_id)
+    if view.focus_listing_id and re.search(r"\b(?:this|that|it|the\s+(?:landlord|agent|owner))\b", text):
+        card = next((c for c in view.board if c.listing_id == view.focus_listing_id), None)
+        if card is not None:
+            return [str(card.rank)]
+    return []
+
+
+async def catch_up_calls(line: str, ctx: tools.ToolContext) -> str | None:
+    """Records the calls `line` asked for through call_listings' own handler, and returns its reply; None
+    when the line doesn't ask for any."""
+    if not asks_for_calls(line):
+        return None
+    refs = refs_in(line, ctx)
+    log.info("call %s: catch-up for calls after a turn without call_listings: refs %s", ctx.call_id, refs)
+    arguments = json.dumps({"listing_refs": refs} if refs else {})
+    return await tools.handle("call_listings", arguments, f"call_catch_up_{next(_ids)}", ctx)
