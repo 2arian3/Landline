@@ -147,10 +147,12 @@ FEES_LATEST = "Not recorded: record fees from what they just said, in their late
 
 
 def _fees(args: RecordFact, ctx: CallerContext) -> RecordFact | str | None:
-    """A fees answer (#175): its quote is from their latest turn, not an earlier one, and a bare "Yeah" to
-    "any monthly fees?" isn't a fee, so the reply asks which and how much; a bare "No" is fees: none."""
-    match = grounding.find(args.quote, ctx.said)
-    if match is not None and match.source != len(ctx.said) - 1:
+    """A fees answer (#175). When their latest turn is a bare yes or no, it answers the fees question, so a
+    quote from an earlier turn is refused (c_yVmI3iydTn kept "$100 parking" after "No, nothing else.").
+    A bare "Yeah" to "any monthly fees?" isn't a fee, so the reply asks which and how much; a bare "No" is
+    fees: none."""
+    latest = ctx.said[-1] if ctx.said else ""
+    if bare(latest) is not None and not grounding.verify(args.quote, [latest]):
         return FEES_LATEST
     said = bare(args.quote)
     if said == "yes":

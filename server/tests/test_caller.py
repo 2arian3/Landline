@@ -371,6 +371,11 @@ async def test_a_fees_answer_is_quoted_from_their_latest_turn():
     reply = await _say(ctx, "record_fact", {"field": "fees", "value": "none",
                                             "quote": "No, nothing else."}, 2)
     assert reply.startswith("Recorded fees: none")
+    # priya-no-booking-3: fees answered a turn back, and the latest turn is about something else: kept.
+    ctx = await _ctx(_plan(may_book=False), said=["No, there are no extra fees on top of the rent.",
+                                                  "Great. I can show you the unit this Thursday at 6:30 pm."])
+    reply = await _say(ctx, "record_fact", {"field": "fees", "value": "none", "quote": "no extra fees"})
+    assert reply.startswith("Recorded fees: none")
 
 
 async def test_two_tool_calls_in_one_response_send_one_response_create():
