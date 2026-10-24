@@ -184,6 +184,7 @@ async def _talk(transport: Transport, call: RenterCall, runtime: SessionRuntime,
     try:
         for event in start:
             await higgs.send(event)
+        log.info("call %s: Higgs ready, greeting sent", call.call_id)
         pumps = {asyncio.create_task(_renter_to_higgs(transport, higgs, recorder)),
                  asyncio.create_task(_higgs_to_renter(higgs, transport, ctx, playback, recorder, line,
                                                      reader=_reader()))}
@@ -253,6 +254,9 @@ async def run_bridge(ws: WebSocket, *, calls: RenterCalls, runtime: SessionRunti
         log.warning("media stream refused: unknown or reused call_id %r", call_id)
         await close_socket(ws, POLICY_VIOLATION)
         return
+    # With "Higgs ready, greeting sent" and "first audio out", journalctl's timestamps split the wait for the
+    # greeting into Twilio's stream, the session start, Higgs's connect and Higgs's first audio (like #161).
+    log.info("call %s stream started", call.call_id)
     try:
         await runtime.start(SessionStarted(session_id=call.session_id, at=datetime.now(UTC),
                                            idem_key=f"{call.session_id}:started", channel="phone",
@@ -304,6 +308,7 @@ async def _higgs_to_renter(higgs: Any, transport: Transport, ctx: tools.ToolCont
     whose reply claimed a save with no tool, is read for its preferences in the background
     (agents/concierge/backstop.py)."""
     spoke = False   # whether the response under way has sent any audio yet
+    heard_any = False   # whether any audio has gone out on this call, for the timing log
     turn = backstop.Turn()
     async for event in higgs.events():
         kind = event.get("type")
@@ -317,6 +322,9 @@ async def _higgs_to_renter(higgs: Any, transport: Transport, ctx: tools.ToolCont
         elif kind == "response.output_audio.delta":
             spoke = True
             await transport.send_audio(event["delta"])
+            if not heard_any:
+                heard_any = True
+                log.info("call %s: first audio out", ctx.call_id)
             playback.sent(event["delta"])
             recorder.played(event["delta"], event.get("item_id"))
         elif kind == "input_audio_buffer.speech_started":
