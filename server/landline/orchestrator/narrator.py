@@ -58,9 +58,6 @@ def line(before: SessionView | None, after: SessionView, events: Sequence[Event]
     """The line for this commit, or None to keep the last one (a focus change says nothing new)."""
     kinds = {e.type for e in events}
     if before is None:
-        if state.returning:   # the page's line for a caller this number has seen before (O-05)
-            hello = f"Welcome back, {state.user_name}." if state.user_name else "Welcome back."
-            return f"{hello} {state.previous_results or 'Here is your search from last time.'}"
         return "Tell me what you're looking for, and the map will follow."
     if "CallsCompleted" in kinds:
         n = len(after.calls)

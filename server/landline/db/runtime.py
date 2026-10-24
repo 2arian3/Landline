@@ -36,6 +36,12 @@ class Sessions(Repo):
         return await self._one(SessionRow, "select * from sessions where session_id = %s",
                                (session_id,), conn)
 
+    async def link_user(self, session_id: str, user_id: int, conn: Conn = None) -> bool:
+        """The renter a phone session belongs to, found by number once its brief ends."""
+        n = await self._count("update sessions set user_id = %s where session_id = %s", (user_id, session_id),
+                              conn)
+        return n == 1
+
     async def latest_for_user(self, user_id: int, conn: Conn = None) -> SessionRow | None:
         """The user's most recent session: what their next call opens with."""
         return await self._one(SessionRow, "select * from sessions where user_id = %s "
