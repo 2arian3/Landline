@@ -27,6 +27,7 @@ from landline.contracts.tools import PreferenceDelta
 from landline.db.catalogue import Catalogue
 from landline.orchestrator import SessionRuntime
 from landline.voice import bridge
+from landline.voice.higgs import session_config
 from landline.voice.line import Line
 from landline.voice.recorder import PCMU_8K, CallRecorder
 
@@ -637,3 +638,64 @@ async def test_through_the_bridge_the_renter_speaking_again_after_the_note_keeps
     ended = await bridge._higgs_to_renter(higgs, _NoAudio(), ctx, bridge.Playback(8000),
                                           CallRecorder(PCMU_8K))
     assert ended == "higgs_closed"   # not hung up on them: they had more to say
+def test_the_saved_language_steers_the_session_once_and_only_between_responses():
+    """#188's voice half: Farsi, Arabic and Punjabi renters were understood and answered in English."""
+    config = session_config(instructions="BASE", tools=[])
+    steer = bridge.Steer(config)
+    assert steer.update(None) is None and steer.update("en") is None      # English: nothing to add
+    steer.seen({"type": "response.created"})
+    assert steer.update("fa") is None                                      # never during a response
+    steer.seen({"type": "response.done"})
+    update = steer.update("fa")
+    assert update["type"] == "session.update"
+    assert update["session"]["instructions"] == "BASE" + bridge.reply_in("fa")
+    assert "Reply only in Persian (Farsi) from now on" in update["session"]["instructions"]
+    rest = {k: v for k, v in update["session"].items() if k != "instructions"}
+    assert rest == {k: v for k, v in config["session"].items() if k != "instructions"}   # all else as opened
+    assert steer.update("fa") is None and steer.update("fa-IR") is None    # once per language
+    assert steer.update("en")["session"]["instructions"] == "BASE"         # back to English: rule off
+    assert config["session"]["instructions"] == "BASE"                     # the opening config untouched
+
+
+async def test_through_the_bridge_a_farsi_line_turns_the_next_replies_to_farsi():
+    ctx = await _ctx()
+    sent: list[dict] = []
+
+    class Higgs(_Higgs):
+        async def send(self, event):
+            sent.append(event)
+
+    no_tool = {"type": "response.done", "response": {"status": "completed", "output": [{"type": "message"}]}}
+    first = [{"type": "input_audio_buffer.speech_started", "item_id": "u1", "audio_start_ms": 0},
+             {"type": "response.created"},
+             {"type": "conversation.item.input_audio_transcription.completed", "item_id": "u1",
+              "transcript": FARSI},
+             {"type": "response.output_audio_transcript.done", "item_id": "a1", "transcript": "Got it."},
+             no_tool]
+    steer = bridge.Steer(session_config(instructions="BASE", tools=[]))
+    await bridge._higgs_to_renter(Higgs(first), _NoAudio(), ctx, bridge.Playback(8000), CallRecorder(PCMU_8K),
+                                  steer=steer)
+    await asyncio.gather(*list(bridge._CATCHING))
+    assert ctx.runtime.get(SID).preferences.language == "fa" and sent == []   # saved; nothing mid-reply
+    nxt = [{"type": "input_audio_buffer.speech_started", "item_id": "u2", "audio_start_ms": 5000}]
+    await bridge._higgs_to_renter(Higgs(nxt), _NoAudio(), ctx, bridge.Playback(8000), CallRecorder(PCMU_8K),
+                                  steer=steer)
+    [update] = [e for e in sent if e["type"] == "session.update"]
+    assert update["session"]["instructions"].endswith(bridge.reply_in("fa"))
+
+
+async def test_a_concierge_tool_reply_says_to_answer_in_the_renters_saved_language():
+    ctx = await _ctx()
+    sent: list[dict] = []
+
+    class Higgs(_Higgs):
+        async def send(self, event):
+            sent.append(event)
+
+    event = {"name": "update_preferences", "call_id": "fc1", "arguments": '{"pets": ["cat"]}'}
+    await bridge.run_tool(Higgs([]), event, ctx)
+    assert not sent[0]["item"]["output"].endswith("Reply in Persian (Farsi).")    # nothing saved yet
+    await ctx.runtime.emit(PreferencesUpdated(session_id=SID, at=NOW, idem_key=f"{SID}:fa",
+                                              delta=PreferenceDelta(language="fa")))
+    await bridge.run_tool(Higgs([]), {**event, "call_id": "fc2"}, ctx)
+    assert sent[-2]["item"]["output"].endswith(" Reply in Persian (Farsi).")
