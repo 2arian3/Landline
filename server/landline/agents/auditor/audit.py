@@ -24,7 +24,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Any
 
@@ -210,7 +210,7 @@ def build(call: CallRecord, candidates: Sequence[extractor.Candidate], status: s
             except Refused:
                 pass
 
-    result.heard = merge(live + read)
+    result.heard = with_pet_fee(merge(live + read))
     kept = {id(h) for h in result.heard}
     result.tool = {"recorded": len(call.tool_facts), "kept": sum(id(h) in kept for h in live),
                    "corrected": sum(id(h) not in kept for h in live),
@@ -229,6 +229,34 @@ def build(call: CallRecord, candidates: Sequence[extractor.Candidate], status: s
     for d in result.dropped:
         log.info("call %s: dropped %s fact from %s (%s): %r", call.call_id, d.field, d.source, d.why, d.quote)
     return result
+
+
+def with_pet_fee(heard: list[Heard]) -> list[Heard]:
+    """Pets and a pet fee go together, however the Caller filed them: a pet fee says pets are allowed, a pets
+    answer that names its fee keeps the fee, and the pets fact says the fee ("pets allowed, $300 pet fee, one
+    time"). Nothing changes when they said no pets."""
+    pets = next((h for h in heard if h.value.field == "pets"), None)
+    fee = next((h for h in heard if h.value.field == "fees" and h.value.name == "pet_fee"), None)
+    if pets is not None and pets.value.value == "no_pets":
+        return heard
+    if fee is None and pets is not None and fee_name(pets.quote) == "pet_fee":
+        try:   # "Pets are okay with a $300 pet fee." filed under pets: the fee is in its words
+            fee = Heard(settle("fees", "", pets.quote), pets.quote, pets.turn, pets.source)
+            heard = [*heard, fee]
+        except Refused:
+            pass
+    if fee is None:
+        return heard
+    v = fee.value
+    said = f"${v.amount:,} a month for pets" if v.period == "monthly" else f"${v.amount:,} pet fee, one time"
+    if pets is None:   # filed under fees only: the fee's own words say pets are allowed
+        allowed = Value("pets", "allowed", f"pets allowed, {said}")
+        heard = [*heard, Heard(allowed, fee.quote, fee.turn, fee.source)]
+    elif said not in pets.value.display:
+        told = Heard(replace(pets.value, display=f"{pets.value.display}, {said}"), pets.quote, pets.turn,
+                     pets.source)
+        heard = [told if h is pets else h for h in heard]
+    return sorted(heard, key=lambda h: h.turn)
 
 
 def _asked(turns: Sequence[Turn], turn: Turn) -> str | None:
