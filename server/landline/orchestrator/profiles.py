@@ -13,18 +13,21 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from landline.contracts import Anchor, Preferences, as_e164
 from landline.db.pool import Database
-from landline.db.rows import InteractionRow, ProfileRow
+from landline.db.rows import InteractionRow, ProfileRow, SessionRow
 from landline.orchestrator.state import Said, SessionState
 
 log = logging.getLogger(__name__)
 
 TORONTO = ZoneInfo("America/Toronto")
 MAX_OPENING_WORDS = 120
+# From the session's start: the brief ends within its 15-minute deadline, and a plan's calls (at most 5,
+# each with a 5-minute deadline) within half an hour after that. Past this, `calling` means stuck.
+CALLS_STALE_AFTER = timedelta(minutes=45)
 # listing_interactions.action for each reaction, and back. A dislike keeps its reason without excluding.
 ACTION = {"like": "liked", "reject": "rejected", "dislike": "viewed"}
 REACTION = {"liked": "like", "rejected": "reject", "viewed": "dislike"}
@@ -63,7 +66,7 @@ class Profiles:
             preferences=preferences_of(profile) if profile else Preferences(),
             reactions=reactions_of(await db.interactions.for_user(user.user_id)),
             last_seen_at=user.last_seen_at, last_results=last_state.get("results"),
-            calls_running=bool(last and last.status == "calling"),
+            calls_running=calls_running(last, datetime.now(UTC)),
             summary=profile.memory_summary if profile else None,
         )
 
@@ -87,6 +90,9 @@ class Profiles:
                 await db.users.touch(uid, conn=conn)
             elif event_type == "CallsCompleted":
                 for call in state.calls.values():
+                    out = state.outcomes.get(call.listing_id)
+                    if out is not None and out.end_reason == "blocked":
+                        continue   # never dialled, so not "called"
                     action = "booked" if call.listing_id in state.viewings else "called"
                     await db.interactions.add(uid, call.listing_id, action, session_id=state.session_id,
                                               conn=conn)
@@ -94,6 +100,13 @@ class Profiles:
     async def forget(self, user_id: int) -> bool:
         """forget_me: the user, their profile and interactions go; their sessions stay, unlinked."""
         return await self.db.users.forget(user_id)
+
+
+def calls_running(last: SessionRow | None, now: datetime) -> bool:
+    """The last session's calls are still going: it is `calling`, and recent enough that they could be. One
+    left in `calling` (its calls never placed, or the server restarted mid-plan) counts as finished once
+    CALLS_STALE_AFTER has passed, so later calls aren't told "still running" forever."""
+    return bool(last and last.status == "calling" and now - last.started_at < CALLS_STALE_AFTER)
 
 
 # Stored fields, both ways

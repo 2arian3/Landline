@@ -8,15 +8,19 @@ nothing, so it stays unknown.
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import date
-from math import asin, cos, radians, sin, sqrt
+from itertools import pairwise
+from math import asin, cos, inf, radians, sin, sqrt
 
 from landline.contracts import Listing
 
 MIN_SQFT = 150   # below this a stated size is a data error (one listing says 2 sq ft); treated as unknown
 STRONG = ("call", "city")   # provenance that can exclude a listing; a listing's own text only ranks it
+# km per degree of longitude and of latitude at Toronto (43.7° N); a flat plane is close enough there.
+KM_LNG, KM_LAT = 111.32 * cos(radians(43.7)), 110.57
+Segment = tuple[float, float, float, float, float]   # x, y, dx, dy, length² on that plane, in km
 
 
 @dataclass(frozen=True)
@@ -57,6 +61,7 @@ class FeatureMatrix:
     strong_rows: dict[str, frozenset[int]] = field(default_factory=dict)   # field → rows with such evidence
     hoods: dict[int, Hood] = field(default_factory=dict)   # the City's neighbourhoods, by id (D-05)
     _distances: dict[tuple[float, float], list[float | None]] = field(default_factory=dict, repr=False)
+    lines: set[tuple[float, float]] = field(default_factory=set)   # anchors that stand for a street (#102)
     # Utility columns by (feature, the preference values it depends on); filled by rank.py.
     _utilities: dict[tuple, tuple[list, list, float | None]] = field(default_factory=dict, repr=False)
 
@@ -122,7 +127,8 @@ class FeatureMatrix:
         return out
 
     def distances_km(self, lat: float, lng: float) -> list[float | None]:
-        """Distance from every listing to one anchor. Computed once per anchor, then cached."""
+        """Distance from every listing to one anchor. Computed once per anchor, then cached. An anchor
+        that stands for a street (`use_line`) gives the distances to the street's nearest point."""
         key = (round(lat, 5), round(lng, 5))
         if key not in self._distances:
             self._distances[key] = [
@@ -131,6 +137,24 @@ class FeatureMatrix:
             ]
         return self._distances[key]
 
+    def line_distances_km(self, line: Sequence[Sequence[tuple[float, float]]]) -> list[float | None]:
+        """Distance from every listing to the nearest point of a line: paths of (lat, lng), like a street's
+        (#102). Every listing against every segment, so the runtime runs it off the event loop; it only
+        reads the matrix."""
+        segments = _segments(line)
+        return [_nearest_km(segments, a, b) if a is not None and b is not None else None
+                for a, b in zip(self.lat, self.lng, strict=True)]
+
+    def use_line(self, lat: float, lng: float, distances: list[float | None]) -> None:
+        """From now on the anchor at (lat, lng) stands for a line, with these distances from it."""
+        key = (round(lat, 5), round(lng, 5))
+        self._distances[key] = distances
+        self.lines.add(key)
+        self._utilities.clear()   # a location column worked out from the bare point is stale
+
+    def has_line(self, lat: float, lng: float) -> bool:
+        return (round(lat, 5), round(lng, 5)) in self.lines
+
 
 def haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
     p1, p2 = radians(lat1), radians(lat2)
@@ -138,15 +162,42 @@ def haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
     return 2 * 6371.0 * asin(sqrt(h))
 
 
+def _segments(line: Sequence[Sequence[tuple[float, float]]]) -> list[Segment]:
+    """Each segment of each path, on Toronto's plane; a lone vertex is a segment of length 0."""
+    out = []
+    for path in line:
+        pts = [(lng * KM_LNG, lat * KM_LAT) for lat, lng in path]
+        out += [(x, y, x2 - x, y2 - y, (x2 - x) ** 2 + (y2 - y) ** 2) for (x, y), (x2, y2) in pairwise(pts)]
+        if len(pts) == 1:
+            out.append((*pts[0], 0.0, 0.0, 0.0))
+    return out
+
+
+def _nearest_km(segments: list[Segment], lat: float, lng: float) -> float:
+    x, y = lng * KM_LNG, lat * KM_LAT
+    best = inf
+    for sx, sy, dx, dy, l2 in segments:
+        t = ((x - sx) * dx + (y - sy) * dy) / l2 if l2 else 0.0
+        t = 0.0 if t < 0.0 else 1.0 if t > 1.0 else t
+        ex, ey = sx + t * dx - x, sy + t * dy - y
+        d2 = ex * ex + ey * ey
+        if d2 < best:
+            best = d2
+    return sqrt(best)
+
+
 def _known(value: str) -> str | None:
     return None if value == "unknown" else value
 
 
-_APOSTROPHE = re.compile(r"['’]")   # "O'Connor", "O’Connor" and "OConnor" are one word
+_APOSTROPHE = re.compile(r"['’]")
 
 
 def _words(text: str) -> set[str]:
-    return set(re.findall(r"[a-z0-9]+", _APOSTROPHE.sub("", text.lower()).replace("st.", "st")))
+    """An apostrophe counts both as a break and as nothing, so "O'Connor", "OConnor" and "O Connor" all find
+    "O'Connor-Parkview", whichever way the caller split the name first (refs.area passes "o connor")."""
+    text = text.lower().replace("st.", "st")
+    return set(re.findall(r"[a-z0-9]+", text)) | set(re.findall(r"[a-z0-9]+", _APOSTROPHE.sub("", text)))
 
 
 _FILLER = {"the", "area", "neighbourhood", "neighborhood", "around", "near", "in", "toronto", "city", "core"}
@@ -159,7 +210,7 @@ ALIASES = {
         "Kensington-Chinatown", "University", "Moss Park", "Regent Park", "North St.James Town",
         "Cabbagetown-South St.James Town")),
 }
-_DERIVED = {"index", "strong_rows", "hoods", "_distances", "_utilities"}
+_DERIVED = {"index", "strong_rows", "hoods", "_distances", "_utilities", "lines"}
 _PARKING = {"parking", "secured underground parking", "underground parking"}
 _IN_SUITE = {"insuite laundry", "in-suite laundry", "in suite laundry", "ensuite laundry"}
 _OUTDOOR = {"balcony", "patio / deck / terrace", "terrace", "patio", "yard", "deck"}
