@@ -67,10 +67,12 @@ class Refused(Exception):
 
 def settle(field: str, value: str, quote: str, *, amount: float | None = None, count: int | None = None,
            each: bool | None = None, period: str | None = None, mandatory: bool | None = None,
-           name: str | None = None, today: date | None = None, question: str | None = None) -> Value:
+           name: str | None = None, today: date | None = None, question: str | None = None,
+           parts: date | None = None) -> Value:
     """`value` and the structured hints are claims; the quote decides. Raises `Refused`. `today` is the
     call's day in Toronto (`call_day`), which a date like "tomorrow" counts from; the current day if None.
-    `question` is the Caller's line just before the quote: a bare "Yes." or "No." answers it (#139)."""
+    `question` is the Caller's line just before the quote: a bare "Yes." or "No." answers it (#139).
+    `parts` is a move-in day code already made (`from_parts`, #157), kept when the quote names no day."""
     if field in MONEY_FIELDS:
         return _money(field, value, quote, amount, count, each, period, mandatory, name)
     if field in CATEGORIES:
@@ -112,7 +114,7 @@ def settle(field: str, value: str, quote: str, *, amount: float | None = None, c
         return Value(field, str(n), f"{n:,}{unit}" if field != "floor" else f"floor {n}")
     if field == "available_from":   # the day comes from the quote, in code; a model's date is never kept
         today = today or call_day(None)
-        day = free_from(quote, today)
+        day = free_from(quote, today) or parts
         if day is None:
             raise Refused("the quote names no day")
         return Value(field, "now" if day <= today else f"{day:%m-%d}", spoken_day(day, today))
@@ -301,6 +303,27 @@ def _months_on(day: date, n: int) -> date:
         except ValueError:
             continue
     return date(year, month, 28)
+
+
+def from_parts(kind: str, today: date, *, weekday: str | None = None, weeks: int | None = None,
+               month: int | None = None, day: int | None = None) -> date | None:
+    """The day the Caller's parts name (`record_available_from`, #157), counted from `today`, the call's day
+    in Toronto; None for `unknown` or parts that make no date. A past month or date is next year's."""
+    if kind == "now":
+        return today
+    if kind == "tomorrow":
+        return today + timedelta(days=1)
+    if kind == "weekday" and weekday in when.DAYS:
+        return today + timedelta(days=(when.DAYS.index(weekday) - today.weekday()) % 7 or 7)
+    if kind == "next_week":
+        return today + timedelta(days=(0 - today.weekday()) % 7 or 7)   # that week's Monday, as free_from
+    if kind == "in_weeks" and weeks:
+        return today + timedelta(weeks=weeks)
+    if kind == "end_of_month":
+        return _months_on(today.replace(day=1), 1) - timedelta(days=1)
+    if kind in ("date", "month") and month:
+        return when._next_date(today, month, day if kind == "date" and day else 1)
+    return None
 
 
 def spoken_day(day: date, today: date) -> str:

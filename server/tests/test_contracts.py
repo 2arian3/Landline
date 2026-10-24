@@ -133,7 +133,8 @@ def test_tools_match_the_spec():
         "update_preferences", "give_feedback", "focus_listing", "focus_area", "call_listings",
         "remember_me", "forget_me", "end_session",
     ]
-    assert list(CALLER_TOOLS) == ["record_fact", "note_question", "book_viewing", "end_call"]
+    assert list(CALLER_TOOLS) == ["record_fact", "record_available_from", "note_question", "book_viewing",
+                                  "end_call"]
 
 
 @pytest.mark.parametrize("spec", TOOL_SPECS, ids=lambda s: s["name"])

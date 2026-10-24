@@ -1,4 +1,4 @@
-"""The Caller's tools (A-05): record_fact, note_question, book_viewing, end_call.
+"""The Caller's tools (A-05): record_fact, record_available_from, note_question, book_viewing, end_call.
 
 Each runs in code against the session runtime. The session, call and listing come from the `CallerContext`
 the runner fills from the Dispatcher's `Dial`, never from the arguments (hard rule 2), and every event's
@@ -28,11 +28,13 @@ from pydantic import ValidationError
 
 from landline.agents.auditor import grounding
 from landline.agents.auditor.flags import red_flags
+from landline.agents.auditor.values import call_day, free_from, from_parts, spoken_day
 from landline.agents.caller import slots
 from landline.agents.caller.brief import Brief
 from landline.contracts import EndReason, Fact, FactRecorded, QuestionNoted, Shareable, ViewingBooked
 from landline.contracts.tools import (
     CALLER_TOOLS,
+    AvailableFrom,
     BookViewing,
     EndCall,
     NoteQuestion,
@@ -51,6 +53,8 @@ WHEN = re.compile(r"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b|
 PROMISE = re.compile(r"check with (my|the) client|get back to you|ask my client|"
                      r"pass (that|it|this) (on|along) to my client", re.I)
 NOT_CAUGHT = "Sorry, I didn't catch that. Try again with the field, the value and their exact words."
+UNSAID = ("Not recorded: that quote isn't what they said. Use their exact words, or ask again if you aren't "
+          "sure.")
 UNKNOWN = "That tool doesn't exist."
 BROKEN = "Something went wrong on my side. Carry on with the checklist."
 SAY_GOODBYE = "You haven't said goodbye yet. Thank them and say goodbye now, in their language; the line " \
@@ -79,6 +83,9 @@ class CallerContext:
     bye_response: str | None = None                   # as in the Concierge (voice/bridge.py run_tool)
     readbacks: list[str] = field(default_factory=list)   # read-back sentences for the landlord's last turn
     readback_turn: int = -1                           # which landlord turn they belong to (len(said))
+    flagged_at: int | None = None                     # the landlord turn a scam warning first matched
+    covered_at: int | None = None                     # the landlord turn by which the checklist was covered
+    ended_by_code: bool = False                       # `over` ended it: the Caller never called end_call
 
     def flags(self) -> list[str]:
         return [f.reason for f in red_flags(self.said)]
@@ -98,16 +105,44 @@ async def handle(name: str, arguments: str, tool_call_id: str, ctx: CallerContex
     log.info("caller tool %s call=%s args=%s", name, ctx.call_id, args.model_dump_json(exclude_none=True))
     meta = {"session_id": ctx.session_id, "at": ctx.clock(), "idem_key": f"{ctx.call_id}:{tool_call_id}"}
     try:
-        return await HANDLERS[name](args, ctx, meta)
+        reply = await HANDLERS[name](args, ctx, meta)
     except Refused as exc:
         return str(exc)
+    return wrap_up(ctx, name, reply)
 
 
 async def record_fact(args: RecordFact, ctx: CallerContext, meta: dict) -> str:
     if not grounding.verify(args.quote, ctx.said):
         ctx.ungrounded += 1
-        return ("Not recorded: that quote isn't what they said. Use their exact words, or ask again if you "
-                "aren't sure.")
+        return UNSAID
+    if args.field == "available_from":   # the day comes from their words, in code, never the model's value
+        today = call_day(meta["at"])
+        if (got := free_from(args.quote, today)) is None:
+            return "Not recorded: call record_available_from for when it's free, with the parts they said."
+        args = args.model_copy(update={"value": spoken_day(got, today)})
+    return await _record(args, ctx, meta)
+
+
+async def record_available_from(args: AvailableFrom, ctx: CallerContext, meta: dict) -> str:
+    """When it's free, from the Caller's parts (#157): code makes the day from the call's day in Toronto. The
+    quote must be the landlord's words, and when those words plainly name another day nothing is kept."""
+    if not grounding.verify(args.quote, ctx.said):
+        ctx.ungrounded += 1
+        return UNSAID
+    today = call_day(meta["at"])
+    day = from_parts(args.kind, today, weekday=args.weekday, weeks=args.weeks, month=args.month, day=args.day)
+    if day is None:
+        return "Not recorded: that names no day. Ask them from when it's free, or move on."
+    said = free_from(args.quote, today)
+    if said is not None and said != day:
+        return (f"Not recorded: their words sound like {spoken_day(said, today)}, not "
+                f"{spoken_day(day, today)}. Ask them to confirm the day.")
+    fact = RecordFact(field="available_from", value=spoken_day(day, today), quote=args.quote)
+    return await _record(fact, ctx, meta)
+
+
+async def _record(args: RecordFact, ctx: CallerContext, meta: dict) -> str:
+    """Keep a grounded fact, and say what to do next."""
     value = args.value.strip().lower()
     if any(f.field == args.field and f.value.strip().lower() == value for f in ctx.facts):
         # The same answer again: the Caller asked twice (#139). A different answer is a correction and is
@@ -124,10 +159,10 @@ async def record_fact(args: RecordFact, ctx: CallerContext, meta: dict) -> str:
     when = ""
     if args.field == "available" and WHEN.search(args.quote) and \
             not any(f.field == "available_from" for f in ctx.facts):
-        when = " They said when, so also record available_from with that date."
+        when = " They said when, so also call record_available_from with the parts of what they said."
     elif args.field == "available" and not WHEN.search(args.quote) and \
             not any(f.field == "available_from" for f in ctx.facts) and "no" not in args.value.lower():
-        when = " Next, ask from when it's available, then record available_from."
+        when = " Next, ask from when it's available, then call record_available_from."
     left = ctx.brief.missing()
     back = _pending(ctx, readback(args.field, args.value))
     say = f'Start your reply with "{back}", then' if back else "Now"
@@ -163,6 +198,8 @@ def readback(field: str, value: str) -> str | None:
     value has none (a yes or no needs no read-back)."""
     if not (any(ch.isdigit() for ch in value) or WHEN.search(value)):
         return None
+    if field == "available_from" and value.strip().lower() == "now":   # code's word for today (#157)
+        return "So it's available now."
     lead = READBACK.get(field, f"for {field.replace('_', ' ')},")
     return f"So {lead + ' ' if lead else ''}{value.strip().rstrip('.')}."
 
@@ -262,6 +299,57 @@ async def end_call(args: EndCall, ctx: CallerContext, meta: dict) -> str:
                 "it now from their words; if not, ask. If they don't know, end the call again.")
     ctx.end_reason, ctx.hang_up = args.reason, True
     return "Goodbye."
+
+
+# ── the call ends itself ────────────────────────────────────────────────────
+# On the team's phone test the Caller said goodbye and never called end_call, so the line stayed open. The
+# tool replies say to end in the same turn, and `over` ends the call in code when the Caller still doesn't.
+
+END_CALL = ("say one short thank-you and goodbye, in their language, and call end_call with done in this "
+            "same turn")
+END_NOW = f"{END_CALL}. Ask nothing more."
+SCAM_END = ("What they said matches a scam warning, so stop the checklist: say you'll pass it on to your "
+            f"client, then {END_NOW}")
+OLD_END = "thank them and end the call"
+# The Caller's or the landlord's goodbye.
+BYE = re.compile(r"\b(good ?bye|bye|have a (great|good|nice|lovely) (day|evening|night|one|weekend)|"
+                 r"take care)\b", re.I)
+
+
+def wrap_up(ctx: CallerContext, name: str, reply: str) -> str:
+    """A tool's reply once the call is over: a scam warning stops the checklist, and a covered checklist
+    ends the call in this same turn."""
+    if name == "end_call" or ctx.hang_up:
+        return reply
+    if ctx.flags():
+        return SCAM_END
+    if ctx.brief.missing():
+        return reply
+    if OLD_END in reply:
+        return reply.replace(OLD_END, END_CALL)
+    return f"{reply} Then {END_NOW}"
+
+
+def over(ctx: CallerContext, caller_said: str, called: list[str]) -> bool:
+    """After a Caller turn that didn't end the call: whether it is over anyway, so the runner ends it in code
+    (through its usual return, so `finalize` runs once). It is when the Caller or the landlord said
+    goodbye, or a turn has passed since a scam warning or since the checklist was covered. A call still
+    on its checklist goes on."""
+    if ctx.hang_up or "end_call" in called:
+        return False
+    turn = len(ctx.said)
+    if ctx.flagged_at is None and ctx.flags():
+        ctx.flagged_at = turn
+    if ctx.covered_at is None and not ctx.brief.missing():
+        ctx.covered_at = turn
+    said_bye = bool(BYE.search(caller_said) or (ctx.said and BYE.search(ctx.said[-1])))
+    late = any(at is not None and turn > at for at in (ctx.flagged_at, ctx.covered_at))
+    if not (said_bye or late):
+        return False
+    ctx.end_reason = ctx.end_reason or "done"
+    ctx.ended_by_code = True
+    log.info("call %s: over (%s), ending it in code", ctx.call_id, "goodbye" if said_bye else "a turn late")
+    return True
 
 
 async def kept_promise(ctx: CallerContext, caller_said: str, called: list[str]) -> str | None:
@@ -366,6 +454,7 @@ def _noted(question: str, noted: list[str]) -> bool:
 
 HANDLERS: dict[str, Callable[[Any, CallerContext, dict], Awaitable[str]]] = {
     "record_fact": record_fact,
+    "record_available_from": record_available_from,
     "note_question": note_question,
     "book_viewing": book_viewing,
     "end_call": end_call,

@@ -109,6 +109,8 @@ def score_call(case: CallCase, run: int, trace: SimTrace, state: SessionState, l
         if c["name"] == "record_fact" and c["output"].startswith("Recorded"):
             args = _args(c["arguments"])
             b.covered(str(args.get("field", "")), str(args.get("value", "")))
+        elif c["name"] == "record_available_from" and c["output"].startswith("Recorded"):   # #157
+            b.covered("available_from")
         elif c["name"] == "book_viewing" and c["output"].startswith("Booked"):
             for item in b.items:
                 if item.key == "viewing":

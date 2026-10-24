@@ -3,18 +3,20 @@
 One call goes like this:
 
 1. `dial()` checks the number against the allowlist itself (hard rule 6, a second guard behind the
-   Dispatcher's), then asks Twilio to place the call. Twilio fetches `/twiml/outbound/{call_id}` once
-   answering-machine detection has decided, and posts status changes to `/twilio/outbound/status/{call_id}`.
-   Both URLs carry our call id; Twilio signs them, and an unknown id gets nothing.
-2. A person answers: the TwiML hands the call to our media stream with the call id as a `<Parameter>`
-   (PORTING #1), the stream claims the call once, and `converse` runs the Caller on it.
-   A machine answers: the TwiML leaves a short voicemail and hangs up.
+   Dispatcher's), then asks Twilio to place the call. Twilio fetches `/twiml/outbound/{call_id}` the moment
+   the call is answered, runs answering-machine detection alongside it and posts what it decided to
+   `/twilio/outbound/amd/{call_id}`, and posts status changes to `/twilio/outbound/status/{call_id}`.
+   All three URLs carry our call id; Twilio signs them, and an unknown id gets nothing.
+2. The call is answered: the TwiML hands it to our media stream with the call id as a `<Parameter>`
+   (PORTING #1), the stream claims the call once, and `converse` runs the Caller on it from the first second.
+   Detection says a machine (after its beep): the call is switched to a short voicemail that hangs up, which
+   ends the stream and the Caller with it.
 3. Whatever happens first ends the call through `OutboundCalls.finalize(call_id, reason)`: Twilio saying
    busy, no-answer or failed, the voicemail finishing, the conversation ending, or the Dispatcher's
    deadline. Only the first does anything (PORTING #2). If Twilio's line is still up, it is hung up.
 
 What is said on the line is `converse`: the Caller (A-05) on Higgs, in voice/phone_caller.py. Its first
-words are the disclosure, from `opening()` here.
+words are the disclosure, from `opening()` here, and that the call is recorded when its audio is (A-10).
 """
 from __future__ import annotations
 
@@ -41,16 +43,14 @@ TIMEOUT_S = 10
 HANG_UP_S = 3               # a deadline's hang-up must not hold the Dispatcher up
 RING_S = 25                 # how long Twilio lets it ring before no-answer
 DISCLOSURE = "I'm an AI assistant calling for a renter."
+RECORDED = "This call is recorded."   # said right after the disclosure when the call's audio is stored
 VOICEMAIL = ("Hi, I'm an AI assistant calling for a renter about your listing at {address}. "
              "They'd like to know if it's still available and to book a viewing. "
              "We'll try again later. Thank you.")
-# Twilio's AnsweredBy with MachineDetection=DetectMessageEnd: a machine waits for the beep.
+# Twilio's AnsweredBy with MachineDetection=DetectMessageEnd: a machine waits for the beep. Detection runs
+# alongside the call (AsyncAmd), so nobody waits on it and its waits keep Twilio's defaults, which tell
+# machines from people best.
 MACHINE = ("machine_end_beep", "machine_end_silence", "machine_end_other", "fax")
-# Twilio answers the call's URL only once AMD has decided, so its waits are dead air for a person. A quiet
-# pickup is a person after 2 s (Twilio's minimum; 5 s by default), and a "Hello?" is over after 0.8 s of
-# silence (1.2 s by default). The speech threshold stays Twilio's, so a long hello isn't taken for a machine.
-AMD_SILENCE_MS = 2000
-AMD_SPEECH_END_MS = 800
 # Twilio's CallStatus once a call is over, and what it means if nothing else ended it first.
 STATUS_END: dict[str, EndReason] = {"busy": "busy", "no-answer": "no_answer", "failed": "failed",
                                     "canceled": "failed", "completed": "hangup"}
@@ -68,6 +68,7 @@ class Outbound:
     twilio_sid: str | None = None
     media: asyncio.Future = field(default_factory=lambda: asyncio.get_running_loop().create_future())
     ended: asyncio.Future = field(default_factory=lambda: asyncio.get_running_loop().create_future())
+    answered: asyncio.Event = field(default_factory=asyncio.Event)   # a person: Twilio is opening the stream
     state: CallState = "dialing"
     claimed: bool = False
 
@@ -89,9 +90,10 @@ class OutboundCalls:
         return None if call is None or call.done else call
 
     async def set_state(self, call_id: str, state: CallState) -> None:
-        """Ringing, live or voicemail, said to the Dispatcher once each and never after the end."""
+        """Ringing, live or voicemail, said to the Dispatcher once each and never after the end. A call
+        that reached a voicemail stays one, even if its stream starts after detection decided."""
         call = self.get(call_id)
-        if call is None or call.state == state:
+        if call is None or call.state in (state, "voicemail"):
             return
         call.state = state
         await call.report(state)
@@ -158,6 +160,7 @@ class TwilioRunner:
     async def place(self, dial: Dial, report: Report) -> CallResult:
         call = Outbound(dial=dial, report=report)
         self.calls.live[dial.call_id] = call
+        warm: asyncio.Task | None = None   # the Higgs session opened once a person answered (#148)
         try:
             try:
                 call.twilio_sid = await self.dial(dial)
@@ -167,14 +170,29 @@ class TwilioRunner:
             except Exception:
                 log.exception("call %s: Twilio would not place it", dial.call_id)
                 self.calls.finalize(dial.call_id, "failed")
+            # A person answered: open Higgs while Twilio connects the stream, when the Caller can. It runs in
+            # this call's line, so it counts against the Dispatcher's limit like the call itself.
+            prepare = getattr(self.converse, "prepare", None)
+            if prepare is not None:
+                answered = asyncio.ensure_future(call.answered.wait())
+                await asyncio.wait({answered, call.media, call.ended}, return_when=asyncio.FIRST_COMPLETED)
+                if answered.done() and not call.done:
+                    warm = asyncio.create_task(prepare(dial))
+                answered.cancel()
             # A person answered and the stream connected, or the call ended first.
             done, _ = await asyncio.wait({call.media, call.ended}, return_when=asyncio.FIRST_COMPLETED)
             if call.media in done and not call.media.cancelled() and not call.done:
-                result = await self._converse(call, call.media.result())
+                higgs, warm = await _ready(warm, dial), None   # the call has it now, and closes it
+                result = await self._converse(call, call.media.result(), higgs)
+                if call.state == "voicemail":
+                    # A machine after all: its voicemail is playing, and Twilio's final status ends the
+                    # call `voicemail` once it has, so the line isn't put down on the message.
+                    return CallResult(await call.ended)
                 self.calls.finalize(dial.call_id, result.end_reason)
                 return CallResult(await call.ended, result.outcome)
             return CallResult(await call.ended)
         finally:
+            await _discard(warm)   # opened, but no stream came for it: closed, never left open
             # The deadline, a crash or the conversation ending: make sure Twilio's line is down too.
             self.calls.finalize(dial.call_id, "timeout")
             self.calls.live.pop(dial.call_id, None)
@@ -200,8 +218,9 @@ class TwilioRunner:
             "StatusCallback": f"{base}/twilio/outbound/status/{cid}",
             "StatusCallbackEvent": ["initiated", "ringing", "answered", "completed"],
             "MachineDetection": "DetectMessageEnd",
-            "MachineDetectionSilenceTimeout": str(AMD_SILENCE_MS),
-            "MachineDetectionSpeechEndThreshold": str(AMD_SPEECH_END_MS),
+            "AsyncAmd": "true",   # the Caller talks from the answer; a machine is caught on /amd
+            "AsyncAmdStatusCallback": f"{base}/twilio/outbound/amd/{cid}",
+            "AsyncAmdStatusCallbackMethod": "POST",
             "Timeout": str(RING_S),
             "TimeLimit": str(int(s.listing_call_max_s)),   # Twilio's own cap, behind our deadline
         })
@@ -216,8 +235,32 @@ class TwilioRunner:
         await self.client.post(HANG_UP_API.format(sid=s.twilio_account_sid, call_sid=twilio_sid),
                                auth=(s.twilio_account_sid, s.twilio_auth_token), data={"Status": "completed"})
 
-    async def _converse(self, call: Outbound, transport: Any) -> CallResult:
+    async def detected(self, call_id: str, answered_by: str) -> None:
+        """Machine detection's verdict, posted while the Caller is already talking. A machine (after its
+        beep): the call is switched to the voicemail, which hangs up. That ends the media stream, so the
+        Caller stops and closes its Higgs session, and Twilio's final status ends the call `voicemail`.
+        A person, unknown, or a call that's over: nothing."""
+        call = self.calls.get(call_id)
+        if call is None or answered_by not in MACHINE or not call.twilio_sid:
+            return
+        await self.calls.set_state(call_id, "voicemail")   # before the switch, which ends the Caller's stream
+        s = self.settings
         try:
+            r = await self.client.post(HANG_UP_API.format(sid=s.twilio_account_sid, call_sid=call.twilio_sid),
+                                       auth=(s.twilio_account_sid, s.twilio_auth_token),
+                                       data={"Twiml": twilio.twiml_say_hangup(self.voicemail(call.dial))})
+            r.raise_for_status()
+        except Exception as exc:
+            # Never left talking to a machine: put the line down, and the final status still ends it.
+            log.warning("listing call %s: the voicemail didn't start (%r); hanging up", call_id, exc)
+            with contextlib.suppress(Exception):
+                async with asyncio.timeout(HANG_UP_S):
+                    await self._hang_up(call.twilio_sid)
+
+    async def _converse(self, call: Outbound, transport: Any, higgs: Any = None) -> CallResult:
+        try:
+            if higgs is not None:
+                return await self.converse(call.dial, transport, higgs=higgs)
             return await self.converse(call.dial, transport)
         except Exception:
             log.exception("call %s: the conversation failed", call.dial.call_id)
@@ -226,12 +269,14 @@ class TwilioRunner:
     # What the webhooks hand back to Twilio
 
     def answered_twiml(self, call_id: str, answered_by: str, ws_url: str) -> str:
-        """A person (or Twilio couldn't tell): the media stream. A machine: the voicemail, then hang up."""
+        """Just answered (no AnsweredBy: detection is still listening), a person, or Twilio couldn't tell:
+        the media stream, at once. A machine: the voicemail, then hang up."""
         call = self.calls.get(call_id)
         if call is None:
             return twilio.twiml_hangup()
         if answered_by in MACHINE:
             return twilio.twiml_say_hangup(self.voicemail(call.dial))
+        call.answered.set()   # place() opens Higgs while Twilio connects the stream (#148)
         return twilio.twiml_stream(ws_url, call_id)
 
     def voicemail(self, dial: Dial) -> str:
@@ -248,36 +293,73 @@ class TwilioRunner:
 ANSWERED = "[The call was just answered.]"
 
 
-def opening(instructions: str) -> tuple[str, list[dict[str, Any]]]:
-    """The Caller's session instructions, with how the call opens (the disclosure word for word, hard rule 6),
-    and the events that start it: a quoted note and a plain response.create, as the sim starts a Caller's
-    turn. Never a response object on response.create: its instructions replace the session's (#129)."""
+def opening(instructions: str, recorded: bool = False) -> tuple[str, list[dict[str, Any]]]:
+    """The Caller's session instructions, with how the call opens (the disclosure word for word, hard rule 6,
+    then RECORDED when `recorded`), and the events that start it: a quoted note and a plain
+    response.create, as the sim starts a Caller's turn. Never a response object on response.create: its
+    instructions replace the session's (#129)."""
+    first = f"{DISCLOSURE} {RECORDED}" if recorded else DISCLOSURE
     opens = (f"\n\nHow this call opens: the call has just been answered. Your first words are exactly: "
-             f"\"{DISCLOSURE}\" Then say which listing you are calling about and ask if they have a minute.")
+             f"\"{first}\" Then say which listing you are calling about and ask if they have a minute.")
     note = {"type": "message", "role": "user", "content": [{"type": "input_text", "text": ANSWERED}]}
     return f"{instructions}{opens}", [{"type": "conversation.item.create", "item": note},
                                       {"type": "response.create"}]
 
 
 class Turns:
-    """A listing call's transcript, written to call_turns in the background so audio never waits on the
-    database. The call's row already exists: the Dispatcher made it before dialling."""
+    """A listing call's transcript and audio, written in the background so audio never waits on the
+    database: each line to call_turns with its place in the audio when known, and chunks of both sides to
+    call_audio (A-10, recorded by voice/recorder.py). The call's row already exists: the Dispatcher made it
+    before dialling."""
 
     def __init__(self, db: Any, call_id: str) -> None:
         self.db, self.call_id, self.idx = db, call_id, 0
         self.lines: list[tuple[str, str]] = []   # (speaker, text) in order, for the Auditor
         self._writes: list[asyncio.Task] = []
+        self._line_writes: dict[int, asyncio.Task] = {}   # idx -> the latest write of that line
+        self._next_seq: dict[str, int] = {}               # track -> the next chunk's seq
 
-    def said(self, speaker: str, text: str) -> None:
+    def said(self, speaker: str, text: str, *, start_ms: int | None = None,
+             end_ms: int | None = None) -> int | None:
+        """Stores a line, with where it is in the call's audio when known. Returns its idx, or None when
+        nothing was stored (nothing said, or no database)."""
         text = text.strip()
         if not text:
-            return
+            return None
         log.info("call %s %s: %s", self.call_id, speaker, text)
         self.lines.append((speaker, text))
         if self.db is None:
-            return
-        self._writes.append(asyncio.create_task(self.db.turns.append(self.call_id, self.idx, speaker, text)))
+            return None
+        idx = self.idx
         self.idx += 1
+        self._line_writes[idx] = self._write(self.db.turns.append(
+            self.call_id, idx, speaker, text, audio_start_ms=start_ms, audio_end_ms=end_ms))
+        return idx
+
+    def placed(self, idx: int, start_ms: int | None, end_ms: int | None) -> None:
+        """A stored line's place in the audio changed (an agent line a barge-in cut short). The move waits
+        for the line's earlier writes, so it never lands before the line does."""
+        before, db = self._line_writes.get(idx), self.db
+        if before is None or db is None:
+            return
+
+        async def move() -> None:
+            await asyncio.gather(before, return_exceptions=True)
+            await db.turns.place(self.call_id, idx, start_ms, end_ms)
+        self._line_writes[idx] = self._write(move())
+
+    def audio(self, track: str, start_ms: int, audio: bytes, *, fmt: str, rate: int) -> None:
+        """Stores a chunk of one side of the call, `start_ms` into it. Chunks of a track keep their order."""
+        if self.db is None or not audio:
+            return
+        seq = self._next_seq.get(track, 0)
+        self._next_seq[track] = seq + 1
+        self._write(self.db.audio.append(self.call_id, track, seq, start_ms, fmt, rate, audio))
+
+    def _write(self, write: Awaitable[object]) -> asyncio.Task:
+        task = asyncio.ensure_future(write)
+        self._writes.append(task)
+        return task
 
     async def flush(self) -> None:
         for result in await asyncio.gather(*self._writes, return_exceptions=True):
@@ -287,6 +369,33 @@ class Turns:
 
 def _tail(number: str | None) -> str:
     return f"…{(number or '')[-4:]}"
+
+
+async def _ready(warm: asyncio.Task | None, dial: Dial) -> Any:
+    """The Higgs session opened for this call once a person answered; None when none was (the call opens
+    its own) or opening it failed (the call tries again, as it would have)."""
+    if warm is None:
+        return None
+    try:
+        return await warm
+    except Exception as exc:
+        log.warning("listing call %s: the early Higgs session didn't open (%r)", dial.call_id, exc)
+        return None
+
+
+async def _discard(warm: asyncio.Task | None) -> None:
+    """Closes an early Higgs session no stream came for (a hang-up between the answer and the stream), or
+    stops it opening, so it never outlives its call or holds a Higgs line."""
+    if warm is None:
+        return
+    if not warm.done():
+        warm.cancel()
+        with contextlib.suppress(BaseException):
+            await warm
+        return
+    if not warm.cancelled() and warm.exception() is None:
+        with contextlib.suppress(Exception):
+            await warm.result().close()
 
 
 def install(state: Any, settings: Settings, extractor: Any = None) -> OutboundCalls:
@@ -311,7 +420,7 @@ def _caller(state: Any, settings: Settings, extractor: Any) -> Converse:
         return no_caller
     return PhoneCaller(state.runtime, lambda key, cfg: state.connect_higgs(key, cfg),
                        settings.boson_api_key or "", voice=settings.higgs_voice_renter,
-                       extractor=extractor)
+                       extractor=extractor, record_audio=settings.record_audio)
 
 
 async def uninstall(calls: OutboundCalls) -> None:

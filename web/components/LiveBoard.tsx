@@ -13,6 +13,7 @@ import type { Padding } from "./MapView";
 import { PANEL_STYLE, PANEL_WIDTH, PEEK, PanelHeader, SHORT, SPLIT, Shell } from "./Shell";
 import { Activity, Brand, Heard, Results, Welcome } from "./Summary";
 import { type Opened, follows } from "@/lib/follow";
+import { type Unheard, unheard } from "@/lib/outcome";
 import { postJSON, useCatalogue, useLiveSession } from "@/lib/live";
 import { useMedia } from "@/lib/useMedia";
 
@@ -118,6 +119,16 @@ export function LiveBoard({
     return m;
   }, [view]);
 
+  // A finished call that learned nothing, worded from how it ended ("Hung up early"), not "No answer yet".
+  const ended = useMemo(() => {
+    const e: Record<string, Unheard> = {};
+    for (const card of board) {
+      const u = unheard(card, view?.calls);
+      if (u) e[card.listing_id] = u;
+    }
+    return e;
+  }, [board, view]);
+
   // Follow the server's focus (the voice agent saying "the Yorkville one") once
   // it changes after the page opened; on open, frame the whole board.
   const serverFocus = view && follows(openingFocus, view.focus_listing_id ?? null) ? view.focus_listing_id : null;
@@ -217,6 +228,7 @@ export function LiveBoard({
         focusId={focusId}
         hoverId={hover}
         marks={marks}
+        ended={ended}
         onSelect={select}
         onHover={setHover}
       />

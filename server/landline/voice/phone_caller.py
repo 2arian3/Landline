@@ -7,6 +7,11 @@ and red flags read only what the other person said. Tool calls run through the b
 Caller's tools, so the goodbye guard is the renter call's. After each Caller turn, `kept_promise` notes a
 question the Caller promised to bring back but didn't. The call returns a little before the Dispatcher's
 deadline, so the outcome keeps what was heard.
+
+Both sides are recorded the way a renter call is (A-10, voice/recorder.py): the listing agent's voice on the
+`landlord` track, the Caller's on `agent`, and each transcript line at its place in them, stored through
+`Turns` every few seconds and once more at the end. With RECORD_AUDIO=0 no audio is stored (the lines still
+get their place) and the Caller doesn't say the call is recorded.
 """
 from __future__ import annotations
 
@@ -23,58 +28,88 @@ from landline.agents.caller.brief import brief, instructions, wants
 from landline.contracts import CallOutcome, Listing, Preferences, Viewing
 from landline.orchestrator import SessionRuntime
 from landline.voice import bridge
-from landline.voice.bridge import HANG_UP_GRACE_S, Playback
+from landline.voice.bridge import HANG_UP_GRACE_S, KEEP_AUDIO_EVERY_S, Playback
 from landline.voice.dispatch import CallResult, Dial
 from landline.voice.higgs import PCMU, ConnectHiggs, session_config
 from landline.voice.outbound import Turns, opening
+from landline.voice.recorder import CallRecorder, Chunk, Placed, format_of
 
 log = logging.getLogger(__name__)
 
 DEADLINE_MARGIN_S = 5   # as in the sim: end before the Dispatcher does, with the outcome
+END_AFTER_S = 3.0       # once a call is over (caller_tools.over), how long its last words get for end_call
 
 
 class PhoneCaller:
     def __init__(self, runtime: SessionRuntime, connect_higgs: ConnectHiggs, api_key: str,
-                 voice: str = "default", clock=lambda: datetime.now(UTC), extractor: Complete | None = None):
+                 voice: str = "default", clock=lambda: datetime.now(UTC), extractor: Complete | None = None,
+                 record_audio: bool = True):
         self.runtime, self.connect, self.api_key, self.voice, self.clock = (
             runtime, connect_higgs, api_key, voice, clock)
         self.extractor = extractor   # the Auditor's text LLM (A-07); None: rules and the live record only
+        self.record_audio = record_audio   # Settings.record_audio: store both sides' audio (A-10)
 
     def _preferences(self, session_id: str) -> Preferences | None:
         """The renter's preferences, for what the checklist asks; None once the session is gone."""
         return self.runtime.state(session_id).preferences if self.runtime.has(session_id) else None
 
-    async def __call__(self, dial: Dial, transport: Any) -> CallResult:
+    def _setup(self, dial: Dial) -> tuple[Listing, Any, dict[str, Any], list[dict[str, Any]]]:
+        """The call's listing, its brief, its Higgs session config and the events that open it."""
         listing = self.runtime.catalogue.by_id[dial.listing_id]
         b = brief(listing, dial.plan, wants(self._preferences(dial.session_id)))
+        text, start = opening(instructions(b), recorded=self.record_audio)
+        config = session_config(instructions=text, tools=caller_tools.TOOLS, voice=self.voice,
+                                audio_format=PCMU)
+        return listing, b, config, start
+
+    async def prepare(self, dial: Dial) -> Any:
+        """Opens the call's Higgs session once a person has answered, while Twilio still connects the stream,
+        so the connect and session.update no longer wait for it (#148). The runner hands it to the call, or
+        closes it if no stream comes."""
+        return await self.connect(self.api_key, self._setup(dial)[2])
+
+    async def __call__(self, dial: Dial, transport: Any, higgs: Any = None) -> CallResult:
+        """Talks the call through; `higgs` is a session `prepare` opened for it, else one opens now. The
+        call closes it either way."""
+        listing, b, config, start = self._setup(dial)
         ctx = caller_tools.CallerContext(session_id=dial.session_id, call_id=dial.call_id,
                                          listing_id=dial.listing_id, brief=b, runtime=self.runtime,
                                          clock=self.clock)
-        text, start = opening(instructions(b))
         reason = "failed"
-        higgs = None
+        keeper: asyncio.Task | None = None
         turns = Turns(self.runtime.db, dial.call_id)
+        # Its clock starts as the stream does, as in the bridge: the listing agent's audio waits on the
+        # stream while Higgs connects, so both tracks start together.
+        recorder = CallRecorder(format_of(PCMU), caller="landlord")
         try:
-            higgs = await self.connect(self.api_key, session_config(
-                instructions=text, tools=caller_tools.TOOLS, voice=self.voice, audio_format=PCMU))
+            if higgs is None:
+                higgs = await self.connect(self.api_key, config)
             for event in start:
                 await higgs.send(event)
             # With "answered by" and "stream started" (api/twilio.py) and "first audio out" below, the log's
             # timestamps split the silence after a pickup into its steps (#148).
             log.info("listing call %s: Higgs ready, opening sent", dial.call_id)
+            keeper = asyncio.create_task(_keep_every(turns, recorder, self.record_audio))
             left = (dial.deadline - self.clock()).total_seconds() - DEADLINE_MARGIN_S
             try:
                 async with asyncio.timeout(max(1.0, left)):
-                    reason = await _talk(higgs, transport, ctx, turns, Playback(8000))
+                    reason = await _talk(higgs, transport, ctx, turns, Playback(8000), recorder)
             except TimeoutError:
                 reason = ctx.end_reason or "timeout"
         except Exception:
             log.exception("phone call %s failed", dial.call_id)
             reason = ctx.end_reason or "failed"
         finally:
+            if keeper is not None:
+                keeper.cancel()
+                await asyncio.gather(keeper, return_exceptions=True)
             if higgs is not None:
                 with contextlib.suppress(Exception):
                     await higgs.close()
+            try:   # the rest of the audio, never in the way of ending the call
+                _keep(turns, recorder, recorder.finish(), self.record_audio)
+            except Exception:
+                log.exception("could not keep the end of call %s's audio", dial.call_id)
             await turns.flush()
         viewing = Viewing(starts_at=ctx.booked, slot_text=ctx.slot_text or "") if ctx.booked else None
         return CallResult(reason, await self._audit(dial, listing, reason, ctx, turns, viewing))
@@ -94,10 +129,16 @@ class PhoneCaller:
         return await auditor.outcome(record, complete=extractor, timeout_s=max(1.0, left))
 
 
-async def _talk(higgs: Any, transport: Any, ctx: Any, turns: Turns, playback: Playback) -> str:
-    """Audio both ways until the Caller's goodbye has played (end_call) or the agent hangs up."""
+async def _talk(higgs: Any, transport: Any, ctx: Any, turns: Turns, playback: Playback,
+                recorder: CallRecorder) -> str:
+    """Audio both ways until the Caller's goodbye has played (end_call), the agent hangs up, or the call is
+    over with no end_call (ends_itself). The recorder hears both sides, as the bridge's does, through a
+    guard: a recorder error never ends the call."""
+    rec = _Guard(ctx.call_id)
+
     async def listen() -> str:
         while (audio := await transport.receive_audio()) is not None:
+            rec(recorder.heard, audio)
             await higgs.send({"type": "input_audio_buffer.append", "audio": audio})
         return "hangup"
 
@@ -114,24 +155,30 @@ async def _talk(higgs: Any, transport: Any, ctx: Any, turns: Turns, playback: Pl
                 spoke = True
                 await transport.send_audio(event["delta"])
                 playback.sent(event["delta"])
+                rec(recorder.played, event["delta"], event.get("item_id"))
                 if not sent_any:
                     sent_any = True
                     log.info("listing call %s: first audio out", ctx.call_id)
             elif kind == "input_audio_buffer.speech_started":
+                # Their line starts here either way; only a barge-in cuts what the Caller was saying.
+                rec(recorder.speech_started, event.get("item_id"), event.get("audio_start_ms"))
                 if opening and (not opened or playback.remaining() > 0):
                     log.info("listing call %s: speech over the opening; it plays on", ctx.call_id)
                     continue
                 opening = False
                 await transport.send_clear()
                 playback.clear()
+                rec(recorder.cut)
+            elif kind == "input_audio_buffer.speech_stopped":
+                rec(recorder.speech_stopped, event.get("item_id"), event.get("audio_end_ms"))
             elif kind == "conversation.item.input_audio_transcription.completed":
                 heard = str(event.get("transcript") or "").strip()
                 if heard:
                     ctx.said.append(heard)
-                    turns.said("landlord", heard)
+                    _said(turns, recorder, "landlord", heard, event, rec)
             elif kind == "response.output_audio_transcript.done":
                 said = " ".join(f"{said} {event.get('transcript') or ''}".split())
-                turns.said("agent", str(event.get("transcript") or ""))
+                _said(turns, recorder, "agent", str(event.get("transcript") or ""), event, rec)
             elif kind == "response.function_call_arguments.done":
                 await bridge.run_tool(higgs, event, ctx, spoke=spoke, agent=caller_tools)
                 called.append(str(event.get("name", "")))
@@ -143,12 +190,26 @@ async def _talk(higgs: Any, transport: Any, ctx: Any, turns: Turns, playback: Pl
                 output = (event.get("response") or {}).get("output") or []
                 if not ctx.hang_up and not any(o.get("type") == "function_call" for o in output):
                     await caller_tools.kept_promise(ctx, said, called)   # the Caller's turn is over
+                    if caller_tools.over(ctx, said, called):
+                        over.set()
                     said, called = "", []
             elif kind == "error":
                 log.warning("call %s Higgs error: %s", ctx.call_id, event.get("error"))
         return "hangup"
 
-    pumps = {asyncio.create_task(listen()), asyncio.create_task(speak())}
+    over = asyncio.Event()
+
+    async def ends_itself() -> str:
+        """A call that is over (caller_tools.over) and still open ends here: once everything the Caller said
+        has played and END_AFTER_S more have passed with no end_call. Its last words are never cut."""
+        await over.wait()
+        while True:
+            await asyncio.sleep(playback.remaining() + END_AFTER_S)
+            if playback.remaining() <= 0:
+                log.info("listing call %s: over with no end_call; hanging up", ctx.call_id)
+                return ctx.end_reason or "done"
+
+    pumps = {asyncio.create_task(listen()), asyncio.create_task(speak()), asyncio.create_task(ends_itself())}
     try:
         done, _ = await asyncio.wait(pumps, return_when=asyncio.FIRST_COMPLETED)
         return next(iter(done)).result()
@@ -156,3 +217,51 @@ async def _talk(higgs: Any, transport: Any, ctx: Any, turns: Turns, playback: Pl
         for task in pumps:
             task.cancel()
         await asyncio.gather(*pumps, return_exceptions=True)
+
+
+class _Guard:
+    """Runs the recorder's calls inside a live call's audio loop. The first one that fails is logged and the
+    recorder stays off for the rest of the call: the recording is a record (A-10), the call is the job."""
+
+    def __init__(self, call_id: str) -> None:
+        self.call_id, self.off = call_id, False
+
+    def __call__(self, fn: Any, *args: Any) -> Any:
+        if self.off:
+            return None
+        try:
+            return fn(*args)
+        except Exception:
+            self.off = True
+            log.exception("listing call %s: the recorder failed; the call goes on without it", self.call_id)
+            return None
+
+
+def _said(turns: Turns, recorder: CallRecorder, speaker: str, text: str, event: dict[str, Any],
+          rec: _Guard) -> None:
+    """Stores a transcript line at its place in the call's audio; with the recorder off, without its place,
+    so the line itself (which the Auditor reads) is never lost."""
+    item_id = event.get("item_id")
+    start_ms, end_ms = rec(recorder.span, item_id) or (None, None)
+    rec(recorder.stored, item_id, turns.said(speaker, text, start_ms=start_ms, end_ms=end_ms))
+
+
+async def _keep_every(turns: Turns, recorder: CallRecorder, record: bool) -> None:
+    """Stores what the recorder has ready every few seconds, so a crash loses only the last few."""
+    while True:
+        await asyncio.sleep(KEEP_AUDIO_EVERY_S)
+        try:
+            _keep(turns, recorder, recorder.take(), record)
+        except Exception:
+            log.exception("could not keep call %s's audio", turns.call_id)
+
+
+def _keep(turns: Turns, recorder: CallRecorder, taken: tuple[list[Chunk], list[Placed]],
+          record: bool) -> None:
+    chunks, moved = taken
+    if record:
+        fmt = recorder.fmt
+        for chunk in chunks:
+            turns.audio(chunk.track, chunk.start_ms, chunk.audio, fmt=fmt.name, rate=fmt.rate)
+    for line in moved:
+        turns.placed(line.idx, line.start_ms, line.end_ms)
