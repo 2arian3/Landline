@@ -1,14 +1,27 @@
-"""The Concierge's catch-up (A-04): a renter line in another script that got a reply with no tool is read
-for its preferences and saved through update_preferences. Never for English. No network: the text model
-is a fake."""
+"""The Concierge's catch-ups (A-04): a renter line in another script that got a reply with no tool is read
+for its preferences and saved through update_preferences, never for English; and an English line asking
+for calls or a viewing that got no call_listings records the plan (#127). No network: the text model is a
+fake."""
+import asyncio
 from datetime import UTC, datetime
 
 from landline.agents.concierge import tools
-from landline.agents.concierge.backstop import Turn, catch_up, foreign
-from landline.contracts import Listing, PreferencesUpdated, SessionStarted
+from landline.agents.concierge.backstop import (
+    PLANNED,
+    Turn,
+    asks_for_calls,
+    catch_up,
+    catch_up_calls,
+    foreign,
+    refs_in,
+)
+from landline.contracts import Listing, ListingFocused, PreferencesUpdated, SessionStarted
 from landline.contracts.tools import PreferenceDelta
 from landline.db.catalogue import Catalogue
 from landline.orchestrator import SessionRuntime
+from landline.voice import bridge
+from landline.voice.line import Line
+from landline.voice.recorder import PCMU_8K, CallRecorder
 
 NOW = datetime(2026, 10, 24, 15, 0, tzinfo=UTC)
 SID = "s_back000001"
@@ -120,3 +133,113 @@ def test_a_tool_call_an_english_line_or_a_cut_off_reply_gives_nothing():
     turn.response_done(_done("message", status="cancelled"))
     turn.transcript(KOREAN)
     assert turn.line() is None
+
+
+# ── Calls the renter asked for (#127) ───────────────────────────────────────
+
+ASKS = ["Can you can you call the first one? I really like it.", "Can you call them?", "Call the top three.",
+        "Let's let's set a house visit for the first one.", "Book a viewing for number two.",
+        "Contact the landlord.", "Could you call the second and the third?",
+        "Can you check if it's still available?", "Set up a viewing for the last one, please."]
+NOT_ASKS = ["I'll call you back", "What do you call that area?", "Call me Sara", "Don't call yet",
+            "Don't call them yet.", "I really like the first one.", "I called the landlord last week.",
+            "Yeah, yeah. Let's do that.", "Who should I call?", "그 집에 전화해 주세요"]
+CALL_FIRST = "Can you can you call the first one? I really like it."
+
+
+def test_only_a_plain_ask_for_calls_or_a_viewing_counts():
+    for said in ASKS:
+        assert asks_for_calls(said), said
+    for said in NOT_ASKS:
+        assert not asks_for_calls(said), said
+
+
+async def test_the_listings_come_from_the_line_or_the_card_in_focus():
+    ctx = await _ctx()
+    assert refs_in(CALL_FIRST, ctx) == ["1"]
+    assert refs_in("Call the top three.", ctx) == ["1", "2", "3"]
+    assert refs_in("Book a viewing for number two.", ctx) == ["2"]
+    assert refs_in("Could you call the second and the third?", ctx) == ["2", "3"]
+    assert refs_in("Contact the landlord.", ctx) == []   # nothing named: call_listings decides
+    fourth = ctx.runtime.get(SID).board[3]
+    await ctx.runtime.emit(ListingFocused(session_id=SID, at=NOW, idem_key=f"{SID}:tap", origin="ui",
+                                          listing_id=fourth.listing_id))
+    assert refs_in("Contact the landlord.", ctx) == [str(fourth.rank)]
+
+
+def _answered(turn: Turn, said: str, tools_called: tuple[str, ...] = ()) -> None:
+    turn.speech_started()
+    turn.transcript(said)
+    turn.response_created()
+    for name in tools_called:
+        turn.tool_called(name)
+    turn.response_done({"response": {"status": "completed", "output": [{"type": "message"}]}})
+
+
+def test_a_turn_without_call_listings_gives_the_line_once_and_one_with_it_gives_nothing():
+    turn = Turn()
+    _answered(turn, CALL_FIRST, ("give_feedback",))   # "I really like it" alone isn't the call
+    assert turn.call_line() == CALL_FIRST and turn.call_line() is None
+    _answered(turn, CALL_FIRST, ("call_listings",))
+    assert turn.call_line() is None
+    _answered(turn, "I'll call you back.")
+    assert turn.call_line() is None
+
+
+async def test_call_the_first_one_records_the_plan_for_listing_1():
+    ctx = await _ctx()
+    first = ctx.runtime.get(SID).board[0]
+    reply = await catch_up_calls(CALL_FIRST, ctx)
+    assert ctx.runtime.state(SID).request.listing_ids == [first.listing_id]
+    assert reply.startswith(f"I'll call {first.address} after you hang up")
+    assert await catch_up_calls("I'll call you back.", ctx) is None
+
+
+class _Higgs:
+    def __init__(self, events):
+        self._events = events
+
+    async def send(self, event):
+        pass
+
+    async def events(self):
+        for event in self._events:
+            yield event
+
+
+class _NoAudio:
+    async def send_audio(self, b64):
+        pass
+
+    async def send_clear(self):
+        pass
+
+
+async def test_through_the_bridge_a_reply_with_no_call_listings_records_the_plan_once_and_reads_it_back():
+    ctx = await _ctx()
+    first = ctx.runtime.get(SID).board[0].listing_id
+    no_tool = {"type": "response.done", "response": {"status": "completed", "output": [{"type": "message"}]}}
+    events = [
+        {"type": "input_audio_buffer.speech_started", "item_id": "u1", "audio_start_ms": 0},
+        {"type": "input_audio_buffer.speech_stopped", "item_id": "u1", "audio_end_ms": 900},
+        {"type": "response.created"},
+        {"type": "conversation.item.input_audio_transcription.completed", "item_id": "u1",
+         "transcript": CALL_FIRST},
+        {"type": "response.output_audio_transcript.done", "item_id": "a1",
+         "transcript": "I can't call the landlord directly, but I can help you contact them."},
+        no_tool,
+        {"type": "response.created"}, no_tool,   # another reply in the same turn: still once
+    ]
+    sent: list[dict] = []
+
+    async def send(event):
+        sent.append(event)
+
+    line = Line(send)
+    await bridge._higgs_to_renter(_Higgs(events), _NoAudio(), ctx, bridge.Playback(8000),
+                                  CallRecorder(PCMU_8K), line)
+    await asyncio.gather(*list(bridge._CATCHING))
+    assert ctx.runtime.state(SID).request.listing_ids == [first]
+    notes = [e["item"]["content"][0]["text"] for e in sent if e["type"] == "conversation.item.create"]
+    assert len(notes) == 1 and notes[0].startswith(f"{PLANNED} I'll call ")
+    assert sent[-1] == {"type": "response.create"}
