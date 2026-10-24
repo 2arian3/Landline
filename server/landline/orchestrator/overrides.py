@@ -13,7 +13,7 @@ import re
 from datetime import date
 from typing import Any
 
-from landline.agents.auditor.values import Refused, Value, call_day, fee_name, settle
+from landline.agents.auditor.values import Refused, Value, call_day, fee_name, free_from, settle
 from landline.contracts import Fact, Listing
 from landline.db.catalogue import Catalogue
 from landline.orchestrator.state import SessionState
@@ -65,8 +65,10 @@ def _settled(facts: list[Fact]) -> tuple[dict[str, Value], dict[str, str], list[
             if f.field == "fees":
                 fees.append(settle("fees", f.value, f.quote, **_fee_hints(f.value)))
             else:
+                on = call_day(f.at)   # the Auditor wrote the move-in day in words, from code (#157)
+                parts = free_from(f.value, on) if f.field == "available_from" else None
                 heard[f.field], quotes[f.field] = settle(f.field, f.value, f.quote,
-                                                         today=call_day(f.at) if f.at else None), f.quote
+                                                         today=on if f.at else None, parts=parts), f.quote
         except Refused:
             continue
     return heard, quotes, fees

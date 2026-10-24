@@ -31,7 +31,7 @@ from typing import Any
 from landline.agents.auditor import extract as extractor
 from landline.agents.auditor import grounding, when
 from landline.agents.auditor.flags import Flag, red_flags
-from landline.agents.auditor.values import Refused, Value, asks, bare, call_day, fee_name, settle
+from landline.agents.auditor.values import Refused, Value, asks, bare, call_day, fee_name, free_from, settle
 from landline.agents.caller import slots
 from landline.contracts import CallOutcome, Conflict, EndReason, Fact, Viewing
 
@@ -180,8 +180,12 @@ def build(call: CallRecord, candidates: Sequence[extractor.Candidate], status: s
         if turn is None:
             continue
         turn = _answering(call.turns, landlord, turn, tf.field, tf.quote)
+        # A live move-in day is code's words ("Sunday, October 25"), from the Caller's tools, never a model's
+        # date (#157), so it stands when the quote's own words name no day ("after Halloween").
+        parts = free_from(tf.value, day) if tf.field == "available_from" else None
         try:
-            v = settle(tf.field, tf.value, tf.quote, today=day, question=_asked(call.turns, turn))
+            v = settle(tf.field, tf.value, tf.quote, today=day, question=_asked(call.turns, turn),
+                       parts=parts)
             live.append(Heard(v, tf.quote, turn.idx, "tool"))
         except Refused as e:
             result.dropped.append(Dropped(tf.field, tf.quote, "tool", f"unreadable: {e}"))

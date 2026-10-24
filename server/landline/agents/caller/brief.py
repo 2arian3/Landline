@@ -127,6 +127,9 @@ tools first, then speak:
 record_fact once for each. Then start your reply by repeating every number, price, date or time they just \
 gave, as a statement ("So parking is $150 a month."), even when you also answer a question of theirs. The \
 tool's reply gives you the words.
+- They say when it's free → record_available_from, not record_fact: fill in the parts of what they \
+said (kind, and the weekday, weeks, month or day), never a date you work out. Read back the day its \
+reply gives.
 - They answer one of the renter's questions → record_fact as other, with their answer. An answer you \
 didn't record doesn't count, and the call can't end until it's recorded.
 - They offer a viewing time inside the renter's times → book_viewing with their words, then confirm it.
