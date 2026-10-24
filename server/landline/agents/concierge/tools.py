@@ -190,10 +190,14 @@ def _places(args: PreferenceDelta, ctx: ToolContext) -> tuple[PreferenceDelta, l
     if not args.areas and not args.anchors:
         return args, [], []
     runtime = ctx.runtime
-    known = runtime.state(ctx.session_id).preferences.anchors
+    before = runtime.state(ctx.session_id).preferences
+    known = before.anchors
     placed = {a.label.lower() for a in known if a.lat is not None}
-    areas: list[str] = []
-    anchors: list[str] = [] if args.anchors is not None else [a.label for a in known]
+    # A place named now replaces the ones before it ("sorry, near Christie Street"), unless the renter adds
+    # it ("and also near my work"): otherwise the old place keeps steering the list as the map moves (#183).
+    keep = _adds_place(ctx.renter_said)
+    areas: list[str] = list(before.areas) if keep else []
+    anchors: list[str] = [a.label for a in known] if keep else []
     points: list[tuple[str, refs.Spot]] = []
     lost: list[str] = []
     named = [(a, True) for a in args.areas or []] + [(a.label, False) for a in args.anchors or []]
@@ -210,12 +214,21 @@ def _places(args: PreferenceDelta, ctx: ToolContext) -> tuple[PreferenceDelta, l
         else:
             lost.append(label)
             anchors.append(label)
-    update: dict[str, Any] = {}
-    if args.areas is not None:
-        update["areas"] = list(dict.fromkeys(areas))
-    if args.anchors is not None or anchors != [a.label for a in known]:
-        update["anchors"] = [AnchorRef(label=x) for x in dict.fromkeys(anchors)]
+    update = {"areas": list(dict.fromkeys(areas)),
+              "anchors": [AnchorRef(label=x) for x in dict.fromkeys(anchors)]}
     return args.model_copy(update=update), points, lost
+
+
+_ADDS_PLACE = re.compile(r"\b(also|as well|both|either|in addition|plus)\b|"
+                         r"\band (also )?(near|around|close to|by|in)\b", re.I)
+# "Show me the options near X" asks for listings there, not just the map (#183).
+_WANTS_LISTINGS = re.compile(r"\b(options?|places|listings?|apartments?|rentals?|units?|homes?|condos?|"
+                             r"anything)\b", re.I)
+
+
+def _adds_place(line: str | None) -> bool:
+    """Whether the renter's latest line adds a place to the ones already in the search."""
+    return bool(line) and _ADDS_PLACE.search(line) is not None
 
 
 def _not_found(lost: list[str], ctx: ToolContext) -> str | None:
@@ -265,7 +278,7 @@ async def focus_area(args: FocusArea, ctx: ToolContext, meta: dict) -> str:
     spot = refs.area(args.place, runtime.matrix.named, _stations(), runtime.catalogue)
     if spot is not None:
         await _show_area(ctx, meta, args.place, spot.lat, spot.lng)
-        return f"Showing {args.place}."
+        return await _showing(ctx, meta, args.place, spot.lat, spot.lng)
     lookup = asyncio.ensure_future(runtime.places.resolve(args.place))
     try:
         point = await asyncio.wait_for(asyncio.shield(lookup), PLACE_WAIT_S)
@@ -277,7 +290,26 @@ async def focus_area(args: FocusArea, ctx: ToolContext, meta: dict) -> str:
     if point is None:
         return f"Couldn't find {args.place} on the map. Nothing changed. {ASK_PLACE}"
     await _show_area(ctx, meta, args.place, point.lat, point.lng)
-    return f"Showing {args.place}."
+    return await _showing(ctx, meta, args.place, point.lat, point.lng)
+
+
+async def _showing(ctx: ToolContext, meta: dict, place: str, lat: float, lng: float) -> str:
+    """The map is on `place`. When the renter asked for listings there ("show me the options near X"),
+    the list ranks by it too, at that same point, so the map and the list agree (#183)."""
+    if not ctx.renter_said or not _WANTS_LISTINGS.search(ctx.renter_said):
+        return f"Showing {place}."
+    sid = ctx.session_id
+    before = ctx.runtime.state(sid).preferences
+    keep = _adds_place(ctx.renter_said)
+    anchors = [AnchorRef(label=a.label) for a in before.anchors] if keep else []
+    delta = PreferenceDelta(areas=list(before.areas) if keep else [],
+                            anchors=[*anchors, AnchorRef(label=place)])
+    key = f"{meta['idem_key']}:rank"
+    async with ctx.runtime.session_tx(sid) as tx:
+        await tx.apply(PreferencesUpdated(**{**meta, "idem_key": key}, delta=delta))
+        await tx.apply(AnchorResolved(session_id=sid, at=meta["at"], idem_key=f"{key}:place", label=place,
+                                      lat=lat, lng=lng))
+    return f"Showing {place}, and the list now ranks by it. {ctx.runtime.get(sid).agent_says}"
 
 
 async def _show_when_found(ctx: ToolContext, meta: dict, place: str, lookup: asyncio.Future) -> None:

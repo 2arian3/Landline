@@ -415,3 +415,49 @@ def test_a_question_that_brings_up_a_new_place_is_a_search_there_not_a_chat():
     assert ('A question that brings up a new place ("what about the Annex?", "anything in Leslieville?") is '
             "them asking to look there: put it in areas with update_preferences, as above, and never answer "
             "it without a tool.") in text
+
+
+# ── a new place replaces the old one unless the renter adds it (#183) ──────
+
+def _places_now(ctx) -> list[tuple[str, bool]]:
+    prefs = ctx.runtime.state(SID).preferences
+    return [(a, False) for a in prefs.areas] + [(a.label, a.lat is not None) for a in prefs.anchors]
+
+
+async def test_a_correction_replaces_the_old_place_and_the_list_follows_the_new_one(ctx):
+    ctx.renter_said = "Somewhere over by Dupont, please."
+    await _say(ctx, "update_preferences", '{"areas": ["over by Dupont"]}')
+    assert _places_now(ctx) == [("over by Dupont", True)] and _view(ctx).board[0].address == "322 Dupont St"
+    ctx.renter_said = "Sorry, I meant near Bloor."
+    reply = await _say(ctx, "update_preferences", '{"areas": ["Bloor"]}', "fc_2")
+    assert _places_now(ctx) == [("Bloor", True)]                  # Dupont no longer steers the list
+    assert "Bloor" in _view(ctx).board[0].address
+    assert "near Bloor" in reply and "over by Dupont" not in reply   # a listing on Dupont St may be named
+
+
+async def test_also_adds_a_place_to_the_ones_before(ctx):
+    ctx.renter_said = "Near Dupont."
+    await _say(ctx, "update_preferences", '{"areas": ["Dupont"]}')
+    ctx.renter_said = "And also near Bloor."
+    await _say(ctx, "update_preferences", '{"areas": ["Bloor"]}', "fc_2")
+    assert _places_now(ctx) == [("Dupont", True), ("Bloor", True)]
+
+
+async def test_with_no_renter_line_a_new_place_replaces_by_default(ctx):
+    await _say(ctx, "update_preferences", '{"areas": ["Dupont"]}')
+    await _say(ctx, "update_preferences", '{"anchors": [{"label": "Bloor"}]}', "fc_2")
+    assert _places_now(ctx) == [("Bloor", True)]
+
+
+async def test_show_me_the_options_near_a_place_ranks_by_it_where_the_map_went(ctx):
+    ctx.renter_said = "Near Dupont."
+    await _say(ctx, "update_preferences", '{"areas": ["Dupont"]}')
+    ctx.renter_said = "Show me Bloor on the map."                  # only the map: the search stays
+    assert await _say(ctx, "focus_area", '{"place": "Bloor"}', "fc_2") == "Showing Bloor."
+    assert _places_now(ctx) == [("Dupont", True)]
+    ctx.renter_said = "Can you show me the options near Bloor?"   # listings there: the list follows
+    reply = await _say(ctx, "focus_area", '{"place": "Bloor"}', "fc_3")
+    assert reply.startswith("Showing Bloor, and the list now ranks by it.")
+    area, anchor = _view(ctx).focus_area, ctx.runtime.state(SID).preferences.anchors[0]
+    assert _places_now(ctx) == [("Bloor", True)] and (anchor.lat, anchor.lng) == (area.lat, area.lng)
+    assert "Bloor" in _view(ctx).board[0].address
