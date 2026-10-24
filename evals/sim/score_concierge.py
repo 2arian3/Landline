@@ -98,7 +98,8 @@ def _wants(want: Want, state: dict, trace: Trace, catalogue: Catalogue, *, kind:
         for r in want.reactions or []:
             lid = _one(r.ref, _board(trace, r.at if r.at is not None else own), catalogue)
             said = state["reactions"].get(lid)
-            ok = said is not None and (r.reaction is None or said["reaction"] == r.reaction) \
+            fair = [r.reaction] if isinstance(r.reaction, str) else r.reaction
+            ok = said is not None and (fair is None or said["reaction"] in fair) \
                 and (r.attribute is None or said.get("attribute") == r.attribute)
             check(f"reaction.{r.ref}", ok, f"want {r.reaction}/{r.attribute} on {_addr(catalogue, lid)}, "
                                            f"got {said}")
@@ -121,6 +122,12 @@ def _wants(want: Want, state: dict, trace: Trace, catalogue: Catalogue, *, kind:
                 check(f"tool.{name}", name in called, f"called {called}")
         if want.ended is not None:
             check("ended", (trace.end == "end_session") == want.ended, f"ended by {trace.end}")
+        if want.ended:
+            # After end_session nothing more is said, so a goodbye has to come in that same turn. Without
+            # one the renter hears the line drop.
+            bye = [a for a in trace.agent if "end_session" in a.tools]
+            check("ended.goodbye", bool(bye) and bool(bye[-1].text.strip()),
+                  "hung up without a word" if bye else "never called end_session")
         if want.replies_in is not None:
             ok, detail = _replies_in(want.replies_in, trace)
             check(f"replies_in.{want.replies_in}", ok, detail)
@@ -159,7 +166,7 @@ def _replies_in(script: str, trace: Trace) -> tuple[bool, str]:
     switched = [i for i, said in enumerate(trace.lines) if pattern.search(said)]
     if not switched:
         return False, "bad case: no line is in that script"
-    after = [a for a in trace.agent if a.line >= switched[0]]
+    after = [a for a in trace.agent if a.line >= switched[0] and a.text.strip()]   # silence: ended.goodbye
     wrong = [a.line for a in after if not pattern.search(a.text)]
     return (bool(after) and not wrong), f"replies after line {switched[0]} not in {script}: lines {wrong}"
 

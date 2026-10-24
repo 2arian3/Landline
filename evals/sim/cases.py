@@ -35,10 +35,13 @@ class _Strict(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
 
+Reaction = Literal["like", "dislike", "reject"]
+
+
 class ReactionWant(_Strict):
     ref: str
     at: int | None = None          # the line whose board `ref` refers to; implied inside `expect`
-    reaction: Literal["like", "dislike", "reject"] | None = None
+    reaction: Reaction | list[Reaction] | None = None   # a list when either reading is fair
     attribute: Literal["light", "location", "size", "cost", "parking"] | None = None
 
 

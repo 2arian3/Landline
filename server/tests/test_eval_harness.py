@@ -96,6 +96,14 @@ def test_a_request_names_the_listings_the_board_showed_when_it_was_made():
     assert not score(case, _trace([turn], [call], wrong), CATALOGUE).passed
 
 
+def test_hanging_up_without_a_goodbye_fails_the_case():
+    case = Case.model_validate({"id": "t", "about": "t", "lines": [{"say": "Bye."}],
+                                "final": {"ended": True}})
+    assert score(case, _trace([AgentTurn(0, "Goodbye!", ["end_session"], 1)]), CATALOGUE).passed
+    result = score(case, _trace([AgentTurn(0, "", ["end_session"], 1)]), CATALOGUE)
+    assert [c.name for c in result.failed()] == ["final.ended.goodbye"]
+
+
 def test_an_empty_run_still_writes_a_report():
     assert "No eval has run yet" in report.render({})
 
