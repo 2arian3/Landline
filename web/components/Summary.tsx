@@ -50,12 +50,14 @@ export function Activity({ view, compact = false }: { view: SessionView | null; 
   const queued = view.calls.filter((c) => c.state === "queued").length;
   const rest = compact ? "min-w-0 truncate" : "";
 
-  if (view.phase === "open" && view.plan.length) {
+  // The plan, before the renter hangs up, and after it until the calls are scheduled (A-06).
+  if (view.plan.length && (view.phase === "open" || (view.phase === "calling" && !view.calls.length))) {
     return (
       <p className="flex items-baseline gap-x-1.5 text-meta" aria-live="polite">
         <span aria-hidden className="h-2 w-2 shrink-0 self-center rounded-full bg-ink" />
         <span className={`font-label text-ink ${rest}`}>
-          Will call {view.plan.length} {view.plan.length === 1 ? "place" : "places"} when you hang up
+          Will call {view.plan.length} {view.plan.length === 1 ? "place" : "places"}
+          {view.phase === "open" && " when you hang up"}
         </span>
       </p>
     );
