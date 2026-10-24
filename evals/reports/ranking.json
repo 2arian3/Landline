@@ -1,0 +1,394 @@
+{
+ "tune": {
+  "current": {
+   "at": "2026-10-24T08:30:50+00:00",
+   "sha": "dabed61",
+   "catalogue": "listings.json",
+   "cases": 7,
+   "hit_at_3": 1.0,
+   "precision_at_3": 0.762,
+   "converged": 2,
+   "turns_mean": 2,
+   "turns_max": 3,
+   "monotonicity": [],
+   "stability": [
+    "cheapest-studio: 'too small' on the top card left it first",
+    "family-space: 'too expensive' on the top card left it first",
+    "one-bed-space: 'too expensive' on the top card left it first",
+    "three-bed-value: 'too expensive' on the top card left it first",
+    "union-commuter: 'too small' on the top card left it first",
+    "union-commuter: 'too small' moved livrent:108451 above livrent:139609, which is no worse on size",
+    "union-commuter: 'too small' moved livrent:130282 above livrent:139609, which is no worse on size",
+    "union-commuter: 'too small' moved livrent:100747 above livrent:139609, which is no worse on size",
+    "uoft-student: 'too small' on the top card left it first",
+    "uoft-student: 'too small' moved livrent:125599 above livrent:137404, which is no worse on size",
+    "yonge-eglinton: 'too small' on the top card left it first"
+   ],
+   "per_case": [
+    {
+     "id": "cheapest-studio",
+     "top": [
+      "livrent:133724",
+      "livrent:135384",
+      "livrent:135386"
+     ],
+     "hit": true,
+     "precision": 1.0,
+     "turns": 1,
+     "path": [
+      [
+       "livrent:133724",
+       "livrent:105591",
+       "livrent:125596"
+      ]
+     ],
+     "reason": "too small"
+    },
+    {
+     "id": "family-space",
+     "top": [
+      "livrent:116699",
+      "livrent:101528",
+      "livrent:135984"
+     ],
+     "hit": true,
+     "precision": 0.3333333333333333,
+     "turns": null,
+     "path": [
+      [
+       "livrent:116699",
+       "livrent:135984",
+       "livrent:126435"
+      ],
+      [
+       "livrent:116699",
+       "livrent:135984",
+       "livrent:126435"
+      ],
+      [
+       "livrent:116699",
+       "livrent:135984",
+       "livrent:126435"
+      ],
+      [
+       "livrent:116699",
+       "livrent:135984",
+       "livrent:126435"
+      ],
+      [
+       "livrent:116699",
+       "livrent:135984",
+       "livrent:126435"
+      ]
+     ],
+     "reason": "too expensive"
+    },
+    {
+     "id": "one-bed-space",
+     "top": [
+      "livrent:145662",
+      "livrent:130262",
+      "livrent:117109"
+     ],
+     "hit": true,
+     "precision": 1.0,
+     "turns": null,
+     "path": [
+      [
+       "livrent:145662",
+       "livrent:130262",
+       "livrent:117109"
+      ],
+      [
+       "livrent:145662",
+       "livrent:130262",
+       "livrent:117109"
+      ],
+      [
+       "livrent:145662",
+       "livrent:130262",
+       "livrent:117109"
+      ],
+      [
+       "livrent:145662",
+       "livrent:130262",
+       "livrent:117109"
+      ],
+      [
+       "livrent:145662",
+       "livrent:130262",
+       "livrent:117109"
+      ]
+     ],
+     "reason": "too expensive"
+    },
+    {
+     "id": "three-bed-value",
+     "top": [
+      "livrent:135986",
+      "livrent:135985",
+      "livrent:130264"
+     ],
+     "hit": true,
+     "precision": 0.3333333333333333,
+     "turns": null,
+     "path": [
+      [
+       "livrent:135986",
+       "livrent:135985",
+       "livrent:130264"
+      ],
+      [
+       "livrent:135986",
+       "livrent:135985",
+       "livrent:130264"
+      ],
+      [
+       "livrent:135986",
+       "livrent:135985",
+       "livrent:130264"
+      ],
+      [
+       "livrent:135986",
+       "livrent:135985",
+       "livrent:130264"
+      ],
+      [
+       "livrent:135986",
+       "livrent:135985",
+       "livrent:130264"
+      ]
+     ],
+     "reason": "too expensive"
+    },
+    {
+     "id": "union-commuter",
+     "top": [
+      "livrent:134584",
+      "livrent:139609",
+      "livrent:108455"
+     ],
+     "hit": true,
+     "precision": 1.0,
+     "turns": 3,
+     "path": [
+      [
+       "livrent:134584",
+       "livrent:130282",
+       "livrent:100747"
+      ],
+      [
+       "livrent:139609",
+       "livrent:100747",
+       "livrent:130282"
+      ],
+      [
+       "livrent:139609",
+       "livrent:137408",
+       "livrent:100747"
+      ]
+     ],
+     "reason": "too small"
+    },
+    {
+     "id": "uoft-student",
+     "top": [
+      "livrent:130281",
+      "livrent:125592",
+      "livrent:125590"
+     ],
+     "hit": true,
+     "precision": 0.6666666666666666,
+     "turns": null,
+     "path": [
+      [
+       "livrent:130281",
+       "livrent:125592",
+       "livrent:125590"
+      ],
+      [
+       "livrent:137408",
+       "livrent:125592",
+       "livrent:130281"
+      ],
+      [
+       "livrent:137408",
+       "livrent:130281",
+       "livrent:137393"
+      ],
+      [
+       "livrent:137408",
+       "livrent:130281",
+       "livrent:137393"
+      ],
+      [
+       "livrent:137408",
+       "livrent:130281",
+       "livrent:137393"
+      ]
+     ],
+     "reason": "too small"
+    },
+    {
+     "id": "yonge-eglinton",
+     "top": [
+      "livrent:131134",
+      "livrent:128289",
+      "livrent:141658"
+     ],
+     "hit": true,
+     "precision": 1.0,
+     "turns": null,
+     "path": [
+      [
+       "livrent:131134",
+       "livrent:128289",
+       "livrent:141658"
+      ],
+      [
+       "livrent:131134",
+       "livrent:128289",
+       "livrent:141658"
+      ],
+      [
+       "livrent:131134",
+       "livrent:128289",
+       "livrent:141658"
+      ],
+      [
+       "livrent:131134",
+       "livrent:128289",
+       "livrent:141658"
+      ],
+      [
+       "livrent:131134",
+       "livrent:128289",
+       "livrent:141658"
+      ]
+     ],
+     "reason": "too small"
+    }
+   ]
+  },
+  "previous": null
+ },
+ "holdout": {
+  "current": {
+   "at": "2026-10-24T08:30:50+00:00",
+   "sha": "dabed61",
+   "catalogue": "listings.json",
+   "cases": 3,
+   "hit_at_3": 1.0,
+   "precision_at_3": 0.889,
+   "converged": 2,
+   "turns_mean": 1,
+   "turns_max": 1,
+   "monotonicity": [],
+   "stability": [
+    "dog-near-tmu: 'too small' on the top card left it first",
+    "scarborough: 'too far' on the top card left it first"
+   ],
+   "per_case": [
+    {
+     "id": "dog-near-tmu",
+     "top": [
+      "livrent:100747",
+      "livrent:134584",
+      "livrent:125589"
+     ],
+     "hit": true,
+     "precision": 1.0,
+     "turns": 1,
+     "path": [
+      [
+       "livrent:100747",
+       "livrent:125591",
+       "livrent:134584"
+      ]
+     ],
+     "reason": "too small"
+    },
+    {
+     "id": "liberty-couple",
+     "top": [
+      "livrent:135397",
+      "livrent:135392",
+      "livrent:138689"
+     ],
+     "hit": true,
+     "precision": 1.0,
+     "turns": 1,
+     "path": [
+      [
+       "livrent:138965",
+       "livrent:135397",
+       "livrent:135392"
+      ]
+     ],
+     "reason": "too small"
+    },
+    {
+     "id": "scarborough",
+     "top": [
+      "livrent:145662",
+      "livrent:145646",
+      "livrent:120278"
+     ],
+     "hit": true,
+     "precision": 0.6666666666666666,
+     "turns": null,
+     "path": [
+      [
+       "livrent:145662",
+       "livrent:145646",
+       "livrent:120278"
+      ],
+      [
+       "livrent:145662",
+       "livrent:145646",
+       "livrent:120278"
+      ],
+      [
+       "livrent:145662",
+       "livrent:145646",
+       "livrent:120278"
+      ],
+      [
+       "livrent:145662",
+       "livrent:145646",
+       "livrent:120278"
+      ],
+      [
+       "livrent:145662",
+       "livrent:145646",
+       "livrent:120278"
+      ]
+     ],
+     "reason": "too far"
+    }
+   ]
+  },
+  "previous": null
+ },
+ "checks": {
+  "current": {
+   "at": "2026-10-24T08:30:50+00:00",
+   "sha": "dabed61",
+   "catalogue": "listings.json",
+   "light_twins": [],
+   "too_dark": [
+    "too-dark: 'too dark' on the top card left it first"
+   ],
+   "latency": {
+    "listings": 400,
+    "cold_ms": 1.1,
+    "p50_ms": 0.103,
+    "p95_ms": 0.153,
+    "big_listings": 4000,
+    "big_p50_ms": 1.632,
+    "big_p95_ms": 2.847
+   }
+  },
+  "previous": null
+ }
+}

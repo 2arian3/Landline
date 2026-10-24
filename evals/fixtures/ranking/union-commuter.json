@@ -1,0 +1,39 @@
+{
+  "id": "union-commuter",
+  "renter": "Works at Union Station, one bedroom, up to $2,500, location first.",
+  "brief": {
+    "max_monthly": 2500,
+    "min_beds": 1,
+    "priorities": [
+      "location",
+      "cost"
+    ],
+    "anchors": [
+      {
+        "label": "work at Union Station",
+        "lat": 43.6453,
+        "lng": -79.3806
+      }
+    ]
+  },
+  "acceptable": [
+    "livrent:108449",
+    "livrent:108451",
+    "livrent:108455",
+    "livrent:108551",
+    "livrent:139609",
+    "livrent:134584",
+    "livrent:108462",
+    "livrent:108465",
+    "livrent:108471"
+  ],
+  "why": "1+ bed, ≤ $2,500, about as close to Union as the closest (within 0.35 km of it)",
+  "feedback": {
+    "reason": "too small",
+    "attribute": "size",
+    "goal": [
+      "livrent:137408"
+    ],
+    "why": "same, within 3 km of Union and ≥ 750 sq ft"
+  }
+}

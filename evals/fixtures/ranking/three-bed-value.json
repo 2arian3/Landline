@@ -1,0 +1,29 @@
+{
+  "id": "three-bed-value",
+  "renter": "Three bedrooms for roommates, up to $5,000, cost first.",
+  "brief": {
+    "max_monthly": 5000,
+    "min_beds": 3,
+    "priorities": [
+      "cost"
+    ]
+  },
+  "acceptable": [
+    "livrent:137392",
+    "livrent:143425",
+    "livrent:130264",
+    "livrent:143821",
+    "livrent:140432",
+    "livrent:137416"
+  ],
+  "why": "3+ beds, ≤ $5,000, the six cheapest",
+  "feedback": {
+    "reason": "too expensive",
+    "attribute": "cost",
+    "goal": [
+      "livrent:137392",
+      "livrent:143425"
+    ],
+    "why": "3+ beds, ≤ $2,750"
+  }
+}

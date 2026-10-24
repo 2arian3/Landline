@@ -1,0 +1,28 @@
+{
+  "id": "cheapest-studio",
+  "renter": "Cheapest place anywhere, a studio is fine, up to $1,500.",
+  "brief": {
+    "max_monthly": 1500,
+    "min_beds": 0,
+    "priorities": [
+      "cost"
+    ]
+  },
+  "acceptable": [
+    "livrent:133724",
+    "livrent:125596",
+    "livrent:135384",
+    "livrent:135386",
+    "livrent:105591",
+    "livrent:109075"
+  ],
+  "why": "≤ $1,500, the six cheapest",
+  "feedback": {
+    "reason": "too small",
+    "attribute": "size",
+    "goal": [
+      "livrent:105591"
+    ],
+    "why": "≤ $1,500 and ≥ 500 sq ft"
+  }
+}
