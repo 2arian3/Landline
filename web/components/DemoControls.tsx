@@ -20,6 +20,7 @@ export function DemoControls({
   prefs,
   phase,
   planned,
+  places,
   returning,
   userName,
 }: {
@@ -27,6 +28,8 @@ export function DemoControls({
   prefs: Preferences;
   phase: Phase;
   planned: number;
+  /** Places on the board: with none, there's nothing to call. */
+  places: number;
   returning: boolean;
   userName: string | null;
 }) {
@@ -63,6 +66,7 @@ export function DemoControls({
         : phase === "calling"
           ? null
           : { path: "reset", label: "Start over", note: "Back to the brief, with nothing planned." };
+  const nothingToCall = step?.path === "calls" && places === 0;
 
   function showArea(place: string) {
     void postJSON(`/api/sessions/${encodeURIComponent(sessionId)}/area`, { place });
@@ -124,14 +128,18 @@ export function DemoControls({
       <button
         type="button"
         onClick={() => step && void take(step.path)}
-        disabled={!step || dialing}
+        disabled={!step || dialing || nothingToCall}
         className="mt-2 w-full rounded-[var(--radius-control)] bg-surface py-2 text-support font-label text-ink hover:bg-press disabled:opacity-60"
         style={{ boxShadow: "0 0 0 1px var(--color-line)" }}
       >
         {step ? step.label : "Calls under way"}
       </button>
       <p className="mt-1.5 text-meta text-ink-3">
-        {step ? step.note : "Scripted agents, and the fourth doesn\u2019t pick up. No phone rings."}
+        {nothingToCall
+          ? "Nothing on the board to call. Widen the budget first."
+          : step
+            ? step.note
+            : "Scripted agents, and the fourth doesn\u2019t pick up. No phone rings."}
       </p>
       <label className="mt-3 flex items-center justify-between gap-3 text-meta text-ink-2" htmlFor="demo-area">
         Show an area

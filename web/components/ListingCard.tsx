@@ -76,7 +76,7 @@ export function ListingCard({
       </span>
 
       <span className="relative block h-[84px] w-[84px] overflow-hidden rounded-[var(--radius-photo)] bg-press">
-        {card.photo && (
+        {card.photo ? (
           // Source photos stay on the source's CDN, attributed in the detail view. The top card's is
           // usually the largest thing on a phone's first screen, so it loads first rather than lazily.
           // eslint-disable-next-line @next/next/no-img-element
@@ -91,6 +91,9 @@ export function ListingCard({
             fetchPriority={card.rank === 1 ? "high" : "auto"}
             className="h-full w-full object-cover"
           />
+        ) : (
+          // Said plainly, so an empty square doesn't read as a photo still loading.
+          <span className="flex h-full w-full items-center justify-center text-meta text-ink-3">No photo</span>
         )}
       </span>
 
