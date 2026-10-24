@@ -33,6 +33,8 @@ async def twiml_renter(request: Request) -> Response:
         raise HTTPException(403, "invalid Twilio signature")
     if not settings.boson_api_key:
         return _xml(twilio.twiml_say_hangup(NOT_READY))
+    if request.app.state.drain.draining:   # restarting (#167): a call taken now would be cut
+        return _xml(twilio.twiml_say_hangup(BUSY))
     call = request.app.state.calls.open(caller=params.get("From"), called=params.get("To"))
     if call is None:
         return _xml(twilio.twiml_say_hangup(BUSY))

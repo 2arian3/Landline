@@ -9,6 +9,7 @@ import logfire
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from landline import drain
 from landline.agents.auditor import llm as auditor_llm
 from landline.api import admin, browser_audio, me, twilio
 from landline.api.demo import DemoSessions
@@ -103,6 +104,8 @@ def create_app(settings: Settings | None = None, catalogue: Catalogue | None = N
                            sim_for_phone=settings.transport == "sim")
         app.state.dispatcher = Dispatcher(app.state.runtime, settings, runner=runner, texter=app.state.texter,
                                           translate=Translator(chat))
+        # A restart lets live calls finish and page streams end before uvicorn stops (#167).
+        app.state.drain = drain.install(app.state)
         yield
         await app.state.dispatcher.close()
         await outbound.uninstall(app.state.outbound)
