@@ -111,8 +111,22 @@ export function LiveBoard({
   }, [sessionId]);
   const selectedCard = board.find((c) => c.listing_id === selected);
 
+  // The panel's scroll: a detail opens at its top, and "← All places" puts the list back where it was.
+  const scroller = useRef<HTMLDivElement>(null);
+  const listTop = useRef<number | null>(null);
+  const detailShown = useCallback((el: HTMLDivElement | null) => {
+    if (el) scroller.current?.scrollTo({ top: 0 });
+  }, []);
+  const listShown = useCallback((el: HTMLDivElement | null) => {
+    if (!el || listTop.current === null) return;
+    scroller.current?.scrollTo({ top: listTop.current });
+    listTop.current = null;
+  }, []);
+
   function select(id: string) {
     if (!sessionId) return;
+    if (selected === null) listTop.current = scroller.current?.scrollTop ?? 0;
+    else scroller.current?.scrollTo({ top: 0 }); // another place's detail, from its pin
     setSelected(id);
     if (!desktop && snap === PEEK) setSnap(0.56);
     void postJSON(`/api/sessions/${encodeURIComponent(sessionId)}/focus`, { listing_id: id });
@@ -202,6 +216,7 @@ export function LiveBoard({
         {selected ? (
           <motion.div
             key="detail"
+            ref={detailShown}
             initial={{ opacity: 0, x: 24 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 24 }}
@@ -219,6 +234,7 @@ export function LiveBoard({
         ) : (
           <motion.div
             key="list"
+            ref={listShown}
             initial={{ opacity: 0, x: -24 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -24 }}
@@ -251,7 +267,9 @@ export function LiveBoard({
             <Brand stale={stale} connected={!!view} idle={idle} line={line} />
             <p className="mt-0.5 text-meta text-ink-3">Toronto rentals, checked by phone</p>
           </div>
-          <div className="relative min-h-0 flex-1 overflow-y-auto">{panel}</div>
+          <div ref={scroller} className="relative min-h-0 flex-1 overflow-y-auto">
+            {panel}
+          </div>
           {dock && sessionId && (
             <div className="shrink-0 px-4 py-3" style={{ boxShadow: "0 -1px 0 var(--color-line)" }}>
               {dock}
@@ -305,6 +323,7 @@ export function LiveBoard({
             <div aria-hidden className="mx-auto mb-2 mt-2.5 h-1 w-10 shrink-0 rounded-full bg-ink/20" />
             {dock && sessionId && <div className="shrink-0 px-4 pb-3">{dock}</div>}
             <div
+              ref={scroller}
               className="relative min-h-0 flex-1 overflow-y-auto"
               style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
             >

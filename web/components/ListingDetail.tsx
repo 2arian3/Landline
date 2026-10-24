@@ -77,7 +77,7 @@ export function ListingDetail({
   const place = [detail?.building_name, card?.neighbourhood].find((p) => p && p !== address) ?? null;
   const flags = card?.red_flags ?? [];
   const notes = callNotes(card, results);
-  const noted = !!notes.viewing || notes.questions.length > 0;
+  const asked = notes.questions.length > 0;
 
   return (
     <article className="flex min-h-full flex-col gap-6 pb-8">
@@ -130,6 +130,17 @@ export function ListingDetail({
         {card?.watch_out && <p className="mt-1 text-support text-dead">{card.watch_out}</p>}
       </header>
 
+      {/* A booked viewing is what the renter acts on next, so it leads. */}
+      {notes.viewing && (
+        <section className="px-4" aria-labelledby="viewing-heading">
+          <h3 id="viewing-heading" className="text-meta font-label text-real">
+            Viewing booked
+          </h3>
+          <p className="mt-1 text-fact">{notes.viewing}</p>
+          <p className="text-meta text-ink-3">Booked on the call, inside the times you gave</p>
+        </section>
+      )}
+
       {flags.length > 0 && (
         <section className="px-4" aria-labelledby="flags-heading">
           <h3 id="flags-heading" className="text-meta font-label text-dead">
@@ -158,37 +169,34 @@ export function ListingDetail({
         </section>
       )}
 
-      <section className="px-4" aria-labelledby="phone-heading">
-        <h3 id="phone-heading" className="text-meta font-label text-ink-3">
-          Checked by phone
-        </h3>
-        {card?.facts.length ? (
-          <ul className="mt-2 space-y-3">
-            {card.facts.map((f) => (
-              <li key={f.field + f.quote}>
-                <p className="text-fact">{f.value}</p>
-                <p className="text-meta text-ink-3">
-                  “{f.quote}” · {f.speaker}
-                </p>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          !noted && <p className="mt-1.5 text-support text-ink-2">{noFacts(card?.status, mark)}</p>
-        )}
-        {notes.viewing && (
-          <div className="mt-3">
-            <p className="text-fact">Viewing booked for {notes.viewing}</p>
-            <p className="text-meta text-ink-3">Booked on the call, inside the times you gave</p>
-          </div>
-        )}
-        {notes.questions.map((q) => (
-          <div key={q} className="mt-3">
-            <p className="text-fact">The agent asked, &ldquo;{q}&rdquo;</p>
-            <p className="text-meta text-ink-3">Landline said it would check with you</p>
-          </div>
-        ))}
-      </section>
+      {/* With only the booking to say, the section above already said it. */}
+      {(card?.facts.length || asked || !notes.viewing) && (
+        <section className="px-4" aria-labelledby="phone-heading">
+          <h3 id="phone-heading" className="text-meta font-label text-ink-3">
+            Checked by phone
+          </h3>
+          {card?.facts.length ? (
+            <ul className="mt-2 space-y-3">
+              {card.facts.map((f) => (
+                <li key={f.field + f.quote}>
+                  <p className="text-fact">{f.value}</p>
+                  <p className="text-meta text-ink-3">
+                    “{f.quote}” · {f.speaker}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            !asked && <p className="mt-1.5 text-support text-ink-2">{noFacts(card?.status, mark)}</p>
+          )}
+          {notes.questions.map((q) => (
+            <div key={q} className="mt-3">
+              <p className="text-fact">The agent asked, &ldquo;{q}&rdquo;</p>
+              <p className="text-meta text-ink-3">Landline said it would check with you</p>
+            </div>
+          ))}
+        </section>
+      )}
 
       <section className="px-4" aria-labelledby="listing-heading">
         <h3 id="listing-heading" className="text-meta font-label text-ink-3">
