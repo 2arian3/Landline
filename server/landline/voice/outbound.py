@@ -14,7 +14,7 @@ One call goes like this:
    deadline. Only the first does anything (PORTING #2). If Twilio's line is still up, it is hung up.
 
 What is said on the line is `converse`: the Caller (A-05) on Higgs, in voice/phone_caller.py. Its first
-words are the disclosure, from `opening()` here.
+words are the disclosure, from `opening()` here, and that the call is recorded when its audio is (A-10).
 """
 from __future__ import annotations
 
@@ -41,6 +41,7 @@ TIMEOUT_S = 10
 HANG_UP_S = 3               # a deadline's hang-up must not hold the Dispatcher up
 RING_S = 25                 # how long Twilio lets it ring before no-answer
 DISCLOSURE = "I'm an AI assistant calling for a renter."
+RECORDED = "This call is recorded."   # said right after the disclosure when the call's audio is stored
 VOICEMAIL = ("Hi, I'm an AI assistant calling for a renter about your listing at {address}. "
              "They'd like to know if it's still available and to book a viewing. "
              "We'll try again later. Thank you.")
@@ -248,36 +249,73 @@ class TwilioRunner:
 ANSWERED = "[The call was just answered.]"
 
 
-def opening(instructions: str) -> tuple[str, list[dict[str, Any]]]:
-    """The Caller's session instructions, with how the call opens (the disclosure word for word, hard rule 6),
-    and the events that start it: a quoted note and a plain response.create, as the sim starts a Caller's
-    turn. Never a response object on response.create: its instructions replace the session's (#129)."""
+def opening(instructions: str, recorded: bool = False) -> tuple[str, list[dict[str, Any]]]:
+    """The Caller's session instructions, with how the call opens (the disclosure word for word, hard rule 6,
+    then RECORDED when `recorded`), and the events that start it: a quoted note and a plain
+    response.create, as the sim starts a Caller's turn. Never a response object on response.create: its
+    instructions replace the session's (#129)."""
+    first = f"{DISCLOSURE} {RECORDED}" if recorded else DISCLOSURE
     opens = (f"\n\nHow this call opens: the call has just been answered. Your first words are exactly: "
-             f"\"{DISCLOSURE}\" Then say which listing you are calling about and ask if they have a minute.")
+             f"\"{first}\" Then say which listing you are calling about and ask if they have a minute.")
     note = {"type": "message", "role": "user", "content": [{"type": "input_text", "text": ANSWERED}]}
     return f"{instructions}{opens}", [{"type": "conversation.item.create", "item": note},
                                       {"type": "response.create"}]
 
 
 class Turns:
-    """A listing call's transcript, written to call_turns in the background so audio never waits on the
-    database. The call's row already exists: the Dispatcher made it before dialling."""
+    """A listing call's transcript and audio, written in the background so audio never waits on the
+    database: each line to call_turns with its place in the audio when known, and chunks of both sides to
+    call_audio (A-10, recorded by voice/recorder.py). The call's row already exists: the Dispatcher made it
+    before dialling."""
 
     def __init__(self, db: Any, call_id: str) -> None:
         self.db, self.call_id, self.idx = db, call_id, 0
         self.lines: list[tuple[str, str]] = []   # (speaker, text) in order, for the Auditor
         self._writes: list[asyncio.Task] = []
+        self._line_writes: dict[int, asyncio.Task] = {}   # idx -> the latest write of that line
+        self._next_seq: dict[str, int] = {}               # track -> the next chunk's seq
 
-    def said(self, speaker: str, text: str) -> None:
+    def said(self, speaker: str, text: str, *, start_ms: int | None = None,
+             end_ms: int | None = None) -> int | None:
+        """Stores a line, with where it is in the call's audio when known. Returns its idx, or None when
+        nothing was stored (nothing said, or no database)."""
         text = text.strip()
         if not text:
-            return
+            return None
         log.info("call %s %s: %s", self.call_id, speaker, text)
         self.lines.append((speaker, text))
         if self.db is None:
-            return
-        self._writes.append(asyncio.create_task(self.db.turns.append(self.call_id, self.idx, speaker, text)))
+            return None
+        idx = self.idx
         self.idx += 1
+        self._line_writes[idx] = self._write(self.db.turns.append(
+            self.call_id, idx, speaker, text, audio_start_ms=start_ms, audio_end_ms=end_ms))
+        return idx
+
+    def placed(self, idx: int, start_ms: int | None, end_ms: int | None) -> None:
+        """A stored line's place in the audio changed (an agent line a barge-in cut short). The move waits
+        for the line's earlier writes, so it never lands before the line does."""
+        before, db = self._line_writes.get(idx), self.db
+        if before is None or db is None:
+            return
+
+        async def move() -> None:
+            await asyncio.gather(before, return_exceptions=True)
+            await db.turns.place(self.call_id, idx, start_ms, end_ms)
+        self._line_writes[idx] = self._write(move())
+
+    def audio(self, track: str, start_ms: int, audio: bytes, *, fmt: str, rate: int) -> None:
+        """Stores a chunk of one side of the call, `start_ms` into it. Chunks of a track keep their order."""
+        if self.db is None or not audio:
+            return
+        seq = self._next_seq.get(track, 0)
+        self._next_seq[track] = seq + 1
+        self._write(self.db.audio.append(self.call_id, track, seq, start_ms, fmt, rate, audio))
+
+    def _write(self, write: Awaitable[object]) -> asyncio.Task:
+        task = asyncio.ensure_future(write)
+        self._writes.append(task)
+        return task
 
     async def flush(self) -> None:
         for result in await asyncio.gather(*self._writes, return_exceptions=True):
@@ -311,7 +349,7 @@ def _caller(state: Any, settings: Settings, extractor: Any) -> Converse:
         return no_caller
     return PhoneCaller(state.runtime, lambda key, cfg: state.connect_higgs(key, cfg),
                        settings.boson_api_key or "", voice=settings.higgs_voice_renter,
-                       extractor=extractor)
+                       extractor=extractor, record_audio=settings.record_audio)
 
 
 async def uninstall(calls: OutboundCalls) -> None:
