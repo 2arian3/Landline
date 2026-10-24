@@ -95,10 +95,11 @@ export function Activity({ view, compact = false }: { view: SessionView | null; 
     );
   }
   if (done.length) {
+    // The calls' tally is the demo's payoff, so on a phone it wraps rather than losing its end.
     return (
       <p className="flex items-baseline gap-x-1.5 text-meta" aria-live="polite">
         <span aria-hidden className="h-2 w-2 shrink-0 self-center rounded-full bg-real" />
-        <span className={`font-label text-ink ${rest}`}>{capitalize(done.join(" · "))}</span>
+        <span className="font-label text-ink">{capitalize(done.join(" · "))}</span>
       </p>
     );
   }
@@ -113,16 +114,66 @@ export function Activity({ view, compact = false }: { view: SessionView | null; 
 
 /**
  * What the calls found, once they're all done: the results text (written by code from the outcomes,
- * the same words the renter gets by text), at the top of the panel.
+ * the same words the renter gets by text), at the top of the panel, one line per place with the
+ * booking first.
  */
 export function Results({ view, compact = false }: { view: SessionView | null; compact?: boolean }) {
   if (view?.phase !== "done" || !view.results) return null;
+  const lines = perPlace(view.results, view.board.map((c) => c.address));
   return (
     <section aria-label="What the calls found">
       <p className="text-meta text-ink-3">What the calls found</p>
-      <p className={`text-ink ${compact ? "text-support" : "text-fact"}`}>{view.results}</p>
+      <ul className="mt-1 space-y-1.5">
+        {lines.map((line, i) => (
+          <li key={i} className={`text-ink ${compact ? "text-support" : "text-fact"}`}>
+            {line}
+          </li>
+        ))}
+      </ul>
     </section>
   );
+}
+
+/** The results text as one line per place: a sentence that names no other place stays with the one before. */
+function perPlace(results: string, addresses: string[]): string[] {
+  // The longest address first, so a sentence about "112 King St W" isn't put with "12 King St W".
+  const places = [...new Set(addresses)].sort((a, b) => b.length - a.length);
+  const lines: { text: string; place?: string }[] = [];
+  for (const sentence of sentences(results)) {
+    const place = places.find((a) => names(sentence, a));
+    const last = lines.at(-1);
+    if (last && (!place || place === last.place)) last.text += ` ${sentence}`;
+    else lines.push({ text: sentence, place });
+  }
+  // The booking leads, the way Landline says it ("I booked …"), not any line with "booked" in it.
+  const booking = (l: { text: string }) => Number(l.text.startsWith("I booked "));
+  return lines.sort((a, b) => booking(b) - booking(a)).map((l) => l.text);
+}
+
+/** Whether `sentence` names `address` whole: "12 King St W" isn't named in "112 King St W". */
+function names(sentence: string, address: string): boolean {
+  for (let at = sentence.indexOf(address); at >= 0; at = sentence.indexOf(address, at + 1)) {
+    const around = (sentence[at - 1] ?? " ") + (sentence[at + address.length] ?? " ");
+    if (!/[0-9A-Za-z]/.test(around)) return true;
+  }
+  return false;
+}
+
+/**
+ * The text's sentences, not split after "St." ("64 St. Clair Avenue West"). No lookbehind: Safari before
+ * 16.4 can't parse one, and the whole panel would fail to load.
+ */
+function sentences(text: string): string[] {
+  const out: string[] = [];
+  let start = 0;
+  for (const m of text.matchAll(/[.!?]\s+(?=[A-Z0-9“"])/g)) {
+    const end = m.index + 1;
+    if (/\bSt\.$/.test(text.slice(start, end))) continue;
+    out.push(text.slice(start, end));
+    start = m.index + m[0].length;
+  }
+  out.push(text.slice(start));
+  return out.map((s) => s.trim()).filter(Boolean);
 }
 
 /**
@@ -144,15 +195,27 @@ export function Welcome({ view, compact = false }: { view: SessionView | null; c
   );
 }
 
+/** An empty board, and Landline's last line is the stock one for it. */
+const saysNothingFits = (view: SessionView) => !view.board.length && /^Nothing fits yet\b/.test(view.agent_says ?? "");
+
 /** Landline's last line is the returning renter's welcome: the panel shows it once, as the welcome. */
 const opensWithWelcome = (view: SessionView) => view.returning && /^welcome back/i.test(view.agent_says ?? "");
 
 /**
  * What Landline heard and what it last said: the renter's half of the call, on
  * screen. `compact` (phones) keeps it to one line so the first place shows
- * above the fold of the sheet; the renter is hearing Landline already.
+ * above the fold of the sheet; the renter is hearing Landline already. `wrap`
+ * lets that line wrap once the sheet is raised and there's room.
  */
-export function Heard({ view, compact = false }: { view: SessionView | null; compact?: boolean }) {
+export function Heard({
+  view,
+  compact = false,
+  wrap = false,
+}: {
+  view: SessionView | null;
+  compact?: boolean;
+  wrap?: boolean;
+}) {
   if (!view) {
     return (
       <div className="space-y-2" aria-hidden>
@@ -167,7 +230,7 @@ export function Heard({ view, compact = false }: { view: SessionView | null; com
     return (
       <div className="min-w-0">
         {heard && (
-          <p className="truncate text-support text-ink">
+          <p className={`text-support text-ink ${wrap ? "" : "truncate"}`}>
             <span className="text-ink-3">Heard </span>
             {heard.charAt(0).toLowerCase() + heard.slice(1)}
           </p>
@@ -184,7 +247,9 @@ export function Heard({ view, compact = false }: { view: SessionView | null; com
           <p className="text-support text-ink">{heard}</p>
         </div>
       )}
-      {view.agent_says && !opensWithWelcome(view) && (
+      {/* What Landline said during the brief: stale once the calls start. With nothing on the board, its
+          stock "Nothing fits yet" is what the list's empty state says already; anything else it said shows. */}
+      {view.agent_says && view.phase === "open" && !saysNothingFits(view) && !opensWithWelcome(view) && (
         <blockquote className="m-0 border-0 p-0">
           <p className="text-meta text-ink-3">Landline said</p>
           <p className="text-fact">“{view.agent_says}”</p>

@@ -9,7 +9,7 @@ import { DemoControls } from "./DemoControls";
 import type { Mark } from "./ListingCard";
 import { ListingDetail, type Reaction } from "./ListingDetail";
 import type { Padding } from "./MapView";
-import { PEEK, Shell } from "./Shell";
+import { PANEL_WIDTH, PEEK, SPLIT, Shell } from "./Shell";
 import { Activity, Brand, Heard, Results, Welcome } from "./Summary";
 import { postJSON, useCatalogue, useLiveSession } from "@/lib/live";
 import { useMedia } from "@/lib/useMedia";
@@ -24,11 +24,12 @@ const MapView = dynamic(() => import("./MapView").then((m) => m.MapView), {
 const SNAPS: (string | number)[] = [PEEK, 0.56, 1];
 
 /**
- * The whole screen. Desktop (≥1024px): the map fills the left, a 440px panel
- * on the right holds what's happening, what Landline heard and the ranked
- * places. Phones and small tablets: the map fills the screen and the panel
- * becomes a bottom sheet with three stops; at the lowest stop the renter sees
- * the activity line, one line of what was heard, and the top place.
+ * The whole screen. Desktops, tablets and phones held sideways (SPLIT): the map
+ * fills the left, a panel on the right (440px, narrower on smaller screens)
+ * holds what's happening, what Landline heard and the ranked places. Phones
+ * upright: the map fills the screen and the panel becomes a bottom sheet with
+ * three stops; at the lowest stop the renter sees the activity line, one line
+ * of what was heard, and the top place.
  *
  * Judge mode reuses it: `intro` replaces the panel until a session exists,
  * `dock` (the voice controls) stays pinned to the panel, and `line` puts the
@@ -45,9 +46,9 @@ export function LiveBoard({
   dock?: ReactNode;
   line?: string | null;
 }) {
-  const { view, stale } = useLiveSession(sessionId);
+  const { view, stale, unreachable } = useLiveSession(sessionId);
   const points = useCatalogue();
-  const desktop = useMedia("(min-width: 1024px)");
+  const desktop = useMedia(SPLIT);
   const [selected, setSelected] = useState<string | null>(null);
   const [hover, setHover] = useState<string | null>(null);
   const [snap, setSnap] = useState<string | number | null>(PEEK);
@@ -55,6 +56,19 @@ export function LiveBoard({
   const [vh, setVh] = useState(800);
   // What the renter tapped, shown at once; the server's card.reaction wins once it arrives.
   const [mine, setMine] = useState<Record<string, string>>({});
+  // The server's focus and area when the page opened (below): followed only when they change after that.
+  const openingFocus = useRef<string | null | undefined>(undefined);
+  const openingArea = useRef<string | null | undefined>(undefined);
+  // Another session (judge mode's "Start again") opens with nothing selected or tapped, and frames its own
+  // board. Reset while rendering, so not even one frame shows the last session's selection.
+  const [shownSession, setShownSession] = useState(sessionId);
+  if (shownSession !== sessionId) {
+    setShownSession(sessionId);
+    setSelected(null);
+    setMine({});
+    openingFocus.current = undefined;
+    openingArea.current = undefined;
+  }
 
   // Judge mode: the intro needs the whole sheet; once talking, the map gets it back.
   const hasIntro = !!intro;
@@ -90,21 +104,36 @@ export function LiveBoard({
 
   // Follow the server's focus (the voice agent saying "the Yorkville one") only
   // when it changes after the page opened; on open, frame the whole board.
-  const openingFocus = useRef<string | null | undefined>(undefined);
   if (view && openingFocus.current === undefined) openingFocus.current = view.focus_listing_id ?? null;
   const serverFocus =
     view?.focus_listing_id && view.focus_listing_id !== openingFocus.current ? view.focus_listing_id : null;
   const focusId = selected ?? serverFocus;
   // The same for an area the renter names ("show me Christie Pits"): the map flies there when it changes.
-  const openingArea = useRef<string | null | undefined>(undefined);
   const area = view?.focus_area ?? null;
   const areaKey = area ? `${area.lat},${area.lng},${area.zoom}` : null;
   if (view && openingArea.current === undefined) openingArea.current = areaKey;
   const focusArea = area && areaKey !== openingArea.current ? area : null;
   const selectedCard = board.find((c) => c.listing_id === selected);
 
+  // The panel's scroll: a detail opens at its top, and "← All places" puts the list back where it was.
+  const scroller = useRef<HTMLDivElement>(null);
+  const listTop = useRef<number | null>(null);
+  const detailShown = useCallback((el: HTMLDivElement | null) => {
+    if (el) scroller.current?.scrollTo({ top: 0 });
+  }, []);
+  const listShown = useCallback((el: HTMLDivElement | null) => {
+    if (!el || listTop.current === null) return;
+    scroller.current?.scrollTo({ top: listTop.current });
+    listTop.current = null;
+  }, []);
+
   function select(id: string) {
     if (!sessionId) return;
+    if (selected === null) listTop.current = scroller.current?.scrollTop ?? 0;
+    else scroller.current?.scrollTo({ top: 0 }); // another place's detail, from its pin
+    // The detail's first photo starts loading with the tap, not after the detail's own fetch.
+    const photo = board.find((c) => c.listing_id === id)?.photo;
+    if (photo) new Image().src = photo;
     setSelected(id);
     if (!desktop && snap === PEEK) setSnap(0.56);
     void postJSON(`/api/sessions/${encodeURIComponent(sessionId)}/focus`, { listing_id: id });
@@ -152,12 +181,18 @@ export function LiveBoard({
     <div className="absolute inset-0 bg-map-land" aria-hidden />
   );
 
-  const list = (
+  // No snapshot at all for a while (the API is down or unreachable): say so plainly instead of skeletons
+  // that never fill. Polling carries on, and the first answer brings the board in.
+  const list = unreachable ? (
+    <p role="status" className="text-support text-ink-2">
+      Can&rsquo;t reach Landline right now. Trying again&hellip;
+    </p>
+  ) : (
     <div className={desktop ? "space-y-4" : "space-y-3"}>
       <Welcome view={view} compact={!desktop} />
       <Results view={view} compact={!desktop} />
       <Activity view={view} compact={!desktop} />
-      <Heard view={view} compact={!desktop} />
+      <Heard view={view} compact={!desktop} wrap={snap !== PEEK} />
       <Board
         board={board}
         loading={!view}
@@ -173,6 +208,7 @@ export function LiveBoard({
           prefs={view.preferences}
           phase={view.phase}
           planned={view.plan.length}
+          places={view.board.length}
           returning={view.returning}
           userName={view.user_name ?? null}
         />
@@ -188,6 +224,7 @@ export function LiveBoard({
         {selected ? (
           <motion.div
             key="detail"
+            ref={detailShown}
             initial={{ opacity: 0, x: 24 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 24 }}
@@ -197,8 +234,8 @@ export function LiveBoard({
               id={selected}
               card={selectedCard}
               mark={marks[selected]}
+              call={view?.calls.filter((c) => c.listing_id === selected).pop()}
               results={view?.phase === "done" ? view.results : null}
-              calls={view?.calls}
               onBack={() => setSelected(null)}
               onReact={(reaction, reason) => react(selected, reaction, reason)}
             />
@@ -206,6 +243,7 @@ export function LiveBoard({
         ) : (
           <motion.div
             key="list"
+            ref={listShown}
             initial={{ opacity: 0, x: -24 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -24 }}
@@ -230,15 +268,20 @@ export function LiveBoard({
       <div className="fixed inset-0 flex overflow-hidden">
         <main className="relative min-w-0 flex-1">{map}</main>
         <aside
-          className="flex w-[440px] shrink-0 flex-col bg-ground"
+          className={`flex ${PANEL_WIDTH} shrink-0 flex-col bg-ground`}
           style={{ boxShadow: "-1px 0 0 var(--color-line)" }}
           aria-label="Places Landline found"
         >
-          <div className="px-4 pb-4 pt-5">
+          {/* On a short screen (a phone on its side) the header gives its room to the places. */}
+          <div className="px-4 pb-4 pt-5 [@media(max-height:520px)]:pb-1 [@media(max-height:520px)]:pt-3">
             <Brand stale={stale} connected={!!view} idle={idle} line={line} />
-            <p className="mt-0.5 text-meta text-ink-3">Toronto rentals, checked by phone</p>
+            <p className="mt-0.5 text-meta text-ink-3 [@media(max-height:520px)]:hidden">
+              Toronto rentals, checked by phone
+            </p>
           </div>
-          <div className="relative min-h-0 flex-1 overflow-y-auto">{panel}</div>
+          <div ref={scroller} className="relative min-h-0 flex-1 overflow-y-auto">
+            {panel}
+          </div>
           {dock && sessionId && (
             <div className="shrink-0 px-4 py-3" style={{ boxShadow: "0 -1px 0 var(--color-line)" }}>
               {dock}
@@ -252,7 +295,8 @@ export function LiveBoard({
   return (
     <div className="fixed inset-0 overflow-hidden">
       {map}
-{!idle && (
+      {/* At the sheet's top stop the header would peek, cut in half, above it. */}
+      {!idle && snap !== 1 && (
       <header
         className="pointer-events-none absolute inset-x-0 top-0 z-10 px-3"
         style={{ paddingTop: "max(12px, env(safe-area-inset-top))" }}
@@ -290,8 +334,16 @@ export function LiveBoard({
           >
             <Drawer.Title className="sr-only">Places Landline found</Drawer.Title>
             <div aria-hidden className="mx-auto mb-2 mt-2.5 h-1 w-10 shrink-0 rounded-full bg-ink/20" />
+            {/* At the top stop the floating header steps aside, so its status (live, reconnecting, the
+                voice line) shows here instead. */}
+            {!idle && snap === 1 && (
+              <div className="shrink-0 px-4 pb-2">
+                <Brand stale={stale} connected={!!view} idle={idle} line={line} />
+              </div>
+            )}
             {dock && sessionId && <div className="shrink-0 px-4 pb-3">{dock}</div>}
             <div
+              ref={scroller}
               className="relative min-h-0 flex-1 overflow-y-auto"
               style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
             >

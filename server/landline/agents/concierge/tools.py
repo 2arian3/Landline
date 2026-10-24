@@ -8,6 +8,7 @@ from the arguments (hard rule 2). The event's idem_key is the Higgs tool-call id
 """
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -55,6 +56,10 @@ class ToolContext:
     call_id: str
     runtime: SessionRuntime
     hang_up: bool = False   # set by end_session; the bridge hangs up once the goodbye has played
+    # Phone calls only: texts the renter the link to their board, and says whether a text went out. The
+    # first update_preferences of the call uses it, so the renter can watch the listings as they talk.
+    text_link: Callable[[], bool] | None = None
+    preferences_seen: bool = False
 
 
 async def handle(name: str, arguments: str, tool_call_id: str, ctx: ToolContext) -> str:
@@ -82,7 +87,12 @@ async def handle(name: str, arguments: str, tool_call_id: str, ctx: ToolContext)
 
 
 async def update_preferences(args: PreferenceDelta, ctx: ToolContext, meta: dict) -> str:
+    """The first one of a phone call also texts the renter their board link. Its result then says so
+    (`texted_link`), and the Concierge tells them."""
     view = await ctx.runtime.emit(PreferencesUpdated(**meta, delta=args))
+    first, ctx.preferences_seen = not ctx.preferences_seen, True
+    if first and ctx.text_link is not None and ctx.text_link():
+        return json.dumps({"result": view.agent_says, "texted_link": True})
     return view.agent_says
 
 
