@@ -1,4 +1,5 @@
-{"dir": "out", "event": {"type": "response.create", "response": {"instructions": "Greet the caller in one short sentence in English: say you are Landline, an AI assistant that helps renters find a place in Toronto, and ask what they are looking for."}}}
+{"dir": "out", "event": {"type": "conversation.item.create", "item": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "[The call just connected.]"}]}}}
+{"dir": "out", "event": {"type": "response.create"}}
 {"dir": "in", "event": {"event_id": "e65e889b-b480-4d15-bcd6-9122df0cc846", "type": "response.created", "response": {"id": "0ece_resp_1", "object": "realtime.response", "status": "in_progress", "status_details": null, "output": [], "usage": null, "metadata": null}}}
 {"dir": "in", "event": {"event_id": "0a5983c9-045f-4d48-8a61-fb65d87e5d67", "type": "response.output_item.added", "response_id": "0ece_resp_1", "output_index": 0, "item": {"id": "628ea384", "object": "realtime.item", "type": "message", "role": "assistant", "status": "in_progress", "content": []}}}
 {"dir": "in", "event": {"event_id": "652c24ca-7a8e-45c2-a252-44186c53f80f", "type": "conversation.item.added", "item": {"id": "628ea384", "object": "realtime.item", "type": "message", "role": "assistant", "status": "in_progress", "content": []}, "previous_item_id": null}}
