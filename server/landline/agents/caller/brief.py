@@ -67,8 +67,10 @@ def brief(listing: Listing, plan: CallPlan, wants: frozenset[str] = frozenset())
                   ["available", "available_from"])]
     gaps: list[Item] = []
     if pets := plan.shareable.pets:   # even when the listing says, so the landlord hears what they have
-        has = _join([f"a {p}" for p in pets])
-        gaps.append(Item("pets", f"whether pets are allowed (the renter has {has})", ["pets"]))
+        # Tell, then ask: the renter's pets are known, so the landlord is only asked whether they're allowed
+        # (#226: "the renter has a pets" read as a question about the renter).
+        gaps.append(Item("pets", f"whether pets are allowed; tell them the renter has {_pets(pets)}, never "
+                         "ask them about the renter's pets", ["pets"]))
     if "parking" in wants and (listing.parking == "unknown"
                                or (listing.parking == "extra" and listing.parking_cost is None)):
         gaps.append(Item("parking", "whether parking comes with it, and what it costs a month",
@@ -177,7 +179,9 @@ record_fact (field parking_cost, value "$150 a month", quote "Parking is one spo
 record_fact (field laundry, value "in-suite", quote "there's in-suite laundry"), then you say: "So parking \
 is $150 a month, and laundry is in the unit. Are there any other monthly fees?"
 
-What you may say about the renter: {share} Nothing else. If they ask anything else (income, work, a \
+What you may say about the renter: {share} Nothing else. You already know this, so never ask them \
+anything about the renter: every question you ask is about the place. If they ask anything else \
+(income, work, a \
 guarantor, credit, references, a deposit, documents, or whether they'd want a paid extra like a locker), \
 call note_question with their question and say "I'll check with my client and get back to you." Never \
 agree to send money or anything personal, and never promise \
@@ -228,7 +232,7 @@ def _shareable(plan: CallPlan) -> str:
     said = [f"they want to move in {s.move_in}" if s.move_in else None,
             (f"{s.occupants} {'person' if s.occupants == 1 else 'people'} would live there"
              if s.occupants else None),
-            f"they have {_join([f'a {p}' for p in s.pets])}" if s.pets else None]
+            f"they have {_pets(s.pets)}" if s.pets else None]
     said = [x for x in said if x]
     if not said:
         return "nothing yet."
@@ -251,6 +255,24 @@ def _about_viewing(value: str) -> bool:
     v = value.lower()
     words = any(w in v for w in ("view", "visit", "show", "tour", "see it", "open house"))
     return words or bool(_DAY.search(v) and _CLOCK.search(v))
+
+
+_GENERIC_PETS = {"pet", "pets", "a pet", "some pets", "animal", "animals", "yes"}
+_COUNTED = re.compile(r"^(a|an|one|two|three|four|five|some|my|\d+)\s", re.I)
+
+
+def _pets(pets: list[str]) -> str:
+    """The renter's pets as words: "a dog and a cat", "two dogs", "an iguana", or "pets" when the renter
+    didn't say which (the Concierge stores the word "pets" then)."""
+    named = []
+    for p in (p.strip() for p in pets):
+        if not p or p.lower() in _GENERIC_PETS:
+            continue
+        if _COUNTED.match(p) or p.lower().endswith("s"):
+            named.append(p)
+        else:
+            named.append(f"{'an' if p[0].lower() in 'aeiou' else 'a'} {p}")
+    return _join(named) or "pets"
 
 
 def _join(items: list[str]) -> str:
