@@ -29,6 +29,7 @@ from landline.agents.concierge.prompt import (
     CALL_CONNECTED,
     GREETING,
     INSTRUCTIONS,
+    LINK_TEXTED,
     RETURNING,
     SPOKE_BEFORE,
     WELCOME_BACK,
@@ -97,8 +98,8 @@ async def converse(transport: Transport, call: RenterCall, *, calls: RenterCalls
                    lines: Lines | None = None) -> str:
     """Runs one claimed call to its end, finalizes it and ends its session. Returns why it ended. The
     caller owns the socket and closes it afterwards. With a `texter`, a phone caller is texted the link
-    to their board the first time their preferences change. With `lines`, map taps reach the Concierge
-    between turns (voice/line.py)."""
+    to their board once: a returning caller as the call connects, anyone else with the first tool that
+    touches the board. With `lines`, map taps reach the Concierge between turns (voice/line.py)."""
     reason = "error"
     # The call, its transcript and its audio are stored for the admin panel (orchestrator/calllog.py).
     kind = "voice" if transport.audio_format == PCMU else "browser"
@@ -134,19 +135,22 @@ def _link_texter(texter: Texter | None, call: RenterCall, settings: Settings) ->
     return text
 
 
-def opening(remembered: str | None, language: str | None = None) -> tuple[str, list[dict[str, Any]]]:
+def opening(remembered: str | None, language: str | None = None,
+            texted: bool = False) -> tuple[str, list[dict[str, Any]]]:
     """The Concierge's session instructions for a call, and the events that start it. A first-time caller
     gets GREETING as the first response's instructions, which is all it needs. A returning caller (O-05)
     gets the welcome in the session instructions next to what code remembers, and the call starts with a
     quoted note and a plain response.create: instructions on response.create would replace the session's,
     and the welcome then ignored the memory and made one up (docs/EVAL_FINDINGS.md). A returning caller
-    whose stored language isn't English is welcomed back in it."""
+    whose stored language isn't English is welcomed back in it, and one `texted` their board link as the
+    call connected is told so in the welcome."""
     if not remembered:
         return INSTRUCTIONS, [{"type": "response.create", "response": {"instructions": GREETING}}]
     spoke = primary(language)
     before = SPOKE_BEFORE.format(language=language_name(spoke)) if spoke and spoke != "en" else ""
+    link = LINK_TEXTED if texted else ""
     note = {"type": "message", "role": "user", "content": [{"type": "input_text", "text": CALL_CONNECTED}]}
-    return (f"{INSTRUCTIONS}{before}{WELCOME_BACK}{RETURNING}{remembered}",
+    return (f"{INSTRUCTIONS}{before}{WELCOME_BACK}{link}{RETURNING}{remembered}",
             [{"type": "conversation.item.create", "item": note}, {"type": "response.create"}])
 
 
@@ -171,7 +175,12 @@ async def _talk(transport: Transport, call: RenterCall, runtime: SessionRuntime,
                 lines: Lines | None = None) -> str:
     remembered = runtime.opening(call.session_id)
     language = runtime.state(call.session_id).preferences.language   # restored by Profiles, from code
-    instructions, start = opening(remembered, language)
+    ctx = tools.ToolContext(session_id=call.session_id, call_id=call.call_id, runtime=runtime,
+                            text_link=text_link)
+    # A returning caller's board is on the map before they say a word, so their link goes out now; anyone
+    # else's goes with the first tool that touches the board (tools.handle).
+    texted = bool(remembered) and tools.text_link_once(ctx)
+    instructions, start = opening(remembered, language, texted)
     try:
         higgs = await connect_higgs(settings.boson_api_key or "", session_config(
             instructions=instructions, tools=tools.TOOLS, voice=settings.higgs_voice_renter,
@@ -182,8 +191,6 @@ async def _talk(transport: Transport, call: RenterCall, runtime: SessionRuntime,
         return "higgs_error"
     set_status("ok")
 
-    ctx = tools.ToolContext(session_id=call.session_id, call_id=call.call_id, runtime=runtime,
-                            text_link=text_link)
     playback = Playback(transport.bytes_per_second)
     pumps: set[asyncio.Task[str]] = set()
     keeper = asyncio.create_task(_keep_every(runtime, call.call_id, recorder, settings.record_audio))

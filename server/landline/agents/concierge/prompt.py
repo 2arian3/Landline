@@ -103,6 +103,13 @@ This renter spoke {language} on their last call. Welcome them back in {language}
 switch.
 """
 
+# A returning phone caller is texted their board link as the call connects (voice/bridge.py): part of the
+# session instructions, after WELCOME_BACK, only when the text went out.
+LINK_TEXTED = """
+Code just texted this caller a link to their board. In your welcome, also tell them you just texted them \
+a link where they can see these listings as you talk.
+"""
+
 # Names for the language codes update_preferences stores, so the welcome line reads naturally. A code
 # missing here is said as "the language with code xx", which the model still understands.
 LANGUAGES = {
