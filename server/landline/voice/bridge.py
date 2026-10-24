@@ -315,6 +315,9 @@ async def _higgs_to_renter(higgs: Any, transport: Transport, ctx: tools.ToolCont
     whose reply claimed a save with no tool, is read for its preferences in the background
     (agents/concierge/backstop.py). `wrap` is kept up to date for _wraps_up."""
     spoke = False   # whether the response under way has sent any audio yet
+    # After a goodbye the reply didn't end on: "asked" once the note went out, "answering" once the
+    # response to it started. Its end without end_session ends the call (backstop.SAID_BYE).
+    bye = ""
     heard_any = False   # whether any audio has gone out on this call, for the timing log
     turn = backstop.Turn()
     wrap = wrap or WrapUp()
@@ -327,6 +330,8 @@ async def _higgs_to_renter(higgs: Any, transport: Transport, ctx: tools.ToolCont
         wrap.seen(event)
         if kind == "response.created":
             spoke = False
+            if bye == "asked":
+                bye = "answering"
             turn.response_created()
         elif kind == "response.output_audio.delta":
             spoke = True
@@ -337,6 +342,7 @@ async def _higgs_to_renter(higgs: Any, transport: Transport, ctx: tools.ToolCont
             playback.sent(event["delta"])
             recorder.played(event["delta"], event.get("item_id"))
         elif kind == "input_audio_buffer.speech_started":
+            bye = ""   # the renter said more: they aren't done yet
             await transport.send_clear()
             playback.clear()
             recorder.cut()
@@ -351,6 +357,10 @@ async def _higgs_to_renter(higgs: Any, transport: Transport, ctx: tools.ToolCont
                 wrap.complete = PLAN_COMPLETE in (output or "")
         elif kind == "response.done":
             if ends_call(event, ctx):
+                await asyncio.sleep(playback.remaining() + HANG_UP_GRACE_S)
+                return "end_session"
+            if bye == "answering":   # asked for a goodbye and end_session, and still no end_session
+                log.info("call %s: ended after the renter's goodbye", ctx.call_id)
                 await asyncio.sleep(playback.remaining() + HANG_UP_GRACE_S)
                 return "end_session"
             turn.response_done(event)
@@ -383,6 +393,11 @@ async def _higgs_to_renter(higgs: Any, transport: Transport, ctx: tools.ToolCont
             task = asyncio.create_task(backstop.catch_up(reader, claimed, ctx, claimed=True))
             _CATCHING.add(task)
             task.add_done_callback(_CATCHING.discard)
+        if not ctx.hang_up and not bye and turn.bye_line() is not None:   # a goodbye with no end_session
+            bye = "asked"
+            await higgs.send({"type": "conversation.item.create", "item": {"type": "message", "role": "user",
+                              "content": [{"type": "input_text", "text": backstop.SAID_BYE}]}})
+            await higgs.send({"type": "response.create"})
         if not ctx.hang_up and (asked := turn.call_line()) is not None:
             task = asyncio.create_task(_calls_asked(asked, ctx, line))
             _CATCHING.add(task)

@@ -169,6 +169,20 @@ async def catch_up(reader: Any | None, line: str, ctx: tools.ToolContext,
     return await tools.handle("update_preferences", json.dumps(delta), f"catch_up_{next(_ids)}", ctx)
 
 
+# A goodbye, in the languages renters use most. In another language the model sometimes answers one with
+# its last question again and never calls end_session, so the call stays open (punjabi-renter 3/3,
+# korean-switch, farsi-switch). Code then asks once for a goodbye and end_session, and ends it if not.
+GOODBYE = re.compile(
+    r"\b(bye|good-?bye|bye-bye|that'?s all|that is all|i'?m done|adi[oó]s|chao|eso es todo|au revoir|"
+    r"ciao|tsch[uü]ss)\b|خداحافظ|خدانگهدار|مع السلامة|وداعا|ਰੱਬ ਰਾਖਾ|ਅਲਵਿਦਾ|안녕히|再见|再見|拜拜|"
+    r"до свидания|пока", re.I)
+SAID_BYE = "[The renter said goodbye: say a short goodbye in their language and call end_session.]"
+
+
+def says_goodbye(line: str) -> bool:
+    return bool(line) and GOODBYE.search(line) is not None
+
+
 class Turn:
     """Watches one call's events for the case above. Audio events don't come in a fixed order: the
     renter's transcript can arrive before or after the reply to it is done. `line()` gives the renter's
@@ -181,7 +195,7 @@ class Turn:
         self.heard: str | None = None
         self.said: str | None = None   # the start of the Concierge's reply to it
         self.replied = self.tooled = self.answered = self.taken = self.call_taken = False
-        self.claim_taken = self.language_taken = False
+        self.claim_taken = self.language_taken = self.bye_taken = False
         self.tools: set[str] = set()
 
     def speech_started(self) -> None:
@@ -229,6 +243,14 @@ class Turn:
         ran (#188): save_language then keeps the language the model didn't."""
         if self.heard and self.answered and not self.language_taken and language_of(self.heard):
             self.language_taken = True
+            return self.heard
+        return None
+
+    def bye_line(self) -> str | None:
+        """The renter's line when it said goodbye and the reply ran no end_session, once."""
+        if (self.heard and self.answered and "end_session" not in self.tools and not self.bye_taken
+                and says_goodbye(self.heard)):
+            self.bye_taken = True
             return self.heard
         return None
 
