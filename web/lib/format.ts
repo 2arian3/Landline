@@ -1,4 +1,4 @@
-import type { Preferences } from "./types";
+import type { Preferences, SessionView } from "./types";
 
 const CAD = new Intl.NumberFormat("en-CA", {
   style: "currency",
@@ -49,6 +49,18 @@ export function heardLine(p: Preferences): string[] {
   if (p.must_have.length) out.push(`must have ${p.must_have.join(", ")}`);
   if (p.priorities.length) out.push(`${p.priorities.join(", then ")} first`);
   return out;
+}
+
+/**
+ * Nothing heard yet: a session that opened and that the renter hasn't said anything to. Until the first
+ * preference lands the page shows no match framing at all (no "places fit", no numbered pins or cards),
+ * just the map and Landline's opening sentence.
+ */
+export function nothingHeard(view: SessionView): boolean {
+  const p = view.preferences;
+  const said = p.max_monthly != null || p.min_beds != null || p.move_in || p.occupants != null ||
+    [p.areas, p.anchors, p.pets, p.must_have, p.priorities].some((list) => list?.length);
+  return !said && view.phase === "open" && !view.plan.length && !view.board.some((c) => c.reaction);
 }
 
 export const sourceName = (s: string) => (s === "livrent" ? "liv.rent" : s);
