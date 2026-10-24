@@ -54,8 +54,9 @@ PLANNED = 4      # the demo plans the top four places with a pin; the fourth nev
 TORONTO = ZoneInfo("America/Toronto")
 # "I'm free Saturday afternoon, book one if you can": the renter's window, and the slot an agent offers.
 WINDOW_DAY, WINDOW_FROM, WINDOW_TO, SLOT = 5, 13, 17, 14   # Saturday (Monday is 0), 13:00–17:00, at 14:00
-# What the last call found, for a returning renter whose session hasn't run the demo calls yet: the
-# results from docs/DEMO.md's second call. Fixture only, until profiles (O-05) keep the real ones.
+# What the last call found, for a returning renter whose demo session hasn't run the demo calls yet: the
+# results from docs/DEMO.md's second call. Demo sessions only: a phone call's session gets the real ones
+# from profiles (O-05), in the Narrator's opening line (O-06).
 LAST_RESULTS = ("I booked 412 Markham for Saturday at 2 pm. "
                 "322 Dupont is really $3,470 a month with parking, "
                 "and 88 Erskine asked for a deposit before a viewing, so I'd skip it.")
