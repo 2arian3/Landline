@@ -8,6 +8,12 @@
       "port": 8000
     },
     {
+      "name": "api-uv",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": ["run", "uvicorn", "landline.app:app", "--app-dir", "server", "--port", "8000"],
+      "port": 8000
+    },
+    {
       "name": "web",
       "runtimeExecutable": "bash",
       "runtimeArgs": ["-lc", "cd web && npm run dev"],
