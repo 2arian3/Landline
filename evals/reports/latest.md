@@ -162,15 +162,15 @@ The real Auditor (`server/landline/agents/auditor/`) on 20 written call transcri
 
 ### Holdout (quote these)
 
-2026-10-24T07:54:04+00:00 · `034e811+dirty` · 8 transcripts · extractor: replayed recordings
+2026-10-24T07:56:31+00:00 · `f905e7f` · 8 transcripts · extractor: replayed recordings
 
 | | Rules | With extractor | Previous (best mode) |
 |---|---|---|---|
-| **Ungrounded facts shown** | **0 of 11** | **0 of 17** | — |
-| Precision | 100% | 100% | — |
-| Recall | 65% | 91% | — |
-| Transcripts fully right | 3 / 8 | 6 / 8 | — |
-| Claims refused (quote not a landlord's, or the words say otherwise) | 0 | ungrounded 1 | — |
+| **Ungrounded facts shown** | **0 of 11** | **0 of 17** | **0 of 17** |
+| Precision | 100% | 100% | 100% |
+| Recall | 65% | 91% | 91% |
+| Transcripts fully right | 3 / 8 | 6 / 8 | 6 / 8 |
+| Claims refused (quote not a landlord's, or the words say otherwise) | 0 | ungrounded 1 | ungrounded 1 |
 
 | Field | Rules P / R | With extractor P / R |
 |---|---|---|
@@ -189,15 +189,15 @@ The real Auditor (`server/landline/agents/auditor/`) on 20 written call transcri
 
 ### Tune (prompts change against these)
 
-2026-10-24T07:54:04+00:00 · `034e811+dirty` · 12 transcripts · extractor: replayed recordings
+2026-10-24T07:56:31+00:00 · `f905e7f` · 12 transcripts · extractor: replayed recordings
 
 | | Rules | With extractor | Previous (best mode) |
 |---|---|---|---|
-| **Ungrounded facts shown** | **0 of 21** | **0 of 29** | — |
-| Precision | 96% | 100% | — |
-| Recall | 69% | 94% | — |
-| Transcripts fully right | 5 / 12 | 10 / 12 | — |
-| Claims refused (quote not a landlord's, or the words say otherwise) | agent_words 3 | agent_words 3, unreadable 1 | — |
+| **Ungrounded facts shown** | **0 of 21** | **0 of 29** | **0 of 29** |
+| Precision | 96% | 100% | 100% |
+| Recall | 69% | 94% | 94% |
+| Transcripts fully right | 5 / 12 | 10 / 12 | 10 / 12 |
+| Claims refused (quote not a landlord's, or the words say otherwise) | agent_words 3 | agent_words 3, unreadable 1 | agent_words 3, unreadable 1 |
 
 | Field | Rules P / R | With extractor P / R |
 |---|---|---|
