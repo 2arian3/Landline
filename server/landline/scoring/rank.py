@@ -96,6 +96,9 @@ def rank(matrix: FeatureMatrix, prefs: Preferences, *, weights: dict[str, float]
     status = status or {}
     weights = weights if weights is not None else weights_for(prefs, today=today)
     ctx = _Context(matrix, prefs, weights, overrides or {}, desired_sqft, decay_km, today)
+    if "location" in weights and not ctx.located():
+        # Areas that name nothing would make location a constant that only flattens every score.
+        weights = ctx.weights = {f: w for f, w in weights.items() if f != "location"}
     rows = list(range(len(matrix))) if keep_all else ctx.passing(rejected, status)
 
     # Weighted sum over the whole matrix from cached columns, then the passing rows once. A column that
@@ -318,6 +321,14 @@ class _Context:
             known = [v for v in values if v is not None]
             out.append(sum(known) / len(known) if known else None)
         return out
+
+    def located(self) -> bool:
+        """Whether location can tell listings apart: an anchor with a point, or an area that names a
+        neighbourhood or is some listing's own."""
+        if self.anchors:
+            return True
+        return bool(self.areas) and (bool(self.matrix.named(self.areas))
+                                     or not self.areas.isdisjoint(self.matrix.neighbourhood))
 
     # Words (docs/SCORING.md §5)
 
