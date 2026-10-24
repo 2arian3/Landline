@@ -95,6 +95,7 @@ create table call_turns (call_id text references calls on delete cascade, idx in
 create table facts (fact_id bigserial primary key, call_id text references calls, listing_id text references listings,
   field text not null, value jsonb not null, quote text not null, turn_idx int, confirmed boolean not null default false,
   source text not null, created_at timestamptz not null default now());
+-- board_messages: no longer written since the brief and the calls became two separate flows (see ARCHITECTURE.md)
 create table board_messages (msg_id text primary key, session_id text references sessions on delete cascade,
   kind text not null, from_role text not null, call_id text, listing_id text, text text not null,
   reply_to text, status text not null, created_at timestamptz not null default now(), ttl_s int not null default 25);
