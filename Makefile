@@ -40,7 +40,7 @@ web:
 # The DB tests use a throwaway schema in $TEST_DATABASE_URL (the local DB by default) and skip without one.
 test:
 	TEST_DATABASE_URL=$${TEST_DATABASE_URL:-$(LOCAL_DB)} uv run pytest -q
-	cd web && npm run typecheck
+	cd web && npm run typecheck && npm test
 
 lint:
 	uv run ruff check server pipeline scripts
