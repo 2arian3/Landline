@@ -75,10 +75,13 @@ export function JudgeMode() {
     setPhase("intro");
   }
 
-  // So does leaving the page, instead of holding the line until the server's timeout.
+  // So does leaving the page, instead of holding the line until the server's timeout. Not when the page
+  // only goes into the back/forward cache: it may come back, and an open call keeps its line anyway.
   useEffect(() => {
     if (!sessionId) return;
-    const leave = () => hangUp(sessionId, true);
+    const leave = (e: PageTransitionEvent) => {
+      if (!e.persisted) hangUp(sessionId, true);
+    };
     window.addEventListener("pagehide", leave);
     return () => window.removeEventListener("pagehide", leave);
   }, [sessionId]);
@@ -88,10 +91,13 @@ export function JudgeMode() {
       sessionId={sessionId}
       intro={<Intro phase={phase} waitMin={waitMin} onStart={begin} />}
       dock={<VoiceBar line={line} onDone={done} onAgain={again} />}
-      line={line.state === "connecting" ? "Connecting…" : line.state === "dropped" ? "Line dropped" : null}
+      line={line.state === "connecting" || line.state === "dropped" ? LINE_WORDS[line.state] : null}
     />
   );
 }
+
+/** What the line's state says, in the dock and (while it isn't live) the header: one wording for both. */
+const LINE_WORDS = { connecting: "Connecting…", ended: "Brief done", dropped: "The line dropped" } as const;
 
 /** Frees the judge's line now. Fire and forget; `beacon` for a page that's going away. */
 function hangUp(sessionId: string, beacon = false) {
@@ -205,13 +211,9 @@ function VoiceBar({
 }) {
   const over = line.state === "ended" || line.state === "dropped";
   const label =
-    line.state === "connecting"
-      ? "Connecting…"
-      : line.state === "ended"
-        ? "Brief done"
-        : line.state === "dropped"
-          ? "The line dropped"
-          : line.talking
+    line.state === "connecting" || line.state === "ended" || line.state === "dropped"
+      ? LINE_WORDS[line.state]
+      : line.talking
             ? "Landline is talking"
             : line.muted
               ? "Muted"

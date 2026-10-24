@@ -1,6 +1,8 @@
 .PHONY: setup db-up db-down db-migrate data data-report dev web test lint eval contracts-snapshot
 
-export PYTHONPATH := server:.
+# Windows Python splits PYTHONPATH on ";", everything else on ":".
+PATHSEP := $(if $(filter Windows_NT,$(OS)),;,:)
+export PYTHONPATH := server$(PATHSEP).
 LOCAL_DB := postgresql://landline:landline@localhost:54329/landline
 
 # Hooks, Python deps and web deps. Run once after cloning.
@@ -40,13 +42,13 @@ web:
 # The DB tests use a throwaway schema in $TEST_DATABASE_URL (the local DB by default) and skip without one.
 test:
 	TEST_DATABASE_URL=$${TEST_DATABASE_URL:-$(LOCAL_DB)} uv run pytest -q
-	cd web && npm run typecheck
+	cd web && npm run typecheck && npm test
 
 lint:
 	uv run ruff check server pipeline scripts
 
 eval:
-	@echo "added in E-01: writes evals/reports/latest.md"
+	uv run python -m evals.run_concierge
 
 # Rewrites server/tests/snapshots/contracts.json after a contract change; commit it with the change.
 contracts-snapshot:

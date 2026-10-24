@@ -1,0 +1,70 @@
+{
+  "id": "parking-must-and-focus",
+  "about": "Needs parking, focuses a card by number, then calls it too small without naming it",
+  "lines": [
+    {
+      "say": "I need a two bedroom, budget 3,200, and I need a parking spot for my car.",
+      "expect": {
+        "prefs": {
+          "max_monthly": 3200,
+          "min_beds": 2,
+          "must_have": [
+            "parking"
+          ]
+        }
+      }
+    },
+    {
+      "say": "Tell me about number two.",
+      "expect": {
+        "focus": {
+          "ref": "rank:2"
+        }
+      }
+    },
+    {
+      "say": "Hmm, that's too small for us.",
+      "expect": {
+        "reactions": [
+          {
+            "ref": "rank:2",
+            "at": 1,
+            "reaction": [
+              "dislike",
+              "reject"
+            ],
+            "attribute": "size"
+          }
+        ]
+      }
+    },
+    {
+      "say": "Okay, that's all for today. Bye."
+    }
+  ],
+  "final": {
+    "prefs": {
+      "max_monthly": 3200,
+      "min_beds": 2,
+      "must_have": [
+        "parking"
+      ]
+    },
+    "focus": {
+      "ref": "rank:2",
+      "at": 1
+    },
+    "reactions": [
+      {
+        "ref": "rank:2",
+        "at": 1,
+        "reaction": [
+          "dislike",
+          "reject"
+        ],
+        "attribute": "size"
+      }
+    ],
+    "ended": true
+  }
+}

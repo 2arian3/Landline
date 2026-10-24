@@ -6,12 +6,15 @@ export type CallNotes = {
   questions: string[]; // what the listing agent asked that only the renter can answer
 };
 
+const NONE: CallNotes = { viewing: null, questions: [] };
+
 /**
  * The one place that reads a place's booked viewing and noted questions. They come from the call's
  * outcome (`CallView.outcome`, the Auditor's CallOutcome for this listing) when the session has one.
  * Otherwise, from the session's results text: the Narrator's ("I booked 30 Carabob Court for Saturday at
- * 2 pm.") or the ?dev=1 demo's ("…, inside your Saturday afternoon."). That fallback breaks if the wording
- * changes or the results are in another language, so it's only a fallback. No lookbehind anywhere: Safari
+ * 2 pm.") or the ?dev=1 demo's ("…, inside your Saturday afternoon."), and only for a place that was
+ * called, since many listings share one street address and the text never names the unit. That fallback
+ * breaks if the wording changes or the results are in another language. No lookbehind anywhere: Safari
  * before 16.4 can't parse it.
  */
 export function callNotes(
@@ -27,7 +30,8 @@ export function callNotes(
       questions: outcome.open_questions,
     };
   }
-  const said = card && results ? sentencesAbout(results, card.address) : [];
+  if (!card || !results || card.status === "pending" || card.status === "calling") return NONE;
+  const said = sentencesAbout(results, card.address);
   return {
     viewing: said.map((s) => BOOKED.exec(s)?.[1]).find(Boolean) ?? null,
     questions: said.flatMap((s) => (s.includes(" asked, ") ? (/“([^”]+)”/.exec(s)?.slice(1) ?? []) : [])),
@@ -50,37 +54,51 @@ function when(iso: string): string {
 }
 
 // "I booked <place> for <when>." with the demo's ", inside your Saturday afternoon" after <when>, or not.
-const BOOKED = /^I booked .+ for (.+?)(?:, inside [^.]*)?\.$/;
-// A street address: "701 Don Mills Rd", "190-200 Exbury Road", "12B Main St". Times ("2 pm") and amounts
-// ("$180 a month", "12-month") have no capital after the number.
-const PLACE = /\b\d+[A-Za-z]?(?:-\d+)?\s+[A-Z]/;
+const BOOKED = /^I booked .+ for (.+?)(?:, inside .*)?\.$/;
+// What the Narrator says after a place's first sentence without naming it again: where it moved, a
+// conflict with the listing or the City record, the questions its agent asked (orchestrator/narrator.py).
+const FOLLOW_ON = /^(?:It moves |It drops |Its agent asked|The listing says |The City record says )/;
 
 /**
- * The sentences about this place: from one that names it up to one that names another place. The ones in
- * between name no place and belong to it, like the Narrator's "Its agent asked, …" or "It moves up to first."
+ * The sentences about this place: one that names it, and the Narrator's follow-ons right after it. Any
+ * other sentence (another place, or "I couldn't reach that place in time.") ends the run.
  */
 function sentencesAbout(text: string, address: string): string[] {
   let mine = false;
-  return sentences(text).filter((s) => {
-    if (s.includes(address)) mine = true;
-    else if (PLACE.test(s)) mine = false;
-    return mine;
-  });
+  return sentences(text, address).filter((s) => (mine = names(s, address) || (mine && FOLLOW_ON.test(s))));
+}
+
+/** Whether a sentence names this address as a whole: "12 King St W" isn't named by "112 King St W". */
+function names(sentence: string, address: string): boolean {
+  for (let i = sentence.indexOf(address); i >= 0; i = sentence.indexOf(address, i + 1)) {
+    const before = sentence[i - 1] ?? " ";
+    const after = sentence[i + address.length] ?? " ";
+    if (!/[A-Za-z0-9-]/.test(before) && !/[A-Za-z0-9]/.test(after)) return true;
+  }
+  return false;
 }
 
 /**
- * Splits after . ! or ? followed by a space and a capital, a digit or an opening quote. Not inside a quoted
- * question (“…?” is followed by a quote mark, not a space), and not after the "St." of a street number's
- * Saint ("64 St. Clair"), while "4 Main St. Nobody…" still splits.
+ * Splits after . ! or ? followed by a space and then a capital, a digit or an opening quote. Never inside a
+ * quote (a question may hold two sentences: “Do you have pets? What kind?”), inside the place's own address
+ * ("100 Queen St. W", "12-26 Rosseau Rd."), or after a street number's Saint ("64 St. Clair").
  */
-function sentences(text: string): string[] {
+function sentences(text: string, address: string): string[] {
+  const own: [number, number][] = [];
+  for (let i = text.indexOf(address); i >= 0; i = text.indexOf(address, i + 1)) own.push([i, i + address.length]);
   const out: string[] = [];
   let start = 0;
+  let quoted = false;
   for (let i = 0; i < text.length; i++) {
     const c = text[i];
-    if ((c !== "." && c !== "!" && c !== "?") || !/\s/.test(text[i + 1] ?? "")) continue;
-    if (!/[A-Z0-9“"]/.test(text.slice(i + 1).trimStart()[0] ?? "")) continue;
-    if (c === "." && /\b\d+[A-Za-z]?\s+St$/.test(text.slice(start, i))) continue;
+    if (c === "“") quoted = true;
+    else if (c === "”") quoted = false;
+    if (quoted || (c !== "." && c !== "!" && c !== "?") || !/\s/.test(text[i + 1] ?? "")) continue;
+    let j = i + 1;
+    while (j < text.length && /\s/.test(text[j])) j++;
+    if (!/[A-Z0-9“"]/.test(text[j] ?? "")) continue;
+    if (own.some(([a, b]) => i >= a && i < b - 1)) continue;
+    if (c === "." && /\b\d+[A-Za-z]?\s+St$/.test(text.slice(Math.max(start, i - 12), i))) continue;
     out.push(text.slice(start, i + 1).trim());
     start = i + 1;
   }

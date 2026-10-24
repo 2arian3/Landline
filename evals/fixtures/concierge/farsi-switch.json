@@ -1,0 +1,43 @@
+{
+  "id": "farsi-switch",
+  "about": "Starts in English, switches to Farsi with Persian digits; replies, pets and language must follow",
+  "lines": [
+    {
+      "say": "Hello, I'm looking for an apartment."
+    },
+    {
+      "say": "راستش فارسی راحت‌ترم. یه آپارتمان یک‌خوابه می‌خوام، تا ۲۵۰۰ دلار در ماه.",
+      "expect": {
+        "prefs": {
+          "max_monthly": 2500,
+          "min_beds": 1
+        }
+      }
+    },
+    {
+      "say": "یه گربه هم دارم.",
+      "expect": {
+        "prefs": {
+          "pets": [
+            "cat"
+          ]
+        }
+      }
+    },
+    {
+      "say": "ممنون، فعلاً همین. خداحافظ."
+    }
+  ],
+  "final": {
+    "prefs": {
+      "max_monthly": 2500,
+      "min_beds": 1,
+      "pets": [
+        "cat"
+      ],
+      "language": "fa"
+    },
+    "replies_in": "fa",
+    "ended": true
+  }
+}

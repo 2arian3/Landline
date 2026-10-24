@@ -1,0 +1,49 @@
+{
+  "id": "focus-rank-street-area",
+  "about": "Focuses a listing by rank, then by street name, then moves the map to a street",
+  "lines": [
+    {
+      "say": "Show me one bedrooms up to 2,800."
+    },
+    {
+      "say": "Tell me about the fourth one.",
+      "expect": {
+        "focus": {
+          "ref": "rank:4"
+        },
+        "tools": [
+          "focus_listing"
+        ]
+      }
+    },
+    {
+      "say": "And what about the one on Martin Grove?",
+      "expect": {
+        "focus": {
+          "ref": "addr:Martin Grove"
+        }
+      }
+    },
+    {
+      "say": "Can you move the map over to Bathurst Street?",
+      "expect": {
+        "area": "Bathurst",
+        "tools": [
+          "focus_area"
+        ]
+      }
+    },
+    {
+      "say": "Okay, thanks, that's all. Bye."
+    }
+  ],
+  "final": {
+    "focus": {
+      "ref": "addr:Martin Grove",
+      "at": 2
+    },
+    "area": "Bathurst",
+    "no_request": true,
+    "ended": true
+  }
+}
