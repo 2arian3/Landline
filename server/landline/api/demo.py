@@ -54,12 +54,10 @@ PLANNED = 4      # the demo plans the top four places with a pin; the fourth nev
 TORONTO = ZoneInfo("America/Toronto")
 # "I'm free Saturday afternoon, book one if you can": the renter's window, and the slot an agent offers.
 WINDOW_DAY, WINDOW_FROM, WINDOW_TO, SLOT = 5, 13, 17, 14   # Saturday (Monday is 0), 13:00–17:00, at 14:00
-# What the last call found, for a returning renter whose demo session hasn't run the demo calls yet: the
-# results from docs/DEMO.md's second call. Demo sessions only: a phone call's session gets the real ones
-# from profiles (O-05), in the Narrator's opening line (O-06).
-LAST_RESULTS = ("I booked 412 Markham for Saturday at 2 pm. "
-                "322 Dupont is really $3,470 a month with parking, "
-                "and 88 Erskine asked for a deposit before a viewing, so I'd skip it.")
+# A returning renter's welcome before this demo session has any results of its own: the Narrator's (O-06)
+# line for that case, not invented results (AGENTS.md rule 3). A phone call's session gets the real ones
+# from profiles (O-05).
+NO_RESULTS_YET = "Here is your search from last time."
 ON_THE_LINE = ("dialing", "ringing", "live")
 # Places a renter might name ("show me Christie Pits"), and where the map goes for each. Demo only: the
 # Concierge's focus_area tool resolves real places once it exists.
@@ -127,6 +125,9 @@ class DemoSessions:
         self.tick_s = tick_s
         # Sessions marked as a returning renter, with the name to greet (None: no name on file).
         self.returning: dict[str, str | None] = {}
+        # Returning sessions whose renter has said something since the welcome: like the Narrator, the
+        # welcome opens the call and then gives way to what Landline says back.
+        self.moved_on: set[str] = set()
         # The area the renter last asked to see, per session.
         self.areas: dict[str, Area] = {}
         self.changed = asyncio.Condition()
@@ -141,6 +142,7 @@ class DemoSessions:
         """Demo hook for FeedbackGiven: records the reaction on the card. Re-ranking is O-04's job."""
         said = reason or ("like it" if reaction == "like" else "not for me")
         self.reactions.setdefault(session_id, {})[listing_id] = said
+        self.moved_on.add(session_id)
         return await self.update(session_id)
 
     async def plan_top(self, session_id: str) -> SessionView:
@@ -172,6 +174,7 @@ class DemoSessions:
         if task := self.dialing.pop(session_id, None):
             task.cancel()
         self.runs.pop(session_id, None)
+        self.moved_on.discard(session_id)   # the renter calls again: a returning one hears the welcome
         return await self.update(session_id)
 
     def turns(self, call_id: str, after: int = -1) -> list[TurnRow] | None:
@@ -260,6 +263,7 @@ class DemoSessions:
             self.returning[session_id] = name
         else:
             self.returning.pop(session_id, None)
+        self.moved_on.discard(session_id)
         return await self.update(session_id)
 
     async def focus_area(self, session_id: str, area: Area) -> SessionView:
@@ -270,6 +274,8 @@ class DemoSessions:
     async def update(self, session_id: str, prefs: Preferences | None = None,
                      focus: str | None = None) -> SessionView:
         cur = self.get(session_id)
+        if prefs is not None:
+            self.moved_on.add(session_id)
         view = self._build(session_id, prefs or cur.preferences, cur.version + 1,
                            focus if focus is not None else cur.focus_listing_id)
         self.views[session_id] = view
@@ -296,10 +302,11 @@ class DemoSessions:
         top = board[0].address if board else None
         says = (f"{len(matches)} places fit. {top} is on top." if top
                 else "Nothing fits yet. Want to widen the budget or the area?")
-        if session_id in self.returning and run.phase == "open" and not run.plan:
+        if (session_id in self.returning and session_id not in self.moved_on and run.phase == "open"
+                and not run.plan):
             # A returning call opens with the welcome and what the last call found (docs/DEMO.md, 2:00).
             name = self.returning[session_id]
-            last = self.last_results.get(session_id, LAST_RESULTS)
+            last = self.last_results.get(session_id, NO_RESULTS_YET)
             says = f"Welcome back{f', {name}' if name else ''}. {last}"
         return SessionView(session_id=session_id, version=version, phase=run.phase, preferences=prefs,
                            user_name=self.returning.get(session_id), returning=session_id in self.returning,
