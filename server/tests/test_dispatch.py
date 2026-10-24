@@ -60,9 +60,14 @@ class FakeRunner:
         self.uses_phone, self.results, self.hold_s = uses_phone, results or {}, hold_s
         self.dials: list[Dial] = []
         self.live = self.most = 0
+        self.busy: set[str] = set()   # phones on a call right now
+        self.rang_busy = False        # a phone rang while it was already on a call
 
     async def place(self, dial, report):
         self.dials.append(dial)
+        if dial.to is not None:
+            self.rang_busy |= dial.to in self.busy
+            self.busy.add(dial.to)
         self.live += 1
         self.most = max(self.most, self.live)
         try:
@@ -71,6 +76,8 @@ class FakeRunner:
             if what == "hang":
                 await asyncio.sleep(60)   # never answers: the deadline ends it
             await asyncio.sleep(self.hold_s)
+            if what == "fail":
+                raise RuntimeError("the line dropped")
             if what == "no_answer":
                 return CallResult("no_answer")
             await report("live")
@@ -80,6 +87,7 @@ class FakeRunner:
                                                   end_reason="done", viewing=booked))
         finally:
             self.live -= 1
+            self.busy.discard(dial.to)
 
 
 async def _brief(rt: SessionRuntime, plan: list[str], channel: str = "phone", **request) -> None:
@@ -201,6 +209,41 @@ async def test_a_number_off_the_allowlist_is_never_dialled():
     await d.idle()
     assert runner.dials == [] and rt.state(SID).outcomes["t:1"].end_reason == "blocked"
     assert rt.get(SID).phase == "done" and rt.get(SID).results == "I couldn't place the call to 1 Dial St."
+
+
+# A teammate's phone rings for one listing call at a time
+
+
+async def test_three_calls_on_two_phones_never_ring_a_busy_phone():
+    rt, runner = _runtime(), FakeRunner()
+    d = _dispatcher(rt, runner, call_concurrency=3)   # three lines, but two phones
+    await _brief(rt, ["t:1", "t:2", "t:3"])
+    await _hang_up(rt)
+    await d.idle()
+    assert len(runner.dials) == 3 and not runner.rang_busy and runner.most == 2
+    first_two = {x.to for x in runner.dials[:2]}
+    assert first_two == set(AGENTS) and runner.dials[2].to in first_two   # the third waited for a free one
+    assert rt.get(SID).phase == "done"
+
+
+async def test_a_failed_call_gives_its_phone_back():
+    rt, runner = _runtime(), FakeRunner(results={"t:1": "fail"})
+    d = _dispatcher(rt, runner, demo_agent_phones=AGENTS[:1])   # one phone
+    await _brief(rt, ["t:1", "t:2"])
+    await _hang_up(rt)
+    await d.idle()
+    assert [x.to for x in runner.dials] == [AGENTS[0]] * 2 and not runner.rang_busy
+    outcomes = rt.state(SID).outcomes
+    assert {lid: o.end_reason for lid, o in outcomes.items()} == {"t:1": "failed", "t:2": "done"}
+
+
+async def test_sim_calls_take_no_phone():
+    rt, runner = _runtime(), FakeRunner(uses_phone=False)
+    d = _dispatcher(rt, runner, call_concurrency=3, demo_agent_phones=())
+    await _brief(rt, ["t:1", "t:2", "t:3"])
+    await _hang_up(rt)
+    await d.idle()
+    assert [x.to for x in runner.dials] == [None] * 3 and runner.most == 3
 
 
 async def test_phone_calls_wait_for_business_hours_and_sim_calls_do_not():
