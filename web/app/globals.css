@@ -90,7 +90,21 @@
 
 /* ── map pins ─────────────────────────────────────────────────────────── */
 
+/* The button is the 44 px tap target; the 30 px face inside it is what shows. */
 .pin {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.pin:focus-visible { outline: none; }
+.pin-face {
+  position: relative;
   display: grid;
   place-items: center;
   width: 30px;
@@ -103,17 +117,16 @@
   border: 2px solid #fff;
   box-shadow: 0 1px 2px rgba(26, 24, 21, 0.18), 0 4px 10px rgba(26, 24, 21, 0.12);
   transition: transform 220ms var(--ease-out), box-shadow 220ms var(--ease-out);
-  cursor: pointer;
-  padding: 0;
 }
-.pin:hover, .pin[data-hover="true"] { transform: scale(1.12); }
-.pin[data-focus="true"] {
+.pin:focus-visible .pin-face { outline: 2px solid var(--color-ink); outline-offset: 2px; }
+.pin:hover .pin-face, .pin[data-hover="true"] .pin-face { transform: scale(1.12); }
+.pin[data-focus="true"] .pin-face {
   transform: scale(1.22);
   box-shadow: 0 0 0 2px var(--color-ink), 0 6px 16px rgba(26, 24, 21, 0.25);
 }
-.pin[data-status="verified"] { background: var(--color-real); }
-.pin[data-status="calling"] { background: var(--color-live); }
-.pin[data-status="calling"]::after {
+.pin[data-status="verified"] .pin-face { background: var(--color-real); }
+.pin[data-status="calling"] .pin-face { background: var(--color-live); }
+.pin[data-status="calling"] .pin-face::after {
   content: "";
   position: absolute;
   inset: -6px;
@@ -123,21 +136,21 @@
 }
 /* No answer: the ring of a call that stopped, dashed and still. It reads apart from pending (no
    ring), calling (a pulsing ring) and gone (hollow) without relying on colour. */
-.pin[data-status="no_answer"]::after {
+.pin[data-status="no_answer"] .pin-face::after {
   content: "";
   position: absolute;
   inset: -6px;
   border-radius: 999px;
   border: 2px dashed var(--color-ink-3);
 }
-.pin[data-status="dead"] { background: #fff; color: var(--color-ink-3); border-color: var(--color-ink-3); }
+.pin[data-status="dead"] .pin-face { background: #fff; color: var(--color-ink-3); border-color: var(--color-ink-3); }
 /* Suspect: outlined in red with a mark, so it reads without colour too. */
-.pin[data-status="suspect"] { background: #fff; color: var(--color-dead); border-color: var(--color-dead); }
-.pin[data-status="booked"] { background: var(--color-real); }
-.pin[data-status="suspect"]::before,
-.pin[data-status="booked"]::before,
-.pin[data-mark="will_call"]::before,
-.pin[data-mark="queued"]::before {
+.pin[data-status="suspect"] .pin-face { background: #fff; color: var(--color-dead); border-color: var(--color-dead); }
+.pin[data-status="booked"] .pin-face { background: var(--color-real); }
+.pin[data-status="suspect"] .pin-face::before,
+.pin[data-status="booked"] .pin-face::before,
+.pin[data-mark="will_call"] .pin-face::before,
+.pin[data-mark="queued"] .pin-face::before {
   position: absolute;
   top: -7px;
   right: -7px;
@@ -150,11 +163,11 @@
   color: #fff;
   font: 700 10px/1 var(--font-sans);
 }
-.pin[data-status="suspect"]::before { content: "!"; background: var(--color-dead); }
-.pin[data-status="booked"]::before { content: "★"; background: var(--color-ink); font-size: 9px; }
+.pin[data-status="suspect"] .pin-face::before { content: "!"; background: var(--color-dead); }
+.pin[data-status="booked"] .pin-face::before { content: "★"; background: var(--color-ink); font-size: 9px; }
 /* Picked to call, until it dials (the card says "Will call", then "Queued"): a check, the renter's own pick. */
-.pin[data-mark="will_call"]::before,
-.pin[data-mark="queued"]::before { content: "✓"; background: var(--color-ink); }
+.pin[data-mark="will_call"] .pin-face::before,
+.pin[data-mark="queued"] .pin-face::before { content: "✓"; background: var(--color-ink); }
 
 @keyframes ring {
   from { opacity: 0.7; transform: scale(0.85); }
@@ -176,7 +189,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .pin, .pin::after, .live-dot { transition: none; animation: none; }
+  .pin-face, .pin-face::after, .live-dot { transition: none; animation: none; }
   .meter-talk { animation: none; height: 12px; }
 }
 
