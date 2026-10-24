@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import date, datetime, timedelta
 
+from landline.agents.auditor import when
 from landline.agents.auditor.numbers import amounts
 
 MONEY_FIELDS = {"rent", "parking_cost", "fees"}
@@ -65,8 +67,9 @@ class Refused(Exception):
 
 def settle(field: str, value: str, quote: str, *, amount: float | None = None, count: int | None = None,
            each: bool | None = None, period: str | None = None, mandatory: bool | None = None,
-           name: str | None = None) -> Value:
-    """`value` and the structured hints are claims; the quote decides. Raises `Refused`."""
+           name: str | None = None, today: date | None = None) -> Value:
+    """`value` and the structured hints are claims; the quote decides. Raises `Refused`. `today` is the
+    call's day in Toronto (`call_day`), which a date like "tomorrow" counts from; the current day if None."""
     if field in MONEY_FIELDS:
         return _money(field, value, quote, amount, count, each, period, mandatory, name)
     if field in CATEGORIES:
@@ -102,8 +105,12 @@ def settle(field: str, value: str, quote: str, *, amount: float | None = None, c
             raise Refused(f"{n} isn't in the quote")
         unit = {"lease_months": " months", "sqft": " sq ft", "floor": ""}[field]
         return Value(field, str(n), f"{n:,}{unit}" if field != "floor" else f"floor {n}")
-    if field == "available_from":
-        return Value(field, _date_key(quote) or _date_key(value) or value.strip().lower(), value.strip())
+    if field == "available_from":   # the day comes from the quote, in code; a model's date is never kept
+        today = today or call_day(None)
+        day = free_from(quote, today)
+        if day is None:
+            raise Refused("the quote names no day")
+        return Value(field, "now" if day <= today else f"{day:%m-%d}", spoken_day(day, today))
     return Value(field, value.strip(), value.strip())   # light, outdoor_space, other: words, kept as said
 
 
@@ -179,25 +186,83 @@ def _category_word(field: str, value: str) -> str | None:
     return v if v in CATEGORIES.get(field, ()) else None
 
 
-_MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
+_NOW = re.compile(r"\b(now|immediately|right away|today|asap)\b|现在|马上|随时")
+_COUNT = {"a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6}
+_DAY_WORD = r"(\d{1,2})(?:st|nd|rd|th)?|(" + "|".join(when.ORDINALS) + ")"
 
 
-def _date_key(text: str) -> str | None:
-    t = text.lower()
-    if re.search(r"\b(now|immediately|right away|today|asap)\b|现在|马上|随时", t):
-        return "now"
-    for i, mon in enumerate(_MONTHS):
-        m = re.search(rf"\b{mon}[a-z]*\.?\s*(?:the\s*)?(\d{{1,2}})?", t)
-        if m:
-            day = int(m.group(1)) if m.group(1) else 1
-            return f"{i + 1:02d}-{day:02d}"
-        m2 = re.search(r"(?:the\s*)?(\d{1,2})(?:st|nd|rd|th)?\s+of\s+" + mon, t)
-        if m2:
-            return f"{i + 1:02d}-{int(m2.group(1)):02d}"
-    m = re.search(r"(\d{1,2})月(\d{1,2})?[日号]?", text)
-    if m:
-        return f"{int(m.group(1)):02d}-{int(m.group(2) or 1):02d}"
+def call_day(at: datetime | None) -> date:
+    """The day a call happened, in Toronto: what "tomorrow" and "next week" count from."""
+    return (at or datetime.now(when.TORONTO)).astimezone(when.TORONTO).date()
+
+
+def free_from(text: str, today: date) -> date | None:
+    """The day the words say a place is free from, counted from `today` (the call's day in Toronto), or
+    None when they name no day. Only the words decide: a date a model offered is never taken."""
+    t = text.lower().replace("’", "'")
+    if "day after tomorrow" in t:
+        return today + timedelta(days=2)
+    if "tomorrow" in t or "明天" in text:
+        return today + timedelta(days=1)
+    if m := re.search(r"\bin (a|an|one|two|three|four|five|six|\d{1,2}) (day|week|month)s?\b", t):
+        n = _COUNT.get(m.group(1)) or int(m.group(1))
+        return (_months_on(today, n) if m.group(2) == "month"
+                else today + timedelta(days=n * (7 if m.group(2) == "week" else 1)))
+    if re.search(r"\bend of (the|this) month\b|\bend of month\b|月底", t + text):
+        return _months_on(today.replace(day=1), 1) - timedelta(days=1)
+    if re.search(r"\b(first|1st|beginning|start) of (the )?next month\b|\bnext month\b|下个?月", t + text):
+        return _months_on(today.replace(day=1), 1)
+    for i, name in enumerate(when.DAYS):
+        if re.search(rf"\b{name}\b", t):
+            return today + timedelta(days=(i - today.weekday()) % 7 or 7)   # the coming one
+    if re.search(r"\bnext week\b|下(个)?(星期|周|礼拜)", t + text):
+        return today + timedelta(days=(0 - today.weekday()) % 7 or 7)       # that week's Monday
+    for i, name in enumerate(when.MONTHS):
+        month = rf"(?:{name}|{name[:3]}|sept)" if name == "september" else rf"(?:{name}|{name[:3]})"
+        if not re.search(rf"\b{month}\b", t):
+            continue
+        said_may = rf"\bmay\.?\s+(?:the\s+)?(?:{_DAY_WORD})\b|\b(?:in|of|from|by|early|mid|late)\s+may\b"
+        if name == "may" and not re.search(said_may, t):
+            continue   # "it may be free" is not May
+        if re.search(rf"\bend of {month}\b", t):
+            first = when._next_date(today, i + 1, 1) or today
+            return _months_on(first, 1) - timedelta(days=1)
+        m = (re.search(rf"\b{month}\.?\s+(?:the\s+)?(?:{_DAY_WORD})\b", t)
+             or re.search(rf"\b(?:the\s+)?(?:{_DAY_WORD})\s+of\s+{month}\b", t))
+        day = 1 if m is None else int(m.group(1)) if m.group(1) else when.ORDINALS[m.group(2)]
+        return when._next_date(today, i + 1, day)
+    if m := re.search(r"(\d{1,2})月(\d{1,2})?[日号]?", text):
+        return when._next_date(today, int(m.group(1)), int(m.group(2) or 1))
+    if m := re.search(rf"\bthe\s+(?:{_DAY_WORD})\b", t):   # "from the first": the next such day of a month
+        d = int(m.group(1)) if m.group(1) else when.ORDINALS[m.group(2)]
+        month, year = (today.month, today.year) if d >= today.day else when._next_month(today)
+        try:
+            return date(year, month, d)
+        except ValueError:
+            return None
+    if _NOW.search(t + text):
+        return today
     return None
+
+
+def _months_on(day: date, n: int) -> date:
+    """The same day `n` months on (the month's last day when it has fewer)."""
+    month0 = day.month - 1 + n
+    year, month = day.year + month0 // 12, month0 % 12 + 1
+    for d in (day.day, 30, 29, 28):
+        try:
+            return date(year, month, d)
+        except ValueError:
+            continue
+    return date(year, month, 28)
+
+
+def spoken_day(day: date, today: date) -> str:
+    """"now", or the day in words: "Sunday, October 25", with the year when it isn't the call's year."""
+    if day <= today:
+        return "now"
+    words = f"{day:%A}, {day:%B} {day.day}"
+    return words if day.year == today.year else f"{words}, {day.year}"
 
 
 _RULES: dict[str, tuple[tuple[str, str], ...]] = {

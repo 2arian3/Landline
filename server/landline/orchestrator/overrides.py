@@ -13,7 +13,7 @@ import re
 from datetime import date
 from typing import Any
 
-from landline.agents.auditor.values import Refused, Value, fee_name, settle
+from landline.agents.auditor.values import Refused, Value, call_day, fee_name, settle
 from landline.contracts import Fact, Listing
 from landline.db.catalogue import Catalogue
 from landline.orchestrator.state import SessionState
@@ -44,7 +44,7 @@ def from_calls(state: SessionState, catalogue: Catalogue,
             cols["laundry"] = LAUNDRY[v.value]
         if v := heard.get("parking"):
             cols["parking"] = PARKING[v.value]
-        if (v := heard.get("available_from")) and (day := _day(v.value, today)):
+        if (v := heard.get("available_from")) and (day := _day(v.value, _said_on(outcome.facts, today))):
             cols["available_from"] = day
         cost = _monthly_cost(listing, heard, quotes, fees, needs_parking)
         if cost is not None and cost != listing.monthly_cost:
@@ -65,7 +65,8 @@ def _settled(facts: list[Fact]) -> tuple[dict[str, Value], dict[str, str], list[
             if f.field == "fees":
                 fees.append(settle("fees", f.value, f.quote, **_fee_hints(f.value)))
             else:
-                heard[f.field], quotes[f.field] = settle(f.field, f.value, f.quote), f.quote
+                heard[f.field], quotes[f.field] = settle(f.field, f.value, f.quote,
+                                                         today=call_day(f.at) if f.at else None), f.quote
         except Refused:
             continue
     return heard, quotes, fees
@@ -110,8 +111,15 @@ def _monthly_cost(listing: Listing, heard: dict[str, Value], quotes: dict[str, s
     return (rent or 0) + sum(monthly.values())
 
 
+def _said_on(facts: list[Fact], today: date) -> date:
+    """The day the move-in date was heard, which its key counts from, so "tomorrow" keeps meaning the day
+    after that call (the same day the Narrator names); today when the fact has no time."""
+    at = next((f.at for f in reversed(facts) if f.field == "available_from" and f.at), None)
+    return call_day(at) if at else today
+
+
 def _day(key: str, today: date) -> date | None:
-    """The Auditor's date key ("now", "11-01") as the next such day."""
+    """The Auditor's date key ("now", "11-01") as the next such day from `today`, the call's day."""
     if key == "now":
         return today
     m = re.fullmatch(r"(\d{2})-(\d{2})", key)
