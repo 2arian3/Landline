@@ -200,7 +200,7 @@ async def test_demo_captions_wait_for_a_call_to_go_live():
 
 
 async def test_demo_captions_are_the_whole_script_once_the_calls_end():
-    s = DemoSessions(_one_bedrooms(), tick_s=0)
+    s = DemoSessions(_one_bedrooms(), tick_s=0, now=lambda: NOW)   # booking the coming Saturday at 2 pm
     done = await _walk(s)
     address = {c.listing_id: c.address for c in done.board}
 
@@ -293,6 +293,27 @@ async def test_demo_captions_come_line_by_line_while_a_call_is_live():
         (("ended",) * 4, (6, 3, 7, 0)),
         (("ended",) * 4, (6, 3, 7, 0)),
     ]
+
+
+async def test_a_demo_call_hangs_up_only_once_its_last_line_is_out():
+    s = DemoSessions(_one_bedrooms(), tick_s=0.02)   # a line every 0.01 s
+    ended = {}
+    publish = s.update
+
+    async def spy(session_id, **kw):
+        view = await publish(session_id, **kw)
+        for c in view.calls:
+            if c.state == "ended":
+                ended.setdefault(c.listing_id, s.clock())
+        return view
+
+    s.update = spy
+    await _walk(s)
+    run = s.runs["s1"]
+    assert len(run.live_at) == 3   # the fourth never picks up
+    for lid, went_live in run.live_at.items():   # the first call's six lines take longer than a tick
+        last_line = went_live + (len(run.captions[lid]) - 1) * s.tick_s / 2
+        assert ended[lid] > last_line, lid
 
 
 # The endpoint: demo calls, then the database, then 404
