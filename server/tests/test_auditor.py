@@ -321,6 +321,30 @@ def test_a_bare_yes_or_no_without_its_question_is_still_refused(question, quote)
         settle("pets", "yes", quote, question=question)
 
 
+@pytest.mark.parametrize(("question", "field", "value", "quote", "stored", "shown"), [
+    (PETS_Q, "pets", "no", "They are not allowed.", "no_pets", "no pets"),
+    (PETS_Q, "pets", "not allowed", "They do not allow pets.", "no_pets", "no pets"),
+    ("Is it still available?", "available", "not available", "It is not.", "no", "not available"),
+    ("Is it furnished?", "furnished", "unfurnished", "It is not.", "no", "unfurnished"),
+    (PARKING_Q, "parking", "no parking", "It does not.", "none", "no parking"),
+    ("Is there an elevator?", "elevator", "no elevator", "It does not.", "no", "no"),
+    ("Does it have air conditioning?", "ac", "no", "It does not have AC.", "no", "no air conditioning"),
+])
+def test_a_no_in_full_words_is_a_no_never_a_yes(question, field, value, quote, stored, shown):
+    got = settle(field, value, quote, question=question)
+    assert (got.value, got.display) == (stored, shown)
+
+
+@pytest.mark.parametrize(("question", "field", "value", "quote"), [
+    ("Are utilities included?", "utilities_included", "not included", "They are not."),
+    (PETS_Q, "pets", "yes", "It is not a problem."),   # not a no, and not a plain yes either
+    (PETS_Q, "pets", "no", "Yeah, it's not."),
+])
+def test_a_yes_that_says_not_is_dropped_never_guessed(question, field, value, quote):
+    with pytest.raises(Refused):
+        settle(field, value, quote, question=question)
+
+
 def test_the_last_of_several_answers_to_the_same_question_is_kept():
     turns = [("agent", "Is it still available?"), ("landlord", "Yes."),
              ("agent", PETS_Q), ("landlord", "Yes."), ("agent", PETS_Q), ("landlord", "Yes."),
