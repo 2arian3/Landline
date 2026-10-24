@@ -1,4 +1,4 @@
-"""Repositories for the session runtime: sessions, events, calls, turns, facts and boards.
+"""Repositories for the session runtime: sessions, events, calls, turns, call audio, facts and boards.
 
 Ids come from the caller (code mints them, never a model), and times default to
 now() in SQL. Two rules live here because they must hold whoever calls:
@@ -17,7 +17,7 @@ from psycopg.types.json import Jsonb
 
 from landline.contracts import EventBase
 from landline.db.base import Conn, Repo
-from landline.db.rows import BoardEntry, BoardRow, CallRow, EventRow, FactRow, SessionRow, TurnRow
+from landline.db.rows import AudioRow, BoardEntry, BoardRow, CallRow, EventRow, FactRow, SessionRow, TurnRow
 
 
 class StaleVersion(Exception):
@@ -139,19 +139,62 @@ class Calls(Repo):
 
 class Turns(Repo):
     async def append(self, call_id: str, idx: int, speaker: str, text: str, lang: str | None = None,
-                     t_ms: int | None = None, conn: Conn = None) -> TurnRow | None:
+                     t_ms: int | None = None, audio_start_ms: int | None = None,
+                     audio_end_ms: int | None = None, conn: Conn = None) -> TurnRow | None:
         """Store one turn. None if that idx is already stored (a retried write)."""
         return await self._one(
             TurnRow,
-            "insert into call_turns (call_id, idx, speaker, text, lang, t_ms) "
-            "values (%s, %s, %s, %s, %s, %s) on conflict (call_id, idx) do nothing returning *",
-            (call_id, idx, speaker, text, lang, t_ms), conn,
+            "insert into call_turns (call_id, idx, speaker, text, lang, t_ms, audio_start_ms, audio_end_ms) "
+            "values (%s, %s, %s, %s, %s, %s, %s, %s) on conflict (call_id, idx) do nothing returning *",
+            (call_id, idx, speaker, text, lang, t_ms, audio_start_ms, audio_end_ms), conn,
         )
+
+    async def place(self, call_id: str, idx: int, audio_start_ms: int | None, audio_end_ms: int | None,
+                    conn: Conn = None) -> bool:
+        """Move a stored turn to where it really is in the call's audio, e.g. cut short by a barge-in."""
+        n = await self._count("update call_turns set audio_start_ms = %s, audio_end_ms = %s "
+                              "where call_id = %s and idx = %s",
+                              (audio_start_ms, audio_end_ms, call_id, idx), conn)
+        return n == 1
 
     async def list(self, call_id: str, after_idx: int = -1, conn: Conn = None) -> list[TurnRow]:
         """The call's turns after `after_idx`, in order: live captions poll with the last idx they have."""
         return await self._all(TurnRow, "select * from call_turns where call_id = %s and idx > %s "
                                "order by idx", (call_id, after_idx), conn)
+
+
+class Audio(Repo):
+    """call_audio: each side of a call's audio, in chunks on the call's clock."""
+
+    async def append(self, call_id: str, track: str, seq: int, start_ms: int, fmt: str, rate: int,
+                     audio: bytes, conn: Conn = None) -> bool:
+        """Store one chunk. False if that (track, seq) is already stored (a retried write)."""
+        n = await self._count(
+            "insert into call_audio (call_id, track, seq, start_ms, format, rate, audio) "
+            "values (%s, %s, %s, %s, %s, %s, %s) on conflict (call_id, track, seq) do nothing",
+            (call_id, track, seq, start_ms, fmt, rate, audio), conn,
+        )
+        return n == 1
+
+    async def list(self, call_id: str, from_ms: int | None = None, to_ms: int | None = None,
+                   conn: Conn = None) -> list[AudioRow]:
+        """The call's chunks that overlap [from_ms, to_ms) (all of them by default), by track and order."""
+        # A chunk lasts octet_length / (rate × bytes a sample) seconds: 1 byte for μ-law, 2 for PCM16.
+        return await self._all(
+            AudioRow,
+            "select * from call_audio where call_id = %(call_id)s "
+            "and (%(to)s::int is null or start_ms < %(to)s) "
+            "and (%(from)s::int is null or start_ms + octet_length(audio) * 1000 "
+            "     / (rate * case format when 'pcmu' then 1 else 2 end) > %(from)s) "
+            "order by track, seq",
+            {"call_id": call_id, "from": from_ms, "to": to_ms}, conn,
+        )
+
+    async def exists(self, call_id: str, conn: Conn = None) -> bool:
+        async with self._use(conn) as c, c.cursor() as cur:
+            await cur.execute("select exists (select 1 from call_audio where call_id = %s)", (call_id,))
+            row = await cur.fetchone()
+            return bool(row and row[0])
 
 
 class Facts(Repo):
