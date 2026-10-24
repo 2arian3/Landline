@@ -185,8 +185,8 @@ class ReturningBody(BaseModel):
 
 @router.post("/api/sessions/{session_id}/returning", response_model=SessionView)
 async def returning(session_id: str, body: ReturningBody, request: Request) -> SessionView:
-    """Demo hook: marks the session as a returning renter until profiles (O-05) recognise the phone
-    number. The panel then opens with "Welcome back, <name>."."""
+    """Demo hook: marks a demo session as a returning renter, the way profiles (O-05) recognise a phone
+    call's number for a runtime session. The panel then opens with "Welcome back, <name>."."""
     name = (body.name or "").strip() or None
     _demo_only(request, session_id)
     return await request.app.state.sessions.welcome_back(session_id, body.returning, name)
