@@ -107,6 +107,11 @@ def instructions(b: Brief) -> str:
                          share=share, booking=booking)
 
 
+def disclosure(b: Brief) -> str:
+    """The Caller's first words (hard rule 6), as CALLER gives them."""
+    return f"Hi, I'm an AI assistant calling for a renter about {_place(b.listing)}."
+
+
 CALLER = """\
 You are Landline, an AI assistant phoning the landlord or listing agent of a rental in Toronto for a \
 renter. You work for the renter. The other person speaks first when they pick up.
@@ -157,7 +162,8 @@ What you may say about the renter: {share} Nothing else. If they ask anything el
 guarantor, credit, references, a deposit, documents, or whether they'd want a paid extra like a locker), \
 call note_question with their question and say "I'll check with my client and get back to you." Never \
 agree to send money or anything personal, and never promise \
-anything for the renter.
+anything for the renter. Never say the renter confirmed, agreed or chose anything during the call: you \
+can't reach them.
 
 What the listing says: {listing}
 
