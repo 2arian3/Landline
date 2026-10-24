@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from fastapi.testclient import TestClient
 
 from landline.api.demo import DemoSessions
-from landline.api.judge import JudgeLines
+from landline.api.judge import JudgeLines, StartLimit, client_ip
 from landline.app import create_app
 from landline.config import Settings
 from landline.contracts import Listing
@@ -175,10 +175,18 @@ def test_call_endpoint_shows_calling_then_the_outcomes():
         assert sorted(b["status"] for b in board) == ["pending", "suspect", "verified", "verified"]
 
 
-def _judge_client(cap: int) -> TestClient:
+def _judge_client(cap: int, per_ip: int = 100, ready: bool = True) -> TestClient:
     settings = Settings(database_url=None, web_url="http://localhost:3000", transport="stub",
-                        higgs_max_sessions=cap)
+                        higgs_max_sessions=cap, judge_audio_ready=ready, judge_starts_per_ip=per_ip)
     return TestClient(create_app(settings, Catalogue([_listing(1, 2400, 1)], "test")))
+
+
+def test_judge_mode_opens_soon_until_the_browser_audio_is_ready():
+    with _judge_client(2, ready=False) as c:
+        r = c.post("/api/judge/start")
+        assert r.status_code == 503
+        assert r.json() == {"detail": "Judge mode opens soon.", "reason": "closed"}
+        assert c.app.state.judges.open == {} and c.get("/health").json()["sessions"] == 0
 
 
 def test_judge_start_mints_a_session_and_its_audio_socket():
@@ -199,9 +207,54 @@ def test_judge_start_is_busy_when_every_line_is_taken():
         busy = c.post("/api/judge/start")
         assert busy.status_code == 503
         assert busy.headers["retry-after"] == "60"
-        assert busy.json()["detail"] == "All lines are busy. Try again in a minute."
+        assert busy.json() == {"detail": "All lines are busy. Try again in a minute.", "reason": "busy",
+                               "retry_after_s": 60}
         c.app.state.judges.hang_up(first)   # what the browser transport (A-03) does when a judge leaves
         assert c.post("/api/judge/start").status_code == 200
+
+
+def test_judge_starts_are_limited_per_address():
+    with _judge_client(10, per_ip=2) as c:
+        judge = {"X-Real-IP": "203.0.113.7"}
+        assert [c.post("/api/judge/start", headers=judge).status_code for _ in range(2)] == [200, 200]
+        limited = c.post("/api/judge/start", headers=judge)
+        assert limited.status_code == 429
+        body = limited.json()
+        assert body["reason"] == "rate_limited" and 0 < body["retry_after_s"] <= 600
+        assert limited.headers["retry-after"] == str(body["retry_after_s"])
+        assert body["detail"] == "Too many judge sessions from your network. Try again in 10 minutes."
+        # Another address has its own count; without X-Real-IP the first X-Forwarded-For entry counts.
+        other = {"X-Forwarded-For": "198.51.100.4, 10.0.0.9"}
+        assert [c.post("/api/judge/start", headers=other).status_code for _ in range(3)] == [200, 200, 429]
+
+
+def test_only_starts_that_open_a_line_count_against_an_address():
+    with _judge_client(1, per_ip=1) as c:
+        first = c.post("/api/judge/start", headers={"X-Real-IP": "203.0.113.7"}).json()["session_id"]
+        other = {"X-Real-IP": "198.51.100.4"}
+        assert c.post("/api/judge/start", headers=other).json()["reason"] == "busy"
+        c.app.state.judges.hang_up(first)
+        assert c.post("/api/judge/start", headers=other).status_code == 200
+
+
+def test_start_limit_frees_an_address_as_its_window_passes():
+    now = [0.0]
+    limit = StartLimit(per_ip=2, window_s=600, clock=lambda: now[0])
+    limit.record("a")
+    now[0] = 100.0
+    limit.record("a")
+    now[0] = 200.0
+    assert limit.wait_s("a") == 400 and limit.wait_s("b") == 0
+    now[0] = 600.5
+    assert limit.wait_s("a") == 0
+
+
+def test_client_ip_trusts_the_gateway_header_first():
+    forwarded = {"x-forwarded-for": "198.51.100.4, 10.0.0.9"}
+    assert client_ip({"x-real-ip": "203.0.113.7", **forwarded}, "10.0.0.2") == "203.0.113.7"
+    assert client_ip(forwarded, "10.0.0.2") == "198.51.100.4"
+    assert client_ip({}, "10.0.0.2") == "10.0.0.2"
+    assert client_ip({}, None) == "unknown"
 
 
 def test_judge_lines_free_at_their_deadline():
@@ -219,6 +272,16 @@ def test_settings_read_the_higgs_cap(monkeypatch):
     assert Settings.load().higgs_max_sessions == 3
     monkeypatch.setenv("HIGGS_MAX_SESSIONS", "")
     assert Settings.load().higgs_max_sessions == 5
+
+
+def test_settings_read_judge_mode(monkeypatch):
+    for value, ready in (("1", True), ("true", True), ("", False), ("0", False), ("no", False)):
+        monkeypatch.setenv("JUDGE_AUDIO_READY", value)
+        assert Settings.load().judge_audio_ready is ready
+    monkeypatch.setenv("JUDGE_STARTS_PER_IP", "8")
+    monkeypatch.setenv("JUDGE_START_WINDOW_S", "")
+    s = Settings.load()
+    assert (s.judge_starts_per_ip, s.judge_start_window_s) == (8, 600)
 
 
 def test_returning_renter_is_welcomed_by_name():

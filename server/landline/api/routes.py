@@ -3,17 +3,20 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
+from landline.api.judge import client_ip
 from landline.contracts import CataloguePoint, Listing, Preferences, SessionView
 
 router = APIRouter()
 HEARTBEAT_S = 5   # well inside the page's 6.5 s "Reconnecting…" threshold
 BUSY = "All lines are busy. Try again in a minute."
+CLOSED = "Judge mode opens soon."
 
 
 @router.get("/health")
@@ -129,13 +132,34 @@ class JudgeStart(BaseModel):
 
 
 @router.post("/api/judge/start", response_model=JudgeStart)
-async def judge_start(request: Request) -> JudgeStart:
-    """CONTRACTS.md: {session_id, ws_url} for browser audio. At most HIGGS_MAX_SESSIONS judge sessions
-    hold a line at once; past that it answers 503 with Retry-After, and /try says to try again in a
-    minute. Async on purpose: taking a line never races another request."""
-    session_id = request.app.state.judges.take()
+async def judge_start(request: Request) -> JudgeStart | JSONResponse:
+    """CONTRACTS.md: {session_id, ws_url} for browser audio. Turned down, with a `reason` /try can tell
+    apart: "closed" (503) until JUDGE_AUDIO_READY, "rate_limited" (429) after JUDGE_STARTS_PER_IP starts
+    from one address in the window, "busy" (503) while HIGGS_MAX_SESSIONS judge sessions hold a line.
+    Only a start that opens a line counts against the address. Async on purpose: taking a line never
+    races another request."""
+    state = request.app.state
+    if not state.settings.judge_audio_ready:
+        return _refused(503, "closed", CLOSED)
+    ip = client_ip(request.headers, request.client.host if request.client else None)
+    if wait := state.judge_limit.wait_s(ip):
+        minutes = math.ceil(wait / 60)
+        return _refused(429, "rate_limited", f"Too many judge sessions from your network. Try again in "
+                        f"{minutes} minute{'' if minutes == 1 else 's'}.", math.ceil(wait))
+    session_id = state.judges.take()
     if session_id is None:
-        raise HTTPException(503, BUSY, headers={"Retry-After": "60"})
-    request.app.state.sessions.get(session_id)   # SessionStarted, until O-02's runtime owns it
-    ws_url = request.app.state.settings.judge_ws_path.format(session_id=session_id)
+        return _refused(503, "busy", BUSY, 60)
+    state.judge_limit.record(ip)
+    state.sessions.get(session_id)   # SessionStarted, until O-02's runtime owns it
+    ws_url = state.settings.judge_ws_path.format(session_id=session_id)
     return JudgeStart(session_id=session_id, ws_url=ws_url)
+
+
+def _refused(status: int, reason: str, message: str, retry_after_s: int | None = None) -> JSONResponse:
+    # The wait goes in the body too: a browser on another origin can't read Retry-After without CORS.
+    body: dict = {"detail": message, "reason": reason}
+    headers = None
+    if retry_after_s is not None:
+        body["retry_after_s"] = retry_after_s
+        headers = {"Retry-After": str(retry_after_s)}
+    return JSONResponse(body, status_code=status, headers=headers)
