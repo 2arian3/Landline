@@ -178,6 +178,27 @@ async def test_every_kind_of_outcome_has_its_sentence_and_bookings_come_first():
     assert rt.state(SID).results == done.results   # written once, for the SMS and the next call's opening
 
 
+@pytest.mark.parametrize(("field", "listed", "heard", "says"), [
+    # the values as the Auditor fills them (agents/auditor/audit.py conflicts())
+    ("pets", "no pets", "cats only", "The listing says no pets, but the agent said cats only."),
+    ("pets", "allowed", "no pets", "The listing says pets allowed, but the agent said no pets."),
+    ("laundry", "in suite", "shared", "The listing says laundry in the unit, but the agent said shared."),
+    ("parking", "none", "$100 a month", "The listing says no parking, but the agent said $100 a month."),
+    ("rent", "$1,850", "$1,950", "The listing says rent is $1,850, but the agent said $1,950."),
+    ("parking_cost", "$100", "$150", "The listing says parking is $100, but the agent said $150."),
+    ("monthly_cost", "$2,000 a month", "$2,180 a month",
+     "The listing says $2,000 a month, but the agent said $2,180 a month."),
+    ("available", "listed as available", "not available",
+     "The listing says it's available, but the agent said not available."),
+])
+async def test_a_conflict_reads_as_plain_words(field, listed, heard, says):
+    rt = _runtime(2000)
+    (c1,) = await _session(rt, ["t:1"])
+    conflict = Conflict(field=field, listed=listed, heard=heard, quote="said so")
+    view = await _outcome(rt, c1, "t:1", facts=[_heard(field, heard)], conflicts=[conflict])
+    assert view.agent_says.endswith(says)
+
+
 async def test_voicemail_and_a_call_without_an_outcome():
     rt = _runtime(2000, 2000, 2000)
     c1, c2 = await _session(rt, ["t:1", "t:2"])
