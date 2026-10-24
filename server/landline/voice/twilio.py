@@ -23,6 +23,10 @@ def twiml_say_hangup(text: str) -> str:
     return f"{XML_HEAD}<Response><Say>{escape(text)}</Say><Hangup/></Response>"
 
 
+def twiml_hangup() -> str:
+    return f"{XML_HEAD}<Response><Hangup/></Response>"
+
+
 def signature(auth_token: str, url: str, params: dict[str, str]) -> str:
     """X-Twilio-Signature: HMAC-SHA1 over the full public URL followed by each POST field's name and
     value, sorted by name, base64-encoded."""
