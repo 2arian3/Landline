@@ -14,7 +14,7 @@ from collections.abc import Sequence
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from landline.contracts import Card, Event, PreferencesUpdated, SessionView
+from landline.contracts import Card, Conflict, Event, PreferencesUpdated, SessionView
 from landline.db.catalogue import Catalogue
 from landline.orchestrator.state import SessionState
 from landline.scoring.weights import feature_key
@@ -34,6 +34,18 @@ FIELDS = {
     "utilities_included": "utilities", "furnished": "furnished", "lease_months": "lease",
     "sqft": "size", "floor": "floor", "light": "light", "elevator": "elevator", "step_free": "step-free",
     "outdoor_space": "outdoor space", "other": "also",
+}
+# A conflict's two sides in words. The Auditor writes the listing's side as its value with spaces ("no pets",
+# "in suite") and the agent's side as its display ("cats only", "laundry in the unit"); both read as said.
+SAID = {
+    "pets": {"no pets": "no pets", "none": "no pets", "allowed": "pets allowed", "any": "pets allowed",
+             "pets allowed": "pets allowed", "cats only": "cats only", "dogs only": "dogs only",
+             "small only": "small pets only", "case by case": "pets case by case"},
+    "laundry": {"in suite": "laundry in the unit", "in unit": "laundry in the unit",
+                "shared": "laundry in the building", "in building": "laundry in the building",
+                "none": "no laundry"},
+    "parking": {"included": "parking included", "extra": "parking available",
+                "available": "parking available", "none": "no parking"},
 }
 
 
@@ -157,6 +169,8 @@ def _place(state: SessionState, lid: str, view: SessionView, catalogue: Catalogu
         said.append(f"{addr} is already rented.")
     elif out is None:
         said.append(f"I couldn't reach {addr} in time.")
+    elif out.end_reason == "blocked":   # never dialled: no caller, or no allowlisted number
+        said.append(f"I couldn't place the call to {addr}.")
     elif status == "no_answer":
         said.append(f"I left a message for {addr}'s agent." if out.end_reason == "voicemail"
                     else f"Nobody picked up at {addr}.")
@@ -165,15 +179,28 @@ def _place(state: SessionState, lid: str, view: SessionView, catalogue: Catalogu
                  for f in out.facts if f.field != "available"][:MAX_FACTS]
         said.append(f"At {addr}, {'; '.join(facts)}." if facts else f"{addr} is still available.")
     if out and out.conflicts:
-        c = out.conflicts[0]
-        source = "the City record" if c.against == "city" else "the listing"
-        said.append(f"{source[:1].upper()}{source[1:]} says {FIELDS.get(c.field, c.field)} {c.listed}, "
-                    f"but the agent said {c.heard}.")
+        said.append(_conflict(out.conflicts[0]))
     if status in ("verified", "booked") and (moved := _moved(state, lid, view)):
         said.append(moved)
     asked = [*state.questions.get(lid, []), *(out.open_questions if out else [])]
     said += [f"Its agent asked, “{q.rstrip('?')}?” I said I'd check with you." for q in dict.fromkeys(asked)]
     return said
+
+
+def _conflict(c: Conflict) -> str:
+    """A conflict as plain speech: the values in words, never a field name pasted before its value."""
+    source = "The City record" if c.against == "city" else "The listing"
+    words = SAID.get(c.field, {})
+    listed, heard = words.get(c.listed.lower(), c.listed), words.get(c.heard.lower(), c.heard)
+    if c.field == "rent":
+        return f"{source} says the rent is {listed}, but the agent said {heard}."
+    if c.field == "parking_cost":
+        return f"{source} says parking is {listed} a month, but the agent said {heard}."
+    if c.field == "monthly_cost":
+        return f"{source} says {listed} in all, but with what the agent said it's {heard}."
+    if c.field == "available":
+        return f"{source} says it's available, but the agent said it's {heard}."
+    return f"{source} says {listed}, but the agent said {heard}."
 
 
 def _moved(state: SessionState, lid: str, view: SessionView) -> str | None:

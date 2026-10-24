@@ -4,6 +4,7 @@ Twilio and a fake sim runner; no network. Then the sim's turns reaching call_tur
 import asyncio
 from dataclasses import replace
 from datetime import UTC, datetime
+from urllib.parse import parse_qs
 
 import httpx
 from fastapi.testclient import TestClient
@@ -49,12 +50,15 @@ class FakeSim:
 
 class FakeTwilio:
     def __init__(self):
-        self.created = []
+        self.created, self.texts = [], []
 
     async def handle(self, request):
         if request.url.path.endswith("/Calls.json"):
             self.created.append(request.content.decode())
             return httpx.Response(201, json={"sid": f"CA{len(self.created)}"})
+        if request.url.path.endswith("/Messages.json"):
+            self.texts.append(parse_qs(request.content.decode())["Body"][0])
+            return httpx.Response(201, json={"sid": f"SM{len(self.texts)}"})
         return httpx.Response(200, json={})
 
 
@@ -65,13 +69,19 @@ def _app(**kw):
     assert isinstance(router, ByChannel)
     sim, twilio_api = FakeSim(), FakeTwilio()
     router.sim = sim
+    fake = httpx.MockTransport(twilio_api.handle)
+    c.app.state.texter.client = httpx.AsyncClient(transport=fake)   # the results text, not api.twilio.com
     if router.phone is not None:
-        router.phone.client = httpx.AsyncClient(transport=httpx.MockTransport(twilio_api.handle))
+        router.phone.client = httpx.AsyncClient(transport=fake)
     return c, sim, twilio_api
 
 
 def _finish(c):
     c.portal.call(c.app.state.dispatcher.idle)
+
+
+async def _texts_sent(c) -> None:
+    await asyncio.gather(*c.app.state.texter._sending)
 
 
 def _judge_brief_with_three_picks(c) -> str:
@@ -131,13 +141,17 @@ def test_a_phone_renter_with_transport_sim_never_dials():
         c.__exit__(None, None, None)
 
 
-def test_with_transport_stub_a_phone_renters_calls_stay_queued_and_a_judges_still_run_on_the_sim():
+def test_with_transport_stub_a_phone_renters_calls_end_unplaced_and_a_judges_still_run_on_the_sim():
     c, sim, twilio_api = _app(transport="stub")
     try:
         sid = _phone_brief(c)
         _finish(c)
         assert sim.dials == [] and twilio_api.created == []
-        assert {x["state"] for x in c.get(f"/api/sessions/{sid}").json()["calls"]} == {"queued"}
+        session = c.get(f"/api/sessions/{sid}").json()
+        assert session["phase"] == "done" and {x["state"] for x in session["calls"]} == {"ended"}
+        c.portal.call(_texts_sent, c)
+        assert twilio_api.texts == ["Landline: I couldn't place the call to 1 Route St. I couldn't place the "
+                                    f"call to 2 Route St.\nMap: http://localhost:3000/s/{sid}"]
         _judge_brief_with_three_picks(c)
         _finish(c)
         assert len(sim.dials) == 3
