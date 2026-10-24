@@ -1,4 +1,4 @@
-"""Profiles (O-05): a renter is remembered by phone number from one call to the next.
+"""Profiles (O-05): a renter is stored by phone number. The next call does not load that memory (#144).
 
 These run against Postgres in a throwaway schema (conftest.py) and skip without TEST_DATABASE_URL.
 """
@@ -93,7 +93,7 @@ async def test_a_new_number_gets_a_user_and_its_session_is_linked(db):
     assert view.agent_says == "Tell me what you're looking for, and the map will follow."
 
 
-async def test_the_brief_is_saved_and_the_next_call_starts_from_it(db):
+async def test_the_brief_is_saved_and_the_next_call_does_not_start_from_it(db):
     rt = _runtime(db)
     sid = "s_prof000002"
     await _call(rt, sid)
@@ -119,33 +119,30 @@ async def test_the_brief_is_saved_and_the_next_call_starts_from_it(db):
                                                                          ("t:2", "rejected", "too dark")]
     assert user.last_seen_at is not None
 
-    # The same number calls again, written another way: the search and the reactions are back.
+    # The same number calls again. The profile is still there, and none of it is put on this call (#144).
     again = await _call(rt, "s_prof000003", phone="(416) 555-0100")
-    assert again.returning and again.agent_says == "Welcome back. Here is your search from last time."
-    p = again.preferences
-    assert (p.max_monthly, p.min_beds, p.pets, p.priorities, [a.label for a in p.anchors]) == (
-        2600, 1, ["dog"], ["light"], ["King and Bay"])
-    # The place they turned down stays off the board (O-04), and the reaction is still remembered.
-    assert "t:2" not in {c.listing_id for c in again.board}
-    assert rt.state("s_prof000003").reactions["t:2"].reason == "too dark"
-    said = rt.opening("s_prof000003")
-    assert said.startswith("This renter last called earlier today. What you know: Wants up to $2,600")
+    assert not again.returning
+    assert again.agent_says == "Tell me what you're looking for, and the map will follow."
+    assert again.preferences.max_monthly is None and again.preferences.pets == []
+    assert rt.state("s_prof000003").reactions == {}
+    assert rt.opening("s_prof000003") is None
+    assert "t:2" in {c.listing_id for c in again.board}
     # Ending the second call without new reactions stores nothing twice.
     await _hang_up(rt, "s_prof000003")
     assert len(await db.interactions.for_user(user.user_id)) == 2
 
 
-async def test_the_next_call_opens_with_the_results_of_the_last_one(db):
+async def test_the_next_call_does_not_open_with_the_results_of_the_last_one(db):
     rt = _runtime(db)
     sid = "s_prof000004"
     await _call(rt, sid)
     await rt.emit(CallsRequested(**_meta(sid, "plan", 1), listing_ids=["t:1", "t:2"], may_book=True))
     await _hang_up(rt, sid)
 
-    # While the calls are still running, the next call says so and has no results yet.
+    # While the calls are still running, the next call is not told, and does not open on them (#144).
     running = await _call(rt, "s_prof000005")
-    assert "The calls from their last call are still running." in rt.opening("s_prof000005")
-    assert running.agent_says == "Welcome back. Here is your search from last time."
+    assert rt.opening("s_prof000005") is None and not running.returning
+    assert running.agent_says == "Tell me what you're looking for, and the map will follow."
 
     plan = CallPlan(session_id=sid, listing_ids=["t:1", "t:2"], may_book=True, created_at=T0)
     calls = ["c_prof000001", "c_prof000002"]
@@ -167,12 +164,12 @@ async def test_the_next_call_opens_with_the_results_of_the_last_one(db):
         await conn.execute("update sessions set started_at = now() - interval '1 hour' "
                            "where session_id = 's_prof000005'")
     later = await _call(rt, "s_prof000006")
-    assert later.agent_says == ("Welcome back. I booked 1 Main St for Saturday at 2 pm. "
-                                "Nobody picked up at 2 Main St.")
-    assert "Results of the calls you made for them: I booked 1 Main St" in rt.opening("s_prof000006")
+    assert rt.opening("s_prof000006") is None and not later.returning
+    assert "booked" not in later.agent_says.lower()
+    assert later.agent_says == "Tell me what you're looking for, and the map will follow."
 
 
-async def test_calls_nobody_can_place_end_the_session_and_the_next_call_hears_so(db):
+async def test_calls_nobody_can_place_end_the_session_and_the_next_call_is_not_told(db):
     # Production with TRANSPORT=stub: a phone session's calls have no runner (issue #95).
     rt = _runtime(db)
     d = Dispatcher(rt, Settings(database_url=None, web_url="https://landline.example", transport="stub"))
@@ -186,9 +183,7 @@ async def test_calls_nobody_can_place_end_the_session_and_the_next_call_hears_so
     assert "called" not in [i.action for i in await db.interactions.for_user(user.user_id)]
 
     await _call(rt, "s_prof000015")
-    said = rt.opening("s_prof000015")
-    assert "still running" not in said
-    assert "Results of the calls you made for them: I couldn't place the call to 1 Main St." in said
+    assert rt.opening("s_prof000015") is None   # the missed call is not appended onto the next one (#144)
 
 
 async def test_a_session_stuck_in_calling_stops_counting_as_running(db):
@@ -202,8 +197,7 @@ async def test_a_session_stuck_in_calling_stops_counting_as_running(db):
         await conn.execute("update sessions set started_at = now() - interval '2 hours' "
                            "where session_id = %s", (sid,))
     await _call(rt, "s_prof000017")
-    said = rt.opening("s_prof000017")
-    assert "still running" not in said and "Results" not in said   # no results were ever made
+    assert rt.opening("s_prof000017") is None   # a stuck session is not appended onto the next call (#144)
 
 
 def test_calling_counts_as_running_only_while_its_calls_could_still_be_going():
@@ -217,7 +211,7 @@ def test_calling_counts_as_running_only_while_its_calls_could_still_be_going():
     assert not calls_running(None, T0)
 
 
-async def test_places_new_since_the_last_call_are_counted(db):
+async def test_places_new_since_the_last_call_are_not_appended(db):
     fresh = _listing(6, 2100, first_seen=datetime.now(UTC) + timedelta(minutes=5))
     rt = _runtime(db, [*LISTINGS, fresh])
     async with db.transaction() as conn:
@@ -229,7 +223,7 @@ async def test_places_new_since_the_last_call_are_counted(db):
                                      delta=PreferenceDelta(max_monthly=2200)))
     await _hang_up(rt, "s_prof000007")
     await _call(rt, "s_prof000008")
-    assert rt.opening("s_prof000008").endswith("1 new place matches since then.")
+    assert rt.opening("s_prof000008") is None   # new places since last time are not appended (#144)
 
 
 async def test_a_judge_session_and_a_failed_lookup_start_fresh(db, monkeypatch):

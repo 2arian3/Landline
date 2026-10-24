@@ -31,11 +31,6 @@ from landline.agents.concierge.prompt import (
     FIRST_CALL,
     INSTRUCTIONS,
     LINK_SENT,
-    RETURNING,
-    SPOKE_BEFORE,
-    WELCOME_BACK,
-    language_name,
-    primary,
 )
 from landline.config import Settings
 from landline.contracts import SessionEnded, SessionStarted
@@ -136,20 +131,16 @@ def _link_texter(texter: Texter | None, call: RenterCall, settings: Settings) ->
     return text
 
 
-def opening(remembered: str | None, language: str | None = None) -> tuple[str, list[dict[str, Any]]]:
-    """The Concierge's session instructions for a call, and the events that start it. Every call opens the
-    same way: how it opens sits in the session instructions (FIRST_CALL, or WELCOME_BACK next to what code
-    remembers, O-05), and the call starts with a quoted note and a plain response.create. Never a response
-    object on response.create: its instructions replace the session's, so a welcome ignored the memory and
-    made one up (docs/EVAL_FINDINGS.md), and first-time calls sent GREETING that way called no tools all call
-    (#129). A returning caller whose stored language isn't English is welcomed back in it."""
+def opening(remembered: str | None = None, language: str | None = None) -> tuple[str, list[dict[str, Any]]]:
+    """The Concierge's session instructions for a call, and the events that start it. Every call opens as a
+    first call. `remembered` and `language` are accepted and ignored: last-session memory is not appended
+    (#144). How the call opens sits in the session instructions (FIRST_CALL), and the call starts with a
+    quoted note and a plain response.create. Never a response object on response.create: its instructions
+    replace the session's, and calls sent GREETING that way called no tools all call (#129)."""
+    del remembered, language
     note = {"type": "message", "role": "user", "content": [{"type": "input_text", "text": CALL_CONNECTED}]}
     start = [{"type": "conversation.item.create", "item": note}, {"type": "response.create"}]
-    if not remembered:
-        return f"{INSTRUCTIONS}{FIRST_CALL}", start
-    spoke = primary(language)
-    before = SPOKE_BEFORE.format(language=language_name(spoke)) if spoke and spoke != "en" else ""
-    return f"{INSTRUCTIONS}{before}{WELCOME_BACK}{RETURNING}{remembered}", start
+    return f"{INSTRUCTIONS}{FIRST_CALL}", start
 
 
 def _reader() -> Any | None:
@@ -161,25 +152,22 @@ def _reader() -> Any | None:
 
 
 def hint(remembered: str | None, language: str | None) -> str | None:
-    """The transcription hint for a call: a returning caller's stored language, two letters, else None
-    (Higgs detects it). A first-time caller's stored language can only be a default, so it isn't used."""
-    lang = primary(language)
-    return lang if remembered and len(lang) == 2 else None
+    """No transcription hint from an earlier call. Higgs detects the language of this one (#144)."""
+    del remembered, language
+    return None
 
 
 async def _talk(transport: Transport, call: RenterCall, runtime: SessionRuntime, connect_higgs: ConnectHiggs,
                 settings: Settings, set_status: Callable[[str], None],
                 text_link: Callable[[], bool] | None, recorder: CallRecorder,
                 lines: Lines | None = None) -> str:
-    remembered = runtime.opening(call.session_id)
-    language = runtime.state(call.session_id).preferences.language   # restored by Profiles, from code
-    instructions, start = opening(remembered, language)
+    instructions, start = opening(None)
     if text_link is not None:
         instructions += LINK_SENT   # so the Concierge tells them; the text goes once Higgs is up
     try:
         higgs = await connect_higgs(settings.boson_api_key or "", session_config(
             instructions=instructions, tools=tools.TOOLS, voice=settings.higgs_voice_renter,
-            audio_format=transport.audio_format, language=hint(remembered, language)))
+            audio_format=transport.audio_format, language=hint(None, None)))
     except Exception as exc:
         log.exception("Higgs session failed for call %s", call.call_id)
         set_status(f"error: {exc}"[:200])
