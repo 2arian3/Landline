@@ -14,8 +14,9 @@ Caller (A-05) exist, this is how the board shows every call status.
 
 CAPTIONS. Each answered call has a script, served by /api/calls/{id}/turns as
 the call goes: nothing until it's live, then a line every half tick, and the
-whole script once it has ended. A fact on a card quotes a landlord's line word
-for word, so the quotes below are written once and used by both.
+whole script once it has ended. A call hangs up only once its last line is out.
+A fact on a card quotes a landlord's line word for word, so the quotes below
+are written once and used by both.
 """
 from __future__ import annotations
 
@@ -47,13 +48,15 @@ from landline.db.rows import TurnRow
 from landline.scoring import FeatureMatrix, Ranked, explain, rank
 
 BOARD_SIZE = 6
-TICK_S = 1.2     # each step of the scripted calls: dialing, ringing, live, then one hang-up per tick
+TICK_S = 1.2     # each step of the scripted calls: dialing, ringing, live, then hang-ups a tick or more apart
 if os.getenv("DEMO_TICK_S"):   # slower scripted calls for a video take, so their captions can be read
     TICK_S = float(os.environ["DEMO_TICK_S"])
 PLANNED = 4      # the demo plans the top four places with a pin; the fourth never picks up
 TORONTO = ZoneInfo("America/Toronto")
 # "I'm free Saturday afternoon, book one if you can": the renter's window, and the slot an agent offers.
 WINDOW_DAY, WINDOW_FROM, WINDOW_TO, SLOT = 5, 13, 17, 14   # Saturday (Monday is 0), 13:00–17:00, at 14:00
+LEAD = timedelta(minutes=30)   # how far ahead a viewing is booked at the least: never one that has passed
+SPOKEN = ("twelve", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven")
 # A returning renter's welcome before this demo session has any results of its own: the Narrator's (O-06)
 # line for that case, not invented results (AGENTS.md rule 3). A phone call's session gets the real ones
 # from profiles (O-05).
@@ -110,9 +113,11 @@ class DemoSessions:
     """In-memory sessions with a version counter that SSE subscribers wait on."""
 
     def __init__(self, catalogue: Catalogue, tick_s: float = TICK_S,
-                 clock: Callable[[], float] = time.monotonic):
+                 clock: Callable[[], float] = time.monotonic,
+                 now: Callable[[], datetime] = lambda: datetime.now(UTC)):
         self.catalogue = catalogue
         self.clock = clock   # when calls went live, for how far their captions have got
+        self.now = now       # the date and time the calls happen, for the viewing they book
         self.matrix = FeatureMatrix.build(catalogue.listings)   # once, at boot
         self.views: dict[str, SessionView] = {}
         # What the renter said about a listing, shown on its card ("You: too dark").
@@ -211,7 +216,8 @@ class DemoSessions:
                      for i, (speaker, text) in enumerate(lines))
 
     async def _dial(self, session_id: str, run: DemoRun) -> None:
-        outcomes = dict(zip(run.plan, _outcomes(datetime.now(UTC)), strict=False))
+        at = self.now()
+        outcomes = dict(zip(run.plan, _outcomes(at), strict=False))
         run.captions = {lid: self._captions(run.calls[lid].call_id, lid, outcomes[lid]) for lid in run.plan}
         answered = [lid for lid in run.plan if outcomes[lid].status != "no_answer"]
         for state, who in (("dialing", run.plan), ("ringing", run.plan), ("live", answered)):
@@ -225,23 +231,26 @@ class DemoSessions:
             await self.update(session_id)
         for lid in run.plan:   # one hang-up a tick, as each outcome comes in
             await asyncio.sleep(self.tick_s)
+            if (went_live := run.live_at.get(lid)) is not None:   # not before its last line has been said
+                said = went_live + len(run.captions[lid]) * self.tick_s / 2
+                await asyncio.sleep(max(0.0, said - self.clock()))
             run.outcomes[lid] = outcomes[lid]
             run.calls[lid] = run.calls[lid].model_copy(update={"state": "ended"})
             await self.update(session_id)
-        run.phase, run.results = "done", self._results(run)
+        run.phase, run.results = "done", self._results(run, at)
         self.last_results[session_id] = run.results
         if self.dialing.get(session_id) is asyncio.current_task():
             del self.dialing[session_id]
         await self.update(session_id)
 
-    def _results(self, run: DemoRun) -> str:
+    def _results(self, run: DemoRun, at: datetime) -> str:
         """The Narrator's results text, written by code from the outcomes: the booking first, then each
         call in the renter's order."""
         lines = []
         for lid in sorted(run.plan, key=lambda lid: run.outcomes[lid].viewing is None):
             x, out = self.catalogue.by_id[lid], run.outcomes[lid]
             if out.viewing:
-                when = _when(out.viewing)
+                when = _when(out.viewing, at)
                 lines.append(f"I booked {x.address} for {when}, inside your Saturday afternoon.")
             elif out.status == "suspect" and out.red_flags:
                 lines.append(f"{x.address} {_lower(out.red_flags[0])}, so I'd skip it.")
@@ -329,14 +338,23 @@ def window(now: datetime) -> tuple[datetime, datetime]:
     return start, start.replace(hour=WINDOW_TO)
 
 
+def slot(now: datetime) -> datetime:
+    """The viewing the scripted agent books: 14:00 on the renter's Saturday or, once that afternoon is under
+    way, the first whole hour still LEAD ahead in it; with none left, 14:00 the Saturday after."""
+    start, end = window(now)
+    at = start.replace(hour=SLOT)
+    while at < now + LEAD:
+        at += timedelta(hours=1)
+    return at if at < end else start.replace(hour=SLOT) + timedelta(days=7)
+
+
 def _outcomes(at: datetime) -> list[DemoCall]:
     """What the scripted listing agents say, in the plan's order; the fourth never picks up. Demo only:
     A-05's Caller records real facts in the agent's own words, and A-07 decides what's suspect."""
     def heard(field: str, value: str, quote: str) -> Fact:
         return Fact(field=field, value=value, quote=quote, speaker="Agent heard", at=at)
 
-    start, _ = window(at)
-    viewing = start.replace(hour=SLOT)
+    viewing = slot(at)
     return [
         DemoCall("verified", facts=(heard("parking_cost", "Parking is $180 a month, required", PARKING),),
                  fees=(Fee(name="parking", amount=180, period="monthly", mandatory=True, quote=PARKING),),
@@ -356,8 +374,8 @@ def _outcomes(at: datetime) -> list[DemoCall]:
                        ("agent", "Are pets okay? My client has a dog."),
                        ("landlord", DOGS),
                        ("agent", "Could they see it Saturday afternoon?"),
-                       ("landlord", "Saturday at two works."),
-                       ("agent", f"{_when(viewing)}, then. I'll let my client know."))),
+                       ("landlord", f"{_upper(_day(viewing, at))} at {SPOKEN[viewing.hour % 12]} works."),
+                       ("agent", f"{_upper(_when(viewing, at))}, then. I'll let my client know."))),
         DemoCall("no_answer"),
     ]
 
@@ -367,14 +385,25 @@ def _call_id() -> str:
     return "c_" + "".join(secrets.choice(ID_CHARS) for _ in range(10))
 
 
-def _when(at: datetime) -> str:
+def _day(at: datetime, now: datetime) -> str:
+    """The day of `at` as said on `now`'s: "Saturday", or "next Saturday" when it's a week or more away."""
+    local = at.astimezone(TORONTO)
+    ahead = (local.date() - now.astimezone(TORONTO).date()).days
+    return f"{'next ' if ahead >= 7 else ''}{local:%A}"
+
+
+def _when(at: datetime, now: datetime) -> str:
     local = at.astimezone(TORONTO)
     minutes = f":{local:%M}" if local.minute else ""
-    return f"{local:%A} at {local.hour % 12 or 12}{minutes} {'pm' if local.hour >= 12 else 'am'}"
+    return f"{_day(at, now)} at {local.hour % 12 or 12}{minutes} {'pm' if local.hour >= 12 else 'am'}"
 
 
 def _lower(s: str) -> str:
     return s[:1].lower() + s[1:]
+
+
+def _upper(s: str) -> str:
+    return s[:1].upper() + s[1:]
 
 
 def _pinned(c: Card) -> bool:
