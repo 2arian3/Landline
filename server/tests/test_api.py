@@ -316,9 +316,63 @@ def test_judge_lines_free_at_their_deadline():
     lines = JudgeLines(cap=1, deadline_s=600, clock=lambda: now[0])
     first = lines.take()
     assert first is not None and lines.take() is None
-    now[0] = 600.5
+    now[0] = 5.0
+    assert lines.connected(first)   # the socket opened: held to the deadline, not the connect window
+    now[0] = 604.0
+    assert lines.take() is None
+    now[0] = 605.5
     second = lines.take()
     assert second is not None and second != first
+
+
+def test_judge_lines_free_when_the_socket_never_opens():
+    now = [0.0]
+    lines = JudgeLines(cap=5, connect_s=15, clock=lambda: now[0])
+    first = [lines.take() for _ in range(5)]
+    assert None not in first and lines.take() is None
+    now[0] = 14.9
+    assert lines.take() is None
+    now[0] = 15.1
+    sixth = lines.take()
+    assert sixth is not None and sixth not in first
+    assert not lines.connected(first[0])   # too late: that line went to someone else
+    assert list(lines.open) == [sixth]
+
+
+def test_a_judge_line_never_frees_twice():
+    now = [0.0]
+    lines = JudgeLines(cap=1, connect_s=15, clock=lambda: now[0])
+    first = lines.take()
+    lines.hang_up(first)
+    second = lines.take()
+    lines.hang_up(first)                     # a late beacon for the first judge
+    assert lines.connected(first) is False   # and a late socket
+    assert list(lines.open) == [second] and lines.take() is None
+    now[0] = 16.0                            # the second never connected: its line frees once
+    third = lines.take()
+    lines.hang_up(second)
+    assert list(lines.open) == [third] and lines.take() is None
+
+
+def test_judge_hang_up_frees_the_line_at_once_and_calls_nothing():
+    with _judge_client(1) as c:
+        sid = c.post("/api/judge/start").json()["session_id"]
+        c.post(f"/api/sessions/{sid}/calls")   # a plan, which Done would dial
+        assert c.post("/api/judge/start").json()["reason"] == "busy"
+        r = c.post(f"/api/judge/{sid}/hang-up")
+        assert r.status_code == 204 and r.content == b""
+        assert c.get(f"/api/sessions/{sid}").json()["phase"] == "open"   # the brief is left as it was
+        assert c.post(f"/api/judge/{sid}/hang-up").status_code == 204    # again: harmless
+        assert c.post("/api/judge/start").status_code == 200
+
+
+def test_judge_lines_free_after_the_connect_window_through_the_api():
+    with _judge_client(5) as c:
+        now = [0.0]
+        c.app.state.judges.clock = lambda: now[0]
+        assert [c.post("/api/judge/start").status_code for _ in range(6)] == [200] * 5 + [503]
+        now[0] = 15.5   # none of the five opened a socket
+        assert c.post("/api/judge/start").status_code == 200
 
 
 def test_settings_read_the_higgs_cap(monkeypatch):

@@ -30,17 +30,20 @@ const SNAPS: (string | number)[] = [PEEK, 0.56, 1];
  * becomes a bottom sheet with three stops; at the lowest stop the renter sees
  * the activity line, one line of what was heard, and the top place.
  *
- * Judge mode reuses it: `intro` replaces the panel until a session exists, and
- * `dock` (the voice controls) stays pinned to the panel.
+ * Judge mode reuses it: `intro` replaces the panel until a session exists,
+ * `dock` (the voice controls) stays pinned to the panel, and `line` puts the
+ * voice line's state in the header while it isn't live.
  */
 export function LiveBoard({
   sessionId,
   intro,
   dock,
+  line = null,
 }: {
   sessionId: string | null;
   intro?: ReactNode;
   dock?: ReactNode;
+  line?: string | null;
 }) {
   const { view, stale } = useLiveSession(sessionId);
   const points = useCatalogue();
@@ -222,7 +225,7 @@ export function LiveBoard({
           aria-label="Places Landline found"
         >
           <div className="px-4 pb-4 pt-5">
-            <Brand stale={stale} connected={!!view} idle={idle} />
+            <Brand stale={stale} connected={!!view} idle={idle} line={line} />
             <p className="mt-0.5 text-meta text-ink-3">Toronto rentals, checked by phone</p>
           </div>
           <div className="relative min-h-0 flex-1 overflow-y-auto">{panel}</div>
@@ -248,7 +251,7 @@ export function LiveBoard({
           className="pointer-events-auto rounded-[var(--radius-card)] bg-surface/95 px-4 py-2.5"
           style={{ boxShadow: "0 0 0 1px var(--color-line), 0 4px 16px rgba(26,24,21,.08)" }}
         >
-          <Brand stale={stale} connected={!!view} idle={idle} />
+          <Brand stale={stale} connected={!!view} idle={idle} line={line} />
         </div>
       </header>
       )}

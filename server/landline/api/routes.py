@@ -6,7 +6,7 @@ import json
 import math
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -179,6 +179,15 @@ async def judge_done(session_id: str, request: Request) -> SessionView | JSONRes
         return _refused(503, "closed", CLOSED)
     state.judges.hang_up(session_id)
     return await state.sessions.hang_up(session_id)
+
+
+@router.post("/api/judge/{session_id}/hang-up", status_code=204)
+async def judge_hang_up(session_id: str, request: Request) -> Response:
+    """/try leaving (a beacon on pagehide) or starting again: the judge's line frees at once instead of at
+    its timeout. Only the line: unlike Done, nothing gets called. Ungated and idempotent, because freeing
+    a line is always safe and a beacon can arrive after Done already freed it."""
+    request.app.state.judges.hang_up(session_id)
+    return Response(status_code=204)
 
 
 def _refused(status: int, reason: str, message: str, retry_after_s: int | None = None) -> JSONResponse:
