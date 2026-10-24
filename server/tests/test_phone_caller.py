@@ -254,6 +254,44 @@ async def test_a_goodbye_with_no_end_call_still_ends_the_call_once_after_it_has_
     assert line.played == ["AAAA", "BBBB"]                                # the goodbye went out first
 
 
+class PausingHiggs(FakeHiggs):
+    """A FakeHiggs whose script can wait in real time: {"type": "test.wait", "s": seconds}."""
+
+    async def events(self):
+        for event in self.script:
+            await asyncio.sleep(event["s"] if event["type"] == "test.wait" else 0)
+            if event["type"] != "test.wait":
+                yield event
+        await asyncio.sleep(60)
+
+
+async def test_a_call_over_after_a_goodbye_still_lets_them_finish_and_answers_before_it_ends(monkeypatch):
+    """The landlord speaks again after the Caller's goodbye: the call doesn't end while they speak, or before
+    the Caller's answer has played."""
+    monkeypatch.setattr(phone_caller, "END_AFTER_S", 0.05)
+    script = [
+        {"type": "response.created"},
+        {"type": "response.output_audio.delta", "delta": "AAAA"},
+        {"type": "response.output_audio_transcript.done", "transcript": DISCLOSURE},
+        {"type": "response.done", "response": {"id": "r1", "output": [{"type": "message"}]}},
+        {"type": "conversation.item.input_audio_transcription.completed", "transcript": "Got to run. Bye."},
+        {"type": "response.created"},
+        {"type": "response.output_audio.delta", "delta": "BBBB"},
+        {"type": "response.output_audio_transcript.done", "transcript": "No problem, thanks. Goodbye."},
+        {"type": "response.done", "response": {"id": "r2", "output": [{"type": "message"}]}},
+        {"type": "input_audio_buffer.speech_started"},
+        {"type": "test.wait", "s": 0.3},   # they speak for longer than END_AFTER_S
+        {"type": "input_audio_buffer.speech_stopped"},
+        {"type": "response.created"},
+        {"type": "test.wait", "s": 0.2},   # the answer is on its way
+        {"type": "response.output_audio.delta", "delta": "CCCC"},
+        {"type": "response.done", "response": {"id": "r3", "output": [{"type": "message"}]}},
+    ]
+    line = FakeLine()
+    rt, ended, higgs, _ = await _call(script, line, PausingHiggs(script))
+    assert line.played == ["AAAA", "BBBB", "CCCC"] and [e.reason for e in ended] == ["done"]
+
+
 async def test_speech_over_the_opening_lets_it_play_and_after_it_barges_in(monkeypatch):
     """A "Hello?" while the disclosure is coming or still playing doesn't clear it (hard rule 6); once it
     has played, speech barges in as before."""
