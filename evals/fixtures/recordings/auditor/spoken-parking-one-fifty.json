@@ -1,0 +1,32 @@
+{
+ "model": "higgs-realtime",
+ "user": "Listing: 798 Ossington Ave, listed at $2,300 a month\n\nTranscript:\n[0] AGENT: Hi, I'm an AI assistant calling for a renter about the apartment at 798 Ossington Ave. Does parking come with it, and what does it cost?\n[1] LANDLORD: Yeah, there's an extra charge for parking if you want. It is one fifty, one fifty, one hundred fifty dollars per month.\n[2] AGENT: Just to confirm, is the parking fee exactly one hundred and fifty dollars per month?\n[3] LANDLORD: Yeah.\n[4] AGENT: Are there any other monthly fees on top of the rent?\n[5] LANDLORD: No, that's it.",
+ "response": {
+  "facts": [
+   {
+    "field": "parking_cost",
+    "turn": 1,
+    "quote": "It is one fifty, one fifty, one hundred fifty dollars per month.",
+    "value": "$150 per month",
+    "amount": 150,
+    "count": null,
+    "each": null,
+    "period": "monthly",
+    "mandatory": false,
+    "name": "parking"
+   },
+   {
+    "field": "fees",
+    "turn": 5,
+    "quote": "No, that's it.",
+    "value": "none",
+    "amount": null,
+    "count": null,
+    "each": null,
+    "period": null,
+    "mandatory": null,
+    "name": null
+   }
+  ]
+ }
+}

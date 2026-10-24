@@ -2,8 +2,10 @@
 
 It knows nothing about calls or listings: the caller decides which texts count as the source (for a call,
 only the landlord's turns; for a listing, its description). A quote matches a source when, after light
-normalization (case, punctuation, curly quotes, "1,850" → "1850"), it appears in it exactly, or some run of
-the source's tokens of about the same length is at least `threshold` similar (difflib ratio). Chinese,
+normalization (case, punctuation, curly quotes, "1,850" → "1850", and spoken amounts → the same digits, so
+"one fifty", "one hundred fifty dollars" and "$150" are one claim), it appears in it exactly, or some run of
+the source's tokens of about the same length is at least `threshold` similar (difflib ratio). Saying the
+same amount again ("one fifty, one fifty, one hundred fifty") does not make it a different claim. Chinese,
 Japanese and Korean characters count as one token each, so a Mandarin quote is checked character by
 character. A quote is matched inside one source only, never across two, so words from two different turns
 can't be stitched into something nobody said.
@@ -19,12 +21,16 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 
+from landline.agents.auditor import numbers
+
 FUZZY = 0.85
 MIN_TOKENS = 2          # a one-word quote ("yes", "180") proves nothing about what it supports
 FUZZY_MIN_TOKENS = 5    # shorter quotes must match exactly: one changed word is a different claim
 
 NEGATORS = frozenset({"no", "not", "never", "don't", "doesn't", "isn't", "aren't", "won't", "can't", "cannot",
                       "without", "不", "没", "無", "无", "别"})
+# "$150", "150 dollars" and "one hundred fifty dollars" are one amount. Only the word right after a number.
+_CURRENCY = frozenset({"dollar", "dollars", "buck", "bucks", "cad"})
 _CJK = r"\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af"   # kana, CJK ideographs, hangul
 _TOKEN = re.compile(rf"[{_CJK}]|[^\s{_CJK}]+")
 
@@ -43,8 +49,24 @@ def normalize(text: str) -> str:
     return re.sub(r"\s+", " ", s).strip()
 
 
+def normalize_numbers(text: str) -> str:
+    """Amounts as digits. The same amount written another way, or said again, is one claim: "one fifty,
+    one fifty, one hundred fifty dollars" and "$150" both become "150". A different amount stays different.
+    """
+    out: list[str] = []
+    for w in numbers.digitize(text).split(" "):
+        if not w:
+            continue
+        if w in _CURRENCY and out and out[-1].isdigit():
+            continue
+        if out and w.isdigit() and out[-1] == w:
+            continue
+        out.append(w)
+    return " ".join(out)
+
+
 def tokens(text: str) -> list[str]:
-    return _TOKEN.findall(normalize(text))
+    return _TOKEN.findall(normalize_numbers(normalize(text)))
 
 
 def find(quote: str, sources: Sequence[str], threshold: float = FUZZY) -> Match | None:
