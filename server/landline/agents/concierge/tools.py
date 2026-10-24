@@ -27,6 +27,7 @@ from landline.contracts import (
 )
 from landline.contracts.tools import (
     CONCIERGE_TOOLS,
+    Availability,
     CallListings,
     FocusArea,
     FocusListing,
@@ -48,6 +49,9 @@ UNKNOWN = "Sorry, I can't do that yet."
 NOT_CAUGHT = "Sorry, I didn't catch that. Could you say it again?"
 WHICH = "Which one do you mean? You can say its street or its number on the list."
 BROKEN = "Sorry, something went wrong on my side."
+# end_session's answer when it came before any word: the bridge asks for one more response to say it in.
+SAY_GOODBYE = "You haven't said goodbye yet. Say a short goodbye now, in the renter's language; the line " \
+              "closes after it."
 
 
 @dataclass
@@ -56,6 +60,9 @@ class ToolContext:
     call_id: str
     runtime: SessionRuntime
     hang_up: bool = False   # set by end_session; the bridge hangs up once the goodbye has played
+    # The response that called end_session without a word. A goodbye was asked for after it, and the call
+    # ends when a later response is done.
+    bye_response: str | None = None
     # Phone calls only: texts the renter the link to their board, and says whether a text went out. The
     # first update_preferences of the call uses it, so the renter can watch the listings as they talk.
     text_link: Callable[[], bool] | None = None
@@ -68,22 +75,72 @@ async def handle(name: str, arguments: str, tool_call_id: str, ctx: ToolContext)
         log.warning("call %s: unknown tool %r", ctx.call_id, name)
         return UNKNOWN
     model, _ = CONCIERGE_TOOLS[name]
+    raw = _object(arguments)
+    if raw is None:
+        log.warning("call %s: arguments for %s aren't a JSON object: %r", ctx.call_id, name, arguments[:200])
+        return NOT_CAUGHT
+    raw = _refs_as_words(raw)
+    misplaced = [key for key in raw if key not in _fields(model)]
+    if misplaced:   # dropping them quietly let the agent think it had saved them
+        log.warning("call %s: %s doesn't take %s", ctx.call_id, name, misplaced)
+        raw = {k: v for k, v in raw.items() if k not in misplaced}
     try:
-        args = model.model_validate_json(arguments or "{}")
+        args = model.model_validate(raw)
     except ValidationError as exc:
         log.warning("call %s: bad arguments for %s: %s", ctx.call_id, name, exc.errors()[:2])
         return NOT_CAUGHT
     log.info("tool %s session=%s call=%s args=%s", name, ctx.session_id, ctx.call_id,
              args.model_dump_json(exclude_none=True, by_alias=True))
+    hint = _misplaced_hint(name, misplaced)
+    if misplaced and _fields(model) and not args.model_dump(exclude_none=True):
+        return hint   # nothing left to do: only say where those belong
     meta = {"session_id": ctx.session_id, "at": datetime.now(UTC),
             "idem_key": f"{ctx.session_id}:{ctx.call_id}:{tool_call_id}"}
     try:
-        return await HANDLERS[name](args, ctx, meta)
+        reply = await HANDLERS[name](args, ctx, meta)
     except Refused as exc:
         return str(exc)
     except UnknownSession:
         log.exception("call %s: session %s isn't in the runtime", ctx.call_id, ctx.session_id)
         return BROKEN
+    return f"{reply} {hint}" if hint else reply
+
+
+def _object(arguments: str) -> dict[str, Any] | None:
+    try:
+        value = json.loads(arguments or "{}")
+    except ValueError:
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def _refs_as_words(raw: dict[str, Any]) -> dict[str, Any]:
+    """Rank numbers often come back as JSON numbers (`"listing_refs": [1, 2]`). They mean the same as "1"
+    and "2", so they become words before validation instead of failing it."""
+    def word(ref: Any) -> Any:
+        if isinstance(ref, int | float) and not isinstance(ref, bool):
+            return str(int(ref)) if ref == int(ref) else str(ref)
+        return ref
+    out = dict(raw)
+    if "listing_ref" in out:
+        out["listing_ref"] = word(out["listing_ref"])
+    if isinstance(out.get("listing_refs"), list):
+        out["listing_refs"] = [word(r) for r in out["listing_refs"]]
+    return out
+
+
+def _fields(model: type[BaseModel]) -> set[str]:
+    return {name for key, f in model.model_fields.items() for name in (key, f.alias) if name}
+
+
+def _misplaced_hint(name: str, keys: list[str]) -> str:
+    """What the agent hears about arguments its tool doesn't take: nothing was saved, and where they go."""
+    if not keys:
+        return ""
+    owner = next((other for other, (m, _) in CONCIERGE_TOOLS.items()
+                  if other != name and other not in DEFERRED and set(keys) <= _fields(m)), None)
+    where = f"call {owner} with them" if owner else f"{name} doesn't take them"
+    return f"Not saved: {', '.join(keys)}; {where}."
 
 
 async def update_preferences(args: PreferenceDelta, ctx: ToolContext, meta: dict) -> str:
@@ -127,20 +184,32 @@ async def focus_area(args: FocusArea, ctx: ToolContext, meta: dict) -> str:
 
 
 async def call_listings(args: CallListings, ctx: ToolContext, meta: dict) -> str:
+    """Records the plan, or updates the one already recorded: what this call leaves out (the listings,
+    the viewing times, the permission to book) stays as it was, and extra questions add up. The reply
+    says the whole plan as it now stands, so the agent reads back what was saved."""
     board = ctx.runtime.get(ctx.session_id).board
+    before = ctx.runtime.state(ctx.session_id).request
     if args.listing_refs:
         cards = [refs.resolve(ref, board) for ref in args.listing_refs]
         if any(c is None for c in cards):
             return WHICH
+        ids = list(dict.fromkeys(c.listing_id for c in cards))
+    elif before is not None:
+        ids = list(before.listing_ids)
     else:
-        cards = refs.top(board, TO_CALL)
-    if not cards:
+        ids = [c.listing_id for c in refs.top(board, TO_CALL)]
+    if not ids:
         return "There's nothing on the list to call yet."
-    ids = list(dict.fromkeys(c.listing_id for c in cards))
-    await ctx.runtime.emit(CallsRequested(**meta, listing_ids=ids, extra_questions=args.extra_questions or [],
-                                          availability=args.availability or [], may_book=bool(args.may_book)))
+    questions = list(dict.fromkeys([*(before.questions if before else []), *(args.extra_questions or [])]))
+    availability = args.availability or (before.availability if before else [])
+    may_book = args.may_book if args.may_book is not None else bool(before and before.may_book)
+    await ctx.runtime.emit(CallsRequested(**meta, listing_ids=ids, extra_questions=questions,
+                                          availability=availability, may_book=may_book))
     addresses = [_address(ctx, lid) for lid in ids]
-    return f"I'll call {_join(addresses)} after you hang up, and text you what they say."
+    times = f"Viewings {_join([_window(a) for a in availability])}." if availability \
+        else "No viewing times yet."
+    booking = "I may book one." if may_book else "I won't book."
+    return f"I'll call {_join(addresses)} after you hang up, and text you what they say. {times} {booking}"
 
 
 async def end_session(args: BaseModel, ctx: ToolContext, meta: dict) -> str:
@@ -171,6 +240,17 @@ def _beds(beds: float) -> str:
 
 def _money(amount: int) -> str:
     return f"${amount:,}"
+
+
+def _window(a: Availability) -> str:
+    return f"{a.day.capitalize()} {_clock(a.from_)} to {_clock(a.to)}"
+
+
+def _clock(hhmm: str) -> str:
+    """'13:00' → '1 pm', '09:30' → '9:30 am'."""
+    h, m = (int(x) for x in hhmm.split(":"))
+    suffix, h12 = ("am" if h < 12 else "pm"), (h % 12 or 12)
+    return f"{h12} {suffix}" if m == 0 else f"{h12}:{m:02d} {suffix}"
 
 
 def _join(items: list[str]) -> str:

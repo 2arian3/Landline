@@ -18,9 +18,21 @@ def load(path: Path) -> list[dict]:
 
 
 def save(path: Path, events: list[dict]) -> None:
-    """Writes a recording. Streaming deltas are left out: the driver reads only the `.done` events, and
-    the deltas are most of the bytes."""
-    kept = [e for e in events if not str(e["event"].get("type", "")).endswith(".delta")]
+    """Writes a recording, smaller: each run of text deltas becomes one delta (the driver only needs to
+    know some text streamed before a tool call), and other deltas, which it doesn't read, are left out."""
+    kept: list[dict] = []
+    for e in events:
+        kind = str(e["event"].get("type", ""))
+        if kind == "response.output_text.delta":
+            last = kept[-1] if kept else None
+            if last and last["dir"] == "in" and last["event"].get("type") == kind \
+                    and last["event"].get("item_id") == e["event"].get("item_id"):
+                joined = last["event"]["delta"] + e["event"].get("delta", "")
+                last["event"] = {**last["event"], "delta": joined}
+                continue
+            kept.append({"dir": e["dir"], "event": dict(e["event"])})
+        elif not kind.endswith(".delta"):
+            kept.append(e)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("".join(json.dumps(e, ensure_ascii=False) + "\n" for e in kept), encoding="utf-8")
 
