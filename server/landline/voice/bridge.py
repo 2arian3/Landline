@@ -194,7 +194,7 @@ async def _talk(transport: Transport, call: RenterCall, runtime: SessionRuntime,
         pumps = {asyncio.create_task(_renter_to_higgs(transport, higgs, recorder)),
                  asyncio.create_task(_higgs_to_renter(higgs, transport, ctx, playback, recorder, line,
                                                      reader=_reader(), wrap=wrap)),
-                 asyncio.create_task(_wraps_up(higgs, ctx, playback, wrap))}
+                 asyncio.create_task(_wraps_up(higgs, ctx, playback, wrap, line))}
         done, _ = await asyncio.wait(pumps, timeout=settings.renter_call_max_s,
                                      return_when=asyncio.FIRST_COMPLETED)
         return _why(done)
@@ -494,18 +494,21 @@ class WrapUp:
             self.busy.discard("reply")
 
 
-async def _wraps_up(higgs: Any, ctx: tools.ToolContext, playback: Playback, wrap: WrapUp) -> str:
+async def _wraps_up(higgs: Any, ctx: tools.ToolContext, playback: Playback, wrap: WrapUp,
+                    line: Line | None = None) -> str:
     """#205's twin for the renter: once call_listings said the plan is complete and the line has been quiet
     WRAP_UP_S (nobody speaking, no response coming, nothing playing, no end_session yet), the Concierge is
     told, as a quoted note and a plain response.create, to say it will call them and text the results, say
     goodbye and call end_session. If that goodbye has played and the line stays quiet another WRAP_UP_S
     with still no end_session, the call ends here, as end_session would end it. The renter speaking
-    re-arms it, so it's told at most once a renter turn."""
+    re-arms it, so it's told at most once a renter turn. It and the Line (a map tap) never both ask for a
+    response: each waits while the other's is coming, so a turn gets one."""
     clock = asyncio.get_running_loop().time
     since, told = clock(), None   # told: the renter's turn count when the note went in
     while True:
         await asyncio.sleep(QUIET_EVERY_S)
-        if wrap.busy or playback.remaining() > 0 or ctx.hang_up:
+        if (wrap.busy or playback.remaining() > 0 or ctx.hang_up
+                or (line is not None and line.responding)):
             since = clock()
             continue
         if told is not None and wrap.spoken != told:
@@ -516,6 +519,8 @@ async def _wraps_up(higgs: Any, ctx: tools.ToolContext, playback: Playback, wrap
             log.info("call %s: wrapped up with no end_session; ending the call", ctx.call_id)
             return "end_session"
         log.info("call %s: the plan is complete and the line is quiet; wrapping up", ctx.call_id)
+        if line is not None:
+            line.responding = True   # as the Line marks its own: it holds its notes until this one is done
         note = {"type": "message", "role": "user", "content": [{"type": "input_text", "text": WRAP_UP}]}
         with contextlib.suppress(Exception):   # Higgs gone: the other pumps end the call
             await higgs.send({"type": "conversation.item.create", "item": note})
