@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Captions } from "./Captions";
 import { Feedback, type Reaction } from "./Feedback";
 import { MARK, type Mark, STATUS } from "./ListingCard";
 import { Money } from "./Money";
 import { bathsLabel, bedsLabel, sizeLabel, sourceName, unitLabel } from "@/lib/format";
 import { api } from "@/lib/live";
 import { callNotes } from "@/lib/outcome";
-import type { Card, ListingDetail as Detail, Provenance } from "@/lib/types";
+import type { CallView, Card, ListingDetail as Detail, Provenance } from "@/lib/types";
 
 export type { Reaction };
 
@@ -30,6 +31,7 @@ export function ListingDetail({
   id,
   card,
   mark,
+  call,
   results,
   onBack,
   onReact,
@@ -37,6 +39,8 @@ export function ListingDetail({
   id: string;
   card?: Card;
   mark?: Mark;
+  /** The place's latest call, whose captions show while it runs. */
+  call?: CallView;
   /** The session's results text once its calls are done; this place's sentences show here. */
   results?: string | null;
   onBack: () => void;
@@ -170,7 +174,7 @@ export function ListingDetail({
       )}
 
       {/* With only the booking to say, the section above already said it. */}
-      {(card?.facts.length || asked || !notes.viewing) && (
+      {(card?.facts.length || asked || !notes.viewing || call) && (
         <section className="px-4" aria-labelledby="phone-heading">
           <h3 id="phone-heading" className="text-meta font-label text-ink-3">
             Checked by phone
@@ -195,6 +199,7 @@ export function ListingDetail({
               <p className="text-meta text-ink-3">Landline said it would check with you</p>
             </div>
           ))}
+          {call && <Captions key={call.call_id} call={call} />}
         </section>
       )}
 
