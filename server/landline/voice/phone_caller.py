@@ -151,6 +151,7 @@ async def _talk(higgs: Any, transport: Any, ctx: Any, turns: Turns, playback: Pl
             kind = event.get("type")
             if kind == "response.created":
                 spoke = False
+                busy.add("reply")
             elif kind == "response.output_audio.delta":
                 spoke = True
                 await transport.send_audio(event["delta"])
@@ -161,6 +162,7 @@ async def _talk(higgs: Any, transport: Any, ctx: Any, turns: Turns, playback: Pl
                     log.info("listing call %s: first audio out", ctx.call_id)
             elif kind == "input_audio_buffer.speech_started":
                 # Their line starts here either way; only a barge-in cuts what the Caller was saying.
+                busy.add("them")
                 rec(recorder.speech_started, event.get("item_id"), event.get("audio_start_ms"))
                 if opening and (not opened or playback.remaining() > 0):
                     log.info("listing call %s: speech over the opening; it plays on", ctx.call_id)
@@ -170,6 +172,7 @@ async def _talk(higgs: Any, transport: Any, ctx: Any, turns: Turns, playback: Pl
                 playback.clear()
                 rec(recorder.cut)
             elif kind == "input_audio_buffer.speech_stopped":
+                busy.discard("them")
                 rec(recorder.speech_stopped, event.get("item_id"), event.get("audio_end_ms"))
             elif kind == "conversation.item.input_audio_transcription.completed":
                 heard = str(event.get("transcript") or "").strip()
@@ -183,6 +186,7 @@ async def _talk(higgs: Any, transport: Any, ctx: Any, turns: Turns, playback: Pl
                 await bridge.run_tool(higgs, event, ctx, spoke=spoke, agent=caller_tools)
                 called.append(str(event.get("name", "")))
             elif kind == "response.done":
+                busy.discard("reply")
                 opened = True   # the opening's response is over; its audio may still be playing
                 if bridge.ends_call(event, ctx):
                     await asyncio.sleep(playback.remaining() + HANG_UP_GRACE_S)
@@ -198,14 +202,16 @@ async def _talk(higgs: Any, transport: Any, ctx: Any, turns: Turns, playback: Pl
         return "hangup"
 
     over = asyncio.Event()
+    busy: set[str] = set()   # "them" while the listing agent speaks, "reply" while the Caller's answer comes
 
     async def ends_itself() -> str:
         """A call that is over (caller_tools.over) and still open ends here: once everything the Caller said
-        has played and END_AFTER_S more have passed with no end_call. Its last words are never cut."""
+        has played, nobody is speaking or about to, and END_AFTER_S more have passed with no end_call. Its
+        last words, and theirs after a goodbye, are never cut."""
         await over.wait()
         while True:
             await asyncio.sleep(playback.remaining() + END_AFTER_S)
-            if playback.remaining() <= 0:
+            if playback.remaining() <= 0 and not busy:
                 log.info("listing call %s: over with no end_call; hanging up", ctx.call_id)
                 return ctx.end_reason or "done"
 
