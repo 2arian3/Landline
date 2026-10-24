@@ -140,6 +140,27 @@ async def test_a_board_line_and_a_tap_in_one_turn_go_in_together():
     assert _texts(sent) == [f"[the board changed] Closest to work first.\n{LOOKING} 1 Test St"]
 
 
+async def test_a_board_line_from_a_tool_round_is_in_its_reply_and_never_answered_again():
+    """#164: update_preferences placed a street in its own commit, so its board line came while the reply was
+    coming, and went in after it with a response.create of its own: two replies to one renter line."""
+    line, sent, clock = _line()
+    await line.seen(CREATED)
+    await line.seen({"type": "response.function_call_arguments.done", "name": "update_preferences"})
+    await line.push(Item("board", "[the board changed] Closest to Christie Street first.", clock()))
+    await line.seen(TOOL_DONE)
+    await line.seen(CREATED)                            # the tool's reply, which says the board line
+    await line.seen(DONE)
+    assert sent == []                                   # one reply, nothing answered twice
+    # A re-rank after it (a place the geocoder found later) still goes in, once.
+    later = Item("board", "[the board changed] Closest to King and Bay first.", clock())
+    await line.push(later)
+    assert _texts(sent) == [later.text]
+    await line.seen(CREATED)
+    await line.seen(DONE)
+    await line.push(Item("board", later.text, clock()))   # the same line again: already told
+    assert _texts(sent) == [later.text]
+
+
 def _listing(i, **kw):
     return Listing(listing_id=f"t:{i}", source="t", source_id=str(i), url=f"https://example.com/{i}",
                    first_seen=T0, last_seen=T0, address=f"{i} Test St", lat=43.65, lng=-79.38,
