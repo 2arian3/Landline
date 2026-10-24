@@ -234,7 +234,7 @@ export function LiveBoard({
               id={selected}
               card={selectedCard}
               mark={marks[selected]}
-              call={view?.calls.findLast((c) => c.listing_id === selected)}
+              call={view?.calls.filter((c) => c.listing_id === selected).pop()}
               results={view?.phase === "done" ? view.results : null}
               onBack={() => setSelected(null)}
               onReact={(reaction, reason) => react(selected, reaction, reason)}
@@ -334,6 +334,13 @@ export function LiveBoard({
           >
             <Drawer.Title className="sr-only">Places Landline found</Drawer.Title>
             <div aria-hidden className="mx-auto mb-2 mt-2.5 h-1 w-10 shrink-0 rounded-full bg-ink/20" />
+            {/* At the top stop the floating header steps aside, so its status (live, reconnecting, the
+                voice line) shows here instead. */}
+            {!idle && snap === 1 && (
+              <div className="shrink-0 px-4 pb-2">
+                <Brand stale={stale} connected={!!view} idle={idle} line={line} />
+              </div>
+            )}
             {dock && sessionId && <div className="shrink-0 px-4 pb-3">{dock}</div>}
             <div
               ref={scroller}

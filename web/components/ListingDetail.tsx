@@ -193,7 +193,8 @@ export function ListingDetail({
               ))}
             </ul>
           ) : (
-            !asked && <p className="mt-1.5 text-support text-ink-2">{noFacts(card?.status, mark)}</p>
+            !asked &&
+            !notes.viewing && <p className="mt-1.5 text-support text-ink-2">{noFacts(card?.status, mark)}</p>
           )}
           {notes.questions.map((q) => (
             <div key={q} className="mt-3">
@@ -272,6 +273,7 @@ function noFacts(status?: Card["status"], mark?: Mark): string {
   if (mark === "ringing") return "Ringing now.";
   if (status === "calling") return "Landline is on the phone with them now. What they say lands here, with their words.";
   if (status === "no_answer") return "Nobody picked up yet.";
+  if (status === "booked") return "A viewing was booked on the call. Nothing else came up.";
   return "Nobody has called about this one yet. Say “call this one” and what the listing agent says lands here, with their words.";
 }
 
