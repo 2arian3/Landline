@@ -21,7 +21,7 @@ from landline.scoring.weights import feature_key
 
 TORONTO = ZoneInfo("America/Toronto")
 MAX_WORDS = 25          # a tool reply is spoken; docs/CONTRACTS.md caps it
-MAX_FACTS = 2           # facts read out per place in the results
+MAX_FACTS = 3           # facts read out per place in the results
 UNREACHED = ("no_answer", "busy", "voicemail")   # nobody to hear a fact from, whatever the Auditor kept
 WIDEN = "Nothing fits now. Want to widen the budget or the area?"
 ORDINALS = ("first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth")
@@ -174,8 +174,12 @@ def _place(state: SessionState, lid: str, view: SessionView, catalogue: Catalogu
     elif status == "no_answer" and (not out.facts or out.end_reason in UNREACHED):
         said.append(_unheard(addr, out.end_reason))
     elif out.facts:
-        facts = [_fact(f.field, f.value.rstrip(".")) for f in out.facts if f.field != "available"][:MAX_FACTS]
+        asks = state.plan.questions if state.plan else []
+        answers = [a for f in out.facts if f.field == "other" and (a := _answered(f.value, asks))]
+        facts = [_fact(f.field, f.value.rstrip(".")) for f in out.facts if f.field != "available"
+                 and not (f.field == "other" and _answered(f.value, asks))][:MAX_FACTS]
         said.append(f"At {addr}, {'; '.join(facts)}." if facts else f"{addr} is still available.")
+        said += [f"You asked, “{q.rstrip('?')}?” They said {_lower(a).rstrip('.')}." for q, a in answers]
     if out and out.conflicts:
         said.append(_conflict(out.conflicts[0]))
     if status in ("verified", "booked") and (moved := _moved(state, lid, view)):
@@ -204,7 +208,15 @@ def _fact(field: str, value: str) -> str:
     "now"), never a date in digits."""
     if field == "available_from":
         return "available now" if value.lower() == "now" else f"free from {value}"
+    if field == "fees" and value.startswith("no other"):   # "no other monthly fees" (#187)
+        return value
     return f"{FIELDS.get(field, field.replace('_', ' '))}: {value}"
+
+
+def _answered(value: str, questions: list[str]) -> tuple[str, str] | None:
+    """A renter's question and the answer an `other` fact keeps after it (the Caller's record, #187)."""
+    q = next((q.strip() for q in questions if value.startswith(f"{q.strip()} ")), None)
+    return (q, value[len(q) + 1:].strip()) if q else None
 
 
 def _conflict(c: Conflict) -> str:

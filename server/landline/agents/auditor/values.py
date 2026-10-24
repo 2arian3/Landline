@@ -73,6 +73,9 @@ def settle(field: str, value: str, quote: str, *, amount: float | None = None, c
     call's day in Toronto (`call_day`), which a date like "tomorrow" counts from; the current day if None.
     `question` is the Caller's line just before the quote: a bare "Yes." or "No." answers it (#139).
     `parts` is a move-in day code already made (`from_parts`, #157), kept when the quote names no day."""
+    said_no = _NO_FEES.search(quote) or answer(field, quote, question) == "no"
+    if field == "fees" and not amounts(quote) and said_no:
+        return Value(field, "none", "no other monthly fees")   # "No, nothing else." is an answer (#187)
     if field in MONEY_FIELDS:
         return _money(field, value, quote, amount, count, each, period, mandatory, name)
     if field in CATEGORIES:
@@ -225,7 +228,8 @@ def _category_word(field: str, value: str) -> str | None:
     return v if v in CATEGORIES.get(field, ()) else None
 
 
-_NOW = re.compile(r"\b(now|immediately|right away|today|asap)\b|现在|马上|随时")
+_NOW = re.compile(r"\b(now|immediately|right away|today|asap|any ?time|whenever|vacant|ready now)\b|"
+                  r"现在|马上|随时")
 _COUNT = {"a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6}
 _DAY_WORD = r"(\d{1,2})(?:st|nd|rd|th)?|(" + "|".join(when.ORDINALS) + ")"
 _NTH = r"(\d{1,2})(?:st|nd|rd|th)|(" + "|".join(when.ORDINALS) + ")"   # "the 1st", never "the 2 bedroom"
@@ -249,14 +253,15 @@ def free_from(text: str, today: date) -> date | None:
         n = _COUNT.get(m.group(1)) or int(m.group(1))
         return (_months_on(today, n) if m.group(2) == "month"
                 else today + timedelta(days=n * (7 if m.group(2) == "week" else 1)))
-    if re.search(r"\bend of next month\b|下个?月底", t + text):
+    if re.search(r"\bend of next month\b|下个?月底", t + " " + text):
         return _months_on(today.replace(day=1), 2) - timedelta(days=1)
     if m := re.search(r"(\d{1,2})月底", text):
         first = when._next_date(today.replace(day=1), int(m.group(1)), 1) or today
         return _months_on(first, 1) - timedelta(days=1)
-    if re.search(r"\bend of (the|this) month\b|\bend of month\b|月底", t + text):
+    if re.search(r"\bend of (the|this) month\b|\bend of month\b|月底", t + " " + text):
         return _months_on(today.replace(day=1), 1) - timedelta(days=1)
-    if re.search(r"\b(first|1st|beginning|start) of (the )?next month\b|\bnext month\b|下个?月", t + text):
+    if re.search(r"\b(first|1st|beginning|start) of (the )?next month\b|\bnext month\b|下个?月",
+                 t + " " + text):
         return _months_on(today.replace(day=1), 1)
     for i, name in enumerate(when.MONTHS):   # a named date beats its weekday: "Sunday, November first"
         month = rf"(?:{name}|{name[:3]}|sept)" if name == "september" else rf"(?:{name}|{name[:3]})"
@@ -286,9 +291,9 @@ def free_from(text: str, today: date) -> date | None:
     for i, name in enumerate(when.DAYS):
         if re.search(rf"\b{name}\b", t):
             return today + timedelta(days=(i - today.weekday()) % 7 or 7)   # the coming one
-    if re.search(r"\bnext week\b|下(个)?(星期|周|礼拜)", t + text):
+    if re.search(r"\bnext week\b|下(个)?(星期|周|礼拜)", t + " " + text):
         return today + timedelta(days=(0 - today.weekday()) % 7 or 7)       # that week's Monday
-    if _NOW.search(t + text):
+    if _NOW.search(t + " " + text):
         return today
     return None
 
@@ -385,8 +390,11 @@ _BARE_NO = re.compile(r"^(no|nope|nah)\b(?!\s*(problem|worries|issue))[^.!?]{0,2
                       r"they don't|it is not|they are not|it does not|they do not|we do not|of course not)\b"
                       r"(?![^.!?]*\b(problem|worries|issue)\b)[^.!?]{0,20}[.!?]?$")
 _NEGATED = re.compile(r"\bnot\b|n't\b|\bnever\b")
+_NO_FEES = re.compile(r"\bno (other |extra |additional |more )?(fees|charges|costs)\b|\bnothing else\b|"
+                      r"\b(just|only) the rent\b|^\s*none\b", re.I)
 _ASKS = {
     "available": r"available|still (on the market|open|free)|rented",
+    "fees": r"\bfees?\b|\bcharges?\b|on top of the rent|anything else to pay",
     "pets": r"\bpets?\b|\bdogs?\b|\bcats?\b|animal",
     "parking": r"parking|\bspots?\b|garage",
     "furnished": r"furnish|furniture",
