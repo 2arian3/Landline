@@ -451,4 +451,30 @@ async def test_new_viewing_times_with_nothing_said_about_booking_ask_whether_to_
     ctx = await _ctx()
     ctx.renter_lines = ["Call the first one tomorrow, but don't book anything."]
     ctx.renter_said = ctx.renter_lines[-1]
-    assert (await _call(ctx, listing_refs=["1"], availability=tomorrow)).endswith("Booking: I won't book.")
+    reply = await _call(ctx, listing_refs=["1"], availability=tomorrow)
+    assert "Ask whether" not in reply and "Booking: I won't book." in reply
+
+
+async def test_a_complete_plan_tells_the_agent_to_say_goodbye_and_end_the_call():
+    """Mahyar's test: the agent waited for the renter's bye. Listings, viewing times, and booking allowed or
+    turned down make the plan complete; until then the reply asks for what's missing."""
+    friday = [{"day": "friday", "from": "17:00", "to": "20:00"}]
+    done = ("The plan is complete: tell them you'll call as soon as you hang up and text the results, say "
+            "goodbye, and call end_session.")
+    ctx = await _ctx()
+    ctx.renter_lines = ["Can you call the top two places?"]
+    ctx.renter_said = ctx.renter_lines[-1]
+    assert done not in await _call(ctx, listing_refs=["1", "2"])                    # no times yet
+    ctx.renter_lines.append("Friday evening works for me, from 5 to 8.")
+    ctx.renter_said = ctx.renter_lines[-1]
+    reply = await _call(ctx, availability=friday)
+    assert done not in reply and "Ask whether you may book" in reply               # booking not asked yet
+    ctx.renter_lines.append("Sure, book a viewing if they can do that time.")
+    ctx.renter_said = ctx.renter_lines[-1]
+    assert (await _call(ctx, may_book=True)).endswith(done)
+    ctx = await _ctx()
+    ctx.renter_lines = ["Call the first one, I'm free Sunday noon to 4, but don't book anything."]
+    ctx.renter_said = ctx.renter_lines[-1]
+    sunday = [{"day": "sunday", "from": "12:00", "to": "16:00"}]
+    reply = await _call(ctx, listing_refs=["1"], availability=sunday)
+    assert reply.endswith(done)                                                     # booking turned down

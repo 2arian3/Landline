@@ -347,7 +347,8 @@ async def test_call_listings_plans_the_top_three_and_reads_them_back(ctx):
     addresses = [CATALOGUE.by_id[lid].address for lid in top]
     assert reply == f"Calling {addresses[0]}, {addresses[1]} and {addresses[2]} right after you hang up, " \
                     "and texting you what they say. Viewing window: Saturday 1 pm to 5 pm. " \
-                    "Booking: I may book one."
+                    "Booking: I may book one. The plan is complete: tell them you'll call as soon as you " \
+                    "hang up and text the results, say goodbye, and call end_session."
     assert await _say(ctx, "call_listings", '{"listing_refs": ["Spadina"]}', "fc_2") == tools.WHICH
 
 
