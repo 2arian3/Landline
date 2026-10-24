@@ -18,6 +18,11 @@ class Settings:
     # Browser origins allowed to call the API directly, besides web_url and LOCAL_WEB.
     cors_origins: tuple[str, ...] = ()
     cors_origin_regex: str | None = None
+    # Judge sessions talking at once (U-06), capped by the account's Higgs concurrency (A-01).
+    higgs_max_sessions: int = 5
+    # Where a judge's browser sends its audio, relative to the API. A placeholder until the browser
+    # transport (A-03) settles it; nothing else spells it out.
+    judge_ws_path: str = "/api/judge/{session_id}/audio"
 
     @classmethod
     def load(cls) -> Settings:
@@ -28,6 +33,7 @@ class Settings:
             transport=os.getenv("TRANSPORT") or "stub",
             cors_origins=tuple(o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()),
             cors_origin_regex=os.getenv("CORS_ORIGIN_REGEX") or None,
+            higgs_max_sessions=int(os.getenv("HIGGS_MAX_SESSIONS") or 5),
         )
 
     def allowed_origins(self) -> list[str]:

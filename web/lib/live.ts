@@ -29,7 +29,7 @@ export function api(path: string): string {
   return `${API_BASE}${path}`;
 }
 
-export function useLiveSession(sessionId: string) {
+export function useLiveSession(sessionId: string | null) {
   const [view, setView] = useState<SessionView | null>(null);
   const [stale, setStale] = useState(false);
   const current = useRef<SessionView | null>(null);
@@ -37,7 +37,7 @@ export function useLiveSession(sessionId: string) {
   const lastOk = useRef(Date.now());
 
   const refresh = useCallback(async () => {
-    if (inFlight.current) return;
+    if (!sessionId || inFlight.current) return;
     inFlight.current = true;
     try {
       const res = await fetch(api(`/api/sessions/${encodeURIComponent(sessionId)}`), {
@@ -62,6 +62,8 @@ export function useLiveSession(sessionId: string) {
   }, [sessionId]);
 
   useEffect(() => {
+    // Judge mode mounts the board before a session exists: nothing to follow yet.
+    if (!sessionId) return;
     let alive = true;
     let poll: ReturnType<typeof setInterval> | null = null;
     let errors = 0;

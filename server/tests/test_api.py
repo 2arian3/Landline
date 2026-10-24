@@ -1,7 +1,12 @@
+import asyncio
+import re
+import time
 from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
 
+from landline.api.demo import DemoSessions
+from landline.api.judge import JudgeLines
 from landline.app import create_app
 from landline.config import Settings
 from landline.contracts import Listing
@@ -16,11 +21,18 @@ def _listing(i: int, rent: int, beds: float, sqft: int | None = 700) -> Listing:
                    rent=rent, monthly_cost=rent, beds=beds, sqft=sqft)
 
 
-def _client() -> TestClient:
-    cat = Catalogue([_listing(1, 2400, 1), _listing(2, 2700, 2), _listing(3, 3600, 2), _listing(4, 1900, 0)],
-                    "test")
+def _client(cat: Catalogue | None = None) -> TestClient:
+    if cat is None:
+        cat = Catalogue([_listing(1, 2400, 1), _listing(2, 2700, 2), _listing(3, 3600, 2),
+                         _listing(4, 1900, 0)], "test")
     settings = Settings(database_url=None, web_url="http://localhost:3000", transport="stub")
     return TestClient(create_app(settings, cat))
+
+
+def _one_bedrooms() -> Catalogue:
+    """Four places that all fit the default $2,800 budget, so the top three are all on the board."""
+    return Catalogue([_listing(i, rent, 1) for i, rent in enumerate((2000, 2100, 2200, 2300), start=1)],
+                     "test")
 
 
 def test_health_and_catalogue():
@@ -28,6 +40,17 @@ def test_health_and_catalogue():
         assert c.get("/health").json()["listings"] == 4
         points = c.get("/api/catalogue").json()
         assert {p["listing_id"] for p in points} == {"t:1", "t:2", "t:3", "t:4"}
+
+
+def test_health_counts_sessions_and_reports_higgs():
+    with _client() as c:
+        h = c.get("/health").json()
+        assert (h["status"], h["sessions"], h["transport"], h["higgs"]) == ("ok", 0, "stub", "not configured")
+        for sid in ("s_a", "s_b", "s_a"):
+            c.get(f"/api/sessions/{sid}")
+        assert c.get("/health").json()["sessions"] == 2
+        c.app.state.higgs = "ok"   # what the voice layer sets once it has reached Higgs
+        assert c.get("/health").json()["higgs"] == "ok"
 
 
 def test_session_board_follows_preferences_and_bumps_version():
@@ -78,3 +101,135 @@ def test_focus_rejects_unknown_listing():
         assert c.post("/api/sessions/s1/focus", json={"listing_id": "nope"}).status_code == 404
         focused = c.post("/api/sessions/s1/focus", json={"listing_id": "t:2"}).json()
         assert focused["focus_listing_id"] == "t:2"
+
+
+def test_feedback_shows_on_the_card():
+    with _client() as c:
+        assert c.get("/api/sessions/s_fb").json()["board"][0]["reaction"] is None
+        r = c.post("/api/sessions/s_fb/feedback",
+                   json={"listing_id": "t:1", "reaction": "reject", "reason": "too dark"})
+        assert r.status_code == 200
+        card = next(b for b in r.json()["board"] if b["listing_id"] == "t:1")
+        assert card["reaction"] == "too dark"
+        assert r.json()["version"] == 2
+        # the reaction survives the next re-rank
+        later = c.post("/api/sessions/s_fb/preferences", json={"max_monthly": 3000, "min_beds": 1}).json()
+        assert next(b for b in later["board"] if b["listing_id"] == "t:1")["reaction"] == "too dark"
+        assert c.post("/api/sessions/s_fb/feedback",
+                      json={"listing_id": "nope", "reaction": "like"}).status_code == 404
+        assert c.post("/api/sessions/s_fb/feedback",
+                      json={"listing_id": "t:1", "reaction": "love"}).status_code == 422
+
+
+async def test_demo_calls_walk_the_top_three_to_scripted_outcomes():
+    s = DemoSessions(_one_bedrooms(), call_s=0)
+    top = [c.listing_id for c in s.get("s1").board[:3]]
+
+    calling = await s.call_top("s1")
+    assert calling.version == 2
+    assert [c.status for c in calling.board] == ["calling", "calling", "calling", "pending"]
+
+    await s.dialing["s1"]
+    done = s.get("s1")
+    assert done.version == 3 and "s1" not in s.dialing
+    # Called places keep their rank: re-ranking from what calls found is O-04's job, and a renter who
+    # asked about the top three must still see all three.
+    assert [c.listing_id for c in done.board[:3]] == top
+    cards = {c.listing_id: c for c in done.board}
+    assert [cards[i].status for i in top] == ["verified", "suspect", "verified"]
+    for i in top:
+        [fact] = cards[i].facts
+        assert fact.speaker == "Agent heard" and fact.quote and fact.at is not None
+    # The first agent's mandatory $180 parking goes through monthly_cost; the listed rent stays
+    # for the struck price, and the reasons count from the real cost.
+    first = cards[top[0]]
+    assert (first.rent, first.monthly_cost) == (2000, 2180)
+    assert "$620 under budget" in first.reasons
+    assert cards[top[1]].red_flags and not cards[top[0]].red_flags and not cards[top[2]].red_flags
+
+
+async def test_calling_again_restarts_the_walk():
+    s = DemoSessions(_one_bedrooms(), call_s=60)
+    await s.call_top("s1")
+    first = s.dialing["s1"]
+    again = await s.call_top("s1")
+    await asyncio.sleep(0)
+    assert first.cancelled() and not s.dialing["s1"].done()
+    assert [c.status for c in again.board[:3]] == ["calling"] * 3
+    s.close()
+    await asyncio.sleep(0)
+
+
+def test_call_endpoint_shows_calling_then_the_outcomes():
+    with _client(_one_bedrooms()) as c:
+        c.app.state.sessions.call_s = 0.05
+        r = c.post("/api/sessions/s_call/calls")
+        assert r.status_code == 200
+        assert [b["status"] for b in r.json()["board"]] == ["calling"] * 3 + ["pending"]
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            board = c.get("/api/sessions/s_call").json()["board"]
+            if not any(b["status"] == "calling" for b in board):
+                break
+            time.sleep(0.02)
+        assert sorted(b["status"] for b in board) == ["pending", "suspect", "verified", "verified"]
+
+
+def _judge_client(cap: int) -> TestClient:
+    settings = Settings(database_url=None, web_url="http://localhost:3000", transport="stub",
+                        higgs_max_sessions=cap)
+    return TestClient(create_app(settings, Catalogue([_listing(1, 2400, 1)], "test")))
+
+
+def test_judge_start_mints_a_session_and_its_audio_socket():
+    with _judge_client(2) as c:
+        r = c.post("/api/judge/start")
+        assert r.status_code == 200
+        sid = r.json()["session_id"]
+        assert re.fullmatch(r"s_[A-Za-z0-9_-]{10}", sid)
+        assert r.json()["ws_url"] == f"/api/judge/{sid}/audio"
+        assert c.get("/health").json()["sessions"] == 1
+        assert c.get(f"/api/sessions/{sid}").json()["version"] == 1
+
+
+def test_judge_start_is_busy_when_every_line_is_taken():
+    with _judge_client(2) as c:
+        first = c.post("/api/judge/start").json()["session_id"]
+        assert c.post("/api/judge/start").status_code == 200
+        busy = c.post("/api/judge/start")
+        assert busy.status_code == 503
+        assert busy.headers["retry-after"] == "60"
+        assert busy.json()["detail"] == "All lines are busy. Try again in a minute."
+        c.app.state.judges.hang_up(first)   # what the browser transport (A-03) does when a judge leaves
+        assert c.post("/api/judge/start").status_code == 200
+
+
+def test_judge_lines_free_at_their_deadline():
+    now = [0.0]
+    lines = JudgeLines(cap=1, deadline_s=600, clock=lambda: now[0])
+    first = lines.take()
+    assert first is not None and lines.take() is None
+    now[0] = 600.5
+    second = lines.take()
+    assert second is not None and second != first
+
+
+def test_settings_read_the_higgs_cap(monkeypatch):
+    monkeypatch.setenv("HIGGS_MAX_SESSIONS", "3")
+    assert Settings.load().higgs_max_sessions == 3
+    monkeypatch.setenv("HIGGS_MAX_SESSIONS", "")
+    assert Settings.load().higgs_max_sessions == 5
+
+
+def test_returning_renter_is_welcomed_by_name():
+    with _client() as c:
+        assert c.get("/api/sessions/s_back").json()["returning"] is False
+        v = c.post("/api/sessions/s_back/returning", json={"name": "  Sara "}).json()
+        assert (v["returning"], v["user_name"], v["version"]) == (True, "Sara", 2)
+        # it survives the next re-rank
+        later = c.post("/api/sessions/s_back/preferences", json={"max_monthly": 3000}).json()
+        assert (later["returning"], later["user_name"]) == (True, "Sara")
+        off = c.post("/api/sessions/s_back/returning", json={"returning": False}).json()
+        assert (off["returning"], off["user_name"]) == (False, None)
+        assert c.post("/api/sessions/s_back/returning", json={"name": " "}).json()["user_name"] is None
+        assert c.post("/api/sessions/s_back/returning", json={"name": "x" * 41}).status_code == 422

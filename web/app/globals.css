@@ -122,14 +122,48 @@
   animation: ring 1.8s var(--ease-out) infinite;
 }
 .pin[data-status="dead"] { background: #fff; color: var(--color-ink-3); border-color: var(--color-ink-3); }
+/* Suspect: outlined in red with a mark, so it reads without colour too. */
+.pin[data-status="suspect"] { background: #fff; color: var(--color-dead); border-color: var(--color-dead); }
+.pin[data-status="booked"] { background: var(--color-real); }
+.pin[data-status="suspect"]::before,
+.pin[data-status="booked"]::before {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  border: 1.5px solid #fff;
+  color: #fff;
+  font: 700 10px/1 var(--font-sans);
+}
+.pin[data-status="suspect"]::before { content: "!"; background: var(--color-dead); }
+.pin[data-status="booked"]::before { content: "★"; background: var(--color-ink); font-size: 9px; }
 
 @keyframes ring {
   from { opacity: 0.7; transform: scale(0.85); }
   to { opacity: 0; transform: scale(1.5); }
 }
 
+/* The calling dot in the activity line breathes with the pin's ring. */
+.live-dot { animation: breathe 1.8s var(--ease-out) infinite; }
+@keyframes breathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+/* Judge mode: the voice bar's bars while Landline's audio is actually playing. */
+.meter-talk { height: 6px; animation: talk 900ms var(--ease-out) infinite alternate; }
+@keyframes talk {
+  from { height: 4px; }
+  to { height: 16px; }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .pin, .pin::after { transition: none; animation: none; }
+  .pin, .pin::after, .live-dot { transition: none; animation: none; }
+  .meter-talk { animation: none; height: 12px; }
 }
 
 /* MapLibre's own controls, quieted to match */
