@@ -73,10 +73,17 @@ class Profiles:
 
     async def remember(self, state: SessionState, event_type: str, address: Callable[[str], str]) -> None:
         """Save what this session taught us about the renter. When the brief ends: the profile, its summary,
-        and the reactions given on this call. When the calls are done: which places were called and booked."""
-        if state.user_id is None:
-            return
+        and the reactions given on this call. When the calls are done: which places were called and booked.
+        A phone session's user is found by its number here, created on the first call, and the session is
+        linked to them, so nothing is read about the caller before the greeting."""
         db, uid = self.db, state.user_id
+        if uid is None and state.channel == "phone" and state.caller_phone:
+            e164 = as_e164(state.caller_phone) or state.caller_phone
+            user = await db.users.by_phone(e164) or await db.users.upsert(e164)
+            uid = user.user_id
+            await db.sessions.link_user(state.session_id, uid)
+        if uid is None:
+            return
         async with db.transaction() as conn:
             if event_type == "SessionEnded":
                 hard, priorities, anchors = stored_fields(state.preferences)
