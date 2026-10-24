@@ -351,7 +351,8 @@ def _questions(turn: str) -> list[str]:
 # Words every question to the renter shares, so "Does your client have a car?" isn't taken for a noted
 # "Does your client have a guarantor?".
 QUESTION_WORDS = {"your", "the", "a", "an", "to", "for", "client", "renter", "my", "do", "does", "did", "is",
-                  "are", "have", "has", "would", "will", "can", "could", "you", "they", "what", "how", "want"}
+                  "are", "have", "has", "would", "will", "can", "could", "you", "they", "what", "how", "want",
+                  "be", "in", "of", "on", "it", "and", "also", "any"}
 
 
 def _noted(question: str, noted: list[str]) -> bool:

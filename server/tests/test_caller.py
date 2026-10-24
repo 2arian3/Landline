@@ -526,6 +526,8 @@ async def test_two_renter_questions_in_one_turn_are_both_noted_and_not_again():
     ctx.said.append("Does your client have a car?")             # shares "does your client have"
     assert await tools.kept_promise(ctx, "Okay.", []) == "Does your client have a car?"
     assert await tools.kept_promise(ctx, "I'll check with my client.", []) is None   # noted already
+    ctx.said.append("Also, would your client be interested in the storage locker?")   # raj-upsell-1
+    assert await tools.kept_promise(ctx, "Okay.", []) is None                     # asked again, in new words
     ctx.said.append("Does your client have a guarantor?")
     assert await tools.kept_promise(ctx, "Okay.", ["note_question"]) is None      # the Caller noted it
 
