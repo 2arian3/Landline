@@ -3,7 +3,10 @@ for its preferences and saved through update_preferences, never for English; and
 for calls or a viewing that got no call_listings records the plan (#127). No network: the text model is a
 fake."""
 import asyncio
+import json
 from datetime import UTC, datetime
+
+import pytest
 
 from landline.agents.concierge import tools
 from landline.agents.concierge.backstop import (
@@ -364,3 +367,72 @@ async def test_a_catch_up_that_lands_after_a_newer_save_is_dropped():
     ctx = await _ctx()
     assert await catch_up(SlowReader(BUDGET_READ, ctx), BUDGET, ctx, claimed=True) is None
     assert ctx.runtime.state(SID).preferences.max_monthly == 3500
+
+
+# #174: "set up a visit tomorrow" recorded a call with no viewing window and no leave to book, so nothing
+# was booked. The call catch-up reads the whole ask; call_listings keeps only times the renter said.
+@pytest.mark.parametrize(("said", "refs", "window", "may_book"), [
+    ("Can you call the first option landlord to us set up a visit tomorrow?", [1],
+     [("tomorrow", "09:00", "18:00")], True),
+    ("Call the top two and book a viewing Saturday afternoon", [1, 2],
+     [("saturday", "12:00", "17:00")], True),
+    # A time to see it is its window; "see it" alone isn't leave to book (#154's "see if it's available").
+    ("Call the first one, I can see it tomorrow between 1 and 5", [1],
+     [("tomorrow", "13:00", "17:00")], False),
+    ("Call the first one and ask if it's available", [1], [], False),
+    ("Call the second one, don't book anything", [2], [], False),
+    ("Go ahead and call the best ones for me.", [1, 2, 3], [], False),
+])
+async def test_the_call_catch_up_reads_the_whole_ask(said, refs, window, may_book):
+    ctx = await _ctx()
+    ctx.renter_said = said
+    ctx.renter_lines.append(said)
+    board = ctx.runtime.get(SID).board
+    assert await catch_up_calls(said, ctx) is not None
+    plan = ctx.runtime.state(SID).request
+    assert plan.listing_ids == [board[r - 1].listing_id for r in refs]
+    assert [(a.day, a.from_, a.to) for a in plan.availability] == window
+    assert plan.may_book is may_book
+
+
+async def test_a_short_time_answer_after_the_plan_is_its_viewing_window():
+    ctx = await _ctx()
+    await catch_up_calls("Call the first one.", ctx)
+    ids = ctx.runtime.state(SID).request.listing_ids
+    for line in ["I'm moving in tomorrow.", "Next week, probably."]:   # a move-in date, or no day
+        assert await catch_up_calls(line, ctx) is None, line
+    ctx.renter_lines.append("Tomorrow morning")
+    assert await catch_up_calls("Tomorrow morning", ctx) is not None
+    plan = ctx.runtime.state(SID).request
+    assert plan.listing_ids == ids and [(a.day, a.from_, a.to) for a in plan.availability] == [
+        ("tomorrow", "09:00", "12:00")]
+    turn = Turn()
+    _answered(turn, "Tomorrow morning")
+    assert turn.call_line() == "Tomorrow morning"   # the bridge hands a time answer to the catch-up too
+
+
+_fc = iter(range(1000))
+
+
+async def _call(ctx, **args):
+    return await tools.handle("call_listings", json.dumps(args), f"fc_test_{next(_fc)}", ctx)
+
+
+async def test_call_listings_keeps_only_viewing_times_the_renter_said():
+    """f2's holdout: the model gave "tomorrow 09:00-17:00" the renter never said, with leave to book."""
+    ctx = await _ctx()
+    ctx.renter_lines = ["Two bedrooms, up to 3,000 a month.", "Go ahead and call the best ones for me."]
+    ctx.renter_said = ctx.renter_lines[-1]
+    window = [{"day": "tomorrow", "from": "09:00", "to": "17:00"}]
+    reply = await _call(ctx, listing_refs=["1"], availability=window)
+    plan = ctx.runtime.state(SID).request
+    assert plan.availability == [] and "Ask when they are free for a viewing." in reply
+    assert len(plan.listing_ids) == 3   # "the best ones": the top three, not the one the model picked
+    ctx.renter_lines.append("I can view on Sunday from noon to 4.")
+    ctx.renter_said = ctx.renter_lines[-1]
+    await _call(ctx, availability=[{"day": "sunday", "from": "12:00", "to": "16:00"}])
+    assert [(a.day, a.from_, a.to) for a in ctx.runtime.state(SID).request.availability] == [
+        ("sunday", "12:00", "16:00")]
+    ctx = await _ctx()   # off the phone, no lines to go by: the model's word stands
+    await _call(ctx, listing_refs=["1"], availability=window)
+    assert len(ctx.runtime.state(SID).request.availability) == 1
