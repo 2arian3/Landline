@@ -103,6 +103,20 @@ def test_a_priority_nothing_ranks_by_is_not_acknowledged():
         "Got it: up to $2,600, light first. I can't rank by buzzer.")
 
 
+async def test_a_board_cut_down_to_its_top_card_says_it_stays_on_top():
+    """A budget that leaves only the top card used to raise in _diff (max() of nothing), and the renter's
+    update was lost."""
+    rt = SessionRuntime(Catalogue([_listing(n, 2000 + 400 * n) for n in range(1, 4)], "test"))
+    sid = "s_narr000009"
+    await rt.start(SessionStarted(session_id=sid, at=T0, idem_key=f"{sid}:s", channel="browser"))
+    await rt.emit(PreferencesUpdated(session_id=sid, at=T0, idem_key=f"{sid}:a",
+                                     delta=PreferenceDelta(max_monthly=3300)))
+    view = await rt.emit(PreferencesUpdated(session_id=sid, at=T0, idem_key=f"{sid}:b",
+                                            delta=PreferenceDelta(max_monthly=2500)))
+    assert [c.listing_id for c in view.board] == ["t:1"]
+    assert view.agent_says.endswith("1 Main St stays on top.")
+
+
 # The calls: one template per kind of outcome, through the runtime
 
 
