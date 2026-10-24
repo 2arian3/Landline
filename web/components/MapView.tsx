@@ -213,11 +213,16 @@ export function MapView({
 
   // ── frame the board when its set of listings changes ────────────────────
   const boardKey = board.map((c) => c.listing_id).sort().join(",");
+  const framed = useRef<string | null>(null); // the board last framed
   useEffect(() => {
     const m = map.current;
     if (!m || !ready) return;
     const located = board.filter((c) => onMap(c.lat, c.lng));
     if (!located.length) return;
+    // Only the padding changed (the phone sheet moved to another stop): leave the map alone unless a pin
+    // would now sit under the sheet, so dragging the sheet doesn't set off an 800 ms fit every time.
+    if (framed.current === boardKey && !located.some((c) => underSheet(m, c, padding))) return;
+    framed.current = boardKey;
     const bounds = new LngLatBounds();
     located.forEach((c) => bounds.extend([c.lng!, c.lat!]));
     m.fitBounds(bounds, { padding, maxZoom: 14, duration: reducedMotion() ? 0 : 800 });
@@ -258,6 +263,15 @@ export function MapView({
       <div ref={container} className="h-full w-full" aria-label="Map of matching rentals" />
     </div>
   );
+}
+
+/**
+ * Whether a card's pin would sit under the phone sheet (the bottom padding). Only the sheet moves the
+ * padding, so only the bottom edge counts, with a pixel to spare: a fit leaves the outermost pins right
+ * on the padding's edge.
+ */
+function underSheet(m: MapLibre, card: Card, p: Padding): boolean {
+  return m.project([card.lng!, card.lat!]).y > m.getContainer().clientHeight - p.bottom + 1;
 }
 
 /**
