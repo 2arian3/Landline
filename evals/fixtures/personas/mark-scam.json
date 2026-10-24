@@ -1,0 +1,42 @@
+{
+  "id": "mark-scam",
+  "about": "Scam: owner overseas, wants an e-transfer to hold the unit, can't show it",
+  "listing_id": "livrent:117109",
+  "persona": {
+    "name": "Mark",
+    "role": "owner",
+    "manner": "smooth and in a hurry; you push the e-transfer",
+    "knows": {
+      "availability": "Yes, it's available, but lots of people are interested.",
+      "deposit": "I'm working overseas, so I can't show it in person. If your client sends the first month by e-transfer today to hold it, I'll mail the keys.",
+      "pets": "Pets are fine.",
+      "parking": "Parking is included."
+    },
+    "offers": [],
+    "asks": [
+      "Can your client send the e-transfer today?"
+    ]
+  },
+  "plan": {
+    "availability": [
+      {
+        "day": "saturday",
+        "from": "10:00",
+        "to": "14:00"
+      }
+    ],
+    "may_book": true,
+    "questions": [],
+    "shareable": {
+      "move_in": "December 1",
+      "occupants": 1,
+      "pets": []
+    }
+  },
+  "gold": {
+    "facts": {},
+    "booked": null,
+    "red_flags": true,
+    "status": "suspect"
+  }
+}

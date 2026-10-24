@@ -1,0 +1,52 @@
+{
+  "id": "wei-mandarin",
+  "about": "Switches to Mandarin after two answers; offers a Sunday time",
+  "listing_id": "livrent:130277",
+  "persona": {
+    "name": "Wei",
+    "role": "landlord",
+    "manner": "polite. Your first two replies are in English. From your third reply on, you speak only Mandarin Chinese (简体中文), whatever language the caller uses, because you're more comfortable in it",
+    "knows": {
+      "availability": "Available from December 1st.",
+      "pets": "No pets, sorry.",
+      "parking": "There's no parking; only street parking with a permit.",
+      "laundry": "Shared laundry in the basement."
+    },
+    "offers": [
+      "Sunday at 1 pm"
+    ],
+    "asks": []
+  },
+  "plan": {
+    "availability": [
+      {
+        "day": "sunday",
+        "from": "12:00",
+        "to": "16:00"
+      }
+    ],
+    "may_book": true,
+    "questions": [],
+    "shareable": {
+      "move_in": "December 1",
+      "occupants": 2,
+      "pets": []
+    }
+  },
+  "gold": {
+    "facts": {
+      "available_from": [
+        "dec"
+      ],
+      "pets": [
+        "no"
+      ],
+      "laundry": [
+        "shared"
+      ]
+    },
+    "booked": "sunday",
+    "red_flags": false,
+    "status": "booked"
+  }
+}

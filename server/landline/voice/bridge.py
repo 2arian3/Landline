@@ -284,31 +284,33 @@ async def _higgs_to_renter(higgs: Any, transport: Transport, ctx: tools.ToolCont
     return "higgs_closed"
 
 
-async def run_tool(higgs: Any, event: dict[str, Any], ctx: tools.ToolContext, *,
-                   spoke: bool = True) -> None:
+async def run_tool(higgs: Any, event: dict[str, Any], ctx: Any, *, spoke: bool = True,
+                   agent: Any = tools) -> None:
     """Runs one tool call and answers Higgs. `spoke` says whether this response said anything before the
-    call, which matters only for end_session."""
+    call, which matters only for the tool that hangs up. `agent` is the agent's tools module: the
+    Concierge's by default, or the Caller's (agents/caller/tools.py), each with handle, BROKEN and
+    SAY_GOODBYE, and a context with call_id, hang_up and bye_response."""
     # Higgs's own `call_id` here names this tool call, not our phone call.
     tool_call_id = str(event.get("call_id", ""))
     try:
-        output = await tools.handle(str(event.get("name", "")), event.get("arguments") or "{}",
+        output = await agent.handle(str(event.get("name", "")), event.get("arguments") or "{}",
                                     tool_call_id, ctx)
     except Exception:
         log.exception("tool %s failed on call %s", event.get("name"), ctx.call_id)
-        output = tools.BROKEN
-    # end_session with nothing said yet: one more response for the goodbye, or the renter hears the line
-    # drop. Asked once. The request goes in the tool's answer, not in response instructions, which would
-    # replace the Concierge's own (it then greets: "Hello! How can I help you today?").
+        output = agent.BROKEN
+    # Hanging up with nothing said yet: one more response for the goodbye, or the other person hears the
+    # line drop. Asked once. The request goes in the tool's answer, not in response instructions, which
+    # would replace the agent's own (it then greets: "Hello! How can I help you today?").
     say_bye = ctx.hang_up and not spoke and ctx.bye_response is None
     if say_bye:
-        output, ctx.bye_response = tools.SAY_GOODBYE, str(event.get("response_id") or "")
+        output, ctx.bye_response = agent.SAY_GOODBYE, str(event.get("response_id") or "")
     await higgs.send({"type": "conversation.item.create",
                       "item": {"type": "function_call_output", "call_id": tool_call_id, "output": output}})
     if not ctx.hang_up or say_bye:   # otherwise the goodbye is already out, and nothing more is said
         await higgs.send({"type": "response.create"})
 
 
-def ends_call(done: dict[str, Any], ctx: tools.ToolContext) -> bool:
+def ends_call(done: dict[str, Any], ctx: Any) -> bool:
     """Whether this `response.done` is the last thing said: after end_session, unless it is the response
     that called end_session silently and a goodbye is still coming."""
     if not ctx.hang_up:

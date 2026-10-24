@@ -18,6 +18,7 @@ from landline.orchestrator import SessionRuntime
 from landline.voice import higgs
 from landline.voice.calls import RenterCalls
 from landline.voice.dispatch import Dispatcher
+from landline.voice.sim import SimRunner
 from landline.voice.sms import Texter
 
 
@@ -56,9 +57,12 @@ def create_app(settings: Settings | None = None, catalogue: Catalogue | None = N
         app.state.connect_higgs = higgs.connect
         # Texts the phone renter their board link. Tests swap it for a fake.
         app.state.texter = Texter(settings.twilio_account_sid, settings.twilio_auth_token)
-        # The hand-off (A-06): a brief that ends with a plan has its calls queued and run. The Caller (A-05)
-        # sets `runner`; until then the plan is frozen and its calls stay queued.
-        app.state.dispatcher = Dispatcher(app.state.runtime, settings, texter=app.state.texter)
+        # The hand-off (A-06): a brief that ends with a plan has its calls queued and run. With TRANSPORT=sim
+        # the Caller (A-05) talks to landlord personas in text (A-03), with no phone; otherwise the plan is
+        # frozen and its calls stay queued until a phone runner exists.
+        runner = SimRunner(app.state.runtime, lambda key, cfg: app.state.connect_higgs(key, cfg),
+                           settings.boson_api_key or "") if settings.transport == "sim" else None
+        app.state.dispatcher = Dispatcher(app.state.runtime, settings, runner=runner, texter=app.state.texter)
         yield
         await app.state.dispatcher.close()
         await app.state.texter.close()
