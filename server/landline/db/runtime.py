@@ -36,6 +36,11 @@ class Sessions(Repo):
         return await self._one(SessionRow, "select * from sessions where session_id = %s",
                                (session_id,), conn)
 
+    async def latest_for_user(self, user_id: int, conn: Conn = None) -> SessionRow | None:
+        """The user's most recent session: what their next call opens with."""
+        return await self._one(SessionRow, "select * from sessions where user_id = %s "
+                               "order by started_at desc, session_id desc limit 1", (user_id,), conn)
+
     async def list_active(self, conn: Conn = None) -> list[SessionRow]:
         """Open and calling sessions, oldest first: what a restart reloads."""
         return await self._all(SessionRow, "select * from sessions where status in ('open', 'calling') "
