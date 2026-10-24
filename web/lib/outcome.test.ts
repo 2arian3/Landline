@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { callNotes } from "./outcome.ts";
-import type { Card } from "./types.ts";
+import type { CallView, Card } from "./types.ts";
 
 const card = (address: string) => ({ address }) as Card;
 const LEASE = "Would they sign a 12-month lease?";
@@ -46,6 +46,18 @@ test("a Saint stays inside its address, and a street's St. still ends a sentence
     "Its agent asked, “Is a cat okay?” I said I'd check with you.";
   assert.deepEqual(callNotes(card("64 St. Clair Avenue West"), text), { viewing: "Sunday at 11:30 am", questions: ["Is a cat okay?"] });
   assert.deepEqual(callNotes(card("4 Main St"), text), { viewing: null, questions: [] });
+});
+
+test("a call's outcome wins over the results text", () => {
+  const place = { listing_id: "t:5", address: "5 Main St" } as Card;
+  const call = {
+    call_id: "c_1", listing_id: "t:5", state: "ended",
+    outcome: { call_id: "c_1", listing_id: "t:5", end_reason: "done", facts: [], conflicts: [], red_flags: [],
+      open_questions: ["Is a cat okay?"], viewing: { starts_at: "2026-10-24T18:00:00Z", slot_text: "Saturday at two works." } },
+  } as CallView;
+  // in Farsi, say: the text says nothing the parser can read, and the outcome still answers
+  assert.deepEqual(callNotes(place, "نتایج تماس‌ها", [call]), { viewing: "Saturday at 2 pm", questions: ["Is a cat okay?"] });
+  assert.deepEqual(callNotes(place, NARRATOR, [{ ...call, outcome: null }]), { viewing: "Saturday at 2 pm", questions: [LEASE] });
 });
 
 test("no card or no results: nothing", () => {

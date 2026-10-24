@@ -29,6 +29,7 @@ from landline.contracts import (
     SessionEnded,
     SessionStarted,
     SessionView,
+    Turn,
 )
 from landline.orchestrator import Refused
 
@@ -123,15 +124,6 @@ async def feedback(session_id: str, body: FeedbackBody, request: Request) -> Ses
         return await _emit(request, FeedbackGiven(**_meta(session_id), listing_id=body.listing_id,
                                                   reaction=body.reaction, reason=body.reason))
     return await request.app.state.sessions.react(session_id, body.listing_id, body.reaction, body.reason)
-
-
-class Turn(BaseModel):
-    """One caption line of a call (a call_turns row): who said what, in order."""
-    idx: int
-    speaker: Literal["agent", "landlord", "renter"]
-    text: str
-    lang: str | None = None
-    t_ms: int | None = None   # milliseconds into the call, when known
 
 
 @router.get("/api/calls/{call_id}/turns", response_model=list[Turn])

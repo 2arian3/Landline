@@ -1,4 +1,4 @@
-import type { Card } from "./types";
+import type { CallView, Card } from "./types";
 
 /** What a finished call settled for one place, beyond its facts: a booked viewing, questions for the renter. */
 export type CallNotes = {
@@ -9,19 +9,48 @@ export type CallNotes = {
 const NONE: CallNotes = { viewing: null, questions: [] };
 
 /**
- * The one place that reads a place's booked viewing and noted questions. The contract doesn't carry them
- * per card yet (#38 adds CallView.outcome), so for now they come from the session's results text: the
- * Narrator's ("I booked 30 Carabob Court for Saturday at 2 pm.") or the ?dev=1 demo's ("…, inside your
- * Saturday afternoon."). Only for a place that was called: many listings share one street address, and the
- * text never names the unit. No lookbehind anywhere: Safari before 16.4 can't parse it.
+ * The one place that reads a place's booked viewing and noted questions. They come from the call's
+ * outcome (`CallView.outcome`, the Auditor's CallOutcome for this listing) when the session has one.
+ * Otherwise, from the session's results text: the Narrator's ("I booked 30 Carabob Court for Saturday at
+ * 2 pm.") or the ?dev=1 demo's ("…, inside your Saturday afternoon."), and only for a place that was
+ * called, since many listings share one street address and the text never names the unit. That fallback
+ * breaks if the wording changes or the results are in another language. No lookbehind anywhere: Safari
+ * before 16.4 can't parse it.
  */
-export function callNotes(card: Card | undefined, results: string | null | undefined): CallNotes {
+export function callNotes(
+  card: Card | undefined,
+  results: string | null | undefined,
+  calls: CallView[] = [],
+): CallNotes {
+  // The latest call to this place that has settled something.
+  const outcome = card ? calls.filter((c) => c.listing_id === card.listing_id && c.outcome).at(-1)?.outcome : null;
+  if (outcome) {
+    return {
+      viewing: outcome.viewing ? when(outcome.viewing.starts_at) : null,
+      questions: outcome.open_questions,
+    };
+  }
   if (!card || !results || card.status === "pending" || card.status === "calling") return NONE;
   const said = sentencesAbout(results, card.address);
   return {
     viewing: said.map((s) => BOOKED.exec(s)?.[1]).find(Boolean) ?? null,
     questions: said.flatMap((s) => (s.includes(" asked, ") ? (/“([^”]+)”/.exec(s)?.slice(1) ?? []) : [])),
   };
+}
+
+/** "Saturday at 2 pm", Toronto time: the words the Narrator uses for a booked viewing (narrator.py `_when`). */
+function when(iso: string): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Toronto",
+    weekday: "long",
+    hour: "numeric",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date(iso));
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  const hour = Number(get("hour"));
+  const minute = get("minute");
+  return `${get("weekday")} at ${hour % 12 || 12}${minute === "00" ? "" : `:${minute}`} ${hour >= 12 ? "pm" : "am"}`;
 }
 
 // "I booked <place> for <when>." with the demo's ", inside your Saturday afternoon" after <when>, or not.

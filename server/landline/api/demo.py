@@ -32,6 +32,7 @@ from zoneinfo import ZoneInfo
 from landline.api.judge import ID_CHARS
 from landline.contracts import (
     Area,
+    CallOutcome,
     CallView,
     Card,
     Fact,
@@ -40,6 +41,7 @@ from landline.contracts import (
     Phase,
     Preferences,
     SessionView,
+    Viewing,
     monthly_cost,
 )
 from landline.contracts.session import CardStatus
@@ -238,7 +240,9 @@ class DemoSessions:
                 said = went_live + len(run.captions[lid]) * self.tick_s / 2
                 await asyncio.sleep(max(0.0, said - self.clock()))
             run.outcomes[lid] = outcomes[lid]
-            run.calls[lid] = run.calls[lid].model_copy(update={"state": "ended"})
+            call = run.calls[lid]
+            run.calls[lid] = call.model_copy(update={"state": "ended",
+                                                     "outcome": _call_outcome(call, outcomes[lid], at)})
             await self.update(session_id)
         run.phase, run.results = "done", self._results(run, at)
         self.last_results[session_id] = run.results
@@ -377,7 +381,7 @@ def _outcomes(at: datetime) -> list[DemoCall]:
                        ("agent", "Are pets okay? My client has a dog."),
                        ("landlord", DOGS),
                        ("agent", "Could they see it Saturday afternoon?"),
-                       ("landlord", f"{_upper(_day(viewing, at))} at {SPOKEN[viewing.hour % 12]} works."),
+                       ("landlord", _slot_said(viewing, at)),
                        ("agent", f"{_upper(_when(viewing, at))}, then. I'll let my client know."))),
         DemoCall("no_answer"),
     ]
@@ -386,6 +390,22 @@ def _outcomes(at: datetime) -> list[DemoCall]:
 def _call_id() -> str:
     """`c_` + 10 url-safe characters (docs/CONTRACTS.md), as CallManager.create() mints them."""
     return "c_" + "".join(secrets.choice(ID_CHARS) for _ in range(10))
+
+
+def _call_outcome(call: CallView, out: DemoCall, now: datetime) -> CallOutcome:
+    """What a scripted call settled, in the Auditor's shape (A-07), for the read side's calls[]."""
+    viewing = Viewing(starts_at=out.viewing, slot_text=_slot_said(out.viewing, now)) if out.viewing else None
+    return CallOutcome(
+        call_id=call.call_id, listing_id=call.listing_id,
+        end_reason="no_answer" if out.status == "no_answer" else "done",
+        facts=list(out.facts), red_flags=list(out.red_flags), open_questions=list(out.questions),
+        viewing=viewing,
+    )
+
+
+def _slot_said(at: datetime, now: datetime) -> str:
+    """The landlord's words agreeing to the viewing: the call's captions and its outcome's slot_text."""
+    return f"{_upper(_day(at, now))} at {SPOKEN[at.astimezone(TORONTO).hour % 12]} works."
 
 
 def _day(at: datetime, now: datetime) -> str:
