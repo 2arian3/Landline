@@ -255,6 +255,11 @@ class SessionRuntime:
             if point is None:
                 log.info("place %r stays unresolved for %s", anchor.label, event.session_id)
                 continue
+            if point.line and not self.matrix.has_line(point.lat, point.lng):
+                # A street (#102): every listing's distance to its nearest point, worked out off the event
+                # loop, before the anchor resolves and the board re-ranks around it.
+                distances = await asyncio.to_thread(self.matrix.line_distances_km, point.line)
+                self.matrix.use_line(point.lat, point.lng, distances)
             key = " ".join(anchor.label.lower().split())
             await self.emit(AnchorResolved(session_id=event.session_id, at=datetime.now(UTC),
                                            idem_key=f"{event.session_id}:place:{key}", label=anchor.label,
