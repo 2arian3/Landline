@@ -4,6 +4,7 @@ What the simulated-call eval (E-01) found in the Concierge (A-04), what was fixe
 
 - First full run: harness only, before any fix (`de67523` plus the uncommitted harness, 05:17 UTC).
 - Final run: after the fixes (`6f99149`, 05:44 UTC). PRs [#58](https://github.com/2arian3/Landline/pull/58) (harness) and [#68](https://github.com/2arian3/Landline/pull/68) (fixes).
+- Returning callers: the welcome-back fix (`dde000c`, 05:59 UTC), which added one case to each set. That run's report sits next to `6f99149` in `evals/reports/latest.md`. Without the new cases: tune 16/24, holdout 11/15, both within noise of the run before.
 
 ## How the eval works
 
@@ -66,8 +67,24 @@ These matter more than any single number. Both passed the scorer as it was, beca
 - **Event order in a response with text and then a tool call:** the text deltas stream first, then `response.function_call_arguments.done`, and only then `response.output_text.done` for that text. "Did it speak before the tool?" has to be read from deltas, not `.done`.
 - **Instructions on `response.create` replace the session's instructions for that response**, and the model then answers as if the conversation so far weren't there. Two cases seen:
   - A goodbye asked for that way came out as a fresh greeting, 21 of 21 times.
-  - The returning-caller greeting is sent the same way (`WELCOME_BACK` in `voice/bridge.py`). In a probe with a remembered renter (Zara, 2 bedrooms, 88 Erskine, a Saturday viewing), **0 of 3 greetings used any of it, and 3 of 3 made a memory up** ("near King and Bay", "near the hospital and a park", "a yard for your dog"). The same request as injected user text got the facts right in 1 of 3 runs; the other 2 came back with no text in the first response. **Open, and the most urgent item for the demo.**
+  - The returning-caller greeting was sent the same way (`WELCOME_BACK`). With a remembered renter (Zara, 2 bedrooms, 88 Erskine, a Saturday viewing), **0 of 5 greetings used any of it, and 5 of 5 made a memory up** ("near Queen and Spadina", "near the 401 and Kennedy", "a yard for your dog"). **Fixed** (see "Returning callers" below).
 - `response.function_call_arguments.done` carries `response_id`, and `response.done` carries `response.id`. That's how the bridge tells the silent `end_session` response from the goodbye after it.
+
+### Returning callers (fixed)
+
+Three openings were compared live, 5 runs each, on the Zara memory:
+
+| Opening | Used the memory | Made one up | Tool calls before the first words |
+|---|---|---|---|
+| `WELCOME_BACK` as `response.create` instructions (before) | 0 of 5 | 5 of 5 | 0 |
+| `WELCOME_BACK` in the session instructions, then a plain `response.create` | 4 of 5 | 0 | 2 (re-ran `update_preferences`) |
+| The same, starting with a quoted "[The call just connected.]" user note **(now)** | 5 of 5 | 0 | 0 |
+
+`voice/bridge.py` `opening()` builds a returning caller's session instructions (`INSTRUCTIONS + WELCOME_BACK + RETURNING + memory`) and the events that start the call. The simulator uses the same function. First-time callers still get `GREETING` as response instructions, which is fine, since there's nothing to remember.
+
+The probe also showed **"$3,000" read as "thirty thousand"** in 3 of 5 welcomes, and in 3 of 5 again on the first eval runs. That led to a general speaking rule: "Say amounts the way they're written". Afterwards, 0 of 8.
+
+Two cases now cover this. The tune case (`returning-results-ready`) checks that the welcome gives the booking and doesn't misread the budget. The holdout case (`returning-calls-running`) checks that it recalls the search and claims no results. Over 5 live runs each: **tune 4 of 5, holdout 5 of 5**. Across the 8 tune runs so far (5 plus 3 in `make eval`), the welcome gave the booking in 6 and made nothing up in any.
 
 ### Data that trips the agent
 
@@ -75,7 +92,7 @@ These matter more than any single number. Both passed the scorer as it was, beca
 
 ## Still open
 
-1. **The welcome-back greeting invents memories** (above). Fix: send `WELCOME_BACK` as injected user text, or put the opening instruction into the session instructions. Then check it with a returning-caller case.
+1. **A returning caller whose calls are still running isn't told so.** None of the 5 holdout welcomes mentioned it; they recall the search instead. The case doesn't check for it yet. Also, about 1 in 4 welcomes skips the booking.
 2. **"The first one looks great" is taken as a focus, not a like** (holdout `cat-like-call-top2-friday`, 0 of 3 runs).
 3. **Shared addresses never resolve.** Unit labels from the pipeline, or have the Concierge use rank numbers when the board repeats an address.
 4. **Farsi still fails a third of runs.** Three prompt changes were tried. A Spanish example made it worse (no tool calls in 3 of 3 runs) and was reverted. This looks like a model limit. The A-04 note saw the same on a real phone call.
