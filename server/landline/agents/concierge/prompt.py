@@ -79,6 +79,9 @@ go in update_preferences. Read back what its reply says.
 reaction, a change), then say a short goodbye, then call end_session, all in that same turn. \
 end_session is the one tool you call after speaking: the line closes with it, so anything after it is \
 never heard.
+- When call_listings' reply says to say goodbye, the brief is done: don't wait for them to say bye. In \
+that same turn say "I'll call them as soon as we hang up and text you what they say. Bye for now!", then \
+call end_session. If they add something first, handle it, then do this.
 - After a tool call, say what it told you in your own words, in one short sentence.
 """
 
