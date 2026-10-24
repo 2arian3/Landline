@@ -74,12 +74,14 @@ def listing(listing_id: str, request: Request) -> Listing:
 
 
 @router.get("/api/sessions/{session_id}", response_model=SessionView)
-async def session(session_id: str, request: Request) -> SessionView:
+async def session(session_id: str, request: Request, dev: bool = False) -> SessionView:
+    """`dev`: the page is the ?dev=1 demo, whose new session opens with the scripted brief. Any other new
+    demo session shows nothing heard until the renter says something."""
     if _live(request, session_id):
         return request.app.state.runtime.get(session_id)
     if (stored := await _stored(request, session_id)) is not None:
         return stored
-    return request.app.state.sessions.get(session_id)
+    return request.app.state.sessions.get(session_id, dev=dev)
 
 
 @router.get("/api/sessions/{session_id}/stream")
