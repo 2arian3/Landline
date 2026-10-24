@@ -55,6 +55,11 @@ AREAS = {
 }
 
 
+def area_named(place: str) -> Area | None:
+    """The demo's area for a place the renter named, however it's spaced or capitalised."""
+    return AREAS.get(" ".join(place.lower().split()))
+
+
 @dataclass(frozen=True)
 class DemoCall:
     """What a scripted listing agent said, applied to its card when its call ends."""
@@ -190,12 +195,8 @@ class DemoSessions:
             self.returning.pop(session_id, None)
         return await self.update(session_id)
 
-    async def focus_area(self, session_id: str, place: str) -> SessionView | None:
-        """Demo hook for AreaFocused ("show me Christie Pits"): the map flies there. None for a place the
-        demo doesn't know."""
-        area = AREAS.get(" ".join(place.lower().split()))
-        if area is None:
-            return None
+    async def focus_area(self, session_id: str, area: Area) -> SessionView:
+        """Demo hook for AreaFocused ("show me Christie Pits"): the map flies there."""
         self.areas[session_id] = area
         return await self.update(session_id)
 
