@@ -312,7 +312,8 @@ async def book_viewing(args: BookViewing, ctx: CallerContext, meta: dict) -> str
         if item.key == "viewing":
             item.done = True
     when = slots.spoken(at)
-    return f"Booked for {when}. Start your reply with \"So that's {when},\" to confirm it."
+    return (f"Booked for {when}. Start your reply with \"So that's {when}.\" Say it once; if they already "
+            "agreed, don't ask them to confirm it.")
 
 
 def _ask_time(day, windows, now: datetime) -> str:
