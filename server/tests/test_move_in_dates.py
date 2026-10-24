@@ -182,6 +182,8 @@ async def test_the_caller_gives_the_parts_and_code_makes_the_day(parts, quote, k
     reply = await tools.handle("record_available_from", json.dumps({**parts, "quote": quote}), "fc_1", ctx)
     words = "now" if says == "available now" else says.removeprefix("free from ")
     assert reply.startswith(f"Recorded available from: {words}.")
+    back = "So it's available now." if words == "now" else f"So it's available from {words}."
+    assert f'Start your reply with "{back}"' in reply   # the day read back to the landlord
     # the Auditor keeps the day, the renter reads it in words, and the card gets the same day
     out = build(_record(quote, [ToolFact(f.field, f.value, f.quote) for f in ctx.facts]), []).outcome
     results, rt = await _results(out.facts)
