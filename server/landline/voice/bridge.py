@@ -21,6 +21,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 
+import logfire
 from fastapi import WebSocket, WebSocketDisconnect
 
 from landline.agents.auditor import llm as auditor_llm
@@ -396,14 +397,19 @@ async def run_tool(higgs: Any, event: dict[str, Any], ctx: Any, *, spoke: bool =
     """Runs one tool call and answers Higgs. `spoke` says whether this response said anything before the
     call, which matters only for the tool that hangs up. `agent` is the agent's tools module: the
     Concierge's by default, or the Caller's (agents/caller/tools.py), each with handle, BROKEN and
-    SAY_GOODBYE, and a context with call_id, hang_up and bye_response."""
+    SAY_GOODBYE, and a context with session_id, call_id, hang_up and bye_response."""
     # Higgs's own `call_id` here names this tool call, not our phone call.
     tool_call_id = str(event.get("call_id", ""))
+    name, arguments = str(event.get("name", "")), event.get("arguments") or "{}"
+    # One Logfire span per tool call: the arguments as the model sent them, the tool's answer, how long it
+    # took, or the exception it raised. Nothing is sent without LOGFIRE_TOKEN (app.py).
     try:
-        output = await agent.handle(str(event.get("name", "")), event.get("arguments") or "{}",
-                                    tool_call_id, ctx)
+        with logfire.span("tool {name}", name=name, call_id=ctx.call_id, session_id=ctx.session_id,
+                          tool_call_id=tool_call_id, arguments=arguments) as span:
+            output = await agent.handle(name, arguments, tool_call_id, ctx)
+            span.set_attribute("output", output)
     except Exception:
-        log.exception("tool %s failed on call %s", event.get("name"), ctx.call_id)
+        log.exception("tool %s failed on call %s", name, ctx.call_id)
         output = agent.BROKEN
     # Hanging up with nothing said yet: one more response for the goodbye, or the other person hears the
     # line drop. Asked once. The request goes in the tool's answer, not in response instructions, which
