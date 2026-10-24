@@ -142,6 +142,8 @@ async def _talk(higgs: Any, transport: Any, ctx: Any, turns: Turns, playback: Pl
                     sent_any = True
                     log.info("listing call %s: first audio out", ctx.call_id)
             elif kind == "input_audio_buffer.speech_started":
+                # Their line starts here either way; only a barge-in cuts what the Caller was saying.
+                recorder.speech_started(event.get("item_id"), event.get("audio_start_ms"))
                 if opening and (not opened or playback.remaining() > 0):
                     log.info("listing call %s: speech over the opening; it plays on", ctx.call_id)
                     continue
@@ -149,7 +151,6 @@ async def _talk(higgs: Any, transport: Any, ctx: Any, turns: Turns, playback: Pl
                 await transport.send_clear()
                 playback.clear()
                 recorder.cut()
-                recorder.speech_started(event.get("item_id"), event.get("audio_start_ms"))
             elif kind == "input_audio_buffer.speech_stopped":
                 recorder.speech_stopped(event.get("item_id"), event.get("audio_end_ms"))
             elif kind == "conversation.item.input_audio_transcription.completed":
