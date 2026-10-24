@@ -38,7 +38,7 @@ def session_config(*, instructions: str, tools: list[dict[str, Any]],
             "output": {"format": {"type": "audio/pcmu"}, "voice": voice},
         },
         "tools": tools,
-        "tool_choice": "auto",
+        "tool_choice": "auto" if tools else "none",
         "temperature": 0.3,
     }}
 

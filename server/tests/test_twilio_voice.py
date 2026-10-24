@@ -7,7 +7,6 @@ import pytest
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from landline.agents.concierge import tools
 from landline.agents.concierge.prompt import GREETING
 from landline.api.twilio import BUSY, NOT_READY
 from landline.app import create_app
@@ -18,8 +17,6 @@ from landline.voice.calls import CLAIM_WITHIN_S, RenterCalls
 
 PUBLIC = "https://landline.test"
 TOKEN = "test-token"
-CONTRACT_TOOLS = ["update_preferences", "give_feedback", "focus_listing", "focus_area", "call_listings",
-                  "remember_me", "forget_me", "end_session"]
 
 
 class FakeHiggs:
@@ -104,17 +101,8 @@ def test_twiml_says_so_when_higgs_is_not_configured_or_lines_are_busy():
 
 # ── media stream ↔ Higgs ────────────────────────────────────────────────────
 
-def test_bridge_passes_audio_both_ways_and_answers_tool_calls(monkeypatch):
-    seen = []
-
-    async def record(args, ctx):
-        seen.append((args, ctx))
-        return tools.NOTED
-
-    monkeypatch.setitem(tools.HANDLERS, "update_preferences", record)
+def test_bridge_passes_audio_both_ways_with_no_tools():
     fake = FakeHiggs(script=[
-        {"type": "response.function_call_arguments.done", "call_id": "fc_1", "name": "update_preferences",
-         "arguments": '{"max_monthly": 3000}'},
         {"type": "response.output_audio.delta", "delta": "AAAA"},
         {"type": "input_audio_buffer.speech_started"},
     ])
@@ -135,15 +123,11 @@ def test_bridge_passes_audio_both_ways_and_answers_tool_calls(monkeypatch):
         session = fake.session["session"]
         assert session["audio"]["input"]["format"] == {"type": "audio/pcmu"}
         assert session["audio"]["output"]["format"] == {"type": "audio/pcmu"}
-        assert [t["name"] for t in session["tools"]] == CONTRACT_TOOLS
+        assert (session["tools"], session["tool_choice"]) == ([], "none")   # the Concierge only talks for now
         assert fake.sent == [
             {"type": "response.create", "response": {"instructions": GREETING}},
-            {"type": "conversation.item.create",
-             "item": {"type": "function_call_output", "call_id": "fc_1", "output": "Noted."}},
-            {"type": "response.create"},
             {"type": "input_audio_buffer.append", "audio": "//8="},
         ]
-        assert seen == [({"max_monthly": 3000}, tools.ToolContext(call.session_id, call.call_id))]
         assert fake.closed
         assert call.call_id not in c.app.state.calls.live
         assert c.app.state.calls.recent[-1].end_reason == "hangup"
@@ -216,17 +200,3 @@ def test_signature_round_trip_and_tampering():
     assert twilio.valid_signature(TOKEN, url, params, sig)
     assert not twilio.valid_signature(TOKEN, url, {**params, "From": "+19995550000"}, sig)
     assert not twilio.valid_signature(TOKEN, url, params, "")
-
-
-def test_every_contract_tool_has_a_schema_and_a_handler():
-    assert [t["name"] for t in tools.TOOLS] == CONTRACT_TOOLS
-    assert list(tools.HANDLERS) == CONTRACT_TOOLS
-    for tool in tools.TOOLS:
-        assert tool["type"] == "function" and tool["parameters"]["type"] == "object"
-
-
-async def test_stub_tools_answer_noted_and_unknown_tools_are_refused():
-    ctx = tools.ToolContext("s_test", "c_test")
-    for name in CONTRACT_TOOLS:
-        assert await tools.handle(name, {}, ctx) == tools.NOTED
-    assert await tools.handle("dial_anyone", {"number": "+1"}, ctx) == tools.UNKNOWN
