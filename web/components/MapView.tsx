@@ -47,6 +47,7 @@ export function MapView({
   board,
   focusId,
   hoverId,
+  marks,
   padding,
   showZoom,
   onSelect,
@@ -57,6 +58,7 @@ export function MapView({
   board: Card[];
   focusId: string | null;
   hoverId: string | null;
+  marks: Record<string, string>;
   padding: Padding;
   showZoom: boolean;
   onSelect: (id: string) => void;
@@ -174,6 +176,7 @@ export function MapView({
       }
       pin.el.textContent = String(card.rank);
       pin.el.dataset.status = card.status;
+      pin.el.dataset.mark = marks[card.listing_id] ?? "";
       pin.el.dataset.focus = String(card.listing_id === focusId);
       pin.el.dataset.hover = String(card.listing_id === hoverId);
       pin.el.style.zIndex = card.listing_id === focusId ? "30" : String(20 - card.rank);
@@ -185,7 +188,7 @@ export function MapView({
         pins.current.delete(id);
       }
     }
-  }, [ready, board, focusId, hoverId]);
+  }, [ready, board, focusId, hoverId, marks]);
 
   // ── frame the board when its set of listings changes ────────────────────
   const boardKey = board.map((c) => c.listing_id).sort().join(",");

@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
 
-from landline.api.demo import DemoSessions
+from landline.api.demo import TORONTO, DemoSessions, window
 from landline.api.judge import JudgeLines, StartLimit, client_ip
 from landline.app import create_app
 from landline.config import Settings
@@ -121,71 +121,98 @@ def test_feedback_shows_on_the_card():
                       json={"listing_id": "t:1", "reaction": "love"}).status_code == 422
 
 
-async def test_demo_calls_walk_the_top_four_to_scripted_outcomes():
-    s = DemoSessions(_one_bedrooms(), call_s=0)
-    top = [c.listing_id for c in s.get("s1").board[:4]]
-
-    calling = await s.call_top("s1")
-    assert calling.version == 2
-    assert [c.status for c in calling.board] == ["calling"] * 4 + ["pending"]
-
-    await s.dialing["s1"]
-    done = s.get("s1")
-    assert done.version == 3 and "s1" not in s.dialing
-    # Called places keep their rank: re-ranking from what calls found is O-04's job, and a renter who
-    # asked about the top places must still see all of them.
-    assert [c.listing_id for c in done.board[:4]] == top
-    cards = {c.listing_id: c for c in done.board}
-    assert [cards[i].status for i in top] == ["verified", "suspect", "verified", "no_answer"]
-    for i in top[:3]:
-        [fact] = cards[i].facts
-        assert fact.speaker == "Agent heard" and fact.quote and fact.at is not None
-    # Nobody picked up at the fourth, so nothing was heard there.
-    assert cards[top[3]].facts == [] and cards[top[3]].red_flags == []
-    # The first agent's mandatory $180 parking goes through monthly_cost; the listed rent stays
-    # for the struck price, and the reasons count from the real cost.
-    first = cards[top[0]]
-    assert (first.rent, first.monthly_cost) == (2000, 2180)
-    assert "$620 under budget" in first.reasons
-    assert cards[top[1]].red_flags and not cards[top[0]].red_flags and not cards[top[2]].red_flags
-
-
-async def test_demo_calls_skip_places_without_a_pin():
+async def test_demo_plan_is_the_top_four_places_with_a_pin_and_dials_nothing():
     flipped = _listing(9, 1900, 1).model_copy(update={"lng": 79.38})   # a flipped longitude: no pin
-    s = DemoSessions(Catalogue([flipped, *_one_bedrooms().listings], "test"), call_s=0)
-    calling = await s.call_top("s1")
-    statuses = {c.listing_id: c.status for c in calling.board}
-    assert statuses["t:9"] == "pending"   # still on the board, just not rung
-    assert list(statuses.values()).count("calling") == 4
-    s.close()
+    s = DemoSessions(Catalogue([flipped, *_one_bedrooms().listings], "test"), tick_s=0)
+    board = [c.listing_id for c in s.get("s1").board]
+    planned = await s.plan_top("s1")
+    assert planned.phase == "open" and planned.calls == [] and "s1" not in s.dialing
+    assert planned.plan == [lid for lid in board if lid != "t:9"][:4]   # t:9 stays on the board, unplanned
+    assert {c.status for c in planned.board} == {"pending"}
+
+
+async def test_hanging_up_queues_the_plan_then_walks_it_to_results():
+    s = DemoSessions(_one_bedrooms(), tick_s=0)
+    seen = []
+    publish = s.update
+
+    async def spy(session_id, **kw):
+        view = await publish(session_id, **kw)
+        seen.append((view.phase, tuple(c.state for c in view.calls)))
+        return view
+
+    s.update = spy
+    plan = (await s.plan_top("s1")).plan
+    queued = await s.hang_up("s1")
+    assert [c.listing_id for c in queued.calls] == plan
+    assert all(re.fullmatch(r"c_[A-Za-z0-9_-]{10}", c.call_id) for c in queued.calls)
+    await s.dialing["s1"]
+
+    # Queued, then all dialing and ringing; the fourth never goes live; one hang-up at a time; then done.
+    assert seen == [
+        ("open", ()),
+        ("calling", ("queued",) * 4),
+        ("calling", ("dialing",) * 4),
+        ("calling", ("ringing",) * 4),
+        ("calling", ("live", "live", "live", "ringing")),
+        ("calling", ("ended", "live", "live", "ringing")),
+        ("calling", ("ended", "ended", "live", "ringing")),
+        ("calling", ("ended", "ended", "ended", "ringing")),
+        ("calling", ("ended",) * 4),
+        ("done", ("ended",) * 4),
+    ]
+    done = s.get("s1")
+    assert "s1" not in s.dialing and all(c.started_at for c in done.calls)
+    cards = {c.listing_id: c for c in done.board}
+    assert [cards[lid].status for lid in plan] == ["verified", "suspect", "booked", "no_answer"]
+    assert (cards[plan[0]].rent, cards[plan[0]].monthly_cost) == (2000, 2180)   # parking through monthly_cost
+    # The viewing falls inside the renter's Saturday afternoon, and the results lead with it.
+    viewing = s.runs["s1"].outcomes[plan[2]].viewing
+    start, end = window(viewing)
+    assert start <= viewing < end and viewing.astimezone(TORONTO).strftime("%A %H:%M") == "Saturday 14:00"
+    addr = {lid: c.address for lid, c in cards.items()}
+    assert done.results == (
+        f"I booked {addr[plan[2]]} for Saturday at 2 pm, inside your Saturday afternoon. "
+        f"{addr[plan[0]]} is really $2,180 a month with parking. "
+        "Its agent asked, \u201cWould they sign a 12-month lease?\u201d I said I'd check with you. "
+        f"{addr[plan[1]]} wants a deposit by e-transfer before anyone sees the unit, so I'd skip it. "
+        f"Nobody picked up at {addr[plan[3]]}."
+    )
+
+
+async def test_hanging_up_without_a_plan_closes_the_brief():
+    s = DemoSessions(_one_bedrooms(), tick_s=0)
+    closed = await s.hang_up("s1")
+    assert (closed.phase, closed.plan, closed.calls) == ("closed", [], []) and "s1" not in s.dialing
+    assert (await s.plan_top("s1")).plan == []   # a closed brief takes no plan
+
+
+async def test_reset_stops_the_calls_and_reopens_the_brief():
+    s = DemoSessions(_one_bedrooms(), tick_s=60)
+    await s.plan_top("s1")
+    await s.hang_up("s1")
+    walk = s.dialing["s1"]
+    fresh = await s.reset("s1")
     await asyncio.sleep(0)
+    assert walk.cancelled() and "s1" not in s.dialing
+    assert (fresh.phase, fresh.plan, fresh.calls, fresh.results) == ("open", [], [], None)
+    assert {c.status for c in fresh.board} == {"pending"}
 
 
-async def test_calling_again_restarts_the_walk():
-    s = DemoSessions(_one_bedrooms(), call_s=60)
-    await s.call_top("s1")
-    first = s.dialing["s1"]
-    again = await s.call_top("s1")
-    await asyncio.sleep(0)
-    assert first.cancelled() and not s.dialing["s1"].done()
-    assert [c.status for c in again.board[:4]] == ["calling"] * 4
-    s.close()
-    await asyncio.sleep(0)
-
-
-def test_call_endpoint_shows_calling_then_the_outcomes():
+def test_demo_hooks_run_the_whole_hand_off():
     with _client(_one_bedrooms()) as c:
-        c.app.state.sessions.call_s = 0.05
-        r = c.post("/api/sessions/s_call/calls")
-        assert r.status_code == 200
-        assert [b["status"] for b in r.json()["board"]] == ["calling"] * 4 + ["pending"]
+        c.app.state.sessions.tick_s = 0.01
+        assert len(c.post("/api/sessions/s_flow/calls").json()["plan"]) == 4
+        assert c.post("/api/sessions/s_flow/hang-up").json()["phase"] == "calling"
         deadline = time.monotonic() + 3
-        while time.monotonic() < deadline:
-            board = c.get("/api/sessions/s_call").json()["board"]
-            if not any(b["status"] == "calling" for b in board):
-                break
+        view = c.get("/api/sessions/s_flow").json()
+        while view["phase"] != "done" and time.monotonic() < deadline:
             time.sleep(0.02)
-        assert [b["status"] for b in board] == ["verified", "suspect", "verified", "no_answer", "pending"]
+            view = c.get("/api/sessions/s_flow").json()
+        assert view["phase"] == "done" and view["results"].startswith("I booked")
+        statuses = [b["status"] for b in view["board"]]
+        assert statuses == ["verified", "suspect", "booked", "no_answer", "pending"]
+        assert c.post("/api/sessions/s_flow/reset").json()["phase"] == "open"
 
 
 def _judge_client(cap: int, per_ip: int = 100, ready: bool = True) -> TestClient:
