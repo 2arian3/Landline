@@ -1,7 +1,9 @@
 """Apply db/migrations/*.sql in order to $DATABASE_URL. Forward-only.
 
 Each file runs in its own transaction and is recorded in schema_migrations, so
-running this twice is a no-op.
+running this twice is a no-op. The runner lives in server/landline/db/migrations.py;
+this script puts server/ on the path itself, because the deploy runs it without
+PYTHONPATH (deploy/remote.sh).
 """
 from __future__ import annotations
 
@@ -12,7 +14,9 @@ from pathlib import Path
 import psycopg
 from dotenv import load_dotenv
 
-MIGRATIONS = Path(__file__).resolve().parent.parent / "db" / "migrations"
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "server"))
+
+from landline.db.migrations import apply  # noqa: E402
 
 
 def main() -> int:
@@ -22,18 +26,8 @@ def main() -> int:
         print("DATABASE_URL is not set", file=sys.stderr)
         return 1
     with psycopg.connect(url, autocommit=True) as conn:
-        conn.execute(
-            "create table if not exists schema_migrations "
-            "(name text primary key, applied_at timestamptz not null default now())"
-        )
-        done = {r[0] for r in conn.execute("select name from schema_migrations")}
-        for path in sorted(MIGRATIONS.glob("*.sql")):
-            if path.name in done:
-                continue
-            with conn.transaction():
-                conn.execute(path.read_text())
-                conn.execute("insert into schema_migrations (name) values (%s)", (path.name,))
-            print(f"applied {path.name}")
+        for name in apply(conn):
+            print(f"applied {name}")
     print("migrations up to date")
     return 0
 

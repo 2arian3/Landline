@@ -55,7 +55,7 @@ The event runs from **Fri 23 Oct, 18:00** to **Sat 24 Oct, 16:00–17:00** (conf
 
 ## Arian: orchestration and scoring
 
-- [ ] **O-01 · DB layer**: async pool, migration runner, repositories for every table in the schema. **Done when** repository tests pass against a throwaway schema.
+- [x] **O-01 · DB layer**: async pool, migration runner, repositories for every table in the schema. **Done when** repository tests pass against a throwaway schema.
 - [ ] **O-02 · Session runtime**: `SessionRuntime`, typed event bus with idempotency keys, `session_tx` (per-session lock, version bump, event append, snapshot upsert), SSE publish hook, restart recovery. **Done when** tests show (a) a feedback re-rank racing an outcome keeps the outcome, (b) a duplicate event is a no-op, (c) a restart restores `open` and `calling` sessions.
 - [x] **O-03 · Matcher v1**: feature matrix loaded at boot; hard filters, utilities, weights and adjustments from `docs/SCORING.md`; reasons per card. **Done when** ranking 2k listings takes < 5 ms and the monotonicity tests pass.
 - [ ] **O-04 · Feedback loop**: `FeedbackGiven` → weight changes from the SCORING table, interactions saved, rejected listings excluded. **Done when** "too dark" on the focused card visibly sinks darker units in a test and on the map.
