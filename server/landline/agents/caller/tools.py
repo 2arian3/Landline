@@ -28,7 +28,7 @@ from pydantic import ValidationError
 
 from landline.agents.auditor import grounding
 from landline.agents.auditor.flags import red_flags
-from landline.agents.auditor.values import call_day, free_from, from_parts, spoken_day
+from landline.agents.auditor.values import bare, call_day, free_from, from_parts, spoken_day
 from landline.agents.caller import slots
 from landline.agents.caller.brief import Brief, disclosure
 from landline.contracts import EndReason, Fact, FactRecorded, QuestionNoted, Shareable, ViewingBooked
@@ -87,6 +87,7 @@ class CallerContext:
     covered_at: int | None = None                     # the landlord turn by which the checklist was covered
     ended_by_code: bool = False                       # `over` ended it: the Caller never called end_call
     opened: bool = False                              # its first turn is over, so the disclosure is said
+    spoke: bool = False                               # this response spoke before its tool call (run_tool)
 
     def flags(self) -> list[str]:
         return [f.reason for f in red_flags(self.said)]
@@ -127,12 +128,36 @@ async def record_fact(args: RecordFact, ctx: CallerContext, meta: dict) -> str:
     if not grounding.verify(args.quote, ctx.said):
         ctx.ungrounded += 1
         return UNSAID
+    if args.field == "fees":
+        fees = _fees(args, ctx)
+        if isinstance(fees, str):
+            return fees
+        args = fees or args
     if args.field == "available_from":   # the day comes from their words, in code, never the model's value
         today = call_day(meta["at"])
         if (got := free_from(args.quote, today)) is None:
             return "Not recorded: call record_available_from for when it's free, with the parts they said."
         args = args.model_copy(update={"value": spoken_day(got, today)})
     return await _record(args, ctx, meta)
+
+
+FEES_WHICH = ("Not recorded yet: they said there are fees. Ask which ones and how much, then record_fact "
+              "fees from their answer.")
+FEES_LATEST = "Not recorded: record fees from what they just said, in their latest words."
+
+
+def _fees(args: RecordFact, ctx: CallerContext) -> RecordFact | str | None:
+    """A fees answer (#175): its quote is from their latest turn, not an earlier one, and a bare "Yeah" to
+    "any monthly fees?" isn't a fee, so the reply asks which and how much; a bare "No" is fees: none."""
+    match = grounding.find(args.quote, ctx.said)
+    if match is not None and match.source != len(ctx.said) - 1:
+        return FEES_LATEST
+    said = bare(args.quote)
+    if said == "yes":
+        return FEES_WHICH
+    if said == "no":
+        return args.model_copy(update={"value": "none"})
+    return None
 
 
 async def record_available_from(args: AvailableFrom, ctx: CallerContext, meta: dict) -> str:
@@ -305,7 +330,10 @@ async def _note_offer(slot: str, ctx: CallerContext, meta: dict) -> bool:
 
 async def end_call(args: EndCall, ctx: CallerContext, meta: dict) -> str:
     left = ctx.brief.missing()
-    if args.reason == "done" and left and not ctx.asked_to_finish and not ctx.flags():   # a scam ends now
+    # "Not done yet" only before a goodbye (#175): after theirs, or the Caller's own in this response, it
+    # hangs up.
+    goodbye = ctx.spoke or bool(ctx.said and BYE.search(ctx.said[-1]))
+    if args.reason == "done" and left and not ctx.asked_to_finish and not ctx.flags() and not goodbye:
         ctx.asked_to_finish = True
         return (f"Not done yet: nothing is recorded for {left[0].ask}. If they already told you, record_fact "
                 "it now from their words; if not, ask. If they don't know, end the call again.")
@@ -324,8 +352,8 @@ SCAM_END = ("What they said matches a scam warning, so stop the checklist: say y
             f"client, then {END_NOW}")
 OLD_END = "thank them and end the call"
 # The Caller's or the landlord's goodbye.
-BYE = re.compile(r"\b(good ?bye|bye|have a (great|good|nice|lovely) (day|evening|night|one|weekend)|"
-                 r"take care)\b", re.I)
+BYE = re.compile(r"\b(good ?bye|bye|have a (great|good|nice|lovely|wonderful) "
+                 r"(day|evening|night|one|weekend)|take care|you too|hang up)\b", re.I)
 
 
 def wrap_up(ctx: CallerContext, name: str, reply: str) -> str:

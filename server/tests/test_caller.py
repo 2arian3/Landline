@@ -29,6 +29,7 @@ from landline.contracts.tools import Availability
 from landline.db.catalogue import Catalogue
 from landline.orchestrator import SessionRuntime, narrator
 from landline.orchestrator.board import build as board_build
+from landline.voice import bridge
 from landline.voice.dispatch import Dispatcher
 from landline.voice.personas import Persona
 from landline.voice.sim import SimRunner
@@ -333,6 +334,66 @@ async def test_end_call_done_is_refused_once_while_items_are_open():
     assert ctx.end_reason == "voicemail"
 
 
+# #175: c_Yby-PN8Srz. Both sides said goodbye, end_call(done) was refused for the open fees item, and the
+# Caller filled the line with "I'll check with my client" until the landlord hung up.
+@pytest.mark.parametrize(("last", "spoke", "ends"), [
+    ("You too. Take care.", False, True),
+    ("Okay, hang up the call.", False, True),
+    ("Sure, go ahead.", True, True),        # the Caller said its goodbye in this response
+    ("Sure, go ahead.", False, False),      # mid-call, nothing said: not done yet, once
+])
+async def test_end_call_hangs_up_after_a_goodbye_even_with_items_open(last, spoke, ends):
+    ctx = await _ctx(_plan(may_book=False), said=["Hi, it's available.", last])
+    ctx.spoke = spoke
+    reply = await _say(ctx, "end_call", {"reason": "done"})
+    assert ctx.hang_up is ends and (reply == "Goodbye.") is ends
+    if not ends:
+        assert reply.startswith("Not done yet")
+        assert await _say(ctx, "end_call", {"reason": "done"}, 2) == "Goodbye."   # asked once only
+
+
+async def test_a_bare_yes_to_the_fees_question_asks_which_and_a_bare_no_records_none():
+    ctx = await _ctx(_plan(may_book=False), said=["Hi, it's available.", "Yeah."])
+    reply = await _say(ctx, "record_fact", {"field": "fees", "value": "yes", "quote": "Yeah."})
+    assert reply == tools.FEES_WHICH
+    assert ctx.facts == []
+    ctx.said.append("No.")
+    reply = await _say(ctx, "record_fact", {"field": "fees", "value": "no fees", "quote": "No."}, 2)
+    assert reply.startswith("Recorded fees: none")
+
+
+async def test_a_fees_answer_is_quoted_from_their_latest_turn():
+    """c_yVmI3iydTn: after "No, nothing else." the Caller recorded fees from an earlier turn about parking."""
+    ctx = await _ctx(_plan(may_book=False), said=["There's an extra $100 for parking.", "No, nothing else."])
+    reply = await _say(ctx, "record_fact", {"field": "fees", "value": "$100 parking",
+                                            "quote": "There's an extra $100 for parking"})
+    assert reply == tools.FEES_LATEST and ctx.facts == []
+    reply = await _say(ctx, "record_fact", {"field": "fees", "value": "none",
+                                            "quote": "No, nothing else."}, 2)
+    assert reply.startswith("Recorded fees: none")
+
+
+async def test_two_tool_calls_in_one_response_send_one_response_create():
+    """#175: a second response.create for the same response had nothing new, and Higgs answered 400."""
+    ctx = await _ctx(said=["It's available from November 1st, and parking is $150 a month."])
+    sent: list[dict] = []
+
+    class Higgs:
+        async def send(self, event):
+            sent.append(event)
+
+    calls = [("r1", "available", "yes", "It's available from November 1st"),
+             ("r1", "parking_cost", "$150 a month", "parking is $150 a month"),
+             ("r2", "pets", "unknown", "It's available from November 1st")]
+    for n, (rid, field, value, quote) in enumerate(calls):
+        event = {"name": "record_fact", "call_id": f"fc{n}", "response_id": rid,
+                 "arguments": json.dumps({"field": field, "value": value, "quote": quote})}
+        await bridge.run_tool(Higgs(), event, ctx, agent=tools)
+    assert [e["type"] for e in sent] == ["conversation.item.create", "response.create",
+                                         "conversation.item.create",
+                                         "conversation.item.create", "response.create"]
+
+
 async def test_a_promise_to_check_notes_the_landlords_question():
     ctx = await _ctx(said=["It's quiet. Does your client have a guarantor?"])
     noted = await tools.kept_promise(ctx, "I'll check with my client and get back to you.", [])
@@ -416,9 +477,10 @@ async def test_a_sim_call_records_books_and_comes_back_with_its_outcome():
         _text("c4", "So $150 a month. Could we see it Saturday afternoon?"),
         _tool("c5", "book_viewing", {"slot": "Saturday at 1 pm"}),
         _text("c6", "Booked for Saturday at 1 pm, thank you!"),
-        _tool("c7", "end_call", {"reason": "done"}),    # refused once: pets and utilities are still open
-        _tool("c8", "end_call", {"reason": "done"}),    # accepted, but nothing said: a goodbye is asked for
-        _text("c9", "Thanks, Linda. Goodbye!")])
+        # Fees are still open, but they said "Bye!": accepted at once (#175). Nothing said yet, so a goodbye
+        # is asked for.
+        _tool("c7", "end_call", {"reason": "done"}),
+        _text("c8", "Thanks, Linda. Goodbye!")])
     sessions = iter([caller, landlord])
 
     async def connect(key, session):
@@ -455,7 +517,7 @@ async def test_a_sim_call_records_books_and_comes_back_with_its_outcome():
     assert landlord.sent[1]["item"]["content"][0]["text"].startswith("Hi, I'm an AI assistant")
     outputs = [e["item"]["output"] for e in caller.sent
                if e.get("item", {}).get("type") == "function_call_output"]
-    assert outputs[-2].startswith("Not done yet") and outputs[-1] == tools.SAY_GOODBYE
+    assert outputs[-1] == tools.SAY_GOODBYE and not any(o.startswith("Not done yet") for o in outputs)
     assert caller.closed and landlord.closed
     assert "voice" not in {c.listing_id for c in state.calls.values()}   # the plan's one call, ended
     await runtime.close()
