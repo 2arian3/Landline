@@ -161,8 +161,42 @@ async def test_focus_area_flies_to_a_known_street_or_says_it_cannot(ctx):
     assert area.label == "Bloor" and area.lat == pytest.approx(43.669) and area.zoom == tools.AREA_ZOOM
     before = _view(ctx).version
     assert await _say(ctx, "focus_area", '{"place": "King and Bay"}', "fc_2") == \
-        "I can't place that on the map yet."
+        f"Couldn't find King and Bay on the map. Nothing changed. {tools.ASK_PLACE}"
     assert _view(ctx).version == before
+
+
+def test_area_finds_places_said_loosely():
+    """"Queens" is Queen station; a street said with no type, a possessive or "over by" is still found."""
+    stations = [{"name": "Queen", "lat": 43.653, "lng": -79.379}, {"name": "Queen's Park", "lat": 43.660,
+                                                                   "lng": -79.390}]
+    def find(label):
+        return refs.area(label, lambda _: [], stations, CATALOGUE)
+    for said in ("Queens", "Queen's", "around Queens", "Queen station"):
+        assert find(said).how == "station" and find(said).lat == pytest.approx(43.653), said
+    assert find("Queens Park").lat == pytest.approx(43.660)
+    assert find("over by Dupont").how == "street" and find("Dupont Street").lat == pytest.approx(43.675)
+    east = find("Bloor East")
+    assert east.how == "street" and east.lng == pytest.approx(-79.380)   # only the east part of Bloor
+    assert find("Leslieville").how == "listings"                         # a listing's neighbourhood
+    for nonsense in ("purple fridge", "the", ""):
+        assert find(nonsense) is None, nonsense
+
+
+async def test_update_preferences_places_an_area_or_says_it_cannot(ctx):
+    """An area the search can't use doesn't get a bare "got it": a street becomes a point the board moves
+    to; a place nothing here holds stays for the geocoder, and the agent hears the list doesn't use it."""
+    reply = await _say(ctx, "update_preferences", '{"areas": ["over by Dupont"]}')
+    prefs = ctx.runtime.state(SID).preferences
+    assert prefs.areas == [] and prefs.anchors[0].label == "over by Dupont"
+    assert prefs.anchors[0].lat == pytest.approx(43.675)
+    assert _view(ctx).board[0].address == "322 Dupont St" and "Couldn't find" not in reply
+    reply = await _say(ctx, "update_preferences", '{"anchors": [{"label": "over by Dupont"}, '
+                                                  '{"label": "King and Bay"}]}', "fc_2")
+    assert reply.endswith(f"Couldn't find King and Bay on the map, so the list doesn't use it yet. "
+                          f"{tools.ASK_PLACE}")
+    prefs = ctx.runtime.state(SID).preferences
+    assert [(a.label, a.lat is not None) for a in prefs.anchors] == [("over by Dupont", True),
+                                                                      ("King and Bay", False)]
 
 
 async def test_call_listings_plans_the_top_three_and_reads_them_back(ctx):

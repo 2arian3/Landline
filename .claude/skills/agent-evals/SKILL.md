@@ -101,4 +101,6 @@ See `docs/EVAL_FINDINGS.md` for evidence and status. Known weak spots to write c
 - "Looks great" taken as a focus instead of a like.
 - A returning caller's welcome that ignores or invents memories. A case with `returning` (the opening text and the restored search) and `greeting_says` / `greeting_avoids` checks covers it.
 - Misread amounts ("thirty thousand" for $3,000).
+- Garbled lines answered with a guess or an echo of the words (`no_tools`, `says_any`, `says_none`), and a clear request after one that is claimed with no tool call.
+- Places said loosely ("around Queens", "over by Cosburn") that the search never uses (`placed`, `near`).
 - Listing calls: answers read back but never recorded, scam calls that won't end, read-backs asked as questions, "I'll check with my client" with no `note_question`, double bookings across calls in one plan, and amounts copied into tool arguments in words.

@@ -187,6 +187,24 @@ On the phone path (the real bridge, 8 kHz μ-law; the renter is Higgs TTS saying
 
 Higgs transcribed Farsi, Korean, Chinese and Arabic well at 8 kHz, and Punjabi badly. For a demo where the renter hears replies in their language, Chinese and Spanish are the safe picks today; in Farsi the map and the texted results follow, but the voice answers in English.
 
+### Garbled lines and places said loosely, Sat 24 Oct 10:10–10:35 (A-04, `agents/A-04-clarify-areas`)
+
+Two problems seen on live calls: nonsense got a "got it" and a guess at what it meant, and "around Queens" did nothing; only an exact intersection or place moved the board. Six new cases (tune: `nonsense-mid-brief`, `nonsense-first-line`, `area-queens`, `area-street-no-type`; holdout: `nonsense-then-cat`, `area-over-by-cosburn`) and new checks: `no_tools`, `says_any` and `says_none` on a line, `placed` (the search uses the place as a point or a City neighbourhood) and `near` (the board's top 3 sit near it).
+
+**What `main` did** (`9afeeb9`, 3 runs each):
+- **Places: 0 of 9 runs used the place.** `update_preferences {"areas": ["Queens"]}` saved a label that matches no City neighbourhood, so the ranker ignored it, and the tool still answered "Got it: around Queens. The list stays the same." The agent then said "I've added Queens to your search". Same for "up around Wilson" and "over by Cosburn". Areas never reached the place lookup at all: only anchors did, and it knows City neighbourhood names, station names and, with a geocoder, intersections.
+- **Garbled lines: no tool call on any of 9, but 6 of 9 replies guessed or echoed** ("Did you mean you like the listing at 30 Carabob Court?", "what you'd like to know about the carpet?", "It sounds like you're looking at a listing on the map").
+
+**Fixes:**
+- **Code (`refs.area`, used by `update_preferences` and `focus_area`):** each place the renter names is found from data: a City neighbourhood, a street the catalogue has listings on (its east or west part when said), a TTC station, or listings whose building or neighbourhood holds the words. "Queens", "Queen's" and "Queen Street West" also try "Queen"; "over by" and "somewhere around" are dropped; "Bathurst Street" tries the street before the Bathurst Manor neighbourhood. A City neighbourhood stays an area under the City's name; anything else becomes an anchor whose point goes in the same commit as the preference, so the board has moved before the agent speaks. A place nothing here holds ("King and Bay") stays an anchor for the geocoder, and the reply says the list doesn't use it yet. An earlier version dropped it, which broke holdout `studio-near-work` (0/3); fixed before the reported run.
+- **Prompt:** for a line it can't make sense of, the Concierge says only "Sorry, I didn't catch that. Could you say it again?" in the renter's language, uses none of their words and calls no tool. Places to live around go in `areas` in the renter's words, and a place the tool couldn't find is never "added".
+
+**After** (`e738796`, full run, 3 runs each): every area run used the place, 9 of 9 (tune 6/6, holdout 3/3), and the board's top 3 moved to it, 9 of 9. Garbled lines: 9 of 9 asked again, 9 of 9 with no tool, 8 of 9 with no guess (one asked "about the listing?"). Holdout: 6/8 cases every run, 83% of runs (before: 4/6, 78%); the six holdout cases from before score as they did (4/6, 78%). Tune: 62% of runs; most failures are the missed `end_session` (item 10 below).
+
+**Phone audio probe** (one run, the real bridge on μ-law 8 kHz, Higgs TTS as the renter): the garbled line got "I'm sorry, I didn't catch that. Could you say it again?" with no tool; "Somewhere around Queens" was transcribed as said and placed at Queen station, and the top 3 became 77 Shuter St, 40 Gerrard St E and 393 King St W.
+
+"Queens" lands on Queen station in the eval and on the West Queen West neighbourhood in production, where City neighbourhoods come first. It never becomes Queens Quay unless the renter says "Quay".
+
 ## Still open
 
 1. **A returning caller whose calls are still running isn't told so.** None of the 5 holdout welcomes mentioned it; they recall the search instead. The case doesn't check for it yet. Also, about 1 in 4 welcomes skips the booking.
@@ -205,6 +223,8 @@ Higgs transcribed Farsi, Korean, Chinese and Arabic well at 8 kHz, and Punjabi b
     - **The interrupted reply isn't trimmed.** Higgs sends a reply's audio in one burst, so the reply is already `completed` when the caller talks over it (0 of 12 cancelled), and the bridge sends no `conversation.item.truncate`. The model then believes it said the whole reply, though the caller heard about 1.6 s. Sending `truncate` with the played ms on `speech_started` works: Higgs acknowledged 6 of 6 with that exact `audio_end_ms`. **Open** (a small change in `voice/bridge.py` and `voice/phone_caller.py`).
     - **Two tool calls in one reply send two `response.create`s.** `run_tool` asks for a response after each, and Higgs rejects the second with 400 "No user input". Harmless (one reply comes out) but noisy in the logs. **Open.**
     - Speech-to-text on real voices isn't measured: the clips are synthesized.
+14. **After a garbled first line, the next clear request is often claimed but not saved** ("I've updated your search to two bedrooms…" with no tool call): `nonsense-first-line` passes 1/3 in the reported run; `main` failed it 2/3 too. It's the claims-with-no-tool problem, worst when no tool has been called yet in the call. A prompt rule ("call update_preferences on every turn, also right after you asked them to say it again") scored 0/5 and was reverted. Fixing it needs code: a check on a reply that claims a change with no tool call.
+15. **The eval catalogue has no City neighbourhoods**, so a neighbourhood name the City uses ("the Annex") is placed in production but not in the eval, and a name it doesn't use ("Leslieville", "Yorkville") is placed only by the geocoder, which local runs don't have. Unit tests cover the code path.
 
 ## Lessons for the next eval
 
