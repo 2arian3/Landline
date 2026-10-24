@@ -45,7 +45,7 @@ Work only inside your lane's paths. If a task needs a change in someone else's p
 
 ## How we work
 
-- Branch per task: `<lane>/<task-id>-<slug>`, e.g. `data/D-04-geocoder`. Small PRs into `main`; the author merges once CI is green and, for contract changes, all three approved. Merging to `main` doesn't deploy. Shipping is `git push origin main:release` (see `deploy/README.md`), and Arian does it, since the VM is his. Ask him rather than changing the VM yourself.
+- Branch per task: `<lane>/<task-id>-<slug>`, e.g. `data/D-04-geocoder`. Small PRs into `main`; the author merges once CI is green and, for contract changes, all three approved. Merging to `main` doesn't deploy. Shipping is `git push origin main:release` (see `deploy/README.md`), and Arian does it, since the VM is his. Vercel deploys only when the commit at the tip of `release` is Arian's, so each ship ends with a commit of his on top of `main`; a GitHub merge commit doesn't count. Ask him rather than changing the VM or running a deploy yourself.
 - Commit messages: imperative, sentence case, what changed and why in one line (`Add geocoder cache with precision field`). Reference the task id in the body when useful.
 - Before you start a task, read its "Done when" in `BACKLOG.md` and the skill for your area. When you finish, tick the box in `BACKLOG.md` in the same PR.
 - Keep diffs to what the task asks. No drive-by refactors, no new abstractions "for later".
