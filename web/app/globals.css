@@ -215,6 +215,13 @@
   box-shadow: 0 0 0 1px var(--color-line), 0 2px 8px rgba(26, 24, 21, 0.06) !important;
 }
 .maplibregl-ctrl-attrib { font: 400 11px/1.4 var(--font-sans); color: var(--color-ink-3); }
+/* On a phone the header card floats over the map's top (Shell, LiveBoard): the zoom buttons, shown where
+   there's a mouse, go below it rather than under its "Live" pill. The split layout has no floating header.
+   Keep the media query in step with the split variant above. */
+.maplibregl-ctrl-top-right { top: calc(max(12px, env(safe-area-inset-top)) + 40px); }
+@media (min-width: 768px), (orientation: landscape) and (max-height: 520px) {
+  .maplibregl-ctrl-top-right { top: 0; }
+}
 .maplibregl-ctrl-attrib a { color: var(--color-ink-2); }
 
 /* vaul sheet */
