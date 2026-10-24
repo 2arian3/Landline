@@ -17,10 +17,15 @@ import type { CataloguePoint, SessionView } from "./types";
  *     version is newer (a restart or an expired session answers empty)
  *   - errors keep the last good state; the page admits "Reconnecting…" only
  *     after STALE_MS without any word from the server
+ *   - a new session id starts from nothing: versions count per session, and an
+ *     answer for the session the page just left is dropped
+ * With no snapshot at all after UNREACHABLE_MS, `unreachable` says so, and the
+ * polling carries on.
  */
 const STALE_MS = 6500;
 const POLL_MS = 1500;
 const REOPEN_MS = 30_000;
+const UNREACHABLE_MS = 9000;
 
 /**
  * Where the API lives. Empty means this origin's /api proxy (next.config.ts),
@@ -37,9 +42,12 @@ export function api(path: string): string {
 export function useLiveSession(sessionId: string | null) {
   const [view, setView] = useState<SessionView | null>(null);
   const [stale, setStale] = useState(false);
+  const [unreachable, setUnreachable] = useState(false);
   const current = useRef<SessionView | null>(null);
+  const following = useRef(sessionId);
   const inFlight = useRef(false);
   const lastOk = useRef(Date.now());
+  following.current = sessionId;
 
   const refresh = useCallback(async () => {
     if (!sessionId || inFlight.current) return;
@@ -51,9 +59,10 @@ export function useLiveSession(sessionId: string | null) {
       });
       if (!res.ok) return;
       const data = (await res.json()) as SessionView;
+      if (data.session_id !== following.current) return;
       lastOk.current = Date.now();
       setStale(false);
-      const cur = current.current;
+      const cur = current.current?.session_id === data.session_id ? current.current : null;
       if (cur && data.version < cur.version) return;
       if (cur && data.board.length === 0 && cur.board.length > 0 && data.version <= cur.version) return;
       if (cur && data.version === cur.version && JSON.stringify(data) === JSON.stringify(cur)) return;
@@ -67,6 +76,12 @@ export function useLiveSession(sessionId: string | null) {
   }, [sessionId]);
 
   useEffect(() => {
+    // Another session (judge mode's "Start again") starts from nothing.
+    if (current.current && current.current.session_id !== sessionId) {
+      current.current = null;
+      setView(null);
+    }
+    setUnreachable(false);
     // Judge mode mounts the board before a session exists: nothing to follow yet.
     if (!sessionId) return;
     let source: EventSource | null = null;
@@ -74,6 +89,7 @@ export function useLiveSession(sessionId: string | null) {
     let heardAt = Date.now(); // the stream's last word: opened, a version or a ping
     let openedAt = 0;
     let polledAt = 0;
+    const since = (lastOk.current = Date.now());
     void refresh();
 
     // Any word on the stream means it's up again; the next tick stops polling.
@@ -117,6 +133,7 @@ export function useLiveSession(sessionId: string | null) {
         if (now - openedAt >= REOPEN_MS) open();
       }
       setStale(now - lastOk.current > STALE_MS);
+      setUnreachable(!current.current && now - since > UNREACHABLE_MS);
     }, 500);
     const onVisible = () => {
       if (document.visibilityState !== "visible") return;
@@ -133,16 +150,30 @@ export function useLiveSession(sessionId: string | null) {
     };
   }, [sessionId, refresh]);
 
-  return { view, stale, refresh };
+  // Until the new session's first snapshot, the old one's board isn't shown under its id.
+  return { view: view?.session_id === sessionId ? view : null, stale, unreachable, refresh };
 }
 
 export function useCatalogue() {
   const [points, setPoints] = useState<CataloguePoint[]>([]);
   useEffect(() => {
-    fetch(api("/api/catalogue"), { cache: "force-cache" })
-      .then((r) => (r.ok ? r.json() : []))
-      .then(setPoints)
-      .catch(() => setPoints([]));
+    let stopped = false;
+    let wait = 1000;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    // An API that's down at first comes back with the board, so the dots keep trying too (2 s, 4 s, then
+    // every 8 s). A retry skips the browser cache: force-cache would hand back the failed answer forever.
+    const load = () =>
+      fetch(api("/api/catalogue"), { cache: wait > 1000 ? "reload" : "force-cache" })
+        .then((r) => (r.ok ? (r.json() as Promise<CataloguePoint[]>) : Promise.reject(r.status)))
+        .then((p) => !stopped && setPoints(p))
+        .catch(() => {
+          if (!stopped) timer = setTimeout(load, (wait = Math.min(wait * 2, 8000)));
+        });
+    void load();
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
   }, []);
   return points;
 }
