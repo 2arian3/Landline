@@ -229,6 +229,20 @@ def test_judge_mode_opens_soon_until_the_browser_audio_is_ready():
         assert c.app.state.judges.open == {} and c.get("/health").json()["sessions"] == 0
 
 
+def test_judge_done_ends_the_brief_behind_the_gate():
+    with _judge_client(2, ready=False) as c:
+        shut = c.post("/api/judge/s_anything/done")
+        assert shut.status_code == 503 and shut.json()["reason"] == "closed"
+    with _judge_client(2) as c:
+        sid = c.post("/api/judge/start").json()["session_id"]
+        c.post(f"/api/sessions/{sid}/calls")   # the judge said "call the top ones"
+        done = c.post(f"/api/judge/{sid}/done").json()
+        assert done["phase"] == "calling" and [call["state"] for call in done["calls"]] == ["queued"]
+        assert sid not in c.app.state.judges.open   # the line is free for the next judge
+        unplanned = c.post("/api/judge/start").json()["session_id"]
+        assert c.post(f"/api/judge/{unplanned}/done").json()["phase"] == "closed"   # nothing to call
+
+
 def test_judge_start_mints_a_session_and_its_audio_socket():
     with _judge_client(2) as c:
         r = c.post("/api/judge/start")
