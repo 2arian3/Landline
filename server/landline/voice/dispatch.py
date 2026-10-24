@@ -14,7 +14,8 @@ Each call ends once (`CallEnded`, keyed on the call) and its outcome follows (`O
 call in the plan has an outcome, it emits `CallsCompleted`, and the renter is texted the results once.
 
 Placing one call is a `CallRunner`'s job: the Caller over Twilio (A-05), the sim landlord (A-03), or a fake
-in tests. With no runner, the plan is still frozen and its calls stay queued: nothing is made up.
+in tests. With no runner, the plan is still frozen and its calls end `blocked` at once: nothing is made up,
+and the session doesn't wait in `calling` for calls nobody will place.
 """
 from __future__ import annotations
 
@@ -128,7 +129,12 @@ class Dispatcher:
         if not scheduled:
             return
         if runner is None:
-            log.warning("session %s: %d calls queued, but no caller is configured", sid, len(call_ids))
+            # Nothing can place these calls, and nothing picks queued calls up later, so they end now as
+            # `blocked`: the plan completes, the session leaves `calling`, and the results say so.
+            log.warning("session %s: no caller is configured; its %d calls end blocked", sid, len(call_ids))
+            for cid, lid in zip(call_ids, plan.listing_ids, strict=True):
+                await self._state(sid, cid, "blocked")
+                await self._finish(plan, cid, lid, CallResult("blocked"))
             return
         for cid, lid in zip(call_ids, plan.listing_ids, strict=True):
             self._spawn(self._call(cid, lid, plan, runner))

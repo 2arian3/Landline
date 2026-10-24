@@ -28,11 +28,9 @@ from landline.app import create_app
 from landline.config import ROOT, Settings
 from landline.contracts import (
     CallOutcome,
-    CallsCompleted,
     CallsRequested,
     CataloguePoint,
     Listing,
-    OutcomeReady,
     PreferenceDelta,
     PreferencesUpdated,
     SessionEnded,
@@ -44,6 +42,7 @@ from landline.db.catalogue import Catalogue
 from landline.db.migrations import apply
 from landline.db.rows import SessionRow, TurnRow
 from landline.orchestrator.profiles import Remembered
+from landline.voice.dispatch import CallResult
 
 NOW = datetime(2026, 10, 22, tzinfo=UTC)
 URL = os.environ.get("TEST_DATABASE_URL")
@@ -523,6 +522,20 @@ def _meta(session_id: str, n: int) -> dict:
     return {"session_id": session_id, "at": NOW, "idem_key": f"{session_id}:{n}"}
 
 
+class _Scripted:
+    """Stands in for the Caller: t:1 books the viewing, any other place doesn't answer."""
+    transport, uses_phone = "sim", False
+
+    def __init__(self, viewing: Viewing):
+        self.viewing = viewing
+
+    async def place(self, dial, report):
+        if dial.listing_id != "t:1":
+            return CallResult("no_answer")
+        return CallResult("done", CallOutcome(call_id=dial.call_id, listing_id=dial.listing_id,
+                                              end_reason="done", viewing=self.viewing))
+
+
 def test_a_returning_caller_opens_on_welcome_back_with_the_last_results():
     phone, first, second = "+14165550123", "s_firstcall1", "s_secondcal1"
     with _client() as c:
@@ -532,18 +545,14 @@ def test_a_returning_caller_opens_on_welcome_back_with_the_last_results():
         run(rt.start, SessionStarted(**_meta(first, 0), channel="phone", caller_phone=phone))
         assert not c.get(f"/api/sessions/{first}").json()["returning"]   # a number never heard before
         run(rt.emit, CallsRequested(**_meta(first, 1), listing_ids=["t:1", "t:2"]))
+        # The Dispatcher (A-06) freezes the plan and places one call per place; a scripted runner stands in
+        # for the Caller: 1 Test St books a viewing, 2 Test St doesn't answer.
+        viewing = Viewing(starts_at=datetime(2026, 10, 24, 18, tzinfo=UTC), slot_text="Saturday at two")
+        c.app.state.dispatcher.runner = _Scripted(viewing)
         run(rt.emit, SessionEnded(**_meta(first, 2), reason="hangup"))
-        # The Dispatcher (A-06) freezes the plan and queues one call per place; with no caller plugged in,
-        # they stay queued, and the outcomes below stand in for the calls.
         run(c.app.state.dispatcher.idle)
         calls = list(rt.state(first).calls)
         assert [rt.state(first).calls[cid].listing_id for cid in calls] == ["t:1", "t:2"]
-        viewing = Viewing(starts_at=datetime(2026, 10, 24, 18, tzinfo=UTC), slot_text="Saturday at two")
-        run(rt.emit, OutcomeReady(**_meta(first, 4), outcome=CallOutcome(
-            call_id=calls[0], listing_id="t:1", end_reason="done", viewing=viewing)))
-        run(rt.emit, OutcomeReady(**_meta(first, 5), outcome=CallOutcome(
-            call_id=calls[1], listing_id="t:2", end_reason="no_answer")))
-        run(rt.emit, CallsCompleted(**_meta(first, 6), call_ids=calls))
         run(rt.idle)
         results = c.get(f"/api/sessions/{first}").json()["results"]
         assert results.startswith("I booked 1 Test St for Saturday")
