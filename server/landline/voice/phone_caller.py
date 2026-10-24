@@ -44,19 +44,33 @@ class PhoneCaller:
         """The renter's preferences, for what the checklist asks; None once the session is gone."""
         return self.runtime.state(session_id).preferences if self.runtime.has(session_id) else None
 
-    async def __call__(self, dial: Dial, transport: Any) -> CallResult:
+    def _setup(self, dial: Dial) -> tuple[Listing, Any, dict[str, Any], list[dict[str, Any]]]:
+        """The call's listing, its brief, its Higgs session config and the events that open it."""
         listing = self.runtime.catalogue.by_id[dial.listing_id]
         b = brief(listing, dial.plan, wants(self._preferences(dial.session_id)))
+        text, start = opening(instructions(b))
+        config = session_config(instructions=text, tools=caller_tools.TOOLS, voice=self.voice,
+                                audio_format=PCMU)
+        return listing, b, config, start
+
+    async def prepare(self, dial: Dial) -> Any:
+        """Opens the call's Higgs session once a person has answered, while Twilio still connects the stream,
+        so the connect and session.update no longer wait for it (#148). The runner hands it to the call, or
+        closes it if no stream comes."""
+        return await self.connect(self.api_key, self._setup(dial)[2])
+
+    async def __call__(self, dial: Dial, transport: Any, higgs: Any = None) -> CallResult:
+        """Talks the call through; `higgs` is a session `prepare` opened for it, else one opens now. The
+        call closes it either way."""
+        listing, b, config, start = self._setup(dial)
         ctx = caller_tools.CallerContext(session_id=dial.session_id, call_id=dial.call_id,
                                          listing_id=dial.listing_id, brief=b, runtime=self.runtime,
                                          clock=self.clock)
-        text, start = opening(instructions(b))
         reason = "failed"
-        higgs = None
         turns = Turns(self.runtime.db, dial.call_id)
         try:
-            higgs = await self.connect(self.api_key, session_config(
-                instructions=text, tools=caller_tools.TOOLS, voice=self.voice, audio_format=PCMU))
+            if higgs is None:
+                higgs = await self.connect(self.api_key, config)
             for event in start:
                 await higgs.send(event)
             # With "answered by" and "stream started" (api/twilio.py) and "first audio out" below, the log's
