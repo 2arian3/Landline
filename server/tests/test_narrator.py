@@ -81,6 +81,29 @@ def test_the_same_address_twice_on_the_board_names_the_unit():
                                         "140 D'Arcy Street, unit 5 drops to second.")
 
 
+OSSINGTON = "798 Ossington Ave"
+
+
+def _twin(n: int, rank: int, beds: float = 1, rent: int = 2300) -> Card:
+    return _card(n, rank, OSSINGTON).model_copy(update={"beds": beds, "rent": rent, "monthly_cost": rent})
+
+
+def test_the_same_address_without_units_is_told_apart_by_beds():   # the live line, Sat 12:41
+    one, two, other = _twin(1, 1), _twin(2, 2, beds=2, rent=2500), _card(3, 2)
+    before = SessionView(session_id=SID, version=1, board=[one, other])
+    after = SessionView(session_id=SID, version=2, board=[one, two])
+    assert rank_diff(before, after) == (f"{OSSINGTON}, the one-bedroom stays on top. "
+                                        f"{OSSINGTON}, the two-bedroom joins at second.")
+
+
+def test_the_same_address_and_beds_is_told_apart_by_rent():
+    low, high = _twin(1, 1, rent=2300), _twin(2, 2, rent=2500)
+    before = SessionView(session_id=SID, version=1, board=[low, high])
+    after = SessionView(session_id=SID, version=2, board=[high, low])
+    assert rank_diff(before, after) == (f"{OSSINGTON}, the $2,500 one moves to the top. "
+                                        f"{OSSINGTON}, the $2,300 one drops to second.")
+
+
 def test_the_acknowledgement_names_the_first_two_changes():
     def said(**delta):
         return acknowledge([PreferencesUpdated(session_id=SID, at=T0, idem_key="k",
@@ -214,6 +237,25 @@ async def test_each_way_a_call_ends_has_its_own_words(end_reason, facts, says):
     await _outcome(rt, c1, "t:1", end_reason=end_reason, facts=facts)
     done = await rt.emit(CallsCompleted(**_meta("done", 20), call_ids=[c1]))
     assert done.results == says
+
+
+async def test_the_plan_and_the_results_tell_two_places_at_one_address_apart():
+    rt = SessionRuntime(Catalogue([_listing(1, 2300).model_copy(update={"address": OSSINGTON}),
+                                   _listing(2, 2500).model_copy(update={"address": OSSINGTON, "beds": 2})],
+                                  "test"))
+    await rt.start(SessionStarted(**_meta("start"), channel="judge"))
+    asked = await rt.emit(CallsRequested(**_meta("plan", 1), listing_ids=["t:1", "t:2"], may_book=True))
+    assert asked.agent_says == (f"I'll call {OSSINGTON}, the one-bedroom and {OSSINGTON}, the two-bedroom "
+                                f"after you hang up.")
+    await rt.emit(SessionEnded(**_meta("end", 2), reason="hangup"))
+    frozen = CallPlan(session_id=SID, listing_ids=["t:1", "t:2"], may_book=True, created_at=_at(3))
+    await rt.emit(CallsScheduled(**_meta("scheduled", 3), call_ids=["c_narr000001", "c_narr000002"],
+                                 plan=frozen))
+    await _outcome(rt, "c_narr000001", "t:1", end_reason="no_answer")
+    await _outcome(rt, "c_narr000002", "t:2", end_reason="busy")
+    done = await rt.emit(CallsCompleted(**_meta("done", 20), call_ids=["c_narr000001", "c_narr000002"]))
+    assert done.results == (f"Nobody picked up at {OSSINGTON}, the one-bedroom. "
+                            f"Nobody picked up at {OSSINGTON}, the two-bedroom.")
 
 
 async def test_voicemail_and_a_call_without_an_outcome():

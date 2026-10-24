@@ -14,7 +14,7 @@ from collections.abc import Sequence
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from landline.contracts import Card, Conflict, Event, PreferencesUpdated, SessionView
+from landline.contracts import Card, Conflict, Event, Listing, PreferencesUpdated, SessionView
 from landline.db.catalogue import Catalogue
 from landline.orchestrator.state import SessionState
 from landline.scoring.weights import feature_key
@@ -27,6 +27,7 @@ WIDEN = "Nothing fits now. Want to widen the budget or the area?"
 ORDINALS = ("first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth")
 BEDS = {0: "studios are fine", 1: "one bedroom or more", 2: "two bedrooms or more",
         3: "three bedrooms or more"}
+BEDROOMS = {0: "studio", 1: "one-bedroom", 2: "two-bedroom", 3: "three-bedroom", 4: "four-bedroom"}
 RERANKS = {"PreferencesUpdated", "FeedbackGiven", "AnchorResolved"}   # events whose re-rank is worth saying
 # How a fact's field reads out loud: "parking: $180 a month".
 FIELDS = {
@@ -72,7 +73,7 @@ def line(before: SessionView | None, after: SessionView, events: Sequence[Event]
         return _fit(_place(state, lid, after, catalogue), _place(state, lid, after, catalogue)[:1])
     if "CallsRequested" in kinds and state.request:
         ids = state.request.listing_ids
-        names = [_address(catalogue, lid) for lid in ids]
+        names = [_address(catalogue, lid, ids) for lid in ids]
         return _fit([f"I'll call {_join(names)} after you hang up."],
                     [f"I'll call these {len(ids)} places after you hang up."])
     ack = acknowledge([e for e in events if isinstance(e, PreferencesUpdated)])
@@ -149,15 +150,18 @@ def _diff(before: SessionView, after: SessionView) -> list[str]:
 
 def results(state: SessionState, view: SessionView, catalogue: Catalogue) -> str:
     """The results of every call in the plan: bookings first, then the renter's order."""
-    planned = state.plan.listing_ids if state.plan else [c.listing_id for c in state.calls.values()]
-    order = sorted(dict.fromkeys(planned), key=lambda lid: lid not in state.viewings)
+    order = sorted(dict.fromkeys(_planned(state)), key=lambda lid: lid not in state.viewings)
     return " ".join(s for lid in order for s in _place(state, lid, view, catalogue))
+
+
+def _planned(state: SessionState) -> list[str]:
+    return state.plan.listing_ids if state.plan else [c.listing_id for c in state.calls.values()]
 
 
 def _place(state: SessionState, lid: str, view: SessionView, catalogue: Catalogue) -> list[str]:
     """What one call found, as sentences: a booking, a red flag, rented, nobody answered, or the facts,
     then any conflict with the listing, where it moved on the board, and the landlord's questions."""
-    addr = _address(catalogue, lid)
+    addr = _address(catalogue, lid, _planned(state))   # told apart from another planned place there
     out = state.outcomes.get(lid)
     status = state.status(lid)
     said: list[str] = []
@@ -266,14 +270,31 @@ def _cap(items: Sequence[str], n: int = 2) -> list[str]:
 
 
 def _name(card: Card, board: Sequence[Card]) -> str:
-    """The address, with the unit when the board shows the same address twice."""
-    twins = sum(c.address == card.address for c in board) > 1
-    return f"{card.address}, unit {card.unit_label}" if twins and card.unit_label else card.address
+    """The address, told apart when the board shows the same address twice."""
+    return _told_apart(card, board)
 
 
-def _address(catalogue: Catalogue, lid: str) -> str:
+def _address(catalogue: Catalogue, lid: str, among: Sequence[str] = ()) -> str:
+    """The address, told apart from another place in `among` (the line's listings) at the same address."""
     listing = catalogue.by_id.get(lid)
-    return listing.address if listing else "that place"
+    if listing is None:
+        return "that place"
+    return _told_apart(listing, [catalogue.by_id[o] for o in among if o in catalogue.by_id])
+
+
+def _told_apart(x: Card | Listing, among: Sequence[Card | Listing]) -> str:
+    """The address, and when another place in `among` has the same one: its unit, or else its beds, or its
+    rent when the beds match too ("798 Ossington Ave, the two-bedroom")."""
+    twins = [o for o in among if o.address == x.address and o.listing_id != x.listing_id]
+    if not twins:
+        return x.address
+    if x.unit_label:
+        return f"{x.address}, unit {x.unit_label}"
+    if all(o.beds != x.beds for o in twins):
+        return f"{x.address}, the {BEDROOMS.get(x.beds, f'{x.beds:g}-bedroom')}"
+    if all(o.rent != x.rent for o in twins):
+        return f"{x.address}, the ${x.rent:,} one"
+    return x.address
 
 
 def _join(items: Sequence[str]) -> str:
