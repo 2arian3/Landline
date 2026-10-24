@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from landline.contracts import CallView, Card, Listing, SessionView
 from landline.db.catalogue import Catalogue
-from landline.orchestrator import feedback
+from landline.orchestrator import feedback, overrides
 from landline.orchestrator.state import SessionState
 from landline.scoring import FeatureMatrix, Ranked, explain
 
@@ -16,7 +16,9 @@ BOARD_SIZE = 6
 
 def build(state: SessionState, version: int, catalogue: Catalogue, matrix: FeatureMatrix) -> SessionView:
     status = state.statuses()
-    ranking = feedback.ranked(state, catalogue, matrix, status)   # the renter's reactions move it (O-04)
+    heard = overrides.from_calls(state, catalogue)
+    # The renter's reactions move it (O-04), and so does what calls heard.
+    ranking = feedback.ranked(state, catalogue, matrix, status, heard)
     by_id = catalogue.by_id
     matches = [lid for lid in ranking.order if by_id[lid].lat is not None]
     shown = matches[:BOARD_SIZE]
@@ -27,7 +29,7 @@ def build(state: SessionState, version: int, catalogue: Catalogue, matrix: Featu
     shown += [lid for lid in dict.fromkeys(called) if lid not in shown and lid in by_id]
     passed = ranking.scores
     board = [_card(state, by_id[lid], n, ranking.explain(lid) if lid in passed
-                   else explain(by_id[lid], state.preferences))
+                   else explain(by_id[lid], state.preferences, overrides=heard.get(lid)), heard.get(lid, {}))
              for n, lid in enumerate(shown, start=1)]
     top = board[0].address if board else None
     says = (f"{len(matches)} places fit. {top} is on top." if top
@@ -50,14 +52,15 @@ def _with_outcome(state: SessionState, call: CallView) -> CallView:
     return call.model_copy(update={"outcome": out})
 
 
-def _card(state: SessionState, x: Listing, n: int, why: Ranked) -> Card:
+def _card(state: SessionState, x: Listing, n: int, why: Ranked, heard: dict) -> Card:
     lid = x.listing_id
     outcome = state.outcomes.get(lid)
     said = state.reactions.get(lid)
     return Card(
         listing_id=lid, address=x.address, unit_label=x.unit_label,
         neighbourhood=x.neighbourhood or x.building_name, lat=x.lat, lng=x.lng, rent=x.rent,
-        monthly_cost=x.monthly_cost, beds=x.beds, baths=x.baths, sqft=x.sqft, floor=x.floor,
+        monthly_cost=heard.get("monthly_cost", x.monthly_cost), beds=x.beds, baths=x.baths, sqft=x.sqft,
+        floor=x.floor,
         unit_type=x.unit_type, photo=x.photos[0] if x.photos else None, light_score=x.light_score,
         source=x.source, url=x.url, rank=n, status=state.status(lid), reasons=why.reasons,
         watch_out=why.watch_out, reaction=(said.reason or said.reaction) if said else None,

@@ -144,10 +144,13 @@ def rank(matrix: FeatureMatrix, prefs: Preferences, *, weights: dict[str, float]
     return Ranking(order, ids, score, ctx)
 
 
-def explain(listing: Listing, prefs: Preferences, weights: dict[str, float] | None = None) -> Ranked:
-    """Reasons for one listing outside the catalogue (say, after a call added a fee). Rank is 1."""
+def explain(listing: Listing, prefs: Preferences, weights: dict[str, float] | None = None,
+            overrides: dict[str, Any] | None = None) -> Ranked:
+    """Reasons for one listing outside the catalogue (say, after a call added a fee). Rank is 1.
+    `overrides` are the values calls found for it, by matrix column."""
     matrix = FeatureMatrix.build([listing])
-    return rank(matrix, prefs, weights=weights, keep_all=True).explain(listing.listing_id)
+    found = {listing.listing_id: overrides} if overrides else None
+    return rank(matrix, prefs, weights=weights, keep_all=True, overrides=found).explain(listing.listing_id)
 
 
 class _Context:
