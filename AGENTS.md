@@ -4,7 +4,7 @@ Read this file before you change anything. It applies to every coding agent and 
 
 ## What we are building
 
-**Landline is a voice agent that works for renters, not brokerages.** A renter phones in (or talks to it in the browser). While they talk, a live map of Toronto listings re-ranks from what they say. On request, Landline phones the listing agents in parallel, asks what listings never say (is it still available, what does parking really cost, are dogs allowed, how much light does it get), and re-ranks from what those people answered. It remembers each renter by phone number, so the next call picks up where the last one ended.
+**Landline is a voice agent that works for renters, not brokerages.** A renter phones in (or talks to it in the browser). While they talk, a live map of Toronto listings re-ranks from what they say, and they pick the places they want checked. Once they hang up, Landline phones those listing agents in parallel, asks what listings never say (is it still available, what does parking really cost, are dogs allowed, how much light does it get), books a viewing inside the times the renter gave, re-ranks from what those people answered, and texts the renter the results. It remembers each renter by phone number, so the next call picks up where the last one ended.
 
 Built by Team AAMEL (Arian Boukani, Danial Kordmodanlou, Mahyar Jaberi) for the **Boson AI Higgs Audio Hackathon**, 23–24 October 2026. Judging: Use of Higgs Audio 30%, User Experience 25%, Innovation 25%, Technical Execution 20%. Track 03 (Agents That Act), touching Track 02.
 
@@ -18,10 +18,10 @@ Design: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Interfaces: [docs/CONTRACT
 | `db/migrations/` | Postgres schema (PostGIS + pgvector), applied in order | Arian |
 | `server/landline/contracts/` | Pydantic models for entities, events, tools, API payloads. **Frozen; see below** | Arian (all three approve changes) |
 | `server/landline/db/` | Connection pool, repositories | Arian |
-| `server/landline/orchestrator/` | Session runtime, event bus, `session_tx`, board | Arian |
+| `server/landline/orchestrator/` | System services: session runtime, event bus, `session_tx`, Narrator templates, profiles | Arian |
 | `server/landline/scoring/` | Features, utilities, ranking, explanations | Arian |
-| `server/landline/voice/` | Higgs Realtime client, Twilio/browser/sim transports, call lifecycle | Danial |
-| `server/landline/agents/` | Concierge, Caller, Auditor, Profiler, Narrator: prompts, tools, logic | Danial |
+| `server/landline/voice/` | Higgs Realtime client, Twilio/browser/sim transports, call lifecycle, Dispatcher | Danial |
+| `server/landline/agents/` | The three agents that use a model (Concierge, Caller, Auditor): prompts, tools, logic | Danial |
 | `evals/` | Fixtures, landlord personas, eval runners, reports | Danial |
 | `server/landline/api/` | REST + SSE read side for the web app, judge-mode endpoints | Mahyar (Twilio webhooks: Danial) |
 | `web/` | Next.js app: map, list, detail, judge mode | Mahyar |

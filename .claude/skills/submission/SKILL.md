@@ -13,7 +13,7 @@ Full requirements and the video script are in `docs/DEMO.md`.
 2. **Numbers** (E-05) from `evals/reports/latest.md`, the only source for any figure we state.
 3. **Write-ups** (U-10), each ≤ 200 words:
    - *Project:* the problem (listings that aren't true; newcomers hit hardest), who it's for (Toronto renters), how it works in three sentences.
-   - *How we built it:* each Higgs model and its role (Realtime for the renter and every listing call, with function tools and mid-sentence language switching; TTS for voicemail; Avatar for the debrief if shipped), and what was hard (parallel live calls that consult each other, grounded extraction, the call lifecycle).
+   - *How we built it:* each Higgs model and its role (Realtime for the renter and every listing call, with function tools and mid-sentence language switching; TTS for voicemail; Avatar for the debrief if shipped), and what was hard (parallel live calls run from a frozen brief that book viewings on their own, grounded extraction, the call lifecycle).
 4. **Team:** GitHub handles and what each built. Known limitations, stated plainly (snapshot data, demo phone numbers only, City data covers larger rental buildings only).
 5. **Repo hygiene:** `gitleaks detect`; `.env.example` complete; README has setup steps and example input and output (a transcript and the resulting card); the repo is public.
 6. **Pin it:** `git tag submission && git push origin submission`; paste the SHA into the form.
