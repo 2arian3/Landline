@@ -31,6 +31,8 @@ def _location(good: bool, r: dict[str, Any]) -> str | None:
 
 
 def _transit(good: bool, r: dict[str, Any]) -> str:
+    if r["transit_min"] < 1:   # rounding would say "0 min walk"
+        return f"next to {r['station']} station" if r["station"] else "next to the subway"
     return f"{round(r['transit_min'])} min walk to {r['station'] or 'the subway'}"
 
 
