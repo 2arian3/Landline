@@ -1,0 +1,32 @@
+{
+  "id": "nonsense-first-line",
+  "about": "The first line is a broken transcription: no guessed search; the brief starts on the repeat",
+  "lines": [
+    {
+      "say": "Uh the the, mm, so yeah the blue, um, thing over the, yeah.",
+      "expect": {
+        "no_tools": true,
+        "says_any": ["catch", "again", "repeat", "understand", "follow", "mean"],
+        "says_none": ["blue", "listing", "map"],
+        "prefs": {"max_monthly": null, "min_beds": null, "pets": null, "areas": null, "anchors": null,
+                  "must_have": null}
+      }
+    },
+    {
+      "say": "Sorry about that. I need a two bedroom, around 3,500 a month.",
+      "expect": {
+        "prefs": {"max_monthly": 3500, "min_beds": 2}
+      }
+    },
+    {
+      "say": "Okay, that's it, bye."
+    }
+  ],
+  "final": {
+    "prefs": {"max_monthly": 3500, "min_beds": 2, "pets": null, "areas": null, "anchors": null,
+              "must_have": null},
+    "replies_avoid": ["blue"],
+    "no_request": true,
+    "ended": true
+  }
+}
