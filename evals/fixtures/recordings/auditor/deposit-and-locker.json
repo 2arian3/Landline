@@ -1,0 +1,56 @@
+{
+ "model": "higgs-realtime",
+ "user": "Listing: 88 Erskine Ave, listed at $2,450 a month\n\nTranscript:\n[0] AGENT: Hi, I'm an AI assistant calling for a renter about the apartment at 88 Erskine Avenue. Is it still available?\n[1] LANDLORD: It is. We'd need first and last, so a deposit of 2,450 for the last month.\n[2] AGENT: Understood. Any monthly fees on top of rent?\n[3] LANDLORD: Just a locker if you want one, that's 40 a month, optional.\n[4] AGENT: When could someone move in?\n[5] LANDLORD: Available from November 15th.",
+ "response": {
+  "facts": [
+   {
+    "field": "available",
+    "turn": 1,
+    "quote": "It is.",
+    "value": "yes",
+    "amount": null,
+    "count": null,
+    "each": null,
+    "period": null,
+    "mandatory": null,
+    "name": null
+   },
+   {
+    "field": "fees",
+    "turn": 1,
+    "quote": "We'd need first and last, so a deposit of 2,450 for the last month.",
+    "value": "yes",
+    "amount": 2450,
+    "count": null,
+    "each": null,
+    "period": "one_time",
+    "mandatory": true,
+    "name": "deposit"
+   },
+   {
+    "field": "fees",
+    "turn": 3,
+    "quote": "Just a locker if you want one, that's 40 a month, optional.",
+    "value": "yes",
+    "amount": 40,
+    "count": null,
+    "each": null,
+    "period": "monthly",
+    "mandatory": false,
+    "name": "locker"
+   },
+   {
+    "field": "available_from",
+    "turn": 5,
+    "quote": "Available from November 15th.",
+    "value": "2025-11-15",
+    "amount": null,
+    "count": null,
+    "each": null,
+    "period": null,
+    "mandatory": null,
+    "name": null
+   }
+  ]
+ }
+}

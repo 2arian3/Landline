@@ -1,0 +1,66 @@
+{
+ "id": "no-pets",
+ "note": "\"No pets allowed\" against a listing that says pets are fine: a conflict, not 'pets allowed'.",
+ "end_reason": "done",
+ "listing": {
+  "listing_id": "livrent:e02-3",
+  "address": "15 Maitland Pl",
+  "rent": 2100,
+  "monthly_cost": 2100,
+  "pets": "allowed",
+  "laundry": "in_unit"
+ },
+ "turns": [
+  {
+   "speaker": "agent",
+   "text": "Hi, I'm an AI assistant calling for a renter about the apartment at 15 Maitland Place. Is it still available?"
+  },
+  {
+   "speaker": "landlord",
+   "text": "Yes it is, from December first."
+  },
+  {
+   "speaker": "agent",
+   "text": "My client has a small dog. Is that okay?"
+  },
+  {
+   "speaker": "landlord",
+   "text": "Sorry, no pets allowed in the building, it's the condo rules."
+  },
+  {
+   "speaker": "agent",
+   "text": "Got it. Is there laundry in the unit?"
+  },
+  {
+   "speaker": "landlord",
+   "text": "No, there's a laundry room on the ground floor."
+  }
+ ],
+ "tool_facts": [
+  {
+   "field": "available",
+   "value": "yes",
+   "quote": "Yes it is, from December first",
+   "turn_idx": 1
+  },
+  {
+   "field": "pets",
+   "value": "no pets",
+   "quote": "no pets allowed in the building",
+   "turn_idx": 3
+  },
+  {
+   "field": "laundry",
+   "value": "shared laundry room",
+   "quote": "there's a laundry room on the ground floor",
+   "turn_idx": 5
+  }
+ ],
+ "slot_text": null,
+ "gold": {
+  "available": "yes",
+  "available_from": "12-01",
+  "pets": "no_pets",
+  "laundry": "in_building"
+ }
+}

@@ -1,0 +1,61 @@
+{
+ "id": "mandarin-switch",
+ "note": "The landlord switches to Mandarin; quotes stay in Mandarin and are checked by character.",
+ "end_reason": "done",
+ "listing": {
+  "listing_id": "livrent:e02-5",
+  "address": "4800 Yonge St",
+  "rent": 2550,
+  "monthly_cost": 2550,
+  "parking_cost": null,
+  "pets": "unknown"
+ },
+ "turns": [
+  {
+   "speaker": "agent",
+   "text": "Hi, I'm an AI assistant calling for a renter about the apartment at 4800 Yonge Street. Is it still available?"
+  },
+  {
+   "speaker": "landlord",
+   "text": "Hello? Yes... sorry, my English is not good. 我可以说中文吗？",
+   "lang": "zh"
+  },
+  {
+   "speaker": "agent",
+   "text": "当然可以。请问这套公寓还在出租吗？"
+  },
+  {
+   "speaker": "landlord",
+   "text": "还在。房租两千六，比网上写的多一点。",
+   "lang": "zh"
+  },
+  {
+   "speaker": "agent",
+   "text": "好的。可以养宠物吗？有停车位吗？"
+  },
+  {
+   "speaker": "landlord",
+   "text": "不能养宠物。车位一个月一百五，如果你需要的话。",
+   "lang": "zh"
+  },
+  {
+   "speaker": "agent",
+   "text": "明白了，谢谢您。"
+  }
+ ],
+ "tool_facts": [
+  {
+   "field": "rent",
+   "value": "2600",
+   "quote": "房租两千六",
+   "turn_idx": 3
+  }
+ ],
+ "slot_text": null,
+ "gold": {
+  "available": "yes",
+  "rent": "2600",
+  "pets": "no_pets",
+  "parking_cost": "150"
+ }
+}

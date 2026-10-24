@@ -1,0 +1,15 @@
+{
+ "id": "no-answer",
+ "note": "Nobody answered: no facts, nothing made up.",
+ "end_reason": "no_answer",
+ "listing": {
+  "listing_id": "livrent:e02-11",
+  "address": "77 Davisville Ave",
+  "rent": 2200,
+  "monthly_cost": 2200
+ },
+ "turns": [],
+ "tool_facts": [],
+ "slot_text": null,
+ "gold": {}
+}

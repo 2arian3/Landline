@@ -1,0 +1,59 @@
+{
+ "id": "readback-agreed-only",
+ "note": "Pets were only in the agent's read-back; 'yep, that's right' doesn't make it the landlord's words.",
+ "end_reason": "done",
+ "listing": {
+  "listing_id": "livrent:e02-8",
+  "address": "250 Queens Quay W",
+  "rent": 2900,
+  "monthly_cost": 2900,
+  "parking_cost": 150
+ },
+ "turns": [
+  {
+   "speaker": "agent",
+   "text": "Hi, I'm an AI assistant calling for a renter about the apartment at 250 Queens Quay West. Is it still available?"
+  },
+  {
+   "speaker": "landlord",
+   "text": "Yes, still for rent. Parking is 150 a month if you want a spot."
+  },
+  {
+   "speaker": "agent",
+   "text": "So to read it back: $150 for parking, and pets are okay?"
+  },
+  {
+   "speaker": "landlord",
+   "text": "Yep, that's right."
+  },
+  {
+   "speaker": "agent",
+   "text": "Perfect, thank you."
+  }
+ ],
+ "tool_facts": [
+  {
+   "field": "available",
+   "value": "yes",
+   "quote": "Yes, still for rent",
+   "turn_idx": 1
+  },
+  {
+   "field": "parking_cost",
+   "value": "150",
+   "quote": "Parking is 150 a month if you want a spot",
+   "turn_idx": 1
+  },
+  {
+   "field": "pets",
+   "value": "allowed",
+   "quote": "pets are okay",
+   "turn_idx": 2
+  }
+ ],
+ "slot_text": null,
+ "gold": {
+  "available": "yes",
+  "parking_cost": "150"
+ }
+}
