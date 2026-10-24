@@ -101,6 +101,8 @@ def report(listings: list[Listing]) -> str:
     lines.append(f"  unit types: {dict(types.most_common())}")
     lines.append(f"  beds: {dict(sorted(beds.items()))}")
     lines.append(f"  rent: min {rents[0]}  median {rents[n // 2]}  max {rents[-1]}")
+    flipped = sum(1 for x in listings if (p := x.provenance.get("lng")) and p.source == "derived")
+    lines.append(f"  longitude sign flipped: {flipped}")
     return "\n".join(lines)
 
 
