@@ -542,3 +542,6 @@ def test_the_prompt_wraps_up_once_the_brief_is_done():
             "say bye. In that same turn say \"I'll call them as soon as we hang up and text you what they "
             "say. Bye for now!\", then call end_session. If they add something first, handle it, then do "
             "this.") in text
+    assert ("When the renter's words are only bye or goodbye, call end_session and say nothing. Don't "
+            "answer again.") in text
+    assert "Never say goodbye more than once." in text

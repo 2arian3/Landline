@@ -36,6 +36,7 @@ from landline.config import Settings
 from landline.contracts import SessionEnded, SessionStarted
 from landline.orchestrator import SessionRuntime
 from landline.voice import twilio
+from landline.voice.avatar_clip import Clips
 from landline.voice.calls import RenterCall, RenterCalls
 from landline.voice.higgs import PCMU, ConnectHiggs, session_config
 from landline.voice.line import Item, Line, Lines
@@ -96,7 +97,7 @@ class Playback:
 async def converse(transport: Transport, call: RenterCall, *, calls: RenterCalls, runtime: SessionRuntime,
                    connect_higgs: ConnectHiggs, settings: Settings,
                    set_status: Callable[[str], None] = lambda _: None, texter: Texter | None = None,
-                   lines: Lines | None = None) -> str:
+                   lines: Lines | None = None, clips: Clips | None = None) -> str:
     """Runs one claimed call to its end, finalizes it and ends its session. Returns why it ended. The
     caller owns the socket and closes it afterwards. With a `texter`, a phone caller is texted the link
     to their board once, when the call connects, whatever the Concierge does next (a returning caller's
@@ -117,6 +118,9 @@ async def converse(transport: Transport, call: RenterCall, *, calls: RenterCalls
         except Exception:
             log.exception("could not keep the end of call %s's audio", call.call_id)
         runtime.calls.ended(call.call_id, reason)
+        await runtime.calls.flushed(call.call_id)   # the clip reads the agent track once it is stored
+        if clips is not None:
+            clips.schedule(call.call_id)
         await _end_session(runtime, call.session_id, reason)
     return reason
 
@@ -249,7 +253,8 @@ class TwilioTransport:
 async def run_bridge(ws: WebSocket, *, calls: RenterCalls, runtime: SessionRuntime,
                      connect_higgs: ConnectHiggs, settings: Settings,
                      set_status: Callable[[str], None] = lambda _: None,
-                     texter: Texter | None = None, lines: Lines | None = None) -> None:
+                     texter: Texter | None = None, lines: Lines | None = None,
+                     clips: Clips | None = None) -> None:
     """A Twilio media stream for a call that /twiml/renter minted; its id comes back in `start`. The call
     starts its session in the runtime, the way /api/judge/start does for the browser. With a `texter`,
     the caller gets their board link by text; with `lines`, map taps reach the Concierge."""
@@ -276,7 +281,7 @@ async def run_bridge(ws: WebSocket, *, calls: RenterCalls, runtime: SessionRunti
     try:
         transport = TwilioTransport(ws, str(start.get("streamSid", "")))
         await converse(transport, call, calls=calls, runtime=runtime, connect_higgs=connect_higgs,
-                       settings=settings, set_status=set_status, texter=texter, lines=lines)
+                       settings=settings, set_status=set_status, texter=texter, lines=lines, clips=clips)
     finally:
         await close_socket(ws)
 
