@@ -131,9 +131,12 @@ export function useJudgeLine() {
       };
 
       sock.onopen = () => setState("live");
-      sock.onclose = () => {
+      // A normal close (1000) is the brief ending: the judge pressed Done, or Landline said goodbye and
+      // ended it (end_session), and the session goes on to its calls. Anything else (a refusal, 1008 or
+      // 1013, or a lost connection, 1006) is a dropped line.
+      sock.onclose = (ev) => {
         teardown();
-        setState(ending.current ? "ended" : "dropped");
+        setState(ending.current || ev.code === 1000 ? "ended" : "dropped");
       };
       sock.onerror = () => sock.close();
       sock.onmessage = (ev) => {

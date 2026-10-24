@@ -69,11 +69,15 @@ The server cancels and truncates on its own. On `input_audio_buffer.speech_start
 - Close `1013`: concurrency limit, so retry with backoff, behind our semaphore. `4429`: out of credit. `3000`: bad or expired key. `1000`: normal, including idle timeout (5 min without user speech) and max duration.
 - Pricing: about $0.0023/min of speech in and $0.014/min out. Credits are not the constraint; concurrency is.
 
-## Spike results (fill in from A-01)
+## Spike results (A-01)
+
+Measured with `scripts/spike_higgs.py` on `agents/A-01-higgs-spike`, Fri 23 Oct.
 
 | Measure | Value |
 |---|---|
-| Time to first audio (pcmu) | _tbd_ |
-| Max concurrent sessions before 1013 | _tbd_ |
-| `conversation.item.truncate` accepted | _tbd_ |
-| Farsi + English transcription on 8 kHz | _tbd_ |
+| Time to first audio (pcmu) | 487 ms from connect to the first audio delta; 282 ms from `response.create` |
+| Max concurrent sessions before 1013 | none: 5 of 5 opened, and a later run opened 8, with no close 1013 |
+| `conversation.item.truncate` accepted | yes, after `response.done` (`audio_end_ms` 2620) |
+| Farsi + English transcription on 8 kHz | no: a synthesized mixed sentence came back as "Salam. I want a two-bedroom in Toronto. Sagdaram." The browser path's 24 kHz audio may do better; not measured yet |
+
+In the bridge, the first audio of the greeting reaches the browser about 3 s after its socket opens, because that includes connecting to Higgs.

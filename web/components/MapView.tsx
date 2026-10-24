@@ -24,7 +24,16 @@ const LAND = "#efece6";
 const WATER = "#cad7dc";
 const PARK = "#dfe5d4";
 
+// Close enough to find the street, far enough that the board's neighbours stay on screen: a phone's
+// narrower map needs one step further out to show the same few kilometres.
+const FOCUS_ZOOM = 13;
+const FOCUS_ZOOM_NARROW = 12;
+const NARROW_PX = 640;
+// Pin faces closer than this on screen get nudged apart, so every number stays readable and tappable.
+const PIN_GAP = 32;
+
 export type Padding = { top: number; right: number; bottom: number; left: number };
+type Pin = { marker: Marker; el: HTMLButtonElement; face: HTMLSpanElement };
 
 /**
  * Greater Toronto, generously. A pin or a fit outside it is a data error (a
@@ -68,7 +77,8 @@ export function MapView({
 }) {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<MapLibre | null>(null);
-  const pins = useRef(new Map<string, { marker: Marker; el: HTMLButtonElement }>());
+  const pins = useRef(new Map<string, Pin>());
+  const pinned = useRef<Card[]>([]); // the board's cards that have a pin, in rank order
   const [ready, setReady] = useState(false);
   const handlers = useRef({ onSelect, onHover });
   handlers.current = { onSelect, onHover };
@@ -117,6 +127,8 @@ export function MapView({
       m.on("mouseleave", "catalogue", () => (m.getCanvas().style.cursor = ""));
       setReady(true);
     });
+    // Pins that touch at one zoom may not at the next.
+    m.on("zoomend", () => spread(m, pins.current, pinned.current));
 
     return () => {
       pins.current.forEach(({ marker }) => marker.remove());
@@ -174,11 +186,14 @@ export function MapView({
         });
         el.addEventListener("mouseenter", () => handlers.current.onHover(card.listing_id));
         el.addEventListener("mouseleave", () => handlers.current.onHover(null));
+        const face = document.createElement("span");
+        face.className = "pin-face";
+        el.append(face);
         const marker = new Marker({ element: el, anchor: "center" }).setLngLat([card.lng!, card.lat!]).addTo(m);
-        pin = { marker, el };
+        pin = { marker, el, face };
         pins.current.set(card.listing_id, pin);
       }
-      pin.el.textContent = String(card.rank);
+      pin.face.textContent = String(card.rank);
       pin.el.dataset.status = card.status;
       pin.el.dataset.mark = marks[card.listing_id] ?? "";
       pin.el.dataset.focus = String(card.listing_id === focusId);
@@ -192,15 +207,22 @@ export function MapView({
         pins.current.delete(id);
       }
     }
+    pinned.current = board.filter((c) => keep.has(c.listing_id));
+    spread(m, pins.current, pinned.current);
   }, [ready, board, focusId, hoverId, marks]);
 
   // ── frame the board when its set of listings changes ────────────────────
   const boardKey = board.map((c) => c.listing_id).sort().join(",");
+  const framed = useRef<string | null>(null); // the board last framed
   useEffect(() => {
     const m = map.current;
     if (!m || !ready) return;
     const located = board.filter((c) => onMap(c.lat, c.lng));
     if (!located.length) return;
+    // Only the padding changed (the phone sheet moved to another stop): leave the map alone unless a pin
+    // would now sit under the sheet, so dragging the sheet doesn't set off an 800 ms fit every time.
+    if (framed.current === boardKey && !located.some((c) => underSheet(m, c, padding))) return;
+    framed.current = boardKey;
     const bounds = new LngLatBounds();
     located.forEach((c) => bounds.extend([c.lng!, c.lat!]));
     m.fitBounds(bounds, { padding, maxZoom: 14, duration: reducedMotion() ? 0 : 800 });
@@ -216,7 +238,7 @@ export function MapView({
     if (!pt || !onMap(pt.lat, pt.lng)) return;
     m.easeTo({
       center: [pt.lng!, pt.lat!],
-      zoom: Math.max(m.getZoom(), 14),
+      zoom: Math.max(m.getZoom(), m.getContainer().clientWidth < NARROW_PX ? FOCUS_ZOOM_NARROW : FOCUS_ZOOM),
       padding,
       duration: reducedMotion() ? 0 : 600,
     });
@@ -241,6 +263,41 @@ export function MapView({
       <div ref={container} className="h-full w-full" aria-label="Map of matching rentals" />
     </div>
   );
+}
+
+/**
+ * Whether a card's pin would sit under the phone sheet (the bottom padding). Only the sheet moves the
+ * padding, so only the bottom edge counts, with a pixel to spare: a fit leaves the outermost pins right
+ * on the padding's edge.
+ */
+function underSheet(m: MapLibre, card: Card, p: Padding): boolean {
+  return m.project([card.lng!, card.lat!]).y > m.getContainer().clientHeight - p.bottom + 1;
+}
+
+/**
+ * Nudges pins that would overlap on screen. Cards come in rank order, and a
+ * higher rank keeps its true spot; a lower one moves just far enough away from
+ * the pin it touches (down and right when they share an address). The offset
+ * is in pixels, so it's redone whenever the zoom changes.
+ */
+function spread(m: MapLibre, pins: Map<string, Pin>, cards: Card[]) {
+  const placed: { x: number; y: number }[] = [];
+  for (const card of cards) {
+    const pin = pins.get(card.listing_id);
+    if (!pin) continue;
+    const at = m.project([card.lng!, card.lat!]);
+    let { x, y } = at;
+    for (let pass = 0; pass < 8; pass++) {
+      const near = placed.find((q) => Math.hypot(x - q.x, y - q.y) < PIN_GAP);
+      if (!near) break;
+      const d = Math.hypot(x - near.x, y - near.y);
+      const [ux, uy] = d < 0.5 ? [Math.SQRT1_2, Math.SQRT1_2] : [(x - near.x) / d, (y - near.y) / d];
+      x = near.x + ux * PIN_GAP;
+      y = near.y + uy * PIN_GAP;
+    }
+    placed.push({ x, y });
+    pin.marker.setOffset([x - at.x, y - at.y]);
+  }
 }
 
 function reducedMotion(): boolean {

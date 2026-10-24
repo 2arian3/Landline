@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from landline.agents.concierge import tools
-from landline.agents.concierge.prompt import GREETING
+from landline.agents.concierge.prompt import GREETING, RETURNING, WELCOME_BACK
 from landline.api.browser_audio import JUDGE_AUDIO_PATH
 from landline.api.twilio import BUSY, NOT_READY
 from landline.app import create_app
@@ -189,6 +189,86 @@ def test_a_tool_call_changes_the_session_and_speaks_its_board():
              "item": {"type": "function_call_output", "call_id": "fc_1", "output": view.agent_says}},
             {"type": "response.create"},
         ]
+
+
+def test_a_returning_caller_is_welcomed_back_with_what_the_runtime_remembers():
+    fake = FakeHiggs()
+    remembered = "This renter last called yesterday. What you know: Wants up to $2,600 a month."
+    with _client() as c:
+        c.app.state.connect_higgs = fake.connect
+        # Profiles (O-05) need Postgres (see test_profiles.py), so stand in for what they remember.
+        c.app.state.runtime.opening = lambda sid: remembered
+        call = c.app.state.calls.open(caller="+14165550100")
+        with c.websocket_connect("/twilio/media") as ws:
+            ws.send_json(_start(call.call_id))
+            ws.send_json({"event": "stop", "streamSid": "MZ1"})
+            with pytest.raises(WebSocketDisconnect):
+                ws.receive_json()
+        assert fake.session["session"]["instructions"].endswith(f"{RETURNING}{remembered}")
+        assert fake.sent[0] == {"type": "response.create", "response": {"instructions": WELCOME_BACK}}
+
+
+class FakeTexter:
+    """Stands in for voice.sms.Texter: records each text instead of calling Twilio."""
+    ready = True
+
+    def __init__(self):
+        self.sent = []
+
+    def send_soon(self, to, from_, body):
+        self.sent.append((to, from_, body))
+
+    async def close(self):
+        pass
+
+
+def _outputs(fake: FakeHiggs) -> list[str]:
+    return [e["item"]["output"] for e in fake.sent if e["type"] == "conversation.item.create"]
+
+
+def test_the_first_preferences_of_a_phone_call_text_the_board_link():
+    fake = FakeHiggs(script=[
+        _tool_call("update_preferences", {"max_monthly": 3000}, "fc_1"),
+        _tool_call("update_preferences", {"min_beds": 2}, "fc_2"),
+        {"type": "response.output_audio.delta", "delta": "AAAA"},   # both tools ran before this
+    ])
+    texter = FakeTexter()
+    with _client() as c:
+        c.app.state.connect_higgs, c.app.state.texter = fake.connect, texter
+        call = c.app.state.calls.open(caller="+14165550100", called="+12892765257")
+        with c.websocket_connect("/twilio/media") as ws:
+            ws.send_json(_start(call.call_id))
+            assert ws.receive_json()["event"] == "media"
+            view = c.app.state.runtime.get(call.session_id)
+            ws.send_json({"event": "stop", "streamSid": "MZ1"})
+    first, second = _outputs(fake)
+    # The Narrator's line for the first change (O-06), with the texted link flagged beside it.
+    reply = json.loads(first)
+    assert reply["texted_link"] is True and reply["result"].startswith("Got it: up to $3,000.")
+    assert second == view.agent_says   # only the first one of the call texts
+    assert texter.sent == [("+14165550100", "+12892765257",
+                            bridge.LINK_TEXT.format(link=f"http://localhost:3000/s/{call.session_id}"))]
+
+
+def test_a_browser_call_is_never_texted():
+    fake = FakeHiggs(script=[
+        _tool_call("update_preferences", {"max_monthly": 3000}),
+        {"type": "response.output_audio.delta", "delta": base64.b64encode(b"\0\0").decode()},
+    ])
+    texter = FakeTexter()
+    with _client(judge_audio_ready=True) as c:
+        c.app.state.connect_higgs, c.app.state.texter = fake.connect, texter
+        start = c.post("/api/judge/start").json()
+        with c.websocket_connect(start["ws_url"]) as ws:
+            ws.receive_bytes()
+            _hang_up_and_wait(c, ws, start["session_id"])
+    assert texter.sent == [] and "texted_link" not in _outputs(fake)[0]
+
+
+def test_twiml_remembers_the_number_the_renter_dialled():
+    with _client() as c:
+        call_id = re.search(r'value="(c_[\w-]{10})"', _ring(c).text).group(1)
+        assert c.app.state.calls.live[call_id].called == "+16475550199"
 
 
 def test_bridge_refuses_a_stream_with_an_unknown_call_id():

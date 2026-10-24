@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Captions } from "./Captions";
 import { Feedback, type Reaction } from "./Feedback";
 import { MARK, type Mark, STATUS } from "./ListingCard";
 import { Money } from "./Money";
@@ -30,18 +31,18 @@ export function ListingDetail({
   id,
   card,
   mark,
+  call,
   results,
-  calls,
   onBack,
   onReact,
 }: {
   id: string;
   card?: Card;
   mark?: Mark;
+  /** The place's latest call, whose captions show while it runs. */
+  call?: CallView;
   /** The session's results text once its calls are done; this place's sentences show here. */
   results?: string | null;
-  /** The session's calls; a finished one carries what it settled for this place. */
-  calls?: CallView[];
   onBack: () => void;
   onReact?: (reaction: Reaction, reason: string | null) => void;
 }) {
@@ -79,8 +80,9 @@ export function ListingDetail({
   const address = detail?.address ?? card?.address;
   const place = [detail?.building_name, card?.neighbourhood].find((p) => p && p !== address) ?? null;
   const flags = card?.red_flags ?? [];
-  const notes = callNotes(card, results, calls);
-  const noted = !!notes.viewing || notes.questions.length > 0;
+  // A finished call carries what it settled (CallView.outcome); the results text is the fallback.
+  const notes = callNotes(card, results, call ? [call] : []);
+  const asked = notes.questions.length > 0;
 
   return (
     <article className="flex min-h-full flex-col gap-6 pb-8">
@@ -88,7 +90,7 @@ export function ListingDetail({
         <button
           type="button"
           onClick={onBack}
-          className="-ml-2 rounded-[var(--radius-control)] px-2 py-1 text-support text-ink-2 hover:bg-press"
+          className="-ml-2 inline-flex min-h-11 items-center rounded-[var(--radius-control)] px-2 text-support text-ink-2 hover:bg-press"
         >
           ← All places
         </button>
@@ -114,7 +116,9 @@ export function ListingDetail({
                 src={p}
                 alt={i === 0 ? `Photo of ${detail.address}` : ""}
                 loading={i < 2 ? "eager" : "lazy"}
-                className="aspect-[4/3] w-[82%] shrink-0 snap-start overflow-hidden rounded-[var(--radius-photo)] bg-press object-cover text-[0px] sm:w-[70%]"
+                fetchPriority={i === 0 ? "high" : "auto"}
+                // On a short screen (a phone on its side) the photo gives way, so the price still shows.
+                className="aspect-[4/3] max-h-[38vh] w-[82%] shrink-0 snap-start overflow-hidden rounded-[var(--radius-photo)] bg-press object-cover text-[0px] sm:w-[70%]"
               />
             ))}
           </div>
@@ -132,6 +136,17 @@ export function ListingDetail({
         {card?.reasons.length ? <p className="mt-2 text-support text-ink-2">{card.reasons.join(" · ")}</p> : null}
         {card?.watch_out && <p className="mt-1 text-support text-dead">{card.watch_out}</p>}
       </header>
+
+      {/* A booked viewing is what the renter acts on next, so it leads. */}
+      {notes.viewing && (
+        <section className="px-4" aria-labelledby="viewing-heading">
+          <h3 id="viewing-heading" className="text-meta font-label text-real">
+            Viewing booked
+          </h3>
+          <p className="mt-1 text-fact">{notes.viewing}</p>
+          <p className="text-meta text-ink-3">Booked on the call, inside the times you gave</p>
+        </section>
+      )}
 
       {flags.length > 0 && (
         <section className="px-4" aria-labelledby="flags-heading">
@@ -161,37 +176,36 @@ export function ListingDetail({
         </section>
       )}
 
-      <section className="px-4" aria-labelledby="phone-heading">
-        <h3 id="phone-heading" className="text-meta font-label text-ink-3">
-          Checked by phone
-        </h3>
-        {card?.facts.length ? (
-          <ul className="mt-2 space-y-3">
-            {card.facts.map((f) => (
-              <li key={f.field + f.quote}>
-                <p className="text-fact">{f.value}</p>
-                <p className="text-meta text-ink-3">
-                  “{f.quote}” · {f.speaker}
-                </p>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          !noted && <p className="mt-1.5 text-support text-ink-2">{noFacts(card?.status, mark)}</p>
-        )}
-        {notes.viewing && (
-          <div className="mt-3">
-            <p className="text-fact">Viewing booked for {notes.viewing}</p>
-            <p className="text-meta text-ink-3">Booked on the call, inside the times you gave</p>
-          </div>
-        )}
-        {notes.questions.map((q) => (
-          <div key={q} className="mt-3">
-            <p className="text-fact">The agent asked, &ldquo;{q}&rdquo;</p>
-            <p className="text-meta text-ink-3">Landline said it would check with you</p>
-          </div>
-        ))}
-      </section>
+      {/* With only the booking to say, the section above already said it. */}
+      {(card?.facts.length || asked || !notes.viewing || call) && (
+        <section className="px-4" aria-labelledby="phone-heading">
+          <h3 id="phone-heading" className="text-meta font-label text-ink-3">
+            Checked by phone
+          </h3>
+          {card?.facts.length ? (
+            <ul className="mt-2 space-y-3">
+              {card.facts.map((f) => (
+                <li key={f.field + f.quote}>
+                  <p className="text-fact">{f.value}</p>
+                  <p className="text-meta text-ink-3">
+                    “{f.quote}” · {f.speaker}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            !asked &&
+            !notes.viewing && <p className="mt-1.5 text-support text-ink-2">{noFacts(card?.status, mark)}</p>
+          )}
+          {notes.questions.map((q) => (
+            <div key={q} className="mt-3">
+              <p className="text-fact">The agent asked, &ldquo;{q}&rdquo;</p>
+              <p className="text-meta text-ink-3">Landline said it would check with you</p>
+            </div>
+          ))}
+          {call && <Captions key={call.call_id} call={call} />}
+        </section>
+      )}
 
       <section className="px-4" aria-labelledby="listing-heading">
         <h3 id="listing-heading" className="text-meta font-label text-ink-3">
@@ -218,12 +232,20 @@ export function ListingDetail({
           <p className="mt-3 text-support text-ink-2">Building: {detail.amenities.slice(0, 8).join(", ")}</p>
         )}
         {detail && (
-          <p className="mt-4 text-meta text-ink-3">
-            From {src}, last seen {new Date(detail.last_seen).toLocaleDateString("en-CA", { month: "short", day: "numeric" })}.{" "}
-            <a href={detail.url} target="_blank" rel="noreferrer" className="text-ink-2 underline underline-offset-2">
+          <div className="mt-4">
+            <p className="text-meta text-ink-3">
+              From {src}, last seen {new Date(detail.last_seen).toLocaleDateString("en-CA", { month: "short", day: "numeric" })}.
+            </p>
+            {/* On its own line, so the whole 44 px row is the tap target. */}
+            <a
+              href={detail.url}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex min-h-11 items-center text-meta text-ink-2 underline underline-offset-2"
+            >
               See the listing on {src} ↗
             </a>
-          </p>
+          </div>
         )}
       </section>
     </article>
@@ -252,6 +274,7 @@ function noFacts(status?: Card["status"], mark?: Mark): string {
   if (mark === "ringing") return "Ringing now.";
   if (status === "calling") return "Landline is on the phone with them now. What they say lands here, with their words.";
   if (status === "no_answer") return "Nobody picked up yet.";
+  if (status === "booked") return "A viewing was booked on the call. Nothing else came up.";
   return "Nobody has called about this one yet. Say “call this one” and what the listing agent says lands here, with their words.";
 }
 
