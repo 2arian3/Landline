@@ -1,0 +1,37 @@
+{
+  "id": "liberty-couple",
+  "renter": "A couple near Liberty Village, one bedroom or more, up to $3,000.",
+  "brief": {
+    "max_monthly": 3000,
+    "min_beds": 1,
+    "priorities": [
+      "location",
+      "cost"
+    ],
+    "anchors": [
+      {
+        "label": "Liberty Village",
+        "lat": 43.6387,
+        "lng": -79.4197
+      }
+    ]
+  },
+  "acceptable": [
+    "livrent:135397",
+    "livrent:135392",
+    "livrent:135394",
+    "livrent:138965",
+    "livrent:138689",
+    "livrent:135401"
+  ],
+  "why": "1+ bed, ≤ $3,000, about as close to Liberty Village as the closest",
+  "feedback": {
+    "reason": "too small",
+    "attribute": "size",
+    "goal": [
+      "livrent:135394",
+      "livrent:138965"
+    ],
+    "why": "same, within 1.5 km and ≥ 750 sq ft"
+  }
+}

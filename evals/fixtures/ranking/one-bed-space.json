@@ -1,0 +1,30 @@
+{
+  "id": "one-bed-space",
+  "renter": "One bedroom with as much space as possible, up to $2,600, anywhere.",
+  "brief": {
+    "max_monthly": 2600,
+    "min_beds": 1,
+    "priorities": [
+      "size"
+    ]
+  },
+  "acceptable": [
+    "livrent:101529",
+    "livrent:145662",
+    "livrent:130262",
+    "livrent:133902",
+    "livrent:117109",
+    "livrent:130277"
+  ],
+  "why": "exactly 1 bed, ≤ $2,600, the six largest",
+  "feedback": {
+    "reason": "too expensive",
+    "attribute": "cost",
+    "goal": [
+      "livrent:105591",
+      "livrent:137391",
+      "livrent:126427"
+    ],
+    "why": "exactly 1 bed, ≤ $1,750, ≥ 700 sq ft"
+  }
+}

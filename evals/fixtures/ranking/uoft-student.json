@@ -1,0 +1,35 @@
+{
+  "id": "uoft-student",
+  "renter": "Student at U of T, a studio is fine, up to $1,800, cost first.",
+  "brief": {
+    "max_monthly": 1800,
+    "min_beds": 0,
+    "priorities": [
+      "cost",
+      "location"
+    ],
+    "anchors": [
+      {
+        "label": "U of T",
+        "lat": 43.6629,
+        "lng": -79.3957
+      }
+    ]
+  },
+  "acceptable": [
+    "livrent:125592",
+    "livrent:130281",
+    "livrent:125593",
+    "livrent:130282"
+  ],
+  "why": "≤ $1,800, within 1.5 km of U of T (all four)",
+  "feedback": {
+    "reason": "too small",
+    "attribute": "size",
+    "goal": [
+      "livrent:130282",
+      "livrent:125593"
+    ],
+    "why": "≤ $1,800, within 1.5 km, ≥ 500 sq ft"
+  }
+}

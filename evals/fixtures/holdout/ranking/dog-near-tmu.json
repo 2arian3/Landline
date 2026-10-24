@@ -1,0 +1,38 @@
+{
+  "id": "dog-near-tmu",
+  "renter": "Has a dog, works at TMU, one bedroom, up to $2,700.",
+  "brief": {
+    "max_monthly": 2700,
+    "min_beds": 1,
+    "priorities": [
+      "location"
+    ],
+    "anchors": [
+      {
+        "label": "TMU",
+        "lat": 43.6577,
+        "lng": -79.3788
+      }
+    ],
+    "pets": [
+      "dog"
+    ]
+  },
+  "acceptable": [
+    "livrent:100747",
+    "livrent:134584",
+    "livrent:133722",
+    "livrent:122288",
+    "livrent:125589",
+    "livrent:125591"
+  ],
+  "why": "1+ bed, ≤ $2,700, about as close to TMU as the closest (pets unknown in the catalogue)",
+  "feedback": {
+    "reason": "too small",
+    "attribute": "size",
+    "goal": [
+      "livrent:125591"
+    ],
+    "why": "within 1 km of TMU, ≥ 620 sq ft"
+  }
+}
