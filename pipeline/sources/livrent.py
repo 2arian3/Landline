@@ -85,6 +85,44 @@ def raw_listings(html: str) -> Iterator[dict]:
             yield unit
 
 
+_ROW = re.compile(rb"([0-9a-f]+):")
+_TEXT_LEN = re.compile(rb"T([0-9a-f]+),")
+
+
+def _text_rows(data: bytes) -> dict[str, str]:
+    """The stream's text rows. A row is `<id>:<json>\\n`, or `<id>:T<length in bytes, hex>,<text>` with
+    the next row right after the text, so the rows are walked in order rather than searched for."""
+    rows: dict[str, str] = {}
+    pos = 0
+    while pos < len(data):
+        m = _ROW.match(data, pos)
+        t = _TEXT_LEN.match(data, m.end()) if m else None
+        if t:
+            start = t.end()
+            end = start + int(t.group(1), 16)
+            rows[m.group(1).decode()] = data[start:end].decode(errors="replace")
+            pos = end + (data[end:end + 1] == b"\n")
+        else:
+            nl = data.find(b"\n", pos)
+            pos = len(data) if nl < 0 else nl + 1
+    return rows
+
+
+def descriptions(html: str) -> dict[str, str]:
+    """source_id -> the listing's description text. A long text sits in its own row of the page's data, and
+    the listing holds a reference to it (`"$68"`). Used only to find words in (the light estimate); the
+    text itself isn't stored."""
+    rows = _text_rows(_flight_text(html).encode())
+    out = {}
+    for raw in raw_listings(html):
+        text = raw.get("description") or ""
+        if text.startswith("$") and text[1:] in rows:
+            text = rows[text[1:]]
+        if text and not text.startswith("$"):
+            out[str(raw["listing_id"])] = text
+    return out
+
+
 def building_urls(html: str) -> dict[int, str]:
     """building_id -> canonical listing URL, from the page's JSON-LD item list."""
     urls: dict[int, str] = {}
