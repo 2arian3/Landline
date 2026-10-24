@@ -138,6 +138,27 @@ async def test_no_texted_link_field_when_the_text_could_not_go(ctx):
     assert await _say(ctx, "update_preferences", '{"max_monthly": 3000}') == _view(ctx).agent_says
 
 
+async def test_the_first_tool_that_touches_the_board_texts_the_link_whichever_it_is(ctx):
+    """#97: a returning caller's Concierge may never call update_preferences (one call only focused an
+    area, another only planned calls), so any board tool texts the link, once a call."""
+    texts = []
+    ctx.text_link = lambda: texts.append(1) or True
+    assert await _say(ctx, "end_session") == "Goodbye."   # doesn't touch the board
+    first = json.loads(await _say(ctx, "focus_area", '{"place": "Bloor"}', "fc_2"))
+    assert first == {"result": "Showing Bloor.", "texted_link": True}
+    assert "texted_link" not in await _say(ctx, "call_listings", "{}", "fc_3")
+    assert texts == [1]
+
+
+async def test_a_link_texted_as_the_call_connected_is_not_texted_again(ctx):
+    texts = []
+    ctx.text_link = lambda: texts.append(1) or True
+    assert tools.text_link_once(ctx) is True   # what the bridge does for a returning caller
+    assert "texted_link" not in await _say(ctx, "call_listings", "{}")
+    assert await _say(ctx, "update_preferences", '{"min_beds": 2}', "fc_2") == _view(ctx).agent_says
+    assert texts == [1] and tools.text_link_once(ctx) is False
+
+
 async def test_focus_listing_by_rank_reads_the_card_back(ctx):
     second = _view(ctx).board[1]
     reply = await _say(ctx, "focus_listing", '{"listing_ref": "second"}')

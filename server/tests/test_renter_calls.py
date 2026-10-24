@@ -13,7 +13,14 @@ from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from landline.agents.concierge import tools
-from landline.agents.concierge.prompt import CALL_CONNECTED, GREETING, INSTRUCTIONS, RETURNING, WELCOME_BACK
+from landline.agents.concierge.prompt import (
+    CALL_CONNECTED,
+    GREETING,
+    INSTRUCTIONS,
+    LINK_TEXTED,
+    RETURNING,
+    WELCOME_BACK,
+)
 from landline.api.browser_audio import JUDGE_AUDIO_PATH
 from landline.api.twilio import BUSY, NOT_READY
 from landline.app import create_app
@@ -273,7 +280,9 @@ class FakeTexter:
 
 
 def _outputs(fake: FakeHiggs) -> list[str]:
-    return [e["item"]["output"] for e in fake.sent if e["type"] == "conversation.item.create"]
+    """The tool replies the bridge sent, in order."""
+    return [e["item"]["output"] for e in fake.sent
+            if e["type"] == "conversation.item.create" and e["item"]["type"] == "function_call_output"]
 
 
 def test_the_first_preferences_of_a_phone_call_text_the_board_link():
@@ -300,9 +309,36 @@ def test_the_first_preferences_of_a_phone_call_text_the_board_link():
                             bridge.LINK_TEXT.format(link=f"http://localhost:3000/s/{call.session_id}"))]
 
 
+def test_a_returning_caller_is_texted_the_link_once_as_the_call_connects():
+    """#97: a returning caller's board is up before they say a word, and one such call used only
+    call_listings, so their link goes out as the call connects and the welcome says so."""
+    fake = FakeHiggs(script=[
+        _tool_call("call_listings", {}, "fc_1"),
+        _tool_call("call_listings", {"may_book": True}, "fc_2"),
+        {"type": "response.output_audio.delta", "delta": "AAAA"},   # both tools ran before this
+    ])
+    texter = FakeTexter()
+    remembered = "This renter last called yesterday. What you know: Wants up to $2,600 a month."
+    with _client() as c:
+        c.app.state.connect_higgs, c.app.state.texter = fake.connect, texter
+        c.app.state.runtime.opening = lambda sid: remembered   # stands in for Profiles, as above
+        call = c.app.state.calls.open(caller="+14165550100", called="+12892765257")
+        with c.websocket_connect("/twilio/media") as ws:
+            ws.send_json(_start(call.call_id))
+            assert ws.receive_json()["event"] == "media"
+            ws.send_json({"event": "stop", "streamSid": "MZ1"})
+    assert texter.sent == [("+14165550100", "+12892765257",
+                            bridge.LINK_TEXT.format(link=f"http://localhost:3000/s/{call.session_id}"))]
+    instructions = fake.session["session"]["instructions"]
+    assert instructions.endswith(f"{WELCOME_BACK}{LINK_TEXTED}{RETURNING}{remembered}")
+    outputs = _outputs(fake)
+    assert len(outputs) == 2 and not any("texted_link" in out for out in outputs)   # the welcome says it
+
+
 def test_a_browser_call_is_never_texted():
     fake = FakeHiggs(script=[
         _tool_call("update_preferences", {"max_monthly": 3000}),
+        _tool_call("call_listings", {}, "fc_2"),
         {"type": "response.output_audio.delta", "delta": base64.b64encode(b"\0\0").decode()},
     ])
     texter = FakeTexter()
@@ -312,7 +348,8 @@ def test_a_browser_call_is_never_texted():
         with c.websocket_connect(start["ws_url"]) as ws:
             ws.receive_bytes()
             _hang_up_and_wait(c, ws, start["session_id"])
-    assert texter.sent == [] and "texted_link" not in _outputs(fake)[0]
+    outputs = _outputs(fake)
+    assert texter.sent == [] and len(outputs) == 2 and not any("texted_link" in out for out in outputs)
 
 
 def test_twiml_remembers_the_number_the_renter_dialled():

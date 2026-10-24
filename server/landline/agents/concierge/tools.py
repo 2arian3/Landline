@@ -74,10 +74,23 @@ class ToolContext:
     # The response that called end_session without a word. A goodbye was asked for after it, and the call
     # ends when a later response is done.
     bye_response: str | None = None
-    # Phone calls only: texts the renter the link to their board, and says whether a text went out. The
-    # first update_preferences of the call uses it, so the renter can watch the listings as they talk.
+    # Phone calls only: texts the renter the link to their board, and says whether a text went out. It goes
+    # once a call (`text_link_once`): as a returning caller's call connects, else with the first tool that
+    # touches the board, so the renter can watch the listings as they talk.
     text_link: Callable[[], bool] | None = None
-    preferences_seen: bool = False
+    link_texted: bool = False
+
+
+# The tools that change or show the board: the first one of a call texts the renter its link.
+BOARD_TOOLS = {"update_preferences", "give_feedback", "focus_listing", "focus_area", "call_listings"}
+
+
+def text_link_once(ctx: ToolContext) -> bool:
+    """Texts the renter their board link the first time a call asks, and says whether a text went out."""
+    if ctx.text_link is None or ctx.link_texted:
+        return False
+    ctx.link_texted = True
+    return ctx.text_link()
 
 
 async def handle(name: str, arguments: str, tool_call_id: str, ctx: ToolContext) -> str:
@@ -114,7 +127,10 @@ async def handle(name: str, arguments: str, tool_call_id: str, ctx: ToolContext)
     except UnknownSession:
         log.exception("call %s: session %s isn't in the runtime", ctx.call_id, ctx.session_id)
         return BROKEN
-    return f"{reply} {hint}" if hint else reply
+    reply = f"{reply} {hint}" if hint else reply
+    if name in BOARD_TOOLS and text_link_once(ctx):   # the Concierge then tells the renter (prompt.py)
+        return json.dumps({"result": reply, "texted_link": True})
+    return reply
 
 
 def _object(arguments: str) -> dict[str, Any] | None:
@@ -156,9 +172,7 @@ def _misplaced_hint(name: str, keys: list[str]) -> str:
 
 async def update_preferences(args: PreferenceDelta, ctx: ToolContext, meta: dict) -> str:
     """The places the renter named are found in code first (`_places`), and their points go in the same
-    commit, so the board has moved by the time the agent hears the reply. The first one of a phone call
-    also texts the renter their board link. Its result then says so (`texted_link`), and the Concierge
-    tells them."""
+    commit, so the board has moved by the time the agent hears the reply."""
     args, points, lost = _places(args, ctx)
     sid = ctx.session_id
     version = ctx.runtime.get(sid).version
@@ -172,9 +186,6 @@ async def update_preferences(args: PreferenceDelta, ctx: ToolContext, meta: dict
     # With nothing changed, agent_says is still the last commit's line; only the missing place is news.
     said = " ".join(filter(None, [view.agent_says if view.version != version or not lost else None,
                                   _not_found(lost, ctx)]))
-    first, ctx.preferences_seen = not ctx.preferences_seen, True
-    if first and ctx.text_link is not None and ctx.text_link():
-        return json.dumps({"result": said, "texted_link": True})
     return said
 
 
