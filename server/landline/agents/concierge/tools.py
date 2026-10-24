@@ -29,6 +29,7 @@ from landline.contracts import (
     FeedbackGiven,
     ListingFocused,
     PreferencesUpdated,
+    SessionView,
 )
 from landline.contracts.tools import (
     CONCIERGE_TOOLS,
@@ -179,7 +180,7 @@ async def update_preferences(args: PreferenceDelta, ctx: ToolContext, meta: dict
     view = ctx.runtime.get(sid)
     # With nothing changed, agent_says is still the last commit's line; only the missing place is news.
     said = " ".join(filter(None, [view.agent_says if view.version != version or not lost else None,
-                                  _not_found(lost, ctx)]))
+                                  _not_found(lost, ctx), _top_three(ctx, view)]))
     return said
 
 
@@ -229,6 +230,18 @@ _WANTS_LISTINGS = re.compile(r"\b(options?|places|listings?|apartments?|rentals?
                              r"anything)\b", re.I)
 
 
+# "What are my top options now?": with no tool that reads the board, the agent stalled (#183). A reply that
+# changed the board names its top three when the renter's line asks for them.
+_ASKS_TOP = re.compile(r"\b(top|best|options?|choices|what do you have|anything good)\b", re.I)
+
+
+def _top_three(ctx: ToolContext, view: SessionView) -> str | None:
+    if not ctx.renter_said or not _ASKS_TOP.search(ctx.renter_said) or not view.board:
+        return None
+    named = [f"{c.rank}. {c.address}, {_money(c.monthly_cost)}, {_beds(c.beds)}" for c in view.board[:3]]
+    return f"Top three: {'; '.join(named)}."
+
+
 def _adds_place(line: str | None) -> bool:
     """Whether the renter's latest line adds a place to the ones already in the search."""
     return bool(line) and _ADDS_PLACE.search(line) is not None
@@ -260,7 +273,8 @@ async def give_feedback(args: GiveFeedback, ctx: ToolContext, meta: dict) -> str
         return NO_REF
     view = await ctx.runtime.emit(FeedbackGiven(**meta, listing_id=listing_id, reaction=args.reaction,
                                                 reason=args.reason, attribute=args.attribute))
-    return f"Noted for {_address(ctx, listing_id)}. {view.agent_says}"
+    return " ".join(filter(None, [f"Noted for {_address(ctx, listing_id)}. {view.agent_says}",
+                                  _top_three(ctx, view)]))
 
 
 async def focus_listing(args: FocusListing, ctx: ToolContext, meta: dict) -> str:
@@ -312,7 +326,9 @@ async def _showing(ctx: ToolContext, meta: dict, place: str, lat: float, lng: fl
         await tx.apply(PreferencesUpdated(**{**meta, "idem_key": key}, delta=delta))
         await tx.apply(AnchorResolved(session_id=sid, at=meta["at"], idem_key=f"{key}:place", label=place,
                                       lat=lat, lng=lng))
-    return f"Showing {place}, and the list now ranks by it. {ctx.runtime.get(sid).agent_says}"
+    view = ctx.runtime.get(sid)
+    return " ".join(filter(None, [f"Showing {place}, and the list now ranks by it. {view.agent_says}",
+                                  _top_three(ctx, view)]))
 
 
 async def _show_when_found(ctx: ToolContext, meta: dict, place: str, lookup: asyncio.Future) -> None:
