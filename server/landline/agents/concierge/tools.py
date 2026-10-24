@@ -378,7 +378,12 @@ async def call_listings(args: CallListings, ctx: ToolContext, meta: dict) -> str
     # The call's timing comes first, so a viewing window is never read back as when the calls go out.
     times = f"Viewing window: {_join([_window(a) for a in availability])}." if availability \
         else f"No viewing times yet.{' Ask when they are free for a viewing.' if invented else ''}"
+    # New viewing times and nothing said about booking (#189): the landlord said "yes, tomorrow" and the
+    # Caller couldn't take a time, so the Concierge asks. Not after a "don't book", nor for the same times.
+    ask = not may_book and args.may_book is None and bool(availability) and \
+        availability != (before.availability if before else []) and books(ctx.renter_said or "") is not False
     booking = ("Booking: not allowed yet. Ask whether you may book a viewing." if unasked and not may_book
+               else "Booking: not allowed yet. Ask whether you may book a viewing in that window." if ask
                else "Booking: I may book one." if may_book else "Booking: I won't book.")
     return (f"Calling {_join(addresses)} {_calls_go_out(ctx, meta['at'])}, and texting you what they say. "
             f"{times} {booking}")
