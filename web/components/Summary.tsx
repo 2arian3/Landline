@@ -98,6 +98,20 @@ export function Activity({ view, compact = false }: { view: SessionView | null; 
 }
 
 /**
+ * What the calls found, once they're all done: the results text (written by code from the outcomes,
+ * the same words the renter gets by text), at the top of the panel.
+ */
+export function Results({ view, compact = false }: { view: SessionView | null; compact?: boolean }) {
+  if (view?.phase !== "done" || !view.results) return null;
+  return (
+    <section aria-label="What the calls found">
+      <p className="text-meta text-ink-3">What the calls found</p>
+      <p className={`text-ink ${compact ? "text-support" : "text-fact"}`}>{view.results}</p>
+    </section>
+  );
+}
+
+/**
  * The first thing in the panel for a renter Landline knows (U-08). Landline
  * usually opens a returning call with the welcome itself; where its last line
  * shows (desktop), don't say it twice.
