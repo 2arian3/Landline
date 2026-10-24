@@ -7,7 +7,7 @@ import { MARK, type Mark, STATUS } from "./ListingCard";
 import { Money } from "./Money";
 import { bathsLabel, bedsLabel, sizeLabel, sourceName, unitLabel } from "@/lib/format";
 import { api } from "@/lib/live";
-import { callNotes } from "@/lib/outcome";
+import { type Unheard, callNotes, unheard } from "@/lib/outcome";
 import type { CallView, Card, ListingDetail as Detail, Provenance } from "@/lib/types";
 
 export type { Reaction };
@@ -197,7 +197,11 @@ export function ListingDetail({
             </ul>
           ) : (
             !asked &&
-            !notes.viewing && <p className="mt-1.5 text-support text-ink-2">{noFacts(card?.status, mark)}</p>
+            !notes.viewing && (
+              <p className="mt-1.5 text-support text-ink-2">
+                {noFacts(card?.status, mark, unheard(card, call ? [call] : []))}
+              </p>
+            )
           )}
           {notes.questions.map((q) => (
             <div key={q} className="mt-3">
@@ -270,11 +274,12 @@ function Source({ p }: { p?: Provenance }) {
   );
 }
 
-function noFacts(status?: Card["status"], mark?: Mark): string {
+function noFacts(status?: Card["status"], mark?: Mark, ended?: Unheard | null): string {
   if (mark === "will_call") return "Landline calls them once you hang up. What they say lands here, with their words.";
   if (mark === "queued") return "Waiting for its turn on the phone.";
   if (mark === "ringing") return "Ringing now.";
   if (status === "calling") return "Landline is on the phone with them now. What they say lands here, with their words.";
+  if (ended) return ended.line;   // how the call that learned nothing ended
   if (status === "no_answer") return "Nobody picked up yet.";
   if (status === "booked") return "A viewing was booked on the call. Nothing else came up.";
   return "Nobody has called about this one yet. Say “call this one” and what the listing agent says lands here, with their words.";
