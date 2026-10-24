@@ -5,8 +5,12 @@ import type { CataloguePoint, SessionView } from "./types";
 
 /**
  * The live session: server-sent events say *that* something changed (a
- * version number); the snapshot says *what*. If the stream keeps failing we
- * fall back to polling. Safeguards carried over from Realest's poller:
+ * version number); the snapshot says *what*. When the stream goes quiet we
+ * poll instead: quiet, not failing, because a proxy that buffers the stream
+ * (a Cloudflare tunnel did) stalls it without an error. While it's quiet the
+ * snapshot is fetched every POLL_MS and the stream gets a fresh connection
+ * every REOPEN_MS; its first version or ping stops the polling. Safeguards
+ * carried over from Realest's poller:
  *   - one request in flight at a time, so a slow network can't stack them
  *   - a response older than what's on screen is dropped
  *   - a successful but empty answer never blanks a live board unless its
@@ -16,6 +20,7 @@ import type { CataloguePoint, SessionView } from "./types";
  */
 const STALE_MS = 6500;
 const POLL_MS = 1500;
+const REOPEN_MS = 30_000;
 
 /**
  * Where the API lives. Empty means this origin's /api proxy (next.config.ts),
@@ -64,50 +69,66 @@ export function useLiveSession(sessionId: string | null) {
   useEffect(() => {
     // Judge mode mounts the board before a session exists: nothing to follow yet.
     if (!sessionId) return;
-    let alive = true;
-    let poll: ReturnType<typeof setInterval> | null = null;
+    let source: EventSource | null = null;
     let errors = 0;
+    let heardAt = Date.now(); // the stream's last word: opened, a version or a ping
+    let openedAt = 0;
+    let polledAt = 0;
     void refresh();
 
-    const source = new EventSource(api(`/api/sessions/${encodeURIComponent(sessionId)}/stream`));
-    // Any word from the server, a version or a ping, means the line is up.
-    const markAlive = () => {
-      lastOk.current = Date.now();
+    // Any word on the stream means it's up again; the next tick stops polling.
+    const heard = () => {
+      heardAt = lastOk.current = Date.now();
       setStale(false);
       errors = 0;
     };
-    source.onopen = markAlive;
-    source.addEventListener("ping", markAlive);
-    source.onmessage = (ev) => {
-      markAlive();
-      try {
-        const { version } = JSON.parse(ev.data) as { version: number };
-        if (!current.current || version > current.current.version) void refresh();
-      } catch {
-        void refresh();
-      }
+    const open = () => {
+      source?.close();
+      openedAt = Date.now();
+      const s = new EventSource(api(`/api/sessions/${encodeURIComponent(sessionId)}/stream`));
+      s.onopen = heard;
+      s.addEventListener("ping", heard);
+      s.onmessage = (ev) => {
+        heard();
+        try {
+          const { version } = JSON.parse(ev.data) as { version: number };
+          if (!current.current || version > current.current.version) void refresh();
+        } catch {
+          void refresh();
+        }
+      };
+      // The browser retries a failed stream on its own; three failures in a row and it waits for the
+      // next reopen, with polling holding the board meanwhile.
+      s.onerror = () => {
+        errors += 1;
+        if (errors >= 3) s.close();
+      };
+      source = s;
     };
-    source.onerror = () => {
-      errors += 1;
-      if (errors >= 3 && !poll && alive) {
-        source.close();
-        poll = setInterval(() => void refresh(), POLL_MS);
-      }
-    };
+    open();
 
-    const watch = setInterval(() => setStale(Date.now() - lastOk.current > STALE_MS), 1000);
-    const onVisible = () => {
-      if (document.visibilityState === "visible") {
-        lastOk.current = Date.now();
-        void refresh();
+    const tick = setInterval(() => {
+      const now = Date.now();
+      if (now - heardAt > STALE_MS) {
+        if (now - polledAt >= POLL_MS) {
+          polledAt = now;
+          void refresh();
+        }
+        if (now - openedAt >= REOPEN_MS) open();
       }
+      setStale(now - lastOk.current > STALE_MS);
+    }, 500);
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      lastOk.current = Date.now();
+      void refresh();
+      // A phone that slept can lose the stream without a word.
+      if (Date.now() - heardAt > STALE_MS) open();
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => {
-      alive = false;
-      source.close();
-      if (poll) clearInterval(poll);
-      clearInterval(watch);
+      source?.close();
+      clearInterval(tick);
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [sessionId, refresh]);
