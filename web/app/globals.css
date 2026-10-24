@@ -121,12 +121,23 @@
   border: 2px solid var(--color-live);
   animation: ring 1.8s var(--ease-out) infinite;
 }
+/* No answer: the ring of a call that stopped, dashed and still. It reads apart from pending (no
+   ring), calling (a pulsing ring) and gone (hollow) without relying on colour. */
+.pin[data-status="no_answer"]::after {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border-radius: 999px;
+  border: 2px dashed var(--color-ink-3);
+}
 .pin[data-status="dead"] { background: #fff; color: var(--color-ink-3); border-color: var(--color-ink-3); }
 /* Suspect: outlined in red with a mark, so it reads without colour too. */
 .pin[data-status="suspect"] { background: #fff; color: var(--color-dead); border-color: var(--color-dead); }
 .pin[data-status="booked"] { background: var(--color-real); }
 .pin[data-status="suspect"]::before,
-.pin[data-status="booked"]::before {
+.pin[data-status="booked"]::before,
+.pin[data-mark="will_call"]::before,
+.pin[data-mark="queued"]::before {
   position: absolute;
   top: -7px;
   right: -7px;
@@ -141,6 +152,9 @@
 }
 .pin[data-status="suspect"]::before { content: "!"; background: var(--color-dead); }
 .pin[data-status="booked"]::before { content: "★"; background: var(--color-ink); font-size: 9px; }
+/* Picked to call, until it dials (the card says "Will call", then "Queued"): a check, the renter's own pick. */
+.pin[data-mark="will_call"]::before,
+.pin[data-mark="queued"]::before { content: "✓"; background: var(--color-ink); }
 
 @keyframes ring {
   from { opacity: 0.7; transform: scale(0.85); }

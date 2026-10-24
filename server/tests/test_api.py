@@ -5,8 +5,8 @@ from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
 
-from landline.api.demo import DemoSessions
-from landline.api.judge import JudgeLines
+from landline.api.demo import TORONTO, DemoSessions, window
+from landline.api.judge import JudgeLines, StartLimit, client_ip
 from landline.app import create_app
 from landline.config import Settings
 from landline.contracts import Listing
@@ -30,8 +30,8 @@ def _client(cat: Catalogue | None = None) -> TestClient:
 
 
 def _one_bedrooms() -> Catalogue:
-    """Four places that all fit the default $2,800 budget, so the top three are all on the board."""
-    return Catalogue([_listing(i, rent, 1) for i, rent in enumerate((2000, 2100, 2200, 2300), start=1)],
+    """Five places that all fit the default $2,800 budget: four to call and one left pending."""
+    return Catalogue([_listing(i, rent, 1) for i, rent in enumerate((2000, 2100, 2200, 2300, 2400), start=1)],
                      "test")
 
 
@@ -121,64 +121,112 @@ def test_feedback_shows_on_the_card():
                       json={"listing_id": "t:1", "reaction": "love"}).status_code == 422
 
 
-async def test_demo_calls_walk_the_top_three_to_scripted_outcomes():
-    s = DemoSessions(_one_bedrooms(), call_s=0)
-    top = [c.listing_id for c in s.get("s1").board[:3]]
+async def test_demo_plan_is_the_top_four_places_with_a_pin_and_dials_nothing():
+    flipped = _listing(9, 1900, 1).model_copy(update={"lng": 79.38})   # a flipped longitude: no pin
+    s = DemoSessions(Catalogue([flipped, *_one_bedrooms().listings], "test"), tick_s=0)
+    board = [c.listing_id for c in s.get("s1").board]
+    planned = await s.plan_top("s1")
+    assert planned.phase == "open" and planned.calls == [] and "s1" not in s.dialing
+    assert planned.plan == [lid for lid in board if lid != "t:9"][:4]   # t:9 stays on the board, unplanned
+    assert {c.status for c in planned.board} == {"pending"}
 
-    calling = await s.call_top("s1")
-    assert calling.version == 2
-    assert [c.status for c in calling.board] == ["calling", "calling", "calling", "pending"]
 
+async def test_hanging_up_queues_the_plan_then_walks_it_to_results():
+    s = DemoSessions(_one_bedrooms(), tick_s=0)
+    seen = []
+    publish = s.update
+
+    async def spy(session_id, **kw):
+        view = await publish(session_id, **kw)
+        seen.append((view.phase, tuple(c.state for c in view.calls)))
+        return view
+
+    s.update = spy
+    plan = (await s.plan_top("s1")).plan
+    queued = await s.hang_up("s1")
+    assert [c.listing_id for c in queued.calls] == plan
+    assert all(re.fullmatch(r"c_[A-Za-z0-9_-]{10}", c.call_id) for c in queued.calls)
     await s.dialing["s1"]
+
+    # Queued, then all dialing and ringing; the fourth never goes live; one hang-up at a time; then done.
+    assert seen == [
+        ("open", ()),
+        ("calling", ("queued",) * 4),
+        ("calling", ("dialing",) * 4),
+        ("calling", ("ringing",) * 4),
+        ("calling", ("live", "live", "live", "ringing")),
+        ("calling", ("ended", "live", "live", "ringing")),
+        ("calling", ("ended", "ended", "live", "ringing")),
+        ("calling", ("ended", "ended", "ended", "ringing")),
+        ("calling", ("ended",) * 4),
+        ("done", ("ended",) * 4),
+    ]
     done = s.get("s1")
-    assert done.version == 3 and "s1" not in s.dialing
-    # Called places keep their rank: re-ranking from what calls found is O-04's job, and a renter who
-    # asked about the top three must still see all three.
-    assert [c.listing_id for c in done.board[:3]] == top
+    assert "s1" not in s.dialing and all(c.started_at for c in done.calls)
     cards = {c.listing_id: c for c in done.board}
-    assert [cards[i].status for i in top] == ["verified", "suspect", "verified"]
-    for i in top:
-        [fact] = cards[i].facts
-        assert fact.speaker == "Agent heard" and fact.quote and fact.at is not None
-    # The first agent's mandatory $180 parking goes through monthly_cost; the listed rent stays
-    # for the struck price, and the reasons count from the real cost.
-    first = cards[top[0]]
-    assert (first.rent, first.monthly_cost) == (2000, 2180)
-    assert "$620 under budget" in first.reasons
-    assert cards[top[1]].red_flags and not cards[top[0]].red_flags and not cards[top[2]].red_flags
+    assert [cards[lid].status for lid in plan] == ["verified", "suspect", "booked", "no_answer"]
+    assert (cards[plan[0]].rent, cards[plan[0]].monthly_cost) == (2000, 2180)   # parking through monthly_cost
+    # The viewing falls inside the renter's Saturday afternoon, and the results lead with it.
+    viewing = s.runs["s1"].outcomes[plan[2]].viewing
+    start, end = window(viewing)
+    assert start <= viewing < end and viewing.astimezone(TORONTO).strftime("%A %H:%M") == "Saturday 14:00"
+    addr = {lid: c.address for lid, c in cards.items()}
+    assert done.results == (
+        f"I booked {addr[plan[2]]} for Saturday at 2 pm, inside your Saturday afternoon. "
+        f"{addr[plan[0]]} is really $2,180 a month with parking. "
+        "Its agent asked, \u201cWould they sign a 12-month lease?\u201d I said I'd check with you. "
+        f"{addr[plan[1]]} wants a deposit by e-transfer before anyone sees the unit, so I'd skip it. "
+        f"Nobody picked up at {addr[plan[3]]}."
+    )
 
 
-async def test_calling_again_restarts_the_walk():
-    s = DemoSessions(_one_bedrooms(), call_s=60)
-    await s.call_top("s1")
-    first = s.dialing["s1"]
-    again = await s.call_top("s1")
+async def test_hanging_up_without_a_plan_closes_the_brief():
+    s = DemoSessions(_one_bedrooms(), tick_s=0)
+    closed = await s.hang_up("s1")
+    assert (closed.phase, closed.plan, closed.calls) == ("closed", [], []) and "s1" not in s.dialing
+    assert (await s.plan_top("s1")).plan == []   # a closed brief takes no plan
+
+
+async def test_reset_stops_the_calls_and_reopens_the_brief():
+    s = DemoSessions(_one_bedrooms(), tick_s=60)
+    await s.plan_top("s1")
+    await s.hang_up("s1")
+    walk = s.dialing["s1"]
+    fresh = await s.reset("s1")
     await asyncio.sleep(0)
-    assert first.cancelled() and not s.dialing["s1"].done()
-    assert [c.status for c in again.board[:3]] == ["calling"] * 3
-    s.close()
-    await asyncio.sleep(0)
+    assert walk.cancelled() and "s1" not in s.dialing
+    assert (fresh.phase, fresh.plan, fresh.calls, fresh.results) == ("open", [], [], None)
+    assert {c.status for c in fresh.board} == {"pending"}
 
 
-def test_call_endpoint_shows_calling_then_the_outcomes():
+def test_demo_hooks_run_the_whole_hand_off():
     with _client(_one_bedrooms()) as c:
-        c.app.state.sessions.call_s = 0.05
-        r = c.post("/api/sessions/s_call/calls")
-        assert r.status_code == 200
-        assert [b["status"] for b in r.json()["board"]] == ["calling"] * 3 + ["pending"]
+        c.app.state.sessions.tick_s = 0.01
+        assert len(c.post("/api/sessions/s_flow/calls").json()["plan"]) == 4
+        assert c.post("/api/sessions/s_flow/hang-up").json()["phase"] == "calling"
         deadline = time.monotonic() + 3
-        while time.monotonic() < deadline:
-            board = c.get("/api/sessions/s_call").json()["board"]
-            if not any(b["status"] == "calling" for b in board):
-                break
+        view = c.get("/api/sessions/s_flow").json()
+        while view["phase"] != "done" and time.monotonic() < deadline:
             time.sleep(0.02)
-        assert sorted(b["status"] for b in board) == ["pending", "suspect", "verified", "verified"]
+            view = c.get("/api/sessions/s_flow").json()
+        assert view["phase"] == "done" and view["results"].startswith("I booked")
+        statuses = [b["status"] for b in view["board"]]
+        assert statuses == ["verified", "suspect", "booked", "no_answer", "pending"]
+        assert c.post("/api/sessions/s_flow/reset").json()["phase"] == "open"
 
 
-def _judge_client(cap: int) -> TestClient:
+def _judge_client(cap: int, per_ip: int = 100, ready: bool = True) -> TestClient:
     settings = Settings(database_url=None, web_url="http://localhost:3000", transport="stub",
-                        higgs_max_sessions=cap)
+                        higgs_max_sessions=cap, judge_audio_ready=ready, judge_starts_per_ip=per_ip)
     return TestClient(create_app(settings, Catalogue([_listing(1, 2400, 1)], "test")))
+
+
+def test_judge_mode_opens_soon_until_the_browser_audio_is_ready():
+    with _judge_client(2, ready=False) as c:
+        r = c.post("/api/judge/start")
+        assert r.status_code == 503
+        assert r.json() == {"detail": "Judge mode opens soon.", "reason": "closed"}
+        assert c.app.state.judges.open == {} and c.get("/health").json()["sessions"] == 0
 
 
 def test_judge_start_mints_a_session_and_its_audio_socket():
@@ -199,9 +247,54 @@ def test_judge_start_is_busy_when_every_line_is_taken():
         busy = c.post("/api/judge/start")
         assert busy.status_code == 503
         assert busy.headers["retry-after"] == "60"
-        assert busy.json()["detail"] == "All lines are busy. Try again in a minute."
+        assert busy.json() == {"detail": "All lines are busy. Try again in a minute.", "reason": "busy",
+                               "retry_after_s": 60}
         c.app.state.judges.hang_up(first)   # what the browser transport (A-03) does when a judge leaves
         assert c.post("/api/judge/start").status_code == 200
+
+
+def test_judge_starts_are_limited_per_address():
+    with _judge_client(10, per_ip=2) as c:
+        judge = {"X-Real-IP": "203.0.113.7"}
+        assert [c.post("/api/judge/start", headers=judge).status_code for _ in range(2)] == [200, 200]
+        limited = c.post("/api/judge/start", headers=judge)
+        assert limited.status_code == 429
+        body = limited.json()
+        assert body["reason"] == "rate_limited" and 0 < body["retry_after_s"] <= 600
+        assert limited.headers["retry-after"] == str(body["retry_after_s"])
+        assert body["detail"] == "Too many judge sessions from your network. Try again in 10 minutes."
+        # Another address has its own count; without X-Real-IP the first X-Forwarded-For entry counts.
+        other = {"X-Forwarded-For": "198.51.100.4, 10.0.0.9"}
+        assert [c.post("/api/judge/start", headers=other).status_code for _ in range(3)] == [200, 200, 429]
+
+
+def test_only_starts_that_open_a_line_count_against_an_address():
+    with _judge_client(1, per_ip=1) as c:
+        first = c.post("/api/judge/start", headers={"X-Real-IP": "203.0.113.7"}).json()["session_id"]
+        other = {"X-Real-IP": "198.51.100.4"}
+        assert c.post("/api/judge/start", headers=other).json()["reason"] == "busy"
+        c.app.state.judges.hang_up(first)
+        assert c.post("/api/judge/start", headers=other).status_code == 200
+
+
+def test_start_limit_frees_an_address_as_its_window_passes():
+    now = [0.0]
+    limit = StartLimit(per_ip=2, window_s=600, clock=lambda: now[0])
+    limit.record("a")
+    now[0] = 100.0
+    limit.record("a")
+    now[0] = 200.0
+    assert limit.wait_s("a") == 400 and limit.wait_s("b") == 0
+    now[0] = 600.5
+    assert limit.wait_s("a") == 0
+
+
+def test_client_ip_trusts_the_gateway_header_first():
+    forwarded = {"x-forwarded-for": "198.51.100.4, 10.0.0.9"}
+    assert client_ip({"x-real-ip": "203.0.113.7", **forwarded}, "10.0.0.2") == "203.0.113.7"
+    assert client_ip(forwarded, "10.0.0.2") == "198.51.100.4"
+    assert client_ip({}, "10.0.0.2") == "10.0.0.2"
+    assert client_ip({}, None) == "unknown"
 
 
 def test_judge_lines_free_at_their_deadline():
@@ -219,6 +312,16 @@ def test_settings_read_the_higgs_cap(monkeypatch):
     assert Settings.load().higgs_max_sessions == 3
     monkeypatch.setenv("HIGGS_MAX_SESSIONS", "")
     assert Settings.load().higgs_max_sessions == 5
+
+
+def test_settings_read_judge_mode(monkeypatch):
+    for value, ready in (("1", True), ("true", True), ("", False), ("0", False), ("no", False)):
+        monkeypatch.setenv("JUDGE_AUDIO_READY", value)
+        assert Settings.load().judge_audio_ready is ready
+    monkeypatch.setenv("JUDGE_STARTS_PER_IP", "8")
+    monkeypatch.setenv("JUDGE_START_WINDOW_S", "")
+    s = Settings.load()
+    assert (s.judge_starts_per_ip, s.judge_start_window_s) == (8, 600)
 
 
 def test_returning_renter_is_welcomed_by_name():

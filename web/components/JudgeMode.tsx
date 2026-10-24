@@ -5,7 +5,10 @@ import { LiveBoard } from "./LiveBoard";
 import { askForMic, useJudgeLine } from "@/lib/judgeAudio";
 import { api } from "@/lib/live";
 
-type Phase = "intro" | "asking" | "denied" | "nomic" | "starting" | "busy" | "closed" | "live";
+type Phase = "intro" | "asking" | "denied" | "nomic" | "starting" | "soon" | "limited" | "busy" | "closed" | "live";
+
+/** Why POST /api/judge/start said no: "closed" until the browser audio is live, "rate_limited", "busy". */
+type Refusal = { reason?: string; retry_after_s?: number };
 
 const TRY_SAYING = [
   "A one-bedroom near Bloor, under $2,600.",
@@ -23,6 +26,7 @@ const TRY_SAYING = [
 export function JudgeMode() {
   const [phase, setPhase] = useState<Phase>("intro");
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [waitMin, setWaitMin] = useState(1);
   const line = useJudgeLine();
 
   async function begin() {
@@ -39,13 +43,15 @@ export function JudgeMode() {
       stop();
       return setPhase("closed");
     }
-    if (res.status === 429 || res.status === 503) {
-      stop();
-      return setPhase("busy");
-    }
     if (!res.ok) {
       stop();
-      return setPhase("closed");
+      const why = (await res.json().catch(() => ({}))) as Refusal;
+      if (why.reason === "closed") return setPhase("soon");
+      if (res.status === 429) {
+        setWaitMin(Math.max(1, Math.ceil((why.retry_after_s ?? 600) / 60)));
+        return setPhase("limited");
+      }
+      return setPhase(res.status === 503 ? "busy" : "closed");
     }
     const { session_id, ws_url } = (await res.json()) as { session_id: string; ws_url: string };
     setSessionId(session_id);
@@ -61,13 +67,13 @@ export function JudgeMode() {
   return (
     <LiveBoard
       sessionId={sessionId}
-      intro={<Intro phase={phase} onStart={begin} />}
+      intro={<Intro phase={phase} waitMin={waitMin} onStart={begin} />}
       dock={<VoiceBar line={line} onAgain={again} />}
     />
   );
 }
 
-function Intro({ phase, onStart }: { phase: Phase; onStart: () => void }) {
+function Intro({ phase, waitMin, onStart }: { phase: Phase; waitMin: number; onStart: () => void }) {
   const waiting = phase === "asking" || phase === "starting";
   return (
     <div className="space-y-6 pt-2">
@@ -102,31 +108,45 @@ function Intro({ phase, onStart }: { phase: Phase; onStart: () => void }) {
         </Notice>
       )}
       {phase === "nomic" && <Notice>No microphone found. Plug one in or switch devices, then try again.</Notice>}
+      {phase === "soon" && (
+        <Notice>Judge mode opens soon. You can look around the live board in the meantime.</Notice>
+      )}
+      {phase === "limited" && (
+        <Notice>
+          This network has started a few sessions already. Try again in{" "}
+          {waitMin === 1 ? "a minute" : `${waitMin} minutes`}.
+        </Notice>
+      )}
       {phase === "busy" && <Notice>All lines are busy right now. Try again in a minute.</Notice>}
       {phase === "closed" && (
         <Notice>Judge mode isn&rsquo;t open right now. You can still look around the live board.</Notice>
       )}
 
       <div className="space-y-3">
-        <button
-          type="button"
-          onClick={onStart}
-          disabled={waiting}
-          className="h-12 w-full rounded-[var(--radius-control)] bg-ink text-support font-label text-white transition-opacity duration-150 disabled:opacity-60"
-        >
-          {phase === "asking"
-            ? "Waiting for the microphone…"
-            : phase === "starting"
-              ? "Connecting…"
-              : phase === "intro"
-                ? "Start talking"
-                : "Try again"}
-        </button>
-        <p className="text-meta text-ink-3">
-          {phase === "asking"
-            ? "Your browser is asking to use the microphone."
-            : "Uses your microphone. You can mute or end any time."}
-        </p>
+        {/* Closed until the browser audio is live: nothing to start, so no button that asks for the mic. */}
+        {phase !== "soon" && (
+          <>
+            <button
+              type="button"
+              onClick={onStart}
+              disabled={waiting}
+              className="h-12 w-full rounded-[var(--radius-control)] bg-ink text-support font-label text-white transition-opacity duration-150 disabled:opacity-60"
+            >
+              {phase === "asking"
+                ? "Waiting for the microphone…"
+                : phase === "starting"
+                  ? "Connecting…"
+                  : phase === "intro"
+                    ? "Start talking"
+                    : "Try again"}
+            </button>
+            <p className="text-meta text-ink-3">
+              {phase === "asking"
+                ? "Your browser is asking to use the microphone."
+                : "Uses your microphone. You can mute or end any time."}
+            </p>
+          </>
+        )}
         <a href="/?dev=1" className="inline-block text-support text-ink-2 underline underline-offset-2">
           Look around without talking
         </a>
