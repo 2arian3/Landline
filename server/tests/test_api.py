@@ -5,11 +5,11 @@ from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
 
-from landline.api.demo import LAST_RESULTS, TORONTO, DemoSessions, window
+from landline.api.demo import NO_RESULTS_YET, TORONTO, DemoSessions, window
 from landline.api.judge import JudgeLines, StartLimit, client_ip
 from landline.app import create_app
 from landline.config import Settings
-from landline.contracts import Listing
+from landline.contracts import Listing, Preferences
 from landline.db.catalogue import Catalogue
 
 NOW = datetime(2026, 10, 22, tzinfo=UTC)
@@ -436,7 +436,8 @@ def test_returning_renter_is_welcomed_by_name():
 async def test_a_returning_call_opens_with_the_last_results():
     s = DemoSessions(_one_bedrooms(), tick_s=0)
     first = await s.welcome_back("s1", True, "Sara")
-    assert first.agent_says == f"Welcome back, Sara. {LAST_RESULTS}"   # nothing run yet: the fixture
+    # Nothing run yet: the Narrator's line for that, never invented results.
+    assert first.agent_says == f"Welcome back, Sara. {NO_RESULTS_YET}"
     await s.plan_top("s1")
     await s.hang_up("s1")
     await s.dialing["s1"]
@@ -444,6 +445,11 @@ async def test_a_returning_call_opens_with_the_last_results():
     assert results and not s.get("s1").agent_says.startswith("Welcome back")   # calls done: Landline moved on
     again = await s.reset("s1")   # the renter calls again
     assert again.agent_says == f"Welcome back, Sara. {results}"
+    assert (await s.update("s1", focus="t:2")).agent_says == again.agent_says   # a tap says nothing new
+    # Once the renter says something, Landline answers it, the way the Narrator only opens with the welcome.
+    said = await s.update("s1", prefs=Preferences(max_monthly=2600, min_beds=1))
+    assert said.agent_says.endswith("is on top.") and said.returning
+    await s.reset("s1")
     assert (await s.plan_top("s1")).agent_says.endswith("is on top.")   # once there's a plan, it moves on
     await s.reset("s1")
     assert (await s.welcome_back("s1", False, None)).agent_says.endswith("is on top.")
