@@ -45,7 +45,7 @@ export function LiveBoard({
   dock?: ReactNode;
   line?: string | null;
 }) {
-  const { view, stale } = useLiveSession(sessionId);
+  const { view, stale, unreachable } = useLiveSession(sessionId);
   const points = useCatalogue();
   const desktop = useMedia("(min-width: 1024px)");
   const [selected, setSelected] = useState<string | null>(null);
@@ -101,6 +101,14 @@ export function LiveBoard({
   const areaKey = area ? `${area.lat},${area.lng},${area.zoom}` : null;
   if (view && openingArea.current === undefined) openingArea.current = areaKey;
   const focusArea = area && areaKey !== openingArea.current ? area : null;
+  // Another session (judge mode's "Start again") opens with nothing selected or tapped, and frames its
+  // own board.
+  useEffect(() => {
+    setSelected(null);
+    setMine((m) => (Object.keys(m).length ? {} : m));
+    openingFocus.current = undefined;
+    openingArea.current = undefined;
+  }, [sessionId]);
   const selectedCard = board.find((c) => c.listing_id === selected);
 
   function select(id: string) {
@@ -152,7 +160,13 @@ export function LiveBoard({
     <div className="absolute inset-0 bg-map-land" aria-hidden />
   );
 
-  const list = (
+  // No snapshot at all for a while (the API is down or unreachable): say so plainly instead of skeletons
+  // that never fill. Polling carries on, and the first answer brings the board in.
+  const list = unreachable ? (
+    <p role="status" className="text-support text-ink-2">
+      Can&rsquo;t reach Landline right now. Trying again&hellip;
+    </p>
+  ) : (
     <div className={desktop ? "space-y-4" : "space-y-3"}>
       <Welcome view={view} compact={!desktop} />
       <Results view={view} compact={!desktop} />
