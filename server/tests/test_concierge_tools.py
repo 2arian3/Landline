@@ -395,3 +395,14 @@ async def test_bad_arguments_unknown_and_deferred_tools(ctx):
     assert await _say(ctx, "remember_me") == tools.UNKNOWN
     assert {t["name"] for t in tools.TOOLS} == {"update_preferences", "give_feedback", "focus_listing",
                                                 "focus_area", "call_listings", "end_session"}
+
+
+def test_a_place_to_live_near_is_saved_and_focus_area_is_only_for_show_me():
+    """The demo opens with "near Christie station": only moving the map wouldn't narrow the pins."""
+    from landline.agents.concierge.prompt import INSTRUCTIONS
+    text = " ".join(INSTRUCTIONS.split())
+    assert ("A place they want to live in or near always goes in update_preferences, never only in "
+            "focus_area: focus_area just moves the map, and the list doesn't change.") in text
+    assert ('Call focus_area only when they ask to see a part of the city ("show me", "look at", '
+            '"zoom to").') in text
+    assert "When they name a part of the city to look at, call focus_area." not in text
