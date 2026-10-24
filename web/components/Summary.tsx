@@ -195,6 +195,9 @@ export function Welcome({ view, compact = false }: { view: SessionView | null; c
   );
 }
 
+/** An empty board, and Landline's last line is the stock one for it. */
+const saysNothingFits = (view: SessionView) => !view.board.length && /^Nothing fits yet\b/.test(view.agent_says ?? "");
+
 /** Landline's last line is the returning renter's welcome: the panel shows it once, as the welcome. */
 const opensWithWelcome = (view: SessionView) => view.returning && /^welcome back/i.test(view.agent_says ?? "");
 
@@ -244,9 +247,9 @@ export function Heard({
           <p className="text-support text-ink">{heard}</p>
         </div>
       )}
-      {/* What Landline said during the brief: stale once the calls start, and with nothing on the board the
-          list's own empty state says it. */}
-      {view.agent_says && view.phase === "open" && view.board.length > 0 && !opensWithWelcome(view) && (
+      {/* What Landline said during the brief: stale once the calls start. With nothing on the board, its
+          stock "Nothing fits yet" is what the list's empty state says already; anything else it said shows. */}
+      {view.agent_says && view.phase === "open" && !saysNothingFits(view) && !opensWithWelcome(view) && (
         <blockquote className="m-0 border-0 p-0">
           <p className="text-meta text-ink-3">Landline said</p>
           <p className="text-fact">“{view.agent_says}”</p>
