@@ -1,0 +1,37 @@
+{
+  "id": "returning-results-ready",
+  "about": "A returning caller whose calls are done: the welcome gives the booking from memory and invents nothing",
+  "returning": {
+    "opening": "This renter last called yesterday. Results of the calls you made for them: I booked 88 Erskine Ave for Saturday at 11 am. 412 Markham St is already rented. What you know: Wants up to $3,000 a month, 2 bedrooms or more and has a dog. Liked 88 Erskine Ave.",
+    "prefs": {
+      "max_monthly": 3000,
+      "min_beds": 2,
+      "pets": [
+        "dog"
+      ]
+    }
+  },
+  "lines": [
+    {
+      "say": "Great, thanks. That's all I wanted to know. Bye!"
+    }
+  ],
+  "final": {
+    "greeting_says": [
+      "Erskine",
+      "Saturday"
+    ],
+    "greeting_avoids": [
+      "thirty thousand"
+    ],
+    "prefs": {
+      "max_monthly": 3000,
+      "min_beds": 2,
+      "pets": [
+        "dog"
+      ]
+    },
+    "no_request": true,
+    "ended": true
+  }
+}

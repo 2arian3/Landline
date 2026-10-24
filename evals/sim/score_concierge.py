@@ -135,6 +135,11 @@ def _wants(want: Want, state: dict, trace: Trace, catalogue: Catalogue, *, kind:
         if want.replies_in is not None:
             ok, detail = _replies_in(want.replies_in, trace)
             check(f"replies_in.{want.replies_in}", ok, detail)
+        greeting = trace.agent[0].text if trace.agent else ""
+        for word in want.greeting_says or []:
+            check(f"greeting.says.{word}", word.lower() in greeting.lower(), f"greeting: {greeting!r}")
+        for word in want.greeting_avoids or []:
+            check(f"greeting.avoids.{word}", word.lower() not in greeting.lower(), f"greeting: {greeting!r}")
     except BadCase as exc:
         check("case", False, f"bad case: {exc}")
     return out
