@@ -4,7 +4,7 @@
 
 Call it and say what you want, in whatever language you speak. A live map of Toronto listings re-ranks while you talk. Pick the places you like and hang up: it phones those listing agents in parallel to find out what listings never say (is it still available, what does parking really cost, are dogs allowed, how much light does it get), books a viewing when you said it could, and texts you what it learned. Every fact on the map shows who said it. Call again next week and it remembers where you left off.
 
-Built on Boson AI's **Higgs Realtime** (the renter's call and every listing call) and **Higgs TTS** (voicemail), with Higgs Avatar as a stretch goal, by Team AAMEL for the Boson AI Higgs Audio Hackathon, 23–24 October 2026.
+Built on Boson AI's **Higgs Realtime** (the renter's call and every listing call, transcribed by Higgs speech-to-text), with Higgs Avatar as a stretch goal, by Team AAMEL for the Boson AI Higgs Audio Hackathon, 23–24 October 2026.
 
 ![The ?dev=1 demo: the board re-ranks, four calls go out at once, and a viewing comes back booked](media/landline-demo.gif)
 
@@ -14,7 +14,7 @@ Built on Boson AI's **Higgs Realtime** (the renter's call and every listing call
 - **Or talk in the browser** at **https://landline-mu.vercel.app/try**: press **Start talking**, allow the microphone, and watch the map re-rank as you speak. Try *"natural light matters most"*, *"that one's too dark"* or *"call the top three"*, then press **Done**.
 - **No microphone?** https://landline-mu.vercel.app/?dev=1 runs a scripted demo: **Say it** → **Call the top 4** → **Hang up**.
 
-Status, Sat 24 Oct: the conversation and the live map work on the phone and in the browser (about 1,080 real Toronto listings). The calls to listing agents after you hang up are being built; until they land, the `?dev=1` demo shows them scripted, and no real phone rings. See [BACKLOG.md](BACKLOG.md).
+Status, Sat 24 Oct, on about 1,080 real Toronto listings: call the number and you're texted a link to your live map as the call connects. When you hang up, Landline phones the places you picked over Twilio from the same number, but only to the team's own allowlisted phones (`DEMO_AGENT_PHONES`), with teammates playing the listing agents, and only between 09:00 and 20:00 Toronto time; a call queued outside those hours waits for 9:00. The results come back by text. On `/try` and in the browser, the listing calls go to simulated landlords, each a second Higgs session, and no phone rings. See [BACKLOG.md](BACKLOG.md) and [Known limitations](#known-limitations).
 
 ## How it works
 
@@ -28,11 +28,46 @@ Three agents use a model:
 Everything else is plain code that manages the session:
 
 - A deterministic **orchestrator** routes every event, keeps one writer per session, and ends every call exactly once.
-- The **Matcher** ranks listings from typed features: location (PostGIS), real monthly cost, size, floor, natural light, parking, pets, laundry, transit and City of Toronto building records. It explains each rank in plain words.
+- The **Matcher** ranks listings from typed features: location (PostGIS, with the City of Toronto's 158 neighbourhoods), real monthly cost, size, floor, natural light, parking, pets, laundry, and the walk to the nearest TTC subway station. Facts heard on a call update a listing's features and re-rank it. It explains each rank in plain words.
 - The **Dispatcher** dials one call per picked listing after the renter hangs up; **Profiles** remember renters by phone number; the **Narrator** fills the templates for what the agent says and texts.
 - The **web app** shows a live map and list that follow the conversation; tapping a listing tells the agent what you're looking at.
 
 Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · [docs/DATA.md](docs/DATA.md) · [docs/SCORING.md](docs/SCORING.md) · [docs/CONTRACTS.md](docs/CONTRACTS.md)
+
+## Numbers
+
+Every figure here comes from a file in this repo, and each row names the run it came from. Eval figures are the **holdout** sets in [evals/reports/latest.md](evals/reports/latest.md). Prompts were tuned on separate tune sets, never on these. Times are UTC, Saturday 24 October.
+
+### Higgs models and what each one does
+
+| Model or API | Role in Landline | Code |
+|---|---|---|
+| **Higgs Realtime** (`higgs-realtime`, speech to speech over WebSocket) | The **Concierge** on the renter's call (μ-law 8 kHz from Twilio, or 24 kHz PCM in the browser), whose six function tools move the live map and record the call plan. After the renter hangs up, one **Caller** per picked listing records facts, notes questions and books viewings through its own tools. In judge mode and the evals, a second Realtime session in text mode plays the landlord | [voice/higgs.py](server/landline/voice/higgs.py) |
+| **Higgs speech-to-text** (`higgs-stt-3.1`, inside each Realtime session) | Transcribes both sides of every call into the captions and stored call turns that the Auditor checks quotes against | [voice/higgs.py](server/landline/voice/higgs.py) |
+| **Higgs text chat** (`higgs-realtime` on `api.boson.ai/v1`, JSON-schema output) | One choice of text model (`LLM_PROVIDER=boson`) for the Auditor's fact extractor, the results-text translation and the reader for renter lines in non-Latin scripts. The extraction eval's recorded answers came from it | [agents/auditor/llm.py](server/landline/agents/auditor/llm.py) |
+| **Higgs TTS** (`higgs-tts-v3`) | Synthesizes the renter's and landlords' lines that the audio eval streams into the real voice paths. The live voicemail is Twilio `<Say>`, not Higgs TTS | [evals/run_audio.py](evals/run_audio.py) |
+
+### Technical execution
+
+| What | Number | Run · source |
+|---|---|---|
+| Concierge vs scripted renters, 8 holdout cases × 3 runs, live Higgs text | 6/8 cases pass every run; 83% of runs pass; preferences recorded 72/72; goodbye, then `end_session`, 24/24; 0 claims of a change with no tool call | 14:32, `e738796` · latest.md, Concierge holdout |
+| Caller vs landlord personas, 2 holdout personas × 5 runs | Checklist coverage 24/25 (96%); facts with the right value 19/20 (95%); 0 ungrounded quotes; said it's an AI assistant first 10/10; card ends with the right status 10/10 | 08:28, `cfb384e` · latest.md, Listing calls holdout |
+| Bookings inside the renter's windows | 14/14 (tune personas; the two holdout personas, a scam and a plan with no booking allowed, book nothing) | 08:28, `cfb384e` · latest.md, Listing calls tune |
+| Auditor on 8 holdout call transcripts | **0 of 17 facts shown without a landlord's quote**; precision 100%, recall 91% (rules alone, with no model: precision 100%, recall 65%) | 15:03, `768699e`, extractor answers replayed from recorded Higgs responses · latest.md, Auditor holdout |
+| Voice on Higgs audio: end of the other side's voice → the agent's first audio, p50 / p90 | Concierge (browser) 1,472 / 1,804 ms (n=12); Caller (phone) 1,516 / 2,344 ms (n=20). From Higgs' `speech_stopped`, p50 922 ms and 960 ms. Greeting, `response.create` → first audio, p50 508 ms (n=2) | 08:56, `674e37d` · latest.md, Voice |
+| Barge-in on Higgs audio | 12/12 recovered (heard, audio cleared, the next reply answers it); heard 292 ms (p50) after the voice starts | 08:56, `674e37d` · latest.md, Voice |
+| Higgs Realtime spike, μ-law | 487 ms from connect to the first audio; 282 ms from `response.create`; 8 sessions opened at once with no 1013 close | Fri 23 Oct, A-01 spike · [higgs-realtime skill](.claude/skills/higgs-realtime/SKILL.md) |
+| Matcher on 3 holdout renter briefs, pure code | hit@3 100%; precision@3 89%; 0 monotonicity violations | 15:13, `4b67c0a` · latest.md, Matcher holdout |
+| Ranking time, warm, in memory | p50 1.389 ms, p95 2.123 ms on 4,000 listings; p95 0.25 ms on 400 (target < 5 ms) | 15:13, `4b67c0a` · latest.md, Matcher checks |
+| Listings in production | 1,082 active Toronto listings. All 1,082 are at street precision, in one of the City's 158 neighbourhoods, and matched to the nearest of 68 TTC subway stations; 424 (39%) are within a 15-minute walk of one. All 1,082 have a light score, 1,077 of them with photo brightness | Sat 09:45 · [BACKLOG.md](BACKLOG.md) D-04, D-05, D-07 |
+
+What these numbers don't show:
+
+- Speech-to-text on real voices: the audio eval speaks synthesized clips. In the spike, a mixed Farsi and English sentence on 8 kHz phone audio came back garbled.
+- The tune sets score lower. The Concierge passes 62% of runs on its 21 tune cases.
+- Feedback on the top card doesn't always move it: "too small" and "too far" left the top card first in 2 of 3 holdout briefs, and the "too dark" check fails.
+- The Concierge, Caller and voice runs are older than some changes on `main`, such as the place-lookup fallback and the board-link text. Extraction and ranking were rerun on current `main`.
 
 ## Example: one call, start to finish
 
@@ -99,6 +134,17 @@ Base URL `https://landline.134.87.8.230.sslip.io`. Payload shapes are in [docs/C
 | Arian Boukani | [@2arian3](https://github.com/2arian3) | Data pipeline, database, orchestrator, scoring, the VM |
 | Danial Kordmodanlou | [@Danial-Kord](https://github.com/Danial-Kord) | Voice agents, call dispatcher, evals |
 | Mahyar Jaberi | [@mahyar-jbr](https://github.com/mahyar-jbr) | Web app, live map, API read side, Vercel, video |
+
+## Known limitations
+
+- **Snapshot data.** Listings are scraped from liv.rent and refreshed every 6 hours, so a place can be rented before the next refresh notices.
+- **Demo phones only.** Listing calls go only to the team's allowlisted phones (`DEMO_AGENT_PHONES`), never to real listing agents.
+- **Business hours.** Listing calls go out only between 09:00 and 20:00 Toronto time. A plan made outside those hours waits for 9:00.
+- **Two conversations at once.** Landline holds up to two live conversations, by phone and on `/try` together: a judge and a phone renter, two judges, or two phone renters (`HIGGS_MAX_SESSIONS=2`). A third is told the lines are busy. Listing calls run three at a time across all sessions (`CALL_CONCURRENCY=3`), and more wait their turn.
+- **Pets, parking and laundry aren't read from descriptions yet** (D-06). Parking and laundry come only from a listing's amenity tags, and whether pets are allowed is known only once a call asks.
+- **No City building records.** The RentSafeTO join isn't done. Each neighbourhood's median rent by bedrooms is computed, but it doesn't feed the ranking or the page yet.
+- **Some languages get English replies.** In a phone-audio probe, the agent saved Farsi, Arabic and Punjabi renters' preferences but replied in English; Chinese and Spanish renters got replies in their language.
+- **No Higgs TTS in the product.** A voicemail is read by Twilio's built-in voice. Higgs TTS only makes the audio eval's clips.
 
 ## Getting started
 

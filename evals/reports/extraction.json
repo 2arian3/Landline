@@ -1,8 +1,8 @@
 {
  "tune": {
   "current": {
-   "at": "2026-10-24T07:56:31+00:00",
-   "sha": "f905e7f",
+   "at": "2026-10-24T15:03:03+00:00",
+   "sha": "768699e",
    "mode": "replayed recordings",
    "rules": {
     "cases": 12,
@@ -224,8 +224,8 @@
    }
   },
   "previous": {
-   "at": "2026-10-24T07:54:04+00:00",
-   "sha": "034e811+dirty",
+   "at": "2026-10-24T07:56:31+00:00",
+   "sha": "f905e7f",
    "mode": "replayed recordings",
    "rules": {
     "cases": 12,
@@ -449,8 +449,8 @@
  },
  "holdout": {
   "current": {
-   "at": "2026-10-24T07:56:31+00:00",
-   "sha": "f905e7f",
+   "at": "2026-10-24T15:03:03+00:00",
+   "sha": "768699e",
    "mode": "replayed recordings",
    "rules": {
     "cases": 8,
@@ -688,8 +688,8 @@
    }
   },
   "previous": {
-   "at": "2026-10-24T07:54:04+00:00",
-   "sha": "034e811+dirty",
+   "at": "2026-10-24T07:56:31+00:00",
+   "sha": "f905e7f",
    "mode": "replayed recordings",
    "rules": {
     "cases": 8,
