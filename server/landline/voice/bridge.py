@@ -606,9 +606,13 @@ async def run_tool(higgs: Any, event: dict[str, Any], ctx: Any, *, spoke: bool =
     # response already spoke (#219): the words in it are the reply, and another response says them again.
     response_id = str(event.get("response_id") or "")
     answered = bool(response_id) and getattr(ctx, "answered_response", None) == response_id
+    # hold_tools: an identical record_fact already got its answer this turn (#215). Another response.create
+    # only makes the model call it again and say nothing, which is the loop that hung the landlord up.
+    # A response that already spoke is not asked to speak again (#219): those words are the reply.
     if spoke_now and getattr(ctx, "awaiting_follow", False):
         note_speech(ctx)
-    elif (not ctx.hang_up or say_bye) and not answered and not spoke_now:
+    elif ((not ctx.hang_up or say_bye) and not answered and not spoke_now
+          and not getattr(ctx, "hold_tools", False)):
         ctx.answered_response = response_id
         ctx.awaiting_follow = True
         await higgs.send({"type": "response.create"})
