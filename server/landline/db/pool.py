@@ -23,7 +23,7 @@ from landline.db.admin import Admin
 from landline.db.listings import IngestRuns, Listings
 from landline.db.people import Interactions, Profiles, Users
 from landline.db.reference import Buildings, Neighbourhoods, Stations
-from landline.db.runtime import Boards, Calls, Events, Facts, Sessions, Turns
+from landline.db.runtime import Audio, Boards, Calls, Events, Facts, Sessions, Turns
 
 _SCHEMA = re.compile(r"^[a-z_][a-z0-9_]*$")
 
@@ -36,6 +36,7 @@ class Database:
         self.events = Events(pool)
         self.calls = Calls(pool)
         self.turns = Turns(pool)
+        self.audio = Audio(pool)              # call_audio
         self.facts = Facts(pool)
         self.boards = Boards(pool)            # session_listings
         # people
