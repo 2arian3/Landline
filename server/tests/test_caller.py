@@ -152,11 +152,31 @@ def test_the_pets_item_says_what_the_renter_has_and_gaps_stay_capped():
     b = brief(_listing(), _plan(may_book=False, windows=(), pets=["dog"]),
               wants(Preferences(priorities=["parking"])))
     pets = next(i for i in b.items if i.key == "pets")
-    assert pets.ask == "whether pets are allowed (the renter has a dog)"
+    assert pets.ask == ("whether pets are allowed; tell them the renter has a dog, never ask them about the "
+                        "renter's pets")
     every = wants(Preferences(must_have=["parking", "laundry", "utilities"]))
     b = brief(_listing(), _plan(may_book=False, windows=(), pets=["cat"]), every)
     assert [i.key for i in b.items] == ["available", "pets", "parking", "fees"]   # MAX_GAPS, fees kept
     assert len(b.items) == 1 + MAX_GAPS
+
+
+# #226: "the renter has a pets" read as a question about the renter, and the Caller asked the landlord.
+@pytest.mark.parametrize(("pets", "has"), [
+    (["pets"], "pets"),                   # the renter said they have pets, not which
+    (["Pets", "animals"], "pets"),
+    (["dog"], "a dog"),
+    (["iguana"], "an iguana"),
+    (["dog", "cat"], "a dog and a cat"),
+    (["cats"], "cats"),
+    (["two dogs"], "two dogs"),
+    (["pets", "cat"], "a cat"),           # a named pet wins over the generic word
+])
+def test_the_renter_s_pets_read_right_and_are_never_asked_about(pets, has):
+    text = instructions(brief(_listing(), _plan(may_book=False, windows=(), pets=pets)))
+    assert f"tell them the renter has {has}, never ask them about the renter's pets." in text
+    assert f"and they have {has}." in text
+    assert "a pets" not in text and "an pets" not in text
+    assert "never ask them anything about the renter" in text
 
 
 def test_a_renter_with_no_pets_hears_no_pets_question_and_availability_comes_first():
