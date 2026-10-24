@@ -3,12 +3,14 @@
 One call goes like this:
 
 1. `dial()` checks the number against the allowlist itself (hard rule 6, a second guard behind the
-   Dispatcher's), then asks Twilio to place the call. Twilio fetches `/twiml/outbound/{call_id}` once
-   answering-machine detection has decided, and posts status changes to `/twilio/outbound/status/{call_id}`.
-   Both URLs carry our call id; Twilio signs them, and an unknown id gets nothing.
-2. A person answers: the TwiML hands the call to our media stream with the call id as a `<Parameter>`
-   (PORTING #1), the stream claims the call once, and `converse` runs the Caller on it.
-   A machine answers: the TwiML leaves a short voicemail and hangs up.
+   Dispatcher's), then asks Twilio to place the call. Twilio fetches `/twiml/outbound/{call_id}` the moment
+   the call is answered, runs answering-machine detection alongside it and posts what it decided to
+   `/twilio/outbound/amd/{call_id}`, and posts status changes to `/twilio/outbound/status/{call_id}`.
+   All three URLs carry our call id; Twilio signs them, and an unknown id gets nothing.
+2. The call is answered: the TwiML hands it to our media stream with the call id as a `<Parameter>`
+   (PORTING #1), the stream claims the call once, and `converse` runs the Caller on it from the first second.
+   Detection says a machine (after its beep): the call is switched to a short voicemail that hangs up, which
+   ends the stream and the Caller with it.
 3. Whatever happens first ends the call through `OutboundCalls.finalize(call_id, reason)`: Twilio saying
    busy, no-answer or failed, the voicemail finishing, the conversation ending, or the Dispatcher's
    deadline. Only the first does anything (PORTING #2). If Twilio's line is still up, it is hung up.
@@ -45,13 +47,10 @@ RECORDED = "This call is recorded."   # said right after the disclosure when the
 VOICEMAIL = ("Hi, I'm an AI assistant calling for a renter about your listing at {address}. "
              "They'd like to know if it's still available and to book a viewing. "
              "We'll try again later. Thank you.")
-# Twilio's AnsweredBy with MachineDetection=DetectMessageEnd: a machine waits for the beep.
+# Twilio's AnsweredBy with MachineDetection=DetectMessageEnd: a machine waits for the beep. Detection runs
+# alongside the call (AsyncAmd), so nobody waits on it and its waits keep Twilio's defaults, which tell
+# machines from people best.
 MACHINE = ("machine_end_beep", "machine_end_silence", "machine_end_other", "fax")
-# Twilio answers the call's URL only once AMD has decided, so its waits are dead air for a person. A quiet
-# pickup is a person after 2 s (Twilio's minimum; 5 s by default), and a "Hello?" is over after 0.8 s of
-# silence (1.2 s by default). The speech threshold stays Twilio's, so a long hello isn't taken for a machine.
-AMD_SILENCE_MS = 2000
-AMD_SPEECH_END_MS = 800
 # Twilio's CallStatus once a call is over, and what it means if nothing else ended it first.
 STATUS_END: dict[str, EndReason] = {"busy": "busy", "no-answer": "no_answer", "failed": "failed",
                                     "canceled": "failed", "completed": "hangup"}
@@ -91,9 +90,10 @@ class OutboundCalls:
         return None if call is None or call.done else call
 
     async def set_state(self, call_id: str, state: CallState) -> None:
-        """Ringing, live or voicemail, said to the Dispatcher once each and never after the end."""
+        """Ringing, live or voicemail, said to the Dispatcher once each and never after the end. A call
+        that reached a voicemail stays one, even if its stream starts after detection decided."""
         call = self.get(call_id)
-        if call is None or call.state == state:
+        if call is None or call.state in (state, "voicemail"):
             return
         call.state = state
         await call.report(state)
@@ -184,6 +184,10 @@ class TwilioRunner:
             if call.media in done and not call.media.cancelled() and not call.done:
                 higgs, warm = await _ready(warm, dial), None   # the call has it now, and closes it
                 result = await self._converse(call, call.media.result(), higgs)
+                if call.state == "voicemail":
+                    # A machine after all: its voicemail is playing, and Twilio's final status ends the
+                    # call `voicemail` once it has, so the line isn't put down on the message.
+                    return CallResult(await call.ended)
                 self.calls.finalize(dial.call_id, result.end_reason)
                 return CallResult(await call.ended, result.outcome)
             return CallResult(await call.ended)
@@ -214,8 +218,9 @@ class TwilioRunner:
             "StatusCallback": f"{base}/twilio/outbound/status/{cid}",
             "StatusCallbackEvent": ["initiated", "ringing", "answered", "completed"],
             "MachineDetection": "DetectMessageEnd",
-            "MachineDetectionSilenceTimeout": str(AMD_SILENCE_MS),
-            "MachineDetectionSpeechEndThreshold": str(AMD_SPEECH_END_MS),
+            "AsyncAmd": "true",   # the Caller talks from the answer; a machine is caught on /amd
+            "AsyncAmdStatusCallback": f"{base}/twilio/outbound/amd/{cid}",
+            "AsyncAmdStatusCallbackMethod": "POST",
             "Timeout": str(RING_S),
             "TimeLimit": str(int(s.listing_call_max_s)),   # Twilio's own cap, behind our deadline
         })
@@ -230,6 +235,28 @@ class TwilioRunner:
         await self.client.post(HANG_UP_API.format(sid=s.twilio_account_sid, call_sid=twilio_sid),
                                auth=(s.twilio_account_sid, s.twilio_auth_token), data={"Status": "completed"})
 
+    async def detected(self, call_id: str, answered_by: str) -> None:
+        """Machine detection's verdict, posted while the Caller is already talking. A machine (after its
+        beep): the call is switched to the voicemail, which hangs up. That ends the media stream, so the
+        Caller stops and closes its Higgs session, and Twilio's final status ends the call `voicemail`.
+        A person, unknown, or a call that's over: nothing."""
+        call = self.calls.get(call_id)
+        if call is None or answered_by not in MACHINE or not call.twilio_sid:
+            return
+        await self.calls.set_state(call_id, "voicemail")   # before the switch, which ends the Caller's stream
+        s = self.settings
+        try:
+            r = await self.client.post(HANG_UP_API.format(sid=s.twilio_account_sid, call_sid=call.twilio_sid),
+                                       auth=(s.twilio_account_sid, s.twilio_auth_token),
+                                       data={"Twiml": twilio.twiml_say_hangup(self.voicemail(call.dial))})
+            r.raise_for_status()
+        except Exception as exc:
+            # Never left talking to a machine: put the line down, and the final status still ends it.
+            log.warning("listing call %s: the voicemail didn't start (%r); hanging up", call_id, exc)
+            with contextlib.suppress(Exception):
+                async with asyncio.timeout(HANG_UP_S):
+                    await self._hang_up(call.twilio_sid)
+
     async def _converse(self, call: Outbound, transport: Any, higgs: Any = None) -> CallResult:
         try:
             if higgs is not None:
@@ -242,7 +269,8 @@ class TwilioRunner:
     # What the webhooks hand back to Twilio
 
     def answered_twiml(self, call_id: str, answered_by: str, ws_url: str) -> str:
-        """A person (or Twilio couldn't tell): the media stream. A machine: the voicemail, then hang up."""
+        """Just answered (no AnsweredBy: detection is still listening), a person, or Twilio couldn't tell:
+        the media stream, at once. A machine: the voicemail, then hang up."""
         call = self.calls.get(call_id)
         if call is None:
             return twilio.twiml_hangup()
