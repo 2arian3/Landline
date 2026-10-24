@@ -25,6 +25,8 @@ CLAIM = re.compile(r"\b(i'?ve|i have)\s+(just\s+|now\s+|also\s+)?(noted|updated|
 ABBREV = re.compile(r"\b(St|Ave|Rd|Dr|Blvd|Cres|Crt|Mr|Mrs|Ms|No)\.", re.I)
 SENTENCE_END = re.compile(r"(?<=[.!?。！？؟])\s+")
 MARKDOWN = re.compile(r"\*\*|(^|\n)\s*([-•*]|\d+\.)\s")
+# A last turn that opens a conversation instead of closing it ("Hello! How can I help you today?").
+GREETS = re.compile(r"\bhow can i (help|assist)\b|^(hello|hi)\b", re.I)
 SCRIPTS = {"fa": r"[؀-ۿ]", "ar": r"[؀-ۿ]", "zh": r"[一-鿿]",
            "ko": r"[가-힯]", "ru": r"[Ѐ-ӿ]", "hi": r"[ऀ-ॿ]"}
 REPLIES = {"not_caught": tools.NOT_CAUGHT, "which": tools.WHICH, "unknown_tool": tools.UNKNOWN,
@@ -126,8 +128,10 @@ def _wants(want: Want, state: dict, trace: Trace, catalogue: Catalogue, *, kind:
             # After end_session nothing more is said, so a goodbye has to come in that same turn. Without
             # one the renter hears the line drop.
             bye = [a for a in trace.agent if "end_session" in a.tools]
-            check("ended.goodbye", bool(bye) and bool(bye[-1].text.strip()),
-                  "hung up without a word" if bye else "never called end_session")
+            said = bye[-1].text.strip() if bye else ""
+            check("ended.goodbye", bool(said) and not GREETS.search(said),
+                  f"ended with {said!r}" if said else "hung up without a word" if bye
+                  else "never called end_session")
         if want.replies_in is not None:
             ok, detail = _replies_in(want.replies_in, trace)
             check(f"replies_in.{want.replies_in}", ok, detail)

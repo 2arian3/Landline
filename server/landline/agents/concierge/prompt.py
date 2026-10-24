@@ -64,10 +64,6 @@ WELCOME_BACK = (
     "they'd like to do now."
 )
 
-# Asked for only when the Concierge called end_session without saying anything, so the line never just
-# drops (voice/bridge.py, run_tool).
-GOODBYE = "Say a short goodbye to the renter in one sentence, in the language they are speaking."
-
 GREETING = (
     "Greet the caller in one short sentence in English: say you are Landline, an AI assistant that helps "
     "renters find a place in Toronto, and ask what they are looking for."
