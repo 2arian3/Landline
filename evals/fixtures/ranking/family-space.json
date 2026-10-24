@@ -1,0 +1,34 @@
+{
+  "id": "family-space",
+  "renter": "Family of four, two bedrooms or more, up to $3,800, space first, anywhere.",
+  "brief": {
+    "max_monthly": 3800,
+    "min_beds": 2,
+    "priorities": [
+      "size",
+      "cost"
+    ]
+  },
+  "acceptable": [
+    "livrent:135986",
+    "livrent:135985",
+    "livrent:101528",
+    "livrent:130264",
+    "livrent:100362",
+    "livrent:140432"
+  ],
+  "why": "2+ beds, ≤ $3,800, the six largest",
+  "feedback": {
+    "reason": "too expensive",
+    "attribute": "cost",
+    "goal": [
+      "livrent:130242",
+      "livrent:110368",
+      "livrent:145650",
+      "livrent:145663",
+      "livrent:116208",
+      "livrent:145649"
+    ],
+    "why": "2+ beds, ≤ $2,500, ≥ 900 sq ft"
+  }
+}

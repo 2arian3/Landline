@@ -26,7 +26,8 @@ evals/
   runs/<stamp>/                     # traces, not committed
   fixtures/{,holdout/}transcripts/*.json   # E-02: call transcripts with gold facts (run_extraction.py)
   fixtures/recordings/auditor/*.json       # the extractor's recorded answers, replayed with no key
-  # still to come: fixtures/renters (E-03)
+  run_ranking.py                           # E-03: the Matcher on renter briefs, pure code (no key)
+  fixtures/{,holdout/}ranking/*.json      # renter briefs with acceptable listings and a feedback goal
 ```
 
 ## Concierge sim (E-01)
