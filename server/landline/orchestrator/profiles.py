@@ -40,12 +40,14 @@ class Remembered:
     last_seen_at: datetime | None = None
     last_results: str | None = None  # the last session's results text, once its calls were done
     calls_running: bool = False      # the last session's calls haven't finished yet
+    calls_stalled: bool = False      # the last session's calls will never finish: nothing is placing them
     summary: str | None = None
 
 
 class Profiles:
-    def __init__(self, db: Database):
+    def __init__(self, db: Database, live: Callable[[str], bool] = lambda session_id: True):
         self.db = db
+        self.live = live   # whether a session is in this process's runtime, where its calls run
 
     async def recall(self, phone: str) -> Remembered:
         """The renter behind this number. A new number gets a user now and a profile when its brief ends."""
@@ -58,14 +60,24 @@ class Profiles:
         profile = await db.profiles.get(user.user_id)
         last = await db.sessions.latest_for_user(user.user_id)
         last_state = (last.snapshot or {}).get("state", {}) if last else {}
+        stalled = last is not None and last.status == "calling" and await self._stalled(last.session_id)
         return Remembered(
             user_id=user.user_id, returning=True, name=user.name,
             preferences=preferences_of(profile) if profile else Preferences(),
             reactions=reactions_of(await db.interactions.for_user(user.user_id)),
             last_seen_at=user.last_seen_at, last_results=last_state.get("results"),
-            calls_running=bool(last and last.status == "calling"),
+            calls_running=bool(last and last.status == "calling") and not stalled, calls_stalled=stalled,
             summary=profile.memory_summary if profile else None,
         )
+
+    async def _stalled(self, session_id: str) -> bool:
+        """A calling session whose calls nothing will finish: this process isn't running them (a restart
+        dropped them, say ones waiting overnight for business hours), or the Dispatcher queued them with no
+        caller to place them (`calls.transport` stub). Its next call mustn't hear "still running" forever."""
+        if not self.live(session_id):
+            return True
+        listing = [c for c in await self.db.calls.for_session(session_id) if c.role == "listing"]
+        return bool(listing) and all(c.transport == "stub" for c in listing)
 
     async def remember(self, state: SessionState, event_type: str, address: Callable[[str], str]) -> None:
         """Save what this session taught us about the renter. When the brief ends: the profile, its summary,
@@ -163,6 +175,8 @@ def opening(r: Remembered, new_matches: int, now: datetime) -> str:
              "This renter has called before."]
     if r.calls_running:
         lines.append("The calls from their last call are still running.")
+    elif r.calls_stalled:
+        lines.append("The calls from their last call didn't go through.")
     elif r.last_results:
         lines.append(f"Results of the calls you made for them: {r.last_results}")
     if r.summary:

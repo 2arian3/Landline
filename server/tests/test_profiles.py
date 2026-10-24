@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from landline.config import Settings
 from landline.contracts import (
     CallOutcome,
     CallPlan,
@@ -28,6 +29,7 @@ from landline.db.catalogue import Catalogue
 from landline.db.pool import Database
 from landline.orchestrator import SessionRuntime
 from landline.orchestrator.profiles import MAX_OPENING_WORDS, Remembered, opening
+from landline.voice.dispatch import Dispatcher
 
 T0 = datetime(2026, 10, 23, 12, 0, tzinfo=UTC)
 PHONE = "+14165550100"
@@ -163,6 +165,40 @@ async def test_the_next_call_opens_with_the_results_of_the_last_one(db):
     assert "Results of the calls you made for them: I booked 1 Main St" in rt.opening("s_prof000006")
 
 
+STALLED = "The calls from their last call didn't go through."
+RUNNING = "The calls from their last call are still running."
+
+
+async def test_calls_queued_with_no_caller_are_not_still_running_on_the_next_call(db):
+    """#95: a phone renter while TRANSPORT=stub. The Dispatcher queues the calls with nothing to place them
+    (calls.transport stub), so the next call from that number hears they didn't go through."""
+    rt = _runtime(db)
+    Dispatcher(rt, Settings(database_url=None, web_url="https://landline.example", transport="stub"))
+    sid = "s_prof000014"
+    await _call(rt, sid)
+    await rt.emit(CallsRequested(**_meta(sid, "plan", 1), listing_ids=["t:1", "t:2"]))
+    await _hang_up(rt, sid)
+    assert {c.transport for c in await db.calls.for_session(sid) if c.role == "listing"} == {"stub"}
+    assert rt.get(sid).phase == "calling"   # still queued: nothing is made up
+    await _call(rt, "s_prof000015")
+    said = rt.opening("s_prof000015")
+    assert STALLED in said and RUNNING not in said
+
+
+async def test_calls_a_restart_dropped_are_not_still_running_on_the_next_call(db):
+    """The calls of a session this process isn't running (a restart, say while they waited overnight for
+    business hours) never finish either."""
+    before = _runtime(db)
+    sid = "s_prof000016"
+    await _call(before, sid)
+    await before.emit(CallsRequested(**_meta(sid, "plan", 1), listing_ids=["t:1"]))
+    await _hang_up(before, sid)
+    after = _runtime(db)   # a new process: sessions aren't reloaded, so nothing resumes those calls
+    await _call(after, "s_prof000017")
+    said = after.opening("s_prof000017")
+    assert STALLED in said and RUNNING not in said
+
+
 async def test_places_new_since_the_last_call_are_counted(db):
     fresh = _listing(6, 2100, first_seen=datetime.now(UTC) + timedelta(minutes=5))
     rt = _runtime(db, [*LISTINGS, fresh])
@@ -222,3 +258,10 @@ def test_the_opening_keeps_the_results_and_stays_within_120_words():
     assert said.startswith("This renter last called on Wednesday. Results of the calls you made for them: "
                            "I booked 1 Long Street Name Avenue")
     assert len(said.split()) <= MAX_OPENING_WORDS
+
+
+def test_the_opening_says_calls_that_will_never_finish_did_not_go_through():
+    r = Remembered(user_id=1, returning=True, last_seen_at=T0 - timedelta(hours=2), calls_stalled=True)
+    assert opening(r, new_matches=0, now=T0) == f"This renter last called earlier today. {STALLED}"
+    running = Remembered(user_id=1, returning=True, last_seen_at=T0 - timedelta(hours=2), calls_running=True)
+    assert opening(running, new_matches=0, now=T0) == f"This renter last called earlier today. {RUNNING}"

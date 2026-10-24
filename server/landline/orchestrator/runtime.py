@@ -103,7 +103,7 @@ class SessionRuntime:
         self._subscribers: dict[str, list[Subscriber]] = defaultdict(list)
         self._tasks: set[asyncio.Task] = set()
         self.calls = CallLog(db, self._spawn)   # renter calls and their transcripts, for the admin panel
-        self.profiles = Profiles(db) if db is not None else None
+        self.profiles = Profiles(db, live=self.has) if db is not None else None
         if self.profiles is not None:
             self.on("SessionEnded", self._remember)
             self.on("CallsCompleted", self._remember)
