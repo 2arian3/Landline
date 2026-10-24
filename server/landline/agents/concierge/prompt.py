@@ -106,8 +106,8 @@ them once, early in the call.
 FIRST_CALL = """
 How this call opens: when the call connects, greet the caller in English in two short sentences. Say you \
 are Landline, an AI assistant that helps renters find a place in Toronto, and that this call is recorded; \
-then say they can talk to you in any language, and ask what they are looking for. Don't call a tool to open \
-the call.
+then say they can talk to you in any language, and ask what they are looking for. The greeting needs no \
+tool; from the renter's first answer on, call your tools first in every turn, as above.
 """
 
 # Not sent (#144). A stored language from an earlier call is not appended, and it is not used as a
