@@ -132,8 +132,43 @@ async def test_call_listings_plans_the_top_three_and_reads_them_back(ctx):
     assert request.may_book and request.availability[0].from_ == "13:00"
     addresses = [CATALOGUE.by_id[lid].address for lid in top]
     assert reply == f"I'll call {addresses[0]}, {addresses[1]} and {addresses[2]} after you hang up, " \
-                    "and text you what they say."
+                    "and text you what they say. Viewings Saturday 1 pm to 5 pm. I may book one."
     assert await _say(ctx, "call_listings", '{"listing_refs": ["Spadina"]}', "fc_2") == tools.WHICH
+
+
+async def test_rank_numbers_sent_as_numbers_count_as_ranks(ctx):
+    board = _view(ctx).board
+    await _say(ctx, "call_listings", '{"listing_refs": [1, 3]}')
+    assert ctx.runtime.state(SID).request.listing_ids == [board[0].listing_id, board[2].listing_id]
+    await _say(ctx, "focus_listing", '{"listing_ref": 2}', "fc_2")
+    assert _view(ctx).focus_listing_id == board[1].listing_id
+
+
+async def test_calling_again_updates_the_plan_instead_of_replacing_it(ctx):
+    board = _view(ctx).board
+    await _say(ctx, "call_listings", '{"listing_refs": ["2"], "extra_questions": ["Is parking included?"]}')
+    reply = await _say(ctx, "call_listings", '{"availability": [{"day": "tuesday", "from": "18:00", '
+                                             '"to": "20:30"}]}', "fc_2")
+    request = ctx.runtime.state(SID).request
+    assert request.listing_ids == [board[1].listing_id]          # not the top three
+    assert request.questions == ["Is parking included?"] and not request.may_book
+    assert reply.endswith("Viewings Tuesday 6 pm to 8:30 pm. I won't book.")
+    await _say(ctx, "call_listings", '{"may_book": true, "extra_questions": ["Dogs ok?"]}', "fc_3")
+    request = ctx.runtime.state(SID).request
+    assert request.may_book and request.availability[0].day == "tuesday"
+    assert request.questions == ["Is parking included?", "Dogs ok?"]
+
+
+async def test_plan_fields_sent_to_update_preferences_say_where_they_belong(ctx):
+    before = _view(ctx).version
+    reply = await _say(ctx, "update_preferences", '{"availability": [{"day": "saturday", "from": "10:00", '
+                                                  '"to": "14:00"}], "may_book": true}')
+    assert reply == "Not saved: availability, may_book; call call_listings with them."
+    assert _view(ctx).version == before and ctx.runtime.state(SID).request is None
+    reply = await _say(ctx, "update_preferences", '{"max_monthly": 3000, "may_book": true}', "fc_2")
+    assert _view(ctx).preferences.max_monthly == 3000
+    assert reply.endswith("Not saved: may_book; call call_listings with them.")
+    assert await _say(ctx, "end_session", '{"reason": "done"}', "fc_3") and ctx.hang_up
 
 
 async def test_call_listings_after_the_brief_speaks_the_refusal(ctx):
