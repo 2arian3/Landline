@@ -31,7 +31,7 @@ from typing import Any
 from landline.agents.auditor import extract as extractor
 from landline.agents.auditor import grounding, when
 from landline.agents.auditor.flags import Flag, red_flags
-from landline.agents.auditor.values import Refused, Value, fee_name, settle
+from landline.agents.auditor.values import Refused, Value, asks, bare, fee_name, settle
 from landline.agents.caller import slots
 from landline.contracts import CallOutcome, Conflict, EndReason, Fact, Viewing
 
@@ -178,8 +178,10 @@ def build(call: CallRecord, candidates: Sequence[extractor.Candidate], status: s
         turn = ground(tf.field, tf.quote, "tool")
         if turn is None:
             continue
+        turn = _answering(call.turns, landlord, turn, tf.field, tf.quote)
         try:
-            live.append(Heard(settle(tf.field, tf.value, tf.quote), tf.quote, turn.idx, "tool"))
+            live.append(Heard(settle(tf.field, tf.value, tf.quote, question=_asked(call.turns, turn)),
+                              tf.quote, turn.idx, "tool"))
         except Refused as e:
             result.dropped.append(Dropped(tf.field, tf.quote, "tool", f"unreadable: {e}"))
     read: list[Heard] = []
@@ -187,9 +189,10 @@ def build(call: CallRecord, candidates: Sequence[extractor.Candidate], status: s
         turn = ground(c.field, c.quote, "transcript")
         if turn is None:
             continue
+        turn = _answering(call.turns, landlord, turn, c.field, c.quote)
         try:
             v = settle(c.field, c.value, c.quote, amount=c.amount, count=c.count, each=c.each,
-                       period=c.period, mandatory=c.mandatory, name=c.name)
+                       period=c.period, mandatory=c.mandatory, name=c.name, question=_asked(call.turns, turn))
         except Refused as e:
             result.dropped.append(Dropped(c.field, c.quote, "transcript", f"unreadable: {e}"))
             continue
@@ -220,6 +223,22 @@ def build(call: CallRecord, candidates: Sequence[extractor.Candidate], status: s
     for d in result.dropped:
         log.info("call %s: dropped %s fact from %s (%s): %r", call.call_id, d.field, d.source, d.why, d.quote)
     return result
+
+
+def _asked(turns: Sequence[Turn], turn: Turn) -> str | None:
+    """The Caller's line just before a landlord turn: the question a bare yes or no answers (#139)."""
+    before = [t for t in turns if t.idx < turn.idx]
+    return before[-1].text if before and before[-1].speaker != LANDLORD else None
+
+
+def _answering(turns: Sequence[Turn], landlord: Sequence[Turn], turn: Turn, field: str, quote: str) -> Turn:
+    """For a bare yes or no, the last landlord turn that says it in answer to a question about this field:
+    "Yes." can answer several questions, and when the same one was asked again, the last answer wins."""
+    if bare(quote) is None:
+        return turn
+    answers = [t for t in landlord
+               if grounding.find(quote, [t.text]) is not None and asks(field, _asked(turns, t))]
+    return answers[-1] if answers else turn
 
 
 def merge(heard: Sequence[Heard]) -> list[Heard]:
