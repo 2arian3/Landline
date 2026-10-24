@@ -175,6 +175,15 @@ def test_the_greeting_invites_any_language():
     assert "any language" in FIRST_CALL and "Renters may speak any language" in INSTRUCTIONS
 
 
+def test_the_opening_never_tells_the_model_to_avoid_tools():
+    """FIRST_CALL ends the session instructions. "Don't call a tool to open the call" there made the
+    Concierge call no tools all call in 7 of 21 holdout sessions (#136), so the greeting's no-tool rule
+    comes with the rule for every turn after it."""
+    text = " ".join(FIRST_CALL.split()).lower()
+    assert "don't call a tool" not in text
+    assert "from the renter's first answer on, call your tools first in every turn" in text
+
+
 def test_the_transcription_hint_goes_in_only_when_known():
     hinted = session_config(instructions="x", tools=[], language="fa")
     assert hinted["session"]["audio"]["input"]["transcription"] == {"model": "higgs-stt-3.1",
