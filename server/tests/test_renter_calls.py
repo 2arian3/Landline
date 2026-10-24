@@ -191,6 +191,47 @@ def test_a_tool_call_changes_the_session_and_speaks_its_board():
         ]
 
 
+def test_a_line_in_another_script_answered_with_no_tool_is_read_and_saved(monkeypatch):
+    """A-04: the Concierge answers a Korean line in Korean but calls no tool; code reads that line for its
+    preferences in the background and saves them through update_preferences."""
+    korean = "방 두 개짜리 아파트를 찾고 있고, 한 달에 3000달러까지 괜찮아요."
+
+    class Reader:
+        asked = []
+
+        async def json(self, system, user, schema, name="result"):
+            self.asked.append(user)
+            return {"max_monthly": 3000, "min_beds": 2, "pets": [], "areas": [], "must_have": [],
+                    "move_in": None, "occupants": None, "language": "ko"}
+
+    reader = Reader()
+    monkeypatch.setattr(bridge, "_READER", [reader])
+    fake = FakeHiggs(script=[
+        {"type": "input_audio_buffer.speech_started", "item_id": "i1", "audio_start_ms": 0},
+        {"type": "input_audio_buffer.speech_stopped", "item_id": "i1", "audio_end_ms": 900},
+        {"type": "response.created", "response": {"id": "r1"}},
+        {"type": "conversation.item.input_audio_transcription.completed", "item_id": "i1",
+         "transcript": korean},
+        {"type": "response.done", "response": {"id": "r1", "status": "completed",
+                                               "output": [{"type": "message"}]}},
+        {"type": "response.output_audio.delta", "delta": "AAAA"},
+    ])
+    with _client() as c:
+        c.app.state.connect_higgs = fake.connect
+        call = c.app.state.calls.open(caller=None)
+        with c.websocket_connect("/twilio/media") as ws:
+            ws.send_json(_start(call.call_id))
+            while ws.receive_json()["event"] != "media":
+                pass
+            deadline = time.monotonic() + 5
+            while c.app.state.runtime.get(call.session_id).preferences.min_beds is None \
+                    and time.monotonic() < deadline:
+                time.sleep(0.01)
+            ws.send_json({"event": "stop", "streamSid": "MZ1"})
+        p = c.app.state.runtime.get(call.session_id).preferences
+        assert (p.max_monthly, p.min_beds, p.language) == (3000, 2, "ko") and reader.asked == [korean]
+
+
 def test_a_returning_caller_is_welcomed_back_with_what_the_runtime_remembers():
     fake = FakeHiggs()
     remembered = "This renter last called yesterday. What you know: Wants up to $2,600 a month."

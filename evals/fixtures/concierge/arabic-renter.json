@@ -1,0 +1,40 @@
+{
+  "id": "arabic-renter",
+  "about": "Speaks Arabic from the first line with Arabic-Indic digits; budget, beds, a cat, language ar",
+  "lines": [
+    {
+      "say": "مرحبا، أبحث عن شقة بغرفة نوم واحدة، وميزانيتي حتى ٢٤٠٠ دولار في الشهر.",
+      "expect": {
+        "prefs": {
+          "max_monthly": 2400,
+          "min_beds": 1
+        }
+      }
+    },
+    {
+      "say": "عندي قطة.",
+      "expect": {
+        "prefs": {
+          "pets": [
+            "cat"
+          ]
+        }
+      }
+    },
+    {
+      "say": "شكرا، هذا كل شيء. مع السلامة."
+    }
+  ],
+  "final": {
+    "prefs": {
+      "max_monthly": 2400,
+      "min_beds": 1,
+      "pets": [
+        "cat"
+      ],
+      "language": "ar"
+    },
+    "replies_in": "ar",
+    "ended": true
+  }
+}

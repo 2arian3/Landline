@@ -155,12 +155,44 @@ In Farsi the model answers in English, as if it had translated the line ("I'll s
 | After (this branch) | 4/6 cases, 78% of runs | 6/13 cases, 74% |
 | Same time, same key, holdout 5 runs each | this branch 77%, 3/6 cases | `main` 57%, 1/6 cases |
 
+### Any language, Sat 24 Oct 09:40–10:30 (A-04, `agents/A-04-multilingual`)
+
+The goal changed from "Farsi and English" to any language a renter speaks. Higgs detects the spoken language and replies in kind (docs.boson.ai); nothing in our code was tied to Farsi except the eval. What changed:
+- **Prompt:** renters may speak any language; tool replies and `[…]` notes are English and are never read out as is; the first non-English line sets `language` to its two-letter code, whichever language it is. The greeting says they can talk in any language.
+- **Returning callers** are welcomed back in their stored language, and it goes to Higgs as the transcription hint (`bridge.hint`).
+- **The results text** is translated into the renter's language (`voice/translate.py`) and code checks that every number in it was in the English, as often (Persian and Arabic digits read the same). Otherwise, or on a timeout, the English goes. Live on Higgs: Spanish, Korean, Chinese, Punjabi and Arabic translated with every number kept; Farsi took 14 to 30 s, so the limit is 25 s.
+- **Catch-up for lines in another script** (`agents/concierge/backstop.py`): after a switch to Korean or Farsi the Concierge answers in that language ("a two-bedroom up to $3,000, got it") and calls no tool. When a renter line is mostly in a non-Latin script and the turn ended with no tool call, a text model reads that line alone and `update_preferences`' own handler saves it. Latin-script lines never reach it, which is where the dropped catch-up above made its false updates; it adds no note to the conversation, which is what cost it the goodbyes.
+
+New tune cases: `spanish-renter`, `arabic-renter`, `punjabi-renter` (each speaks it from the first line) and `korean-switch`. Text mode, 3 runs each, same hour:
+
+| 5 language cases, 15 runs | `main` | prompt only | prompt + catch-up |
+|---|---|---|---|
+| Preferences saved right | 12/15 | 10/15 | **15/15** (9 catch-ups, all right) |
+| Replies in the renter's language | 7/15 (Arabic 0/3, Punjabi 0/3) | 12/15 | 11/15 |
+| `end_session` called | 11/15 | 11/15 | 11/15 |
+| Runs passing | 40% | 47% | 53% |
+
+The whole tune set with the prompt change: 51% of runs. The failures outside the new cases are the missed `end_session` (16 of 51), as on `main` this morning (item 10 below).
+
+On the phone path (the real bridge, 8 kHz μ-law; the renter is Higgs TTS saying a brief, a pet and goodbye; one run each, so a probe, not a score):
+
+| Language | Prompt only: replies in it / saved right (budget, beds, pet, language) | Prompt + catch-up |
+|---|---|---|
+| Chinese | yes / 4 of 4 | not rerun |
+| Spanish | yes / 3 of 4 (the dog was missed) | not rerun |
+| Korean | yes / 4 of 4 | English / 4 of 4 |
+| Arabic | English / 3 of 4 (the cat line was misheard) | English / 3 of 4 |
+| Punjabi | English / 3 of 4 (transcribed as romanized Punjabi, "$10", so the budget was a guess) | English / 3 of 4 |
+| Farsi | English / **0 of 4**, while saying "I've noted your budget", then a made-up dog and parking | English / **4 of 4** |
+
+Higgs transcribed Farsi, Korean, Chinese and Arabic well at 8 kHz, and Punjabi badly. For a demo where the renter hears replies in their language, Chinese and Spanish are the safe picks today; in Farsi the map and the texted results follow, but the voice answers in English.
+
 ## Still open
 
 1. **A returning caller whose calls are still running isn't told so.** None of the 5 holdout welcomes mentioned it; they recall the search instead. The case doesn't check for it yet. Also, about 1 in 4 welcomes skips the booking.
 2. **"The first one looks great" is taken as a focus, not a like.** Still open after Sat 04:45: 0 of 6 in a probe whatever the prompt says. See below.
 3. ~~Shared addresses never resolve.~~ Fixed in code (Sat 04:45). Unit labels from the pipeline would still read better than "number 5".
-4. **Farsi fails in Higgs text mode**: no tool calls, answers in English. See below for the evidence and the dropped catch-up.
+4. **Farsi, Arabic and Punjabi replies are often English** (text and phone audio). The preferences are saved now (the catch-up, Sat 10:30), but the Concierge may answer in English. Spanish, Korean and Chinese reply in kind. See "Any language" above.
 5. **About a quarter of turns run past two sentences**, mostly by reading the whole board line back.
 6. **Viewing times made up once**: "today 10 am to 6 pm", before the renter gave any.
 7. **The "claims with no tool call" check reads English only.** The Farsi "I added your cat", with no tool called, wasn't counted.
