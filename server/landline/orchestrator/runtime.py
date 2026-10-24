@@ -36,6 +36,7 @@ from landline.contracts import Event, SessionStarted, SessionView
 from landline.db.catalogue import Catalogue
 from landline.db.pool import Database
 from landline.orchestrator import board, handlers, narrator
+from landline.orchestrator.calllog import CallLog
 from landline.orchestrator.profiles import Profiles, Remembered, opening
 from landline.orchestrator.state import SessionState
 from landline.scoring import FeatureMatrix, rank
@@ -98,6 +99,7 @@ class SessionRuntime:
         self._starting = asyncio.Lock()
         self._subscribers: dict[str, list[Subscriber]] = defaultdict(list)
         self._tasks: set[asyncio.Task] = set()
+        self.calls = CallLog(db, self._spawn)   # renter calls and their transcripts, for the admin panel
         self.profiles = Profiles(db) if db is not None else None
         if self.profiles is not None:
             self.on("SessionEnded", self._remember)
@@ -169,10 +171,20 @@ class SessionRuntime:
             live.seen.update(e.idem_key for e in tx.events)
         await self._published(session_id, tx.events)
 
+    def _spawn(self, work) -> asyncio.Task:
+        """Run `work` in the background; `idle()` and `close()` keep track of it."""
+        task = asyncio.create_task(work)
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+        return task
+
     async def idle(self) -> None:
         """Wait for the subscribers already running (tests, and a clean shutdown)."""
         while self._tasks:
             await asyncio.gather(*list(self._tasks), return_exceptions=True)
+            # gather finishes without yielding when every task is already done (Python 3.12), so give the
+            # finished tasks their turn to leave the set.
+            await asyncio.sleep(0)
 
     async def close(self) -> None:
         for task in list(self._tasks):
@@ -251,9 +263,7 @@ class SessionRuntime:
         view = self.get(session_id)
         for event in events:
             for fn in self._subscribers.get(event.type, ()):
-                task = asyncio.create_task(self._run(fn, event, view))
-                self._tasks.add(task)
-                task.add_done_callback(self._tasks.discard)
+                self._spawn(self._run(fn, event, view))
 
     @staticmethod
     async def _run(fn: Subscriber, event: Event, view: SessionView) -> None:

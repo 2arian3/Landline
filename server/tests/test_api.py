@@ -5,11 +5,11 @@ from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
 
-from landline.api.demo import LAST_RESULTS, TORONTO, DemoSessions, window
+from landline.api.demo import NO_RESULTS_YET, TORONTO, DemoSessions, window
 from landline.api.judge import JudgeLines, StartLimit, client_ip
 from landline.app import create_app
 from landline.config import Settings
-from landline.contracts import Listing
+from landline.contracts import Listing, Preferences
 from landline.db.catalogue import Catalogue
 
 NOW = datetime(2026, 10, 22, tzinfo=UTC)
@@ -115,6 +115,10 @@ def test_area_hook_sets_where_the_map_flies():
         assert c.post("/api/sessions/s_area/area", json={"place": "Atlantis"}).status_code == 404
         king_and_bay = c.post("/api/sessions/s_area/area", json={"place": "King and Bay"}).json()
         assert king_and_bay["focus_area"]["zoom"] == 15.5
+        # the same area again changes nothing, as in the runtime; "Start over" clears it
+        again = c.post("/api/sessions/s_area/area", json={"place": "King and Bay"}).json()
+        assert again["version"] == king_and_bay["version"]
+        assert c.post("/api/sessions/s_area/reset").json()["focus_area"] is None
 
 
 def test_area_hook_sends_a_runtime_session_area_focused():
@@ -264,7 +268,11 @@ def test_judge_done_ends_the_brief_behind_the_gate():
         done = c.post(f"/api/judge/{sid}/done").json()
         assert plan and done["phase"] == "calling" and done["plan"] == plan   # on to the Dispatcher (A-06)
         assert sid not in c.app.state.judges.open   # the line is free for the next judge
-        assert c.post(f"/api/judge/{sid}/done").json()["version"] == done["version"]   # it ends once
+        # It ends once: a second Done changes nothing. (The Dispatcher may have frozen the plan meanwhile,
+        # a commit of its own, so compare with the session as it stands, not with `done`.)
+        before = c.get(f"/api/sessions/{sid}").json()
+        again = c.post(f"/api/judge/{sid}/done").json()
+        assert again["phase"] == "calling" and again["version"] in (before["version"], before["version"] + 1)
         unplanned = c.post("/api/judge/start").json()["session_id"]
         assert c.post(f"/api/judge/{unplanned}/done").json()["phase"] == "closed"   # nothing to call
         assert c.post("/api/judge/s_unknown000/done").status_code == 404   # not a judge session
@@ -388,9 +396,35 @@ def test_judge_hang_up_frees_the_line_at_once_and_calls_nothing():
         assert c.post("/api/judge/start").json()["reason"] == "busy"
         r = c.post(f"/api/judge/{sid}/hang-up")
         assert r.status_code == 204 and r.content == b""
-        assert c.get(f"/api/sessions/{sid}").json()["phase"] == "open"   # the brief is left as it was
+        assert c.get(f"/api/sessions/{sid}").json()["phase"] == "open"   # a planned brief is left as it was
         assert c.post(f"/api/judge/{sid}/hang-up").status_code == 204    # again: harmless
         assert c.post("/api/judge/start").status_code == 200
+
+
+def test_judge_hang_up_closes_a_brief_that_never_got_going():
+    with _judge_client(1) as c:
+        sid = c.post("/api/judge/start").json()["session_id"]
+        assert c.post(f"/api/judge/{sid}/hang-up").status_code == 204
+        assert c.get(f"/api/sessions/{sid}").json()["phase"] == "closed"   # nothing would close it otherwise
+
+
+def test_a_live_socket_keeps_its_line_whatever_the_page_says():
+    now = [0.0]
+    lines = JudgeLines(cap=1, deadline_s=960, clock=lambda: now[0])
+    sid = lines.take()
+    assert lines.connected(sid)
+    assert not lines.connected(sid)        # a second socket for the same line is refused
+    assert lines.release(sid) is False     # a stray beacon or a second tab can't free it
+    now[0] = 899.0                         # a long call, past the old 600 s deadline
+    assert lines.take() is None
+    lines.hang_up(sid)                     # the socket closed
+    assert lines.take() is not None
+
+
+def test_a_judge_lines_backstop_outlasts_the_call_deadline():
+    # A connected line frees when its socket closes; the deadline is only a backstop.
+    with _judge_client(1) as c:
+        assert c.app.state.judges.deadline_s > c.app.state.settings.renter_call_max_s
 
 
 def test_judge_lines_free_after_the_connect_window_through_the_api():
@@ -436,7 +470,8 @@ def test_returning_renter_is_welcomed_by_name():
 async def test_a_returning_call_opens_with_the_last_results():
     s = DemoSessions(_one_bedrooms(), tick_s=0)
     first = await s.welcome_back("s1", True, "Sara")
-    assert first.agent_says == f"Welcome back, Sara. {LAST_RESULTS}"   # nothing run yet: the fixture
+    # Nothing run yet: the Narrator's line for that, never invented results.
+    assert first.agent_says == f"Welcome back, Sara. {NO_RESULTS_YET}"
     await s.plan_top("s1")
     await s.hang_up("s1")
     await s.dialing["s1"]
@@ -444,6 +479,11 @@ async def test_a_returning_call_opens_with_the_last_results():
     assert results and not s.get("s1").agent_says.startswith("Welcome back")   # calls done: Landline moved on
     again = await s.reset("s1")   # the renter calls again
     assert again.agent_says == f"Welcome back, Sara. {results}"
+    assert (await s.update("s1", focus="t:2")).agent_says == again.agent_says   # a tap says nothing new
+    # Once the renter says something, Landline answers it, the way the Narrator only opens with the welcome.
+    said = await s.update("s1", prefs=Preferences(max_monthly=2600, min_beds=1))
+    assert said.agent_says.endswith("is on top.") and said.returning
+    await s.reset("s1")
     assert (await s.plan_top("s1")).agent_says.endswith("is on top.")   # once there's a plan, it moves on
     await s.reset("s1")
     assert (await s.welcome_back("s1", False, None)).agent_says.endswith("is on top.")

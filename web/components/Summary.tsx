@@ -1,7 +1,9 @@
 "use client";
 
 import { heardLine } from "@/lib/format";
+import { resultsByPlace } from "@/lib/results";
 import type { Card, SessionView } from "@/lib/types";
+import { splitWelcome } from "@/lib/welcome";
 
 export function Brand({
   stale,
@@ -119,13 +121,13 @@ export function Activity({ view, compact = false }: { view: SessionView | null; 
  */
 export function Results({ view, compact = false }: { view: SessionView | null; compact?: boolean }) {
   if (view?.phase !== "done" || !view.results) return null;
-  const lines = perPlace(view.results, view.board.map((c) => c.address));
+  const lines = resultsByPlace(view.results, view.board.map((c) => c.address));
   return (
     <section aria-label="What the calls found">
       <p className="text-meta text-ink-3">What the calls found</p>
       <ul className="mt-1 space-y-1.5">
-        {lines.map((line) => (
-          <li key={line} className={`text-ink ${compact ? "text-support" : "text-fact"}`}>
+        {lines.map((line, i) => (
+          <li key={i} className={`text-ink ${compact ? "text-support" : "text-fact"}`}>
             {line}
           </li>
         ))}
@@ -134,22 +136,6 @@ export function Results({ view, compact = false }: { view: SessionView | null; c
   );
 }
 
-/** The results text as one line per place: a sentence that names no other place stays with the one before. */
-function perPlace(results: string, addresses: string[]): string[] {
-  const lines: { text: string; place?: string }[] = [];
-  for (const sentence of results.split(SENTENCE_END)) {
-    const place = addresses.find((a) => sentence.includes(a));
-    const last = lines.at(-1);
-    if (last && (!place || place === last.place)) last.text += ` ${sentence}`;
-    else lines.push({ text: sentence, place });
-  }
-  const booked = (l: { text: string }) => Number(/\bbooked\b/i.test(l.text));
-  return lines.sort((a, b) => booked(b) - booked(a)).map((l) => l.text);
-}
-
-// Between sentences, but not after "St." in "64 St. Clair Avenue West".
-const SENTENCE_END = /(?<=[.!?])(?<!\bSt\.)\s+(?=[A-Z0-9“"])/;
-
 /**
  * The first thing in the panel for a renter Landline knows (U-08). Landline
  * opens a returning call with the welcome and what the last call's agents found
@@ -157,10 +143,7 @@ const SENTENCE_END = /(?<=[.!?])(?<!\bSt\.)\s+(?=[A-Z0-9“"])/;
  */
 export function Welcome({ view, compact = false }: { view: SessionView | null; compact?: boolean }) {
   if (!view?.returning) return null;
-  const opening = opensWithWelcome(view) ? view.agent_says : "";
-  const greeting =
-    /^Welcome back[^.!?]*[.!?]/i.exec(opening)?.[0] ?? `Welcome back${view.user_name ? `, ${view.user_name}` : ""}.`;
-  const news = opening.slice(greeting.length).trim();
+  const { greeting, news } = splitWelcome(opensWithWelcome(view) ? view.agent_says : "", view.user_name);
   return (
     <div className="space-y-0.5">
       <p className={`font-label text-ink ${compact ? "text-support" : "text-fact"}`}>{greeting}</p>
@@ -168,6 +151,9 @@ export function Welcome({ view, compact = false }: { view: SessionView | null; c
     </div>
   );
 }
+
+/** An empty board, and Landline's last line is the stock one for it. */
+const saysNothingFits = (view: SessionView) => !view.board.length && /^Nothing fits yet\b/.test(view.agent_says ?? "");
 
 /** Landline's last line is the returning renter's welcome: the panel shows it once, as the welcome. */
 const opensWithWelcome = (view: SessionView) => view.returning && /^welcome back/i.test(view.agent_says ?? "");
@@ -218,9 +204,9 @@ export function Heard({
           <p className="text-support text-ink">{heard}</p>
         </div>
       )}
-      {/* What Landline said during the brief: stale once the calls start, and with nothing on the board the
-          list's own empty state says it. */}
-      {view.agent_says && view.phase === "open" && view.board.length > 0 && !opensWithWelcome(view) && (
+      {/* What Landline said during the brief: stale once the calls start. With nothing on the board, its
+          stock "Nothing fits yet" is what the list's empty state says already; anything else it said shows. */}
+      {view.agent_says && view.phase === "open" && !saysNothingFits(view) && !opensWithWelcome(view) && (
         <blockquote className="m-0 border-0 p-0">
           <p className="text-meta text-ink-3">Landline said</p>
           <p className="text-fact">“{view.agent_says}”</p>

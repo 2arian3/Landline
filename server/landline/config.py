@@ -41,6 +41,15 @@ class Settings:
     public_url: str | None = None
     higgs_voice_renter: str = "default"
     renter_call_max_s: float = 900
+    # Calls to listing agents (A-06). Only numbers on the allowlist are ever dialled (hard rule 6); calls
+    # wait for Toronto business hours unless FORCE_BUSINESS_HOURS=1; at most CALL_CONCURRENCY run at once
+    # (default: the Higgs lines minus one kept for renters calling in); each has a deadline.
+    demo_agent_phones: tuple[str, ...] = ()
+    force_business_hours: bool = False
+    call_concurrency: int | None = None
+    listing_call_max_s: float = 300
+    # The admin panel (/admin) and its API need this token as a bearer header. Unset, they answer 404.
+    admin_token: str | None = None
 
     @classmethod
     def load(cls) -> Settings:
@@ -61,11 +70,19 @@ class Settings:
             twilio_phone_number=os.getenv("TWILIO_PHONE_NUMBER") or None,
             public_url=(os.getenv("PUBLIC_URL") or "").rstrip("/") or None,
             higgs_voice_renter=os.getenv("HIGGS_VOICE_RENTER") or "default",
+            demo_agent_phones=_list("DEMO_AGENT_PHONES"),
+            force_business_hours=_on("FORCE_BUSINESS_HOURS"),
+            call_concurrency=int(os.getenv("CALL_CONCURRENCY") or 0) or None,
+            admin_token=os.getenv("ADMIN_TOKEN") or None,
         )
 
     def allowed_origins(self) -> list[str]:
         # An Origin header never ends in "/", so a pasted URL with one would never match.
         return sorted({o.rstrip("/") for o in (self.web_url, LOCAL_WEB, *self.cors_origins)})
+
+
+def _list(name: str) -> tuple[str, ...]:
+    return tuple(x.strip() for x in os.getenv(name, "").split(",") if x.strip())
 
 
 def _on(name: str) -> bool:
