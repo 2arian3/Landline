@@ -123,6 +123,31 @@ async def feedback(session_id: str, body: FeedbackBody, request: Request) -> Ses
     return await request.app.state.sessions.react(session_id, body.listing_id, body.reaction, body.reason)
 
 
+class Turn(BaseModel):
+    """One caption line of a call (a call_turns row): who said what, in order."""
+    idx: int
+    speaker: Literal["agent", "landlord", "renter"]
+    text: str
+    lang: str | None = None
+    t_ms: int | None = None   # milliseconds into the call, when known
+
+
+@router.get("/api/calls/{call_id}/turns", response_model=list[Turn])
+async def call_turns(call_id: str, request: Request, after: int = -1) -> list[Turn]:
+    """CONTRACTS.md: live captions for a call, the lines after `after` in order; poll with the last idx
+    shown. A call the demo store dialled answers from its script, any other from call_turns when there's
+    a database. Unknown everywhere: 404."""
+    state = request.app.state
+    rows = state.sessions.turns(call_id, after)
+    if rows is None and state.db is not None:
+        rows = await state.db.turns.list(call_id, after)
+        if not rows and await state.db.calls.get(call_id) is None:
+            rows = None
+    if rows is None:
+        raise HTTPException(404, "unknown call")
+    return [Turn.model_validate(row, from_attributes=True) for row in rows]
+
+
 @router.post("/api/sessions/{session_id}/calls", response_model=SessionView)
 async def plan_calls(session_id: str, request: Request) -> SessionView:
     """Demo hook: stands in for the Concierge's call_listings until the voice layer exists. The top four
