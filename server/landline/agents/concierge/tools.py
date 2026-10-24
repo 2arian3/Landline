@@ -385,8 +385,15 @@ async def call_listings(args: CallListings, ctx: ToolContext, meta: dict) -> str
     booking = ("Booking: not allowed yet. Ask whether you may book a viewing." if unasked and not may_book
                else "Booking: not allowed yet. Ask whether you may book a viewing in that window." if ask
                else "Booking: I may book one." if may_book else "Booking: I won't book.")
-    return (f"Calling {_join(addresses)} {_calls_go_out(ctx, meta['at'])}, and texting you what they say. "
-            f"{times} {booking}")
+    go = _calls_go_out(ctx, meta["at"])
+    # Listings, viewing times, and booking allowed or turned down: nothing is left to ask, so the agent ends
+    # the call instead of waiting for the renter's bye (Mahyar's test).
+    declined = args.may_book is False or books(ctx.renter_said or "") is False
+    done = bool(availability) and not (invented or unasked or ask) and (may_book or declined)
+    when = "as soon as you hang up" if go.startswith("right") else go
+    end = (f" The plan is complete: tell them you'll call {when} and text the results, say goodbye, and call "
+           "end_session.") if done else ""
+    return f"Calling {_join(addresses)} {go}, and texting you what they say. {times} {booking}{end}"
 
 
 # A renter's line that agrees to a booking, or turns one down. Checked in code: the model set may_book on
