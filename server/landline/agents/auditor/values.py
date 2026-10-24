@@ -238,8 +238,8 @@ _RULES: dict[str, tuple[tuple[str, str], ...]] = {
                   ("yes", r"step[- ]free|wheelchair|no stairs|ground level")),
 }
 
-_DISPLAY = {
-    ("available", "yes"): "still available", ("available", "no"): "no longer available",
+_DISPLAY = {   # "not available" is one of the words card status reads as gone (orchestrator/state.py GONE)
+    ("available", "yes"): "still available", ("available", "no"): "not available",
     ("pets", "no_pets"): "no pets", ("pets", "cats_only"): "cats only", ("pets", "dogs_only"): "dogs only",
     ("pets", "small_only"): "small pets only", ("pets", "case_by_case"): "pets case by case",
     ("pets", "allowed"): "pets allowed", ("laundry", "in_unit"): "laundry in the unit",

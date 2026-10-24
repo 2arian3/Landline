@@ -16,6 +16,7 @@ from landline.agents.auditor.flags import red_flags
 from landline.agents.auditor.numbers import amounts
 from landline.agents.auditor.values import Refused, settle
 from landline.contracts import EVENT, OutcomeReady, Viewing
+from landline.orchestrator.state import outcome_status
 
 TORONTO = ZoneInfo("America/Toronto")
 NOW = datetime(2026, 10, 24, 15, 0, tzinfo=TORONTO)   # a Saturday afternoon
@@ -267,3 +268,13 @@ async def test_extractor_output_is_parsed_and_grounded():
 def test_lease_then_month_to_month_is_the_year():
     assert settle("lease_months", "", "One year lease, then month to month.").value == "12"
     assert settle("lease_months", "", "It's month to month.").value == "0"
+
+
+def test_a_rented_listing_ends_dead_on_the_card():
+    """Card status reads the outcome's words (orchestrator.state.outcome_status): gone must read gone."""
+    c = call([("landlord", "Sorry, that one's been rented already.")],
+             tool_facts=[ToolFact("available", "no", "that one's been rented already", 0)])
+    assert outcome_status(build(c, []).outcome) == "dead"
+    live = call([("landlord", "Yes, it's still available.")],
+                tool_facts=[ToolFact("available", "yes", "it's still available", 0)])
+    assert outcome_status(build(live, []).outcome) == "verified"
