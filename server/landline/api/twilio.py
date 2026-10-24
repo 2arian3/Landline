@@ -45,7 +45,7 @@ async def twilio_media(ws: WebSocket) -> None:
     state = ws.app.state
     await run_bridge(ws, calls=state.calls, runtime=state.runtime, connect_higgs=state.connect_higgs,
                      settings=state.settings, set_status=lambda status: setattr(state, "higgs", status),
-                     texter=state.texter, lines=state.lines)
+                     texter=state.texter, lines=state.lines, clips=state.clips)
 
 
 # ── listing calls (outbound, voice/outbound.py) ─────────────────────────────

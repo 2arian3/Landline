@@ -29,6 +29,7 @@ from landline.agents.caller import tools as caller_tools
 from landline.agents.caller.brief import brief, instructions, wants
 from landline.contracts import Listing, Preferences, Viewing
 from landline.orchestrator import SessionRuntime
+from landline.voice.avatar_clip import Clips
 from landline.voice.bridge import ends_call, run_tool
 from landline.voice.dispatch import CallResult, Dial, Report
 from landline.voice.higgs import ConnectHiggs, session_config
@@ -86,9 +87,10 @@ class SimRunner:
                  persona_for: Callable[[Dial, Listing], Persona] = demo_persona,
                  clock: Callable[[], datetime] = lambda: datetime.now(UTC),
                  max_turns: int = MAX_TURNS, turn_timeout_s: float = TURN_TIMEOUT_S,
-                 extractor: Complete | None = None):
+                 extractor: Complete | None = None, clips: Clips | None = None):
         self.runtime, self.connect, self.api_key = runtime, connect_higgs, api_key
         self.extractor = extractor   # the Auditor's text LLM (A-07); None: rules and the live record only
+        self.clips = clips             # the face clip, from the lines Landline said (a sim call has no audio)
         self.persona_for, self.clock = persona_for, clock
         self.max_turns, self.turn_timeout_s = max_turns, turn_timeout_s
         self.traces: OrderedDict[str, SimTrace] = OrderedDict()
@@ -134,6 +136,8 @@ class SimRunner:
                     await side.higgs.close()
             if trace.captions is not None:
                 await trace.captions.flush()
+            if self.clips is not None:
+                self.clips.schedule(dial.call_id)
         trace.end_reason, trace.ungrounded, trace.noted_by_code = reason, ctx.ungrounded, ctx.noted_by_code
         viewing = Viewing(starts_at=ctx.booked, slot_text=ctx.slot_text or "") if ctx.booked else None
         return CallResult(reason, await self._audit(dial, listing, reason, ctx, trace, viewing))

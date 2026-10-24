@@ -271,7 +271,8 @@ async def test_book_viewing_books_only_inside_the_renters_windows():
     assert "couldn't tell" in await _say(ctx, "book_viewing", {"slot": "sometime soon"}, 2)
     reply = await _say(ctx, "book_viewing", {"slot": "Saturday at 1 pm"}, 3)
     assert reply == ("Booked for Saturday at 1 pm. "
-                     "Start your reply with \"So that's Saturday at 1 pm,\" to confirm it.")
+                     "Start your reply with \"So that's Saturday at 1 pm.\" Say it once; if they already "
+                     "agreed, don't ask them to confirm it.")
     viewing = ctx.runtime.state(ctx.session_id).viewings["t:1"]
     assert viewing.starts_at == _at(24, 13) and viewing.slot_text == "Saturday at 1 pm"
     assert "Already booked" in await _say(ctx, "book_viewing", {"slot": "Saturday at 3 pm"}, 4)
@@ -692,6 +693,8 @@ def test_the_caller_never_skips_a_question_about_the_renter_or_claims_a_booking_
     text = instructions(brief(_listing(), _plan()))
     assert "They ask about the renter → never skip it" in text
     assert "only after book_viewing's reply says it's booked" in text
+    assert "If they already confirmed it, don't repeat it and don't ask again." in text
+    assert "If they already agreed to it, don't ask them to confirm it." in text
 
 
 def test_a_time_alone_answers_the_renters_question_but_a_day_and_a_time_doesnt():

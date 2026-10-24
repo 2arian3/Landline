@@ -17,7 +17,9 @@ import {
   type UserRow,
   when,
 } from "@/lib/admin";
+import { useAvatarClips } from "@/lib/avatars";
 import { bedsLabel, heardLine, money } from "@/lib/format";
+import { AvatarClips } from "./AvatarClips";
 
 // The renters list is the app's side panel: the same width as PANEL_WIDTH in Shell.tsx, written out so
 // Tailwind sees the class.
@@ -410,6 +412,11 @@ function PlaceItem({ place }: { place: ChosenPlace }) {
 
 function SessionItem({ session, token }: { session: SessionRow; token: string }) {
   const wants = session.preferences ? heardLine(session.preferences) : [];
+  const clips = useAvatarClips(session.session_id, session.phase);
+  const loadVideo = useCallback(
+    (callId: string) => adminAudio(`/api/admin/calls/${encodeURIComponent(callId)}/avatar`, token),
+    [token],
+  );
   return (
     <li className={`${card} p-4`} style={hairline}>
       <p className="flex items-baseline justify-between gap-3">
@@ -420,6 +427,7 @@ function SessionItem({ session, token }: { session: SessionRow; token: string })
         {when(session.started_at)}
         {session.ended_at ? ` to ${when(session.ended_at)}` : ""}
       </p>
+      <AvatarClips clips={clips} loadVideo={loadVideo} className="mt-3" />
       {wants.length > 0 && <p className="mt-2 text-support text-ink-2">Asked for {wants.join(", ")}</p>}
       {session.plan.length > 0 && (
         <p className="mt-1 text-support text-ink-2">Picked to call: {session.plan.map((p) => p.address).join(", ")}</p>

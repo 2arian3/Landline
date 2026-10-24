@@ -29,6 +29,7 @@ from landline.agents.caller.brief import brief, instructions, wants
 from landline.contracts import CallOutcome, Listing, Preferences, Viewing
 from landline.orchestrator import SessionRuntime
 from landline.voice import bridge
+from landline.voice.avatar_clip import Clips
 from landline.voice.bridge import HANG_UP_GRACE_S, KEEP_AUDIO_EVERY_S, Playback
 from landline.voice.dispatch import CallResult, Dial
 from landline.voice.higgs import PCMU, ConnectHiggs, session_config
@@ -49,11 +50,12 @@ class PhoneCaller:
 
     def __init__(self, runtime: SessionRuntime, connect_higgs: ConnectHiggs, api_key: str,
                  voice: str = "default", clock=lambda: datetime.now(UTC), extractor: Complete | None = None,
-                 record_audio: bool = True):
+                 record_audio: bool = True, clips: Clips | None = None):
         self.runtime, self.connect, self.api_key, self.voice, self.clock = (
             runtime, connect_higgs, api_key, voice, clock)
         self.extractor = extractor   # the Auditor's text LLM (A-07); None: rules and the live record only
         self.record_audio = record_audio   # Settings.record_audio: store both sides' audio (A-10)
+        self.clips = clips             # the face clip, rendered after this call's audio is stored
 
     def _preferences(self, session_id: str) -> Preferences | None:
         """The renter's preferences, for what the checklist asks; None once the session is gone."""
@@ -122,6 +124,8 @@ class PhoneCaller:
             except Exception:
                 log.exception("could not keep the end of call %s's audio", dial.call_id)
             await turns.flush()
+            if self.clips is not None:
+                self.clips.schedule(dial.call_id)
         viewing = Viewing(starts_at=ctx.booked, slot_text=ctx.slot_text or "") if ctx.booked else None
         return CallResult(reason, await self._audit(dial, listing, reason, ctx, turns, viewing))
 
