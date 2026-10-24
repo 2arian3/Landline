@@ -530,3 +530,15 @@ async def test_show_me_the_options_near_a_place_names_the_new_top_three(ctx):
     reply = await _say(ctx, "focus_area", '{"place": "Bloor"}')
     assert reply.startswith("Showing Bloor, and the list now ranks by it.") and reply.endswith(_three(ctx))
     assert "Bloor" in _view(ctx).board[0].address
+
+
+
+# ── once the plan is complete, the Concierge says goodbye and ends ───────────
+
+def test_the_prompt_wraps_up_once_the_brief_is_done():
+    from landline.agents.concierge.prompt import INSTRUCTIONS
+    text = " ".join(INSTRUCTIONS.split())
+    assert ("When call_listings' reply says to say goodbye, the brief is done: don't wait for them to "
+            "say bye. In that same turn say \"I'll call them as soon as we hang up and text you what they "
+            "say. Bye for now!\", then call end_session. If they add something first, handle it, then do "
+            "this.") in text
