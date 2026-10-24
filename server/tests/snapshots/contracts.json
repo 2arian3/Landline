@@ -3958,6 +3958,70 @@
         "type": "function"
       },
       {
+        "description": "The landlord said when it's free. Fill in the parts of what they said, never a date you work out; code makes the date. Read back the day the reply gives.",
+        "name": "record_available_from",
+        "parameters": {
+          "properties": {
+            "day": {
+              "description": "kind=date: the day of the month they named",
+              "maximum": 31,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "kind": {
+              "description": "What kind of day they named",
+              "enum": [
+                "now",
+                "tomorrow",
+                "weekday",
+                "next_week",
+                "in_weeks",
+                "date",
+                "month",
+                "end_of_month",
+                "unknown"
+              ],
+              "type": "string"
+            },
+            "month": {
+              "description": "kind=date or month: the month they named, 1-12",
+              "maximum": 12,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "quote": {
+              "description": "The landlord's exact words",
+              "type": "string"
+            },
+            "weekday": {
+              "description": "kind=weekday: the day they named",
+              "enum": [
+                "monday",
+                "tuesday",
+                "wednesday",
+                "thursday",
+                "friday",
+                "saturday",
+                "sunday"
+              ],
+              "type": "string"
+            },
+            "weeks": {
+              "description": "kind=in_weeks: how many weeks",
+              "maximum": 52,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "quote"
+          ],
+          "type": "object"
+        },
+        "type": "function"
+      },
+      {
         "description": "The landlord asked something you can't answer. Say you'll check with your client, then call this.",
         "name": "note_question",
         "parameters": {
