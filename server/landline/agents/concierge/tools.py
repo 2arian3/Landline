@@ -245,7 +245,7 @@ def _which(found: refs.Match) -> str:
         return WHICH
     named = _join([f"number {c.rank} at {_money(c.monthly_cost)}" for c in options[:3]])
     more = f" and {len(options) - 3} more" if len(options) > 3 else ""
-    return f"Which one? {len(options)} share {options[0].address}: {named}{more}. Ask, then use its number."
+    return f"Which one? {len(options)} places share {options[0].address}: {named}{more}. Ask the renter."
 
 
 def _told_apart(ctx: ToolContext, listing_id: str, board: list[Card]) -> str:
