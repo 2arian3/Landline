@@ -45,7 +45,7 @@ def _started(sid: str, key: str = "start") -> SessionStarted:
 
 def test_migrations_apply_once_then_do_nothing(schema):
     name, applied = schema
-    assert applied == ["0001_init.sql"]
+    assert applied == ["0001_init.sql", "0002_call_audio.sql"]
     with psycopg.connect(URL, autocommit=True) as conn:
         assert apply(conn, schema=name) == []
 
@@ -120,6 +120,37 @@ async def test_turns_and_facts(db):
     assert fact.value == "$180 a month" and fact.confirmed
     assert [f.fact_id for f in await db.facts.for_call(cid)] == [fact.fact_id]
     assert [f.field for f in await db.facts.for_listing(lid)] == ["parking_cost"]
+
+
+async def test_call_audio_and_where_each_line_is_in_it(db):
+    sid = (await db.sessions.create("s_audi000001", "phone")).session_id
+    cid = (await db.calls.create("c_audi000001", session_id=sid, role="renter", transport="voice",
+                                 state="live")).call_id
+    line = await db.turns.append(cid, 0, "agent", "Hi.", audio_start_ms=0, audio_end_ms=1200)
+    assert (line.audio_start_ms, line.audio_end_ms) == (0, 1200)
+    assert await db.turns.place(cid, 0, 0, 640) and not await db.turns.place(cid, 9, 0, 1)
+    assert [(t.audio_start_ms, t.audio_end_ms) for t in await db.turns.list(cid)] == [(0, 640)]
+    assert not await db.audio.exists(cid)
+    second = bytes(range(256)) * 8                                        # 256 ms of μ-law
+    assert await db.audio.append(cid, "renter", 0, 0, "pcmu", 8000, b"\xff" * 8000)   # 0-1000 ms
+    assert await db.audio.append(cid, "renter", 1, 1000, "pcmu", 8000, second)        # 1000-1256 ms
+    assert await db.audio.append(cid, "agent", 0, 200, "pcm16", 24000, b"\x01\x00" * 24000)   # 200-1200 ms
+    assert not await db.audio.append(cid, "renter", 1, 1000, "pcmu", 8000, b"retried")
+    assert await db.audio.exists(cid)
+    rows = await db.audio.list(cid)
+    assert [(r.track, r.seq, r.start_ms) for r in rows] == [
+        ("agent", 0, 200), ("renter", 0, 0), ("renter", 1, 1000)]
+    assert rows[2].audio == second                                        # bytes in, the same bytes out
+    # A window keeps the chunks that overlap it, whatever their format.
+    assert [(r.track, r.seq) for r in await db.audio.list(cid, 1100, 1300)] == [("agent", 0), ("renter", 1)]
+    assert [(r.track, r.seq) for r in await db.audio.list(cid, 0, 150)] == [("renter", 0)]
+    assert [(r.track, r.seq) for r in await db.audio.list(cid, 1200)] == [("renter", 1)]
+    # Deleting the call deletes its audio.
+    await db.calls.finalize(cid, "hangup")
+    async with db.transaction() as conn:
+        await conn.execute("delete from call_turns where call_id = %s", (cid,))
+        await conn.execute("delete from calls where call_id = %s", (cid,))
+    assert await db.audio.list(cid) == []
 
 
 async def test_a_board_is_replaced_whole(db):

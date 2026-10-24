@@ -49,6 +49,12 @@ Verified against docs.boson.ai on 21 Oct 2026. When something fails, re-check `h
 
 Never emitted: `conversation.item.done`, `rate_limits.updated`. Don't gate logic on them.
 
+Timing, verified 24 Oct (A-10, `voice/recorder.py` relies on it):
+- `speech_started` carries `item_id` and `audio_start_ms`; `speech_stopped` carries `item_id` and `audio_end_ms`. Both count milliseconds of input audio appended since the session opened, not since the last turn (a second utterance 8,680 ms in came back at 8,724). `audio_end_ms` includes the VAD's trailing silence, about 0.5 to 0.8 s.
+- `input_audio_transcription.completed`, `output_audio.delta` and `output_audio_transcript.done` all carry the line's `item_id`.
+- Higgs sends a response's audio in one burst, about 10 s of audio in 1.2 s, so what the caller has heard is a clock you keep yourself (`Playback`).
+- `response.output_audio_transcript.length` carries `delta` (a phrase of the transcript) and `length_ms` (the response's audio so far up to it). Unused yet, but it could tell which words played before a barge-in.
+
 ## Tools
 
 1. On `response.function_call_arguments.done`, run the tool in-process with the session and listing taken from the **Call**, never from the arguments. In the Concierge, that's `voice/bridge.py` `run_tool`, which the eval simulator also uses.

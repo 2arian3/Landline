@@ -1,7 +1,10 @@
 """The admin panel's API: off without a token, refused with a wrong one, and with the right one, every
 renter with their sessions, calls, transcripts and chosen listings. Also the stored record of a renter
 call (orchestrator/calllog.py). Runs against Postgres in a throwaway schema; skips without one."""
+import io
 import os
+import struct
+import wave
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -66,9 +69,15 @@ async def url(schema):
     # The renter's call: a session, a stored call with its transcript, a reaction and a plan.
     await rt.start(SessionStarted(**_meta("start"), channel="phone", caller_phone=PHONE))
     rt.calls.started(RENTER_CALL, SID, "voice")
-    rt.calls.said(RENTER_CALL, "agent", "Hi, this is Landline. What are you looking for?")
-    rt.calls.said(RENTER_CALL, "renter", "A one-bedroom under 2,600.")
+    rt.calls.said(RENTER_CALL, "agent", "Hi, this is Landline. What are you looking for?",
+                  start_ms=0, end_ms=2)
+    rt.calls.said(RENTER_CALL, "renter", "A one-bedroom under 2,600.", start_ms=2, end_ms=4)
     rt.calls.said(RENTER_CALL, "renter", "   ")   # nothing said: not stored
+    # Its recording (A-10): 4 ms of the renter (2 silent, then 2 loud) and 2 ms of the agent, which the
+    # renter cut short at 1 ms.
+    rt.calls.audio(RENTER_CALL, "renter", 0, b"\xff" * 16 + b"\x00" * 16, fmt="pcmu", rate=8000)
+    rt.calls.audio(RENTER_CALL, "agent", 0, b"\x80" * 16, fmt="pcmu", rate=8000)
+    rt.calls.placed(RENTER_CALL, 0, 0, 1)
     await rt.emit(PreferencesUpdated(**_meta("p1", 1), delta=PreferenceDelta(max_monthly=2600, min_beds=1)))
     await rt.emit(FeedbackGiven(**_meta("f1", 2), listing_id="t:3", reaction="reject", reason="too dark"))
     await rt.emit(CallsRequested(**_meta("plan", 3), listing_ids=["t:1", "t:2"], may_book=True))
@@ -155,3 +164,32 @@ def test_a_call_shows_its_transcript_in_order(url):
         assert c.get("/api/admin/calls/c_nope", headers=AUTH).status_code == 404
         # The renter's own call also answers the public live-captions route the page polls.
         assert len(c.get(f"/api/calls/{RENTER_CALL}/turns").json()) == 2
+
+
+def _wav(content: bytes) -> tuple[int, int, tuple[int, ...]]:
+    with wave.open(io.BytesIO(content)) as w:
+        frames = w.readframes(w.getnframes())
+        return w.getnchannels(), w.getframerate(), struct.unpack(f"<{len(frames) // 2}h", frames)
+
+
+def test_a_call_plays_back_from_its_recording_line_by_line(url):
+    with _client(url) as c:
+        call = c.get(f"/api/admin/calls/{RENTER_CALL}", headers=AUTH).json()
+        assert call["audio"] is True
+        assert [(t["audio_start_ms"], t["audio_end_ms"]) for t in call["transcript"]] == [(0, 1), (2, 4)]
+        path = f"/api/admin/calls/{RENTER_CALL}/audio"
+        assert c.get(path).status_code == 401
+        r = c.get(path, headers=AUTH)
+        assert r.status_code == 200 and r.headers["content-type"] == "audio/wav"
+        channels, rate, samples = _wav(r.content)
+        assert (channels, rate) == (2, 8000)                      # the renter left, the agent right
+        assert samples[0::2] == (0,) * 16 + (-32124,) * 16
+        assert samples[1::2] == (32124,) * 16 + (0,) * 16
+        renter = call["transcript"][1]                            # just the renter's line
+        r = c.get(path, headers=AUTH, params={"track": "caller", "from_ms": renter["audio_start_ms"],
+                                              "to_ms": renter["audio_end_ms"]})
+        assert _wav(r.content) == (1, 8000, (-32124,) * 16)
+        assert c.get(path, headers=AUTH, params={"track": "nope"}).status_code == 422
+        # A call with nothing recorded says so.
+        assert c.get(f"/api/admin/calls/{LISTING_CALLS[0]}", headers=AUTH).json()["audio"] is False
+        assert c.get(f"/api/admin/calls/{LISTING_CALLS[0]}/audio", headers=AUTH).status_code == 404
