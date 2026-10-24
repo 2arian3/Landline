@@ -6,6 +6,7 @@ import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, us
 import { Drawer } from "vaul";
 import { Board } from "./Board";
 import { DemoControls } from "./DemoControls";
+import type { Mark } from "./ListingCard";
 import { ListingDetail, type Reaction } from "./ListingDetail";
 import type { Padding } from "./MapView";
 import { PEEK, Shell } from "./Shell";
@@ -71,6 +72,19 @@ export function LiveBoard({
     [view, mine],
   );
 
+  // Where each planned place stands until its call has a result: picked during the brief, queued
+  // once the renter hangs up, then ringing. Live and finished calls speak through the card's status.
+  const marks = useMemo(() => {
+    const m: Record<string, Mark> = {};
+    for (const id of view?.plan ?? []) m[id] = "will_call";
+    for (const call of view?.calls ?? []) {
+      if (call.state === "queued") m[call.listing_id] = "queued";
+      else if (call.state === "dialing" || call.state === "ringing") m[call.listing_id] = "ringing";
+      else delete m[call.listing_id];
+    }
+    return m;
+  }, [view]);
+
   // Follow the server's focus (the voice agent saying "the Yorkville one") only
   // when it changes after the page opened; on open, frame the whole board.
   const openingFocus = useRef<string | null | undefined>(undefined);
@@ -118,6 +132,7 @@ export function LiveBoard({
       board={board}
       focusId={focusId}
       hoverId={hover}
+      marks={marks}
       padding={padding}
       showZoom={desktop === true}
       onSelect={select}
@@ -137,6 +152,7 @@ export function LiveBoard({
         loading={!view}
         focusId={focusId}
         hoverId={hover}
+        marks={marks}
         onSelect={select}
         onHover={setHover}
       />
@@ -144,7 +160,8 @@ export function LiveBoard({
         <DemoControls
           sessionId={sessionId}
           prefs={view.preferences}
-          calling={view.board.some((c) => c.status === "calling")}
+          phase={view.phase}
+          planned={view.plan.length}
           returning={view.returning}
           userName={view.user_name ?? null}
         />
@@ -168,6 +185,7 @@ export function LiveBoard({
             <ListingDetail
               id={selected}
               card={selectedCard}
+              mark={marks[selected]}
               onBack={() => setSelected(null)}
               onReact={(reaction, reason) => react(selected, reaction, reason)}
             />

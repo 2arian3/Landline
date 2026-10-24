@@ -13,6 +13,15 @@ export const STATUS: Partial<Record<Card["status"], { word: string; color: strin
   booked: { word: "Viewing booked", color: "var(--color-real)" },
 };
 
+/** Where a planned place stands before its call has a result: picked, queued after hang-up, ringing. */
+export type Mark = "will_call" | "queued" | "ringing";
+
+export const MARK: Record<Mark, { word: string; color: string }> = {
+  will_call: { word: "Will call", color: "var(--color-ink)" },
+  queued: { word: "Queued", color: "var(--color-ink-3)" },
+  ringing: { word: "Ringing", color: "var(--color-live)" },
+};
+
 /** "Up 2", "Down 1" or "New" for a few seconds after a re-rank; null when nothing moved. */
 export type Move = number | "new" | null;
 
@@ -21,6 +30,7 @@ export function ListingCard({
   focused,
   hovered,
   moved = null,
+  mark,
   onSelect,
   onHover,
 }: {
@@ -28,10 +38,11 @@ export function ListingCard({
   focused: boolean;
   hovered: boolean;
   moved?: Move;
+  mark?: Mark;
   onSelect: (id: string) => void;
   onHover: (id: string | null) => void;
 }) {
-  const status = STATUS[card.status];
+  const status = mark ? MARK[mark] : STATUS[card.status];
   const dead = card.status === "dead";
   const flag = card.red_flags[0];
   // What a person said on the phone. A red flag outranks it here; the detail shows both.
@@ -115,7 +126,7 @@ export function ListingCard({
           <span className="mt-1 flex items-center gap-1.5 text-meta font-label" style={{ color: status.color }}>
             <span
               aria-hidden
-              className={`h-1.5 w-1.5 rounded-full ${card.status === "calling" ? "live-dot" : ""}`}
+              className={`h-1.5 w-1.5 rounded-full ${card.status === "calling" || mark === "ringing" ? "live-dot" : ""}`}
               style={{ background: status.color }}
             />
             {status.word}
