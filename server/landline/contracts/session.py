@@ -99,6 +99,15 @@ class CallView(BaseModel):
     outcome: CallOutcome | None = None   # what this call settled (OutcomeReady), once it has ended
 
 
+class Turn(BaseModel):
+    """One caption line of a call (a call_turns row): who said what, in order. GET /api/calls/{id}/turns."""
+    idx: int
+    speaker: Literal["agent", "landlord", "renter"]
+    text: str
+    lang: str | None = None
+    t_ms: int | None = None   # milliseconds into the call, when known
+
+
 class SessionView(BaseModel):
     session_id: str
     version: int

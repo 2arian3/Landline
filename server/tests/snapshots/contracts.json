@@ -3853,6 +3853,59 @@
       ],
       "title": "SessionView",
       "type": "object"
+    },
+    "Turn": {
+      "description": "One caption line of a call (a call_turns row): who said what, in order. GET /api/calls/{id}/turns.",
+      "properties": {
+        "idx": {
+          "title": "Idx",
+          "type": "integer"
+        },
+        "lang": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Lang"
+        },
+        "speaker": {
+          "enum": [
+            "agent",
+            "landlord",
+            "renter"
+          ],
+          "title": "Speaker",
+          "type": "string"
+        },
+        "t_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "T Ms"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "idx",
+        "speaker",
+        "text"
+      ],
+      "title": "Turn",
+      "type": "object"
     }
   },
   "tools": {

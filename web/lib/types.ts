@@ -82,6 +82,15 @@ export type CallView = {
   outcome?: CallOutcome | null; // once the call has ended
 };
 
+/** One caption line of a call: who said what, in order (GET /api/calls/{id}/turns). */
+export type Turn = {
+  idx: number;
+  speaker: "agent" | "landlord" | "renter";
+  text: string;
+  lang?: string | null;
+  t_ms?: number | null; // milliseconds into the call, when known
+};
+
 export type SessionView = {
   session_id: string;
   version: number;
