@@ -157,7 +157,7 @@ make setup           # git hooks (they reject AI attribution in commits), Python
 cp .env.example .env
 ```
 
-In `.env`, set two values. No keys are needed to run the demo:
+In `.env`, set your email for the scraper and uncomment `DATABASE_URL` (`.env.example` ships with it commented out). No keys are needed to run the demo:
 
 ```bash
 SCRAPER_CONTACT_EMAIL=you@example.com                               # goes into the scraper's User-Agent
@@ -170,7 +170,7 @@ Then:
 make db-up           # Postgres 17 + PostGIS + pgvector in Docker on :54329
 make db-migrate      # applies db/migrations/*.sql
 make data            # scrapes liv.rent politely (one page every 2 s), checks, loads ~1,000 listings
-                     # or: make db-pull, a copy of production's data (needs ADMIN_TOKEN in .env)
+                     # or, for the team: make db-pull, a copy of production's data (needs the team's ADMIN_TOKEN in .env)
 make dev             # API on :8000 (one terminal)
 make web             # web app on :3000 (another terminal)
 ```
@@ -179,11 +179,11 @@ Open http://localhost:3000/?dev=1. The demo controls stand in for the voice agen
 
 To check the API, run `curl localhost:8000/health`. It should show `"catalogue":"postgres"` and `"listings"` around 1,000.
 
-- **No Docker?** Skip `db-up`, `db-migrate` and `data`, and leave `DATABASE_URL` empty. `make dev` then falls back to the latest scrape, and after that to `web/lib/fixtures/listings.json` (400 listings, `"catalogue":"fixture"`), so the demo runs on any laptop.
+- **No Docker?** Skip `db-up`, `db-migrate` and `data`, and leave `DATABASE_URL` commented out. `make dev` then falls back to the latest scrape, and after that to `web/lib/fixtures/listings.json` (400 listings, `"catalogue":"fixture"`), so the demo runs on any laptop.
 - `make data` also rewrites `web/lib/fixtures/listings.json`. Commit that file only on purpose.
-- `make test` runs the Python tests and the web typecheck with no keys, phones or network.
+- `make test` runs the Python tests, the web typecheck and the web tests with no keys, phones or network. Without a database, the tests that need Postgres are skipped.
 
-**Production:** web app https://landline-mu.vercel.app (Vercel), API https://landline.134.87.8.230.sslip.io (API and database on the Landline VM). Pushing to the `release` branch (`git push origin main:release`) deploys the API once CI passes, and deploys the web app when `web/` changed. The web build runs its own typecheck. See [deploy/README.md](deploy/README.md).
+**Production:** web app https://landline-mu.vercel.app (Vercel), API https://landline.134.87.8.230.sslip.io/health (the API's root has no page; the API and database run on the Landline VM). Pushing to the `release` branch (`git push origin main:release`) deploys the API once CI passes, and deploys the web app when `web/` changed. The web build runs its own typecheck. See [deploy/README.md](deploy/README.md).
 
 Read [AGENTS.md](AGENTS.md) before writing code, then take the next open task in your lane in [BACKLOG.md](BACKLOG.md).
 
