@@ -90,6 +90,7 @@ async def outbound_media(ws: WebSocket) -> None:
         log.warning("outbound media stream refused: unknown or reused call_id %r", call_id)
         await close_socket(ws, POLICY_VIOLATION)
         return
+    log.info("listing call %s stream started", call_id)
     try:
         await calls.set_state(call_id, "live")
         if not call.media.done():

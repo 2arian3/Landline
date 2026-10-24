@@ -59,6 +59,9 @@ class PhoneCaller:
                 instructions=text, tools=caller_tools.TOOLS, voice=self.voice, audio_format=PCMU))
             for event in start:
                 await higgs.send(event)
+            # With "answered by" and "stream started" (api/twilio.py) and "first audio out" below, the log's
+            # timestamps split the silence after a pickup into its steps (#148).
+            log.info("listing call %s: Higgs ready, opening sent", dial.call_id)
             left = (dial.deadline - self.clock()).total_seconds() - DEADLINE_MARGIN_S
             try:
                 async with asyncio.timeout(max(1.0, left)):
@@ -99,7 +102,7 @@ async def _talk(higgs: Any, transport: Any, ctx: Any, turns: Turns, playback: Pl
         return "hangup"
 
     async def speak() -> str:
-        spoke, said, called = False, "", []
+        spoke, said, called, sent_any = False, "", [], False
         async for event in higgs.events():
             kind = event.get("type")
             if kind == "response.created":
@@ -108,6 +111,9 @@ async def _talk(higgs: Any, transport: Any, ctx: Any, turns: Turns, playback: Pl
                 spoke = True
                 await transport.send_audio(event["delta"])
                 playback.sent(event["delta"])
+                if not sent_any:
+                    sent_any = True
+                    log.info("listing call %s: first audio out", ctx.call_id)
             elif kind == "input_audio_buffer.speech_started":
                 await transport.send_clear()
                 playback.clear()
