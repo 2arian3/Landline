@@ -161,7 +161,7 @@ async def test_focus_area_flies_to_a_known_street_or_says_it_cannot(ctx):
     assert area.label == "Bloor" and area.lat == pytest.approx(43.669) and area.zoom == tools.AREA_ZOOM
     before = _view(ctx).version
     assert await _say(ctx, "focus_area", '{"place": "King and Bay"}', "fc_2") == \
-        f"Couldn't find King and Bay on the map. {tools.ASK_PLACE}"
+        f"Couldn't find King and Bay on the map. Nothing changed. {tools.ASK_PLACE}"
     assert _view(ctx).version == before
 
 
@@ -183,17 +183,20 @@ def test_area_finds_places_said_loosely():
 
 
 async def test_update_preferences_places_an_area_or_says_it_cannot(ctx):
-    """An area the search can't use isn't kept with a "got it": a street becomes a point the board moves
-    to, and a place nothing holds is dropped, and the agent is told to ask."""
+    """An area the search can't use doesn't get a bare "got it": a street becomes a point the board moves
+    to; a place nothing here holds stays for the geocoder, and the agent hears the list doesn't use it."""
     reply = await _say(ctx, "update_preferences", '{"areas": ["over by Dupont"]}')
     prefs = ctx.runtime.state(SID).preferences
     assert prefs.areas == [] and prefs.anchors[0].label == "over by Dupont"
     assert prefs.anchors[0].lat == pytest.approx(43.675)
     assert _view(ctx).board[0].address == "322 Dupont St" and "Couldn't find" not in reply
-    reply = await _say(ctx, "update_preferences", '{"areas": ["Narnia"]}', "fc_2")
-    assert reply == f"Couldn't find Narnia on the map. {tools.ASK_PLACE}"
+    reply = await _say(ctx, "update_preferences", '{"anchors": [{"label": "over by Dupont"}, '
+                                                  '{"label": "King and Bay"}]}', "fc_2")
+    assert reply.endswith(f"Couldn't find King and Bay on the map, so the list doesn't use it yet. "
+                          f"{tools.ASK_PLACE}")
     prefs = ctx.runtime.state(SID).preferences
-    assert [a.label for a in prefs.anchors] == ["over by Dupont"] and "Narnia" not in prefs.areas
+    assert [(a.label, a.lat is not None) for a in prefs.anchors] == [("over by Dupont", True),
+                                                                      ("King and Bay", False)]
 
 
 async def test_call_listings_plans_the_top_three_and_reads_them_back(ctx):
