@@ -6,7 +6,10 @@ from datetime import UTC, datetime
 
 import pytest
 
-from landline.agents.caller import outcome, slots, tools
+from landline.agents import auditor
+from landline.agents.auditor import grounding
+from landline.agents.auditor.flags import REASONS
+from landline.agents.caller import slots, tools
 from landline.agents.caller.brief import MAX_GAPS, brief, instructions
 from landline.config import Settings
 from landline.contracts import (
@@ -14,6 +17,7 @@ from landline.contracts import (
     CallsRequested,
     CallsScheduled,
     Listing,
+    OutcomeReady,
     SessionEnded,
     SessionStarted,
     Shareable,
@@ -22,7 +26,8 @@ from landline.contracts import (
 )
 from landline.contracts.tools import Availability
 from landline.db.catalogue import Catalogue
-from landline.orchestrator import SessionRuntime
+from landline.orchestrator import SessionRuntime, narrator
+from landline.orchestrator.board import build as board_build
 from landline.voice.dispatch import Dispatcher
 from landline.voice.personas import Persona
 from landline.voice.sim import SimRunner
@@ -71,31 +76,34 @@ SAID = ["Hello, Linda speaking.",
 
 
 def test_a_quote_must_be_what_the_landlord_said():
-    assert outcome.quoted("available from November 1st", SAID)
-    assert outcome.quoted("parking is 1850", SAID)                        # $1,850 and 1850 read the same
-    assert outcome.quoted("Yes, its available from November 1st", SAID)  # punctuation, a missing apostrophe
-    assert not outcome.quoted("Pets are fine", SAID)
-    assert not outcome.quoted("", SAID)
+    """The Caller checks quotes with the Auditor's grounding (A-07): one set of rules, live and after."""
+    assert grounding.verify("available from November 1st", SAID)
+    assert grounding.verify("no, $150 a month", SAID)                       # $150 and 150 read the same
+    assert grounding.verify("Yes its available from November 1st", SAID)  # punctuation, a missing apostrophe
+    assert not grounding.verify("Pets are fine", SAID)
+    assert not grounding.verify("Parking is $1,800", SAID)                 # a changed number
+    assert not grounding.verify("", SAID)
 
 
-def test_red_flags_come_from_the_landlords_words():
-    scam = ["I'm working overseas, so I can't show it. Send the first month by e-transfer today to hold it."]
-    assert outcome.red_flags(scam) == [outcome.RED_FLAGS["deposit_before_viewing"],
-                                       outcome.RED_FLAGS["owner_away"]]
-    courier = ["Once you send the deposit by Western Union, my lawyer will courier you the keys."]
-    assert outcome.RED_FLAGS["deposit_before_viewing"] in outcome.red_flags(courier)
-    assert outcome.RED_FLAGS["owner_away"] in outcome.red_flags(courier)
-    legal = ["First and last month's rent once the lease is signed, by e-transfer or cheque."]
-    assert outcome.red_flags(legal) == []
+async def test_the_booking_guard_uses_the_auditors_red_flags():
+    ctx = await _ctx(said=["I'm working overseas, so I can't show it. Send the first month by e-transfer "
+                           "today to hold it."])
+    assert ctx.flags() == [REASONS["deposit_before_viewing"], REASONS["owner_away"], REASONS["no_viewing"]]
+    ctx = await _ctx(said=["Once you send the deposit by Western Union, my lawyer will courier the keys."])
+    want = {REASONS["deposit_before_viewing"], REASONS["untraceable_payment"], REASONS["owner_away"]}
+    assert want <= set(ctx.flags())
+    ctx = await _ctx(said=["First and last month's rent once the lease is signed, by e-transfer or cheque."])
+    assert ctx.flags() == []
 
 
 def test_the_outcome_keeps_grounded_facts_once_per_field():
-    from landline.contracts import Fact
-    facts = [Fact(field="parking_cost", value="$1,850", quote="Parking is $1,850", speaker="Agent heard"),
-             Fact(field="parking_cost", value="$150", quote="no, $150 a month", speaker="Agent heard"),
-             Fact(field="pets", value="cats ok", quote="cats are fine", speaker="Agent heard")]   # never said
-    out = outcome.outcome("c_1", "t:1", "done", facts, SAID, ["Guarantor?", "Guarantor?"], None)
-    assert [(f.field, f.value) for f in out.facts] == [("parking_cost", "$150")]   # the corrected read-back
+    turns = [auditor.Turn(i, "landlord", t) for i, t in enumerate(SAID)]
+    facts = [auditor.ToolFact("parking_cost", "$1,850", "Parking is $1,850"),
+             auditor.ToolFact("parking_cost", "$150", "no, $150 a month"),
+             auditor.ToolFact("pets", "cats ok", "cats are fine")]   # never said
+    out = auditor.build(auditor.CallRecord("c_1", "t:1", "done", turns, auditor.ListingContext("t:1"), NOW,
+                                           facts, ["Guarantor?", "Guarantor?"]), []).outcome
+    assert [(f.field, f.quote) for f in out.facts] == [("parking_cost", "no, $150 a month")]   # corrected
     assert out.open_questions == ["Guarantor?"] and out.red_flags == []
 
 
@@ -182,14 +190,15 @@ async def test_book_viewing_books_only_inside_the_renters_windows():
     assert "outside the renter's times" in await _say(ctx, "book_viewing", {"slot": "Tuesday at 7 pm"})
     assert "couldn't tell" in await _say(ctx, "book_viewing", {"slot": "sometime soon"}, 2)
     reply = await _say(ctx, "book_viewing", {"slot": "Saturday at 1 pm"}, 3)
-    assert reply == "Booked for Saturday at 1 pm. Read it back to them to confirm."
+    assert reply == ("Booked for Saturday at 1 pm. "
+                     "Start your reply with \"So that's Saturday at 1 pm,\" to confirm it.")
     viewing = ctx.runtime.state(ctx.session_id).viewings["t:1"]
     assert viewing.starts_at == _at(24, 13) and viewing.slot_text == "Saturday at 1 pm"
     assert "Already booked" in await _say(ctx, "book_viewing", {"slot": "Saturday at 3 pm"}, 4)
 
 
 async def test_book_viewing_refuses_without_permission_a_clash_or_a_red_flag():
-    ctx = await _ctx(_plan(may_book=False))
+    ctx = await _ctx(_plan(may_book=False))   # a time the landlord never said: nothing noted
     assert "didn't allow booking" in await _say(ctx, "book_viewing", {"slot": "Saturday at 1 pm"})
     ctx = await _ctx()
     other = ctx.runtime._get(ctx.session_id).state   # another call already booked the renter at 1:30
@@ -199,6 +208,42 @@ async def test_book_viewing_refuses_without_permission_a_clash_or_a_red_flag():
     ctx = await _ctx(said=["Send the deposit by e-transfer first to hold it, I'm abroad."])
     assert "scam warning" in await _say(ctx, "book_viewing", {"slot": "Saturday at 1 pm"})
     assert ctx.booked is None
+
+
+async def test_an_offered_time_without_permission_is_noted_never_booked():
+    """Booking not allowed: the landlord's offered time comes back to the renter as a fact, covers the
+    viewing item, and never shows as booked on the card or in the results text."""
+    ctx = await _ctx(_plan(may_book=False), said=["I can show it Saturday at 1 pm if that suits."])
+    reply = await _say(ctx, "book_viewing", {"slot": "Saturday at 1 pm"})
+    assert reply.startswith("Not booked") and "So Saturday at 1 pm could work" in reply
+    assert next(i for i in ctx.brief.items if i.key == "viewing").done
+    assert ctx.booked is None
+    state = ctx.runtime.state(ctx.session_id)
+    assert state.viewings == {}
+    heard = [(f.field, f.value) for f in state.heard["t:1"]]
+    assert heard == [("other", "viewing offered: Saturday at 1 pm")]
+    await _say(ctx, "book_viewing", {"slot": "Saturday at 1 pm"}, 2)     # asked twice: noted once
+    assert len(ctx.facts) == 1
+    turns = [auditor.Turn(0, "landlord", ctx.said[0])]
+    out = auditor.build(auditor.CallRecord(CALL, "t:1", "done", turns, auditor.ListingContext("t:1"), NOW,
+                                           [auditor.ToolFact(f.field, f.value, f.quote) for f in ctx.facts]),
+                        []).outcome
+    assert out.viewing is None and out.facts
+    await ctx.runtime.emit(OutcomeReady(session_id=ctx.session_id, at=NOW, idem_key=f"{CALL}:outcome",
+                                        outcome=out))
+    state = ctx.runtime.state(ctx.session_id)
+    assert state.status("t:1") == "verified" and state.viewings == {}
+    view = board_build(state, 1, ctx.runtime.catalogue, ctx.runtime.matrix)
+    assert "book" not in narrator.results(state, view, ctx.runtime.catalogue).lower()
+
+
+async def test_record_fact_hands_back_the_read_back_sentence():
+    ctx = await _ctx(said=["Parking is $150 a month."])
+    reply = await _say(ctx, "record_fact", {"field": "parking_cost", "value": "$150 a month",
+                                            "quote": "Parking is $150 a month"})
+    assert 'Start your reply with "So parking is $150 a month."' in reply
+    assert tools.readback("available_from", "November 1st") == "So it's available from November 1st."
+    assert tools.readback("pets", "cats ok") is None                    # nothing to read back
 
 
 async def test_end_call_done_is_refused_once_while_items_are_open():
@@ -320,3 +365,39 @@ async def test_a_sim_call_records_books_and_comes_back_with_its_outcome():
 
 def test_the_sim_runner_never_touches_the_phone_network():
     assert SimRunner.uses_phone is False and SimRunner.transport == "sim"
+
+
+async def test_every_read_back_of_a_turn_rides_on_its_last_tool_reply():
+    ctx = await _ctx(said=["Parking is $150 a month and rent is $2,000. Does your client have a guarantor?"])
+    await _say(ctx, "record_fact", {"field": "parking_cost", "value": "$150 a month",
+                                    "quote": "Parking is $150 a month"})
+    reply = await _say(ctx, "record_fact", {"field": "rent", "value": "$2,000", "quote": "rent is $2,000"}, 2)
+    assert '"So parking is $150 a month. And the rent is $2,000."' in reply
+    reply = await _say(ctx, "note_question", {"question": "Does your client have a guarantor?"}, 3)
+    assert 'Start your reply with "So parking is $150 a month. And the rent is $2,000.", then tell' in reply
+    ctx.said.append("Laundry is in the basement.")                     # a new turn starts afresh
+    reply = await _say(ctx, "record_fact", {"field": "laundry", "value": "basement",
+                                            "quote": "Laundry is in the basement"}, 4)
+    assert "Start your reply" not in reply
+
+
+async def test_a_question_asked_twice_is_noted_even_without_a_promise():
+    ctx = await _ctx(said=["Would your client want a locker for $60 a month?"])
+    assert await tools.kept_promise(ctx, "Is the building quiet at night?", []) is None   # asked once
+    ctx.said.append("It's quiet. Would your client want a locker for $60 a month?")
+    noted = await tools.kept_promise(ctx, "Great, and when can we view it?", [])
+    assert noted == "Would your client want a locker for $60 a month?" and ctx.noted_by_code == 1
+    ctx.said.append("So, would your client want a locker for $60 a month?")
+    assert await tools.kept_promise(ctx, "What about Saturday?", []) is None               # noted already
+    ctx = await _ctx(said=["Do you want a locker for $60?", "Do you want a locker for $60?"])
+    ctx.questions.append("Does the renter want the $60 locker?")                         # in its own words
+    assert await tools.kept_promise(ctx, "Okay.", []) is None
+
+
+def test_a_day_and_a_time_recorded_as_other_covers_the_viewing():
+    b = brief(_listing(), _plan(may_book=False, questions=["Is it quiet at night?"]))
+    b.covered("other", "quiet after 10 pm")                 # a time alone answers the renter's question
+    assert next(i for i in b.items if i.key == "q1").done
+    assert not next(i for i in b.items if i.key == "viewing").done
+    b.covered("other", "Thursday at 6:30 pm")
+    assert next(i for i in b.items if i.key == "viewing").done

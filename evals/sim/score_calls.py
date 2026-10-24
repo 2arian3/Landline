@@ -39,6 +39,7 @@ class CallScore:
     checks: list[Check] = field(default_factory=list)
     coverage: list[int] = field(default_factory=lambda: [0, 0])    # checklist items done, items
     readbacks: list[int] = field(default_factory=lambda: [0, 0])   # read back, landlord turns with a number
+    recorded_readbacks: list[int] = field(default_factory=lambda: [0, 0])   # of numbers the Caller saved
     ungrounded: int = 0
     noted_by_code: int = 0
     caller_turns: int = 0
@@ -89,7 +90,9 @@ def score_call(case: CallCase, run: int, trace: SimTrace, state: SessionState, l
         if name not in asked:
             continue
         group = GROUPS.get(name, {name})
-        values = " / ".join(f.value.lower() for f in facts if f.field in group)
+        # The Auditor's value is a fixed form ("laundry in the unit") read from the landlord's quote, so the
+        # landlord's own words ("in-suite") count too.
+        values = " / ".join(f"{f.value} {f.quote}".lower() for f in facts if f.field in group)
         said = numbers(values)   # an amount counts in digits or words: "100" ≈ "one hundred"
         check(f"fact.{name}", bool(values) and all(w.lower() in values or (w.isdigit() and int(w) in said)
                                                    for w in words),
@@ -110,7 +113,8 @@ def score_call(case: CallCase, run: int, trace: SimTrace, state: SessionState, l
     coverage = [len(b.items) - len(b.missing()), len(b.items)] if full else [0, 0]
     return CallScore(case_id=case.id, run=run, passed=all(c.passed for c in checks), end=trace.end_reason,
                      status=status, checks=checks, coverage=coverage,
-                     readbacks=readbacks(trace), ungrounded=trace.ungrounded,
+                     readbacks=readbacks(trace), recorded_readbacks=recorded_readbacks(trace),
+                     ungrounded=trace.ungrounded,
                      noted_by_code=trace.noted_by_code,
                      caller_turns=len(callers),
                      tools=tools)
@@ -129,6 +133,28 @@ def readbacks(trace: SimTrace) -> list[int]:
             continue
         n += 1
         ok += bool(said & numbers(reply.text))
+    return [ok, n]
+
+
+def recorded_readbacks(trace: SimTrace) -> list[int]:
+    """[read back, Caller turns that saved a number of 5 or more]: did the words of the turn in which the
+    Caller recorded a fact or booked a viewing repeat that number? Unlike `readbacks`, numbers in the
+    landlord's own questions ("want a locker for $60?") and goodbyes ("see you Saturday at 11") don't count,
+    since there is nothing to save in them."""
+    ok = n = 0
+    for i, t in enumerate(trace.turns):
+        if t.speaker != "caller":
+            continue
+        saved: set[int] = set()
+        for c in trace.tool_calls:
+            if c.get("turn") != i or not c["output"].startswith(("Recorded", "Booked", "Not booked")):
+                continue
+            args = _args(c["arguments"])
+            saved |= {x for x in numbers(" ".join(str(v) for v in args.values())) if x >= 5}
+        if not saved:
+            continue
+        n += 1
+        ok += bool(saved & numbers(t.text))
     return [ok, n]
 
 
