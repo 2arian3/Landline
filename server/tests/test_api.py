@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
 
-from landline.api.demo import TORONTO, DemoSessions, window
+from landline.api.demo import LAST_RESULTS, TORONTO, DemoSessions, window
 from landline.api.judge import JudgeLines, StartLimit, client_ip
 from landline.app import create_app
 from landline.config import Settings
@@ -103,6 +103,30 @@ def test_focus_rejects_unknown_listing():
         assert focused["focus_listing_id"] == "t:2"
 
 
+def test_area_hook_sets_where_the_map_flies():
+    with _client() as c:
+        assert c.get("/api/sessions/s_area").json()["focus_area"] is None
+        v = c.post("/api/sessions/s_area/area", json={"place": "  Christie   PITS "}).json()
+        assert v["focus_area"] == {"label": "Christie Pits", "lat": 43.6646, "lng": -79.4206, "zoom": 15.0}
+        assert v["version"] == 2
+        # it stays through the next re-rank, and a place the demo doesn't know is a 404
+        later = c.post("/api/sessions/s_area/preferences", json={"max_monthly": 3000}).json()
+        assert later["focus_area"]["label"] == "Christie Pits"
+        assert c.post("/api/sessions/s_area/area", json={"place": "Atlantis"}).status_code == 404
+        king_and_bay = c.post("/api/sessions/s_area/area", json={"place": "King and Bay"}).json()
+        assert king_and_bay["focus_area"]["zoom"] == 15.5
+
+
+def test_area_hook_sends_a_runtime_session_area_focused():
+    with _judge_client(2) as c:
+        sid = c.post("/api/judge/start").json()["session_id"]
+        v = c.post(f"/api/sessions/{sid}/area", json={"place": "Yorkville"}).json()
+        assert v["focus_area"]["label"] == "Yorkville" and v["version"] == 2
+        assert c.app.state.runtime.state(sid).focus_area.label == "Yorkville"
+        assert sid not in c.app.state.sessions.views   # one writer: the demo store never saw it
+        assert c.post(f"/api/sessions/{sid}/area", json={"place": "Atlantis"}).status_code == 404
+
+
 def test_feedback_shows_on_the_card():
     with _client() as c:
         assert c.get("/api/sessions/s_fb").json()["board"][0]["reaction"] is None
@@ -174,7 +198,8 @@ async def test_hanging_up_queues_the_plan_then_walks_it_to_results():
     assert done.results == (
         f"I booked {addr[plan[2]]} for Saturday at 2 pm, inside your Saturday afternoon. "
         f"{addr[plan[0]]} is really $2,180 a month with parking. "
-        "Its agent asked, \u201cWould they sign a 12-month lease?\u201d I said I'd check with you. "
+        f"The agent at {addr[plan[0]]} asked, \u201cWould they sign a 12-month lease?\u201d "
+        "I said I'd check with you. "
         f"{addr[plan[1]]} wants a deposit by e-transfer before anyone sees the unit, so I'd skip it. "
         f"Nobody picked up at {addr[plan[3]]}."
     )
@@ -227,6 +252,22 @@ def test_judge_mode_opens_soon_until_the_browser_audio_is_ready():
         assert r.status_code == 503
         assert r.json() == {"detail": "Judge mode opens soon.", "reason": "closed"}
         assert c.app.state.judges.open == {} and c.get("/health").json()["sessions"] == 0
+
+
+def test_judge_done_ends_the_brief_behind_the_gate():
+    with _judge_client(2, ready=False) as c:
+        shut = c.post("/api/judge/s_anything/done")
+        assert shut.status_code == 503 and shut.json()["reason"] == "closed"
+    with _judge_client(2) as c:
+        sid = c.post("/api/judge/start").json()["session_id"]
+        plan = c.post(f"/api/sessions/{sid}/calls").json()["plan"]   # the judge said "call the top ones"
+        done = c.post(f"/api/judge/{sid}/done").json()
+        assert plan and done["phase"] == "calling" and done["plan"] == plan   # on to the Dispatcher (A-06)
+        assert sid not in c.app.state.judges.open   # the line is free for the next judge
+        assert c.post(f"/api/judge/{sid}/done").json()["version"] == done["version"]   # it ends once
+        unplanned = c.post("/api/judge/start").json()["session_id"]
+        assert c.post(f"/api/judge/{unplanned}/done").json()["phase"] == "closed"   # nothing to call
+        assert c.post("/api/judge/s_unknown000/done").status_code == 404   # not a judge session
 
 
 def test_judge_start_mints_a_session_and_its_audio_socket():
@@ -302,9 +343,63 @@ def test_judge_lines_free_at_their_deadline():
     lines = JudgeLines(cap=1, deadline_s=600, clock=lambda: now[0])
     first = lines.take()
     assert first is not None and lines.take() is None
-    now[0] = 600.5
+    now[0] = 5.0
+    assert lines.connected(first)   # the socket opened: held to the deadline, not the connect window
+    now[0] = 604.0
+    assert lines.take() is None
+    now[0] = 605.5
     second = lines.take()
     assert second is not None and second != first
+
+
+def test_judge_lines_free_when_the_socket_never_opens():
+    now = [0.0]
+    lines = JudgeLines(cap=5, connect_s=15, clock=lambda: now[0])
+    first = [lines.take() for _ in range(5)]
+    assert None not in first and lines.take() is None
+    now[0] = 14.9
+    assert lines.take() is None
+    now[0] = 15.1
+    sixth = lines.take()
+    assert sixth is not None and sixth not in first
+    assert not lines.connected(first[0])   # too late: that line went to someone else
+    assert list(lines.open) == [sixth]
+
+
+def test_a_judge_line_never_frees_twice():
+    now = [0.0]
+    lines = JudgeLines(cap=1, connect_s=15, clock=lambda: now[0])
+    first = lines.take()
+    lines.hang_up(first)
+    second = lines.take()
+    lines.hang_up(first)                     # a late beacon for the first judge
+    assert lines.connected(first) is False   # and a late socket
+    assert list(lines.open) == [second] and lines.take() is None
+    now[0] = 16.0                            # the second never connected: its line frees once
+    third = lines.take()
+    lines.hang_up(second)
+    assert list(lines.open) == [third] and lines.take() is None
+
+
+def test_judge_hang_up_frees_the_line_at_once_and_calls_nothing():
+    with _judge_client(1) as c:
+        sid = c.post("/api/judge/start").json()["session_id"]
+        c.post(f"/api/sessions/{sid}/calls")   # a plan, which Done would dial
+        assert c.post("/api/judge/start").json()["reason"] == "busy"
+        r = c.post(f"/api/judge/{sid}/hang-up")
+        assert r.status_code == 204 and r.content == b""
+        assert c.get(f"/api/sessions/{sid}").json()["phase"] == "open"   # the brief is left as it was
+        assert c.post(f"/api/judge/{sid}/hang-up").status_code == 204    # again: harmless
+        assert c.post("/api/judge/start").status_code == 200
+
+
+def test_judge_lines_free_after_the_connect_window_through_the_api():
+    with _judge_client(5) as c:
+        now = [0.0]
+        c.app.state.judges.clock = lambda: now[0]
+        assert [c.post("/api/judge/start").status_code for _ in range(6)] == [200] * 5 + [503]
+        now[0] = 15.5   # none of the five opened a socket
+        assert c.post("/api/judge/start").status_code == 200
 
 
 def test_settings_read_the_higgs_cap(monkeypatch):
@@ -336,3 +431,19 @@ def test_returning_renter_is_welcomed_by_name():
         assert (off["returning"], off["user_name"]) == (False, None)
         assert c.post("/api/sessions/s_back/returning", json={"name": " "}).json()["user_name"] is None
         assert c.post("/api/sessions/s_back/returning", json={"name": "x" * 41}).status_code == 422
+
+
+async def test_a_returning_call_opens_with_the_last_results():
+    s = DemoSessions(_one_bedrooms(), tick_s=0)
+    first = await s.welcome_back("s1", True, "Sara")
+    assert first.agent_says == f"Welcome back, Sara. {LAST_RESULTS}"   # nothing run yet: the fixture
+    await s.plan_top("s1")
+    await s.hang_up("s1")
+    await s.dialing["s1"]
+    results = s.get("s1").results
+    assert results and not s.get("s1").agent_says.startswith("Welcome back")   # calls done: Landline moved on
+    again = await s.reset("s1")   # the renter calls again
+    assert again.agent_says == f"Welcome back, Sara. {results}"
+    assert (await s.plan_top("s1")).agent_says.endswith("is on top.")   # once there's a plan, it moves on
+    await s.reset("s1")
+    assert (await s.welcome_back("s1", False, None)).agent_says.endswith("is on top.")

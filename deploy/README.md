@@ -36,13 +36,17 @@ Secrets live only on the VM, in `~/landline/.env` (mode 600): `POSTGRES_PASSWORD
 
 `.github/workflows/deploy.yml` runs when **CI** succeeds on a push to `release`. It can also be started by hand from the Actions tab, with a re-scrape choice. A manual run only deploys when it is started on `release`. Pushes to `main` run CI and nothing else.
 
-To ship, fast-forward `release` to a green `main`:
+To ship, Arian puts a commit of his on top of a green `main`, then fast-forwards `release` to it. Vercel deploys only when Arian authored the commit at the tip of `release` (see **Commit author** below), and a merge commit made on GitHub is authored by whoever clicked Merge, so `main`'s tip is usually someone else's:
 
 ```bash
+git switch main && git pull --ff-only
+git commit --allow-empty -m "Ship <main's short sha> to release"   # skip if main's tip is already Arian's
+git push origin main
+# once CI is green on that commit:
 git push origin main:release
 ```
 
-Git refuses the push if `release` has diverged from `main`. So as long as everyone ships this way, `release` only moves forward along `main`. To roll back, push an older commit of `main` with `--force-with-lease`:
+The ship commit goes on `main` too, so `release` stays on `main`'s line. Git refuses the push if `release` has diverged from `main`. So as long as everyone ships this way, `release` only moves forward along `main`. To roll back, push an older commit of `main` with `--force-with-lease`:
 
 ```bash
 git push --force-with-lease origin <sha>:release
@@ -84,13 +88,9 @@ The project lives under the Vercel team **AAMEL**. `landline.vercel.app` belongs
 
 Vercel's default Standard Protection puts every URL except the production domain behind a Vercel login, including per-deploy URLs and `landline-aamel.vercel.app`. Share only the production domain; judges need no Vercel login there.
 
-**Commit author.** Vercel blocks a deploy ("the commit author doesn't have permission to create deployments for this project") when the author of the commit at the tip of `release` isn't a member of the AAMEL team. Commit with the email of your Vercel account, set for this repo only:
+**Commit author.** Vercel deploys only when the commit at the tip of `release` is authored by Arian (`boukani.arian@gmail.com`, the email of his Vercel account, set in his clone with `git config user.email`). A tip authored by anyone else, a GitHub merge commit included, fails: on Fri 23 Oct, `26e797c` (Danial's merge of #27) failed with "Your deployment failed. Please retry later.", while every tip of Arian's before it deployed. So every ship ends with a commit of Arian's (above).
 
-```bash
-git config user.email <your Vercel account email>
-```
-
-If the tip of `release` is someone else's commit, that person must be a member of the team. A failed deploy prints Vercel's reason in the "Explain a failed deploy" step.
+`deploy-web.yml` runs on its own only when the push to `release` changes `web/`. When a push carries no `web/` change (say, the web changes went out on an earlier push whose deploy failed), run it by hand once the tip is Arian's: `gh workflow run deploy-web.yml --ref release`. A failed deploy prints Vercel's reason in the "Explain a failed deploy" step.
 
 ## The gateway is shared
 
