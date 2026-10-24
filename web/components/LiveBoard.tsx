@@ -9,7 +9,7 @@ import { DemoControls } from "./DemoControls";
 import type { Mark } from "./ListingCard";
 import { ListingDetail, type Reaction } from "./ListingDetail";
 import type { Padding } from "./MapView";
-import { PEEK, Shell } from "./Shell";
+import { PANEL_WIDTH, PEEK, SPLIT, Shell } from "./Shell";
 import { Activity, Brand, Heard, Results, Welcome } from "./Summary";
 import { postJSON, useCatalogue, useLiveSession } from "@/lib/live";
 import { useMedia } from "@/lib/useMedia";
@@ -24,11 +24,12 @@ const MapView = dynamic(() => import("./MapView").then((m) => m.MapView), {
 const SNAPS: (string | number)[] = [PEEK, 0.56, 1];
 
 /**
- * The whole screen. Desktop (≥1024px): the map fills the left, a 440px panel
- * on the right holds what's happening, what Landline heard and the ranked
- * places. Phones and small tablets: the map fills the screen and the panel
- * becomes a bottom sheet with three stops; at the lowest stop the renter sees
- * the activity line, one line of what was heard, and the top place.
+ * The whole screen. Desktops, tablets and phones held sideways (SPLIT): the map
+ * fills the left, a panel on the right (440px, narrower on smaller screens)
+ * holds what's happening, what Landline heard and the ranked places. Phones
+ * upright: the map fills the screen and the panel becomes a bottom sheet with
+ * three stops; at the lowest stop the renter sees the activity line, one line
+ * of what was heard, and the top place.
  *
  * Judge mode reuses it: `intro` replaces the panel until a session exists,
  * `dock` (the voice controls) stays pinned to the panel, and `line` puts the
@@ -47,7 +48,7 @@ export function LiveBoard({
 }) {
   const { view, stale, unreachable } = useLiveSession(sessionId);
   const points = useCatalogue();
-  const desktop = useMedia("(min-width: 1024px)");
+  const desktop = useMedia(SPLIT);
   const [selected, setSelected] = useState<string | null>(null);
   const [hover, setHover] = useState<string | null>(null);
   const [snap, setSnap] = useState<string | number | null>(PEEK);
@@ -264,13 +265,16 @@ export function LiveBoard({
       <div className="fixed inset-0 flex overflow-hidden">
         <main className="relative min-w-0 flex-1">{map}</main>
         <aside
-          className="flex w-[440px] shrink-0 flex-col bg-ground"
+          className={`flex ${PANEL_WIDTH} shrink-0 flex-col bg-ground`}
           style={{ boxShadow: "-1px 0 0 var(--color-line)" }}
           aria-label="Places Landline found"
         >
-          <div className="px-4 pb-4 pt-5">
+          {/* On a short screen (a phone on its side) the header gives its room to the places. */}
+          <div className="px-4 pb-4 pt-5 [@media(max-height:520px)]:pb-1 [@media(max-height:520px)]:pt-3">
             <Brand stale={stale} connected={!!view} idle={idle} line={line} />
-            <p className="mt-0.5 text-meta text-ink-3">Toronto rentals, checked by phone</p>
+            <p className="mt-0.5 text-meta text-ink-3 [@media(max-height:520px)]:hidden">
+              Toronto rentals, checked by phone
+            </p>
           </div>
           <div ref={scroller} className="relative min-h-0 flex-1 overflow-y-auto">
             {panel}

@@ -4,6 +4,15 @@ import { Brand } from "./Summary";
 export const PEEK = "196px";
 
 /**
+ * Where the split layout takes over from the bottom sheet: tablets, desktops, and phones held sideways.
+ * The same query as the `split` variant in app/globals.css, which this shell's CSS uses.
+ */
+export const SPLIT = "(min-width: 768px), (min-width: 640px) and (max-height: 520px)";
+
+/** The split layout's panel: 440px on a desktop, narrower on a tablet or a phone on its side. */
+export const PANEL_WIDTH = "w-[clamp(340px,42vw,440px)]";
+
+/**
  * The first paint, sent as HTML before any script runs: the brand and the panel, with grey places where
  * the board will be, in the spots LiveBoard puts them. CSS picks the phone or desktop layout because the
  * page hasn't asked the browser yet; LiveBoard takes over in place once it has. `idle` is judge mode's
@@ -11,7 +20,7 @@ export const PEEK = "196px";
  */
 export function Shell({ idle = false }: { idle?: boolean }) {
   const places = !idle && (
-    <div className="space-y-3 px-4 pt-1 lg:space-y-4" aria-hidden>
+    <div className="space-y-3 px-4 pt-1 split:space-y-4" aria-hidden>
       <div className="h-[18px] w-1/2 rounded bg-press" />
       <div className="h-4 w-2/3 rounded bg-press" />
       {[0, 1, 2].map((i) => (
@@ -26,21 +35,23 @@ export function Shell({ idle = false }: { idle?: boolean }) {
 
   return (
     <div className="fixed inset-0 overflow-hidden bg-map-land" aria-busy="true">
-      <div className="hidden h-full lg:flex">
+      <div className="hidden h-full split:flex">
         <div className="min-w-0 flex-1" />
         <aside
-          className="flex w-[440px] shrink-0 flex-col bg-ground"
+          className={`flex ${PANEL_WIDTH} shrink-0 flex-col bg-ground`}
           style={{ boxShadow: "-1px 0 0 var(--color-line)" }}
         >
-          <div className="px-4 pb-4 pt-5">
+          <div className="px-4 pb-4 pt-5 [@media(max-height:520px)]:pb-1 [@media(max-height:520px)]:pt-3">
             <Brand stale={false} connected={false} idle={idle} />
-            <p className="mt-0.5 text-meta text-ink-3">Toronto rentals, checked by phone</p>
+            <p className="mt-0.5 text-meta text-ink-3 [@media(max-height:520px)]:hidden">
+              Toronto rentals, checked by phone
+            </p>
           </div>
           {places}
         </aside>
       </div>
 
-      <div className="lg:hidden">
+      <div className="split:hidden">
         {!idle && (
           <header
             className="absolute inset-x-0 top-0 z-10 px-3"
