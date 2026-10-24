@@ -101,7 +101,7 @@ def report(listings: list[Listing]) -> str:
     lines.append(f"  unit types: {dict(types.most_common())}")
     lines.append(f"  beds: {dict(sorted(beds.items()))}")
     lines.append(f"  rent: min {rents[0]}  median {rents[n // 2]}  max {rents[-1]}")
-    flipped = sum(1 for x in listings if (p := x.provenance.get("lng")) and p.source == "derived")
+    flipped = sum(1 for x in listings if (p := x.provenance.get("lng")) and p.version == livrent.LNG_FLIP)
     lines.append(f"  longitude sign flipped: {flipped}")
     return "\n".join(lines)
 
@@ -125,7 +125,10 @@ on conflict (listing_id) do update set
   beds = excluded.beds, baths = excluded.baths, sqft = excluded.sqft, unit_type = excluded.unit_type,
   building_type = excluded.building_type, furnished = excluded.furnished,
   utilities_included = excluded.utilities_included, amenities = excluded.amenities,
-  photos = excluded.photos, provenance = listings.provenance || excluded.provenance
+  photos = excluded.photos,
+  -- a point the parser nulled takes its old lat/lng provenance with it; every other key merges as before
+  provenance = case when excluded.geom is null then listings.provenance - 'lat' - 'lng'
+                    else listings.provenance end || excluded.provenance
 returning (xmax = 0) as inserted
 """
 
