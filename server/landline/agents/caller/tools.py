@@ -183,16 +183,21 @@ async def record_available_from(args: AvailableFrom, ctx: CallerContext, meta: d
 async def _record(args: RecordFact, ctx: CallerContext, meta: dict) -> str:
     """Keep a grounded fact, and say what to do next."""
     value = args.value.strip().lower()
-    if any(f.field == args.field and f.value.strip().lower() == value for f in ctx.facts):
+    asked = ctx.brief.answers(args.value) if args.field == "other" else None   # a renter's question (#187)
+    asks = ctx.brief.plan.questions
+    if asked is None and any(f.field == args.field and _answer(f.value, asks).strip().lower() == value
+                             for f in ctx.facts):
         # The same answer again: the Caller asked twice (#139). A different answer is a correction and is
         # recorded; the Auditor keeps the last.
         left = ctx.brief.missing()
         nxt = f"Don't ask about it again. Ask {left[0].ask} next." if left else \
             "That's the checklist: thank them and end the call."
         return f"Already recorded {args.field.replace('_', ' ')}: {args.value}. {nxt}"
-    await ctx.runtime.emit(FactRecorded(**meta, call_id=ctx.call_id, field=args.field, value=args.value,
+    # The answer to a renter's question keeps the question, so the results can say what was asked.
+    stored = f"{asked.strip()} {args.value.strip()}" if asked else args.value
+    await ctx.runtime.emit(FactRecorded(**meta, call_id=ctx.call_id, field=args.field, value=stored,
                                         quote=args.quote, turn_idx=len(ctx.said) - 1))
-    ctx.facts.append(Fact(field=args.field, value=args.value, quote=args.quote, speaker="Agent heard",
+    ctx.facts.append(Fact(field=args.field, value=stored, quote=args.quote, speaker="Agent heard",
                           at=meta["at"]))
     ctx.brief.covered(args.field, args.value)
     when = ""
@@ -212,6 +217,12 @@ async def _record(args: RecordFact, ctx: CallerContext, meta: dict) -> str:
     else:
         nxt = " That's the checklist: thank them and end the call."
     return f"Recorded {args.field.replace('_', ' ')}: {args.value}.{when}{nxt}"
+
+
+def _answer(value: str, questions: list[str]) -> str:
+    """An `other` fact's answer, without the renter's question it keeps in front (#187)."""
+    q = next((q.strip() for q in questions if value.startswith(f"{q.strip()} ")), None)
+    return value[len(q) + 1:] if q else value
 
 
 READBACK = {"rent": "the rent is", "parking_cost": "parking is", "parking": "parking is",
