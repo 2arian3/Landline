@@ -186,7 +186,7 @@ The real Auditor (`server/landline/agents/auditor/`) on 20 written call transcri
 
 ### Holdout (quote these)
 
-2026-10-24T07:56:31+00:00 · `f905e7f` · 8 transcripts · extractor: replayed recordings
+2026-10-24T15:03:03+00:00 · `768699e` · 8 transcripts · extractor: replayed recordings
 
 | | Rules | With extractor | Previous (best mode) |
 |---|---|---|---|
@@ -213,7 +213,7 @@ The real Auditor (`server/landline/agents/auditor/`) on 20 written call transcri
 
 ### Tune (prompts change against these)
 
-2026-10-24T07:56:31+00:00 · `f905e7f` · 12 transcripts · extractor: replayed recordings
+2026-10-24T15:03:03+00:00 · `768699e` · 12 transcripts · extractor: replayed recordings
 
 | | Rules | With extractor | Previous (best mode) |
 |---|---|---|---|
@@ -242,15 +242,15 @@ The real ranking (`server/landline/scoring/`, with feedback from `orchestrator/f
 
 ### Holdout (quote these)
 
-2026-10-24T08:30:50+00:00 · `dabed61` · 3 briefs · listings.json
+2026-10-24T15:13:07+00:00 · `4b67c0a` · 3 briefs · listings.json
 
 | | Now | Previous |
 |---|---|---|
-| **hit@3** | 100% | — |
-| Precision@3 | 89% | — |
-| Converged after feedback | 2 / 3 (1 mean, 1 max) | — |
-| Monotonicity violations | 0 | — |
-| Stability violations | 2 | — |
+| **hit@3** | 100% | 100% |
+| Precision@3 | 89% | 89% |
+| Converged after feedback | 2 / 3 (1 mean, 1 max) | 2 / 3 (1 mean, 1 max) |
+| Monotonicity violations | 0 | 0 |
+| Stability violations | 2 | 2 |
 
 | Brief | hit@3 | Precision@3 | Turns (reason) |
 |---|---|---|---|
@@ -265,15 +265,15 @@ Violations:
 
 ### Tune (prompts change against these)
 
-2026-10-24T08:30:50+00:00 · `dabed61` · 7 briefs · listings.json
+2026-10-24T15:13:07+00:00 · `4b67c0a` · 7 briefs · listings.json
 
 | | Now | Previous |
 |---|---|---|
-| **hit@3** | 100% | — |
-| Precision@3 | 76% | — |
-| Converged after feedback | 2 / 7 (2 mean, 3 max) | — |
-| Monotonicity violations | 0 | — |
-| Stability violations | 11 | — |
+| **hit@3** | 100% | 100% |
+| Precision@3 | 76% | 76% |
+| Converged after feedback | 2 / 7 (2 mean, 3 max) | 2 / 7 (2 mean, 3 max) |
+| Monotonicity violations | 0 | 0 |
+| Stability violations | 11 | 11 |
 
 | Brief | hit@3 | Precision@3 | Turns (reason) |
 |---|---|---|---|
@@ -303,7 +303,7 @@ Violations:
 
 - Light twins (a brighter copy never loses): pass
 - "Too dark" on a dark top card (a small catalogue where light varies): **fail**: too-dark: 'too dark' on the top card left it first
-- Ranking time, warm: p50 0.103 ms, p95 0.153 ms on 400 listings (cold 1.1 ms); p50 1.632 ms, p95 2.847 ms on 4000. Target < 5 ms.
+- Ranking time, warm: p50 0.189 ms, p95 0.25 ms on 400 listings (cold 1.06 ms); p50 1.389 ms, p95 2.123 ms on 4000. Target < 5 ms.
 
 ## Voice: real audio on Higgs Realtime
 
