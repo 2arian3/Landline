@@ -90,9 +90,74 @@ Traces: `evals/runs/20261024T055922Z` (not committed).
 
 Traces: `evals/runs/20261024T055922Z` (not committed).
 
+## Listing calls: the Caller against landlord personas (text)
+
+One renter plan per run through the real Dispatcher: the Caller (its brief, prompt and tools) phones one listing through the sim runner, where a second Higgs session plays a landlord persona with hidden facts, viewing times and questions of its own. Scored in code from the session afterwards: the card's status, the booking and its window, red flags, the questions noted, and each expected fact's value. Personas in `holdout/` never tune the prompt.
+
+### Holdout (quote these)
+
+2026-10-24T06:46:38+00:00 · `bcaab31` · 2 personas × 3 runs · live text
+
+| | This run | Previous |
+|---|---|---|
+| **Personas passing every run** | **1 / 2** | — |
+| Runs passing | 83% | — |
+| Checklist coverage | 13/15 (87%) | — |
+| Landlord numbers read back | 10/16 (62%) | — |
+| Quotes refused as not said (ungrounded) | 0 | — |
+| Questions code noted after the Caller promised to check | 5 | — |
+| Said it's an AI assistant first | 6/6 (100%) | — |
+| Card ends with the right status | 6/6 (100%) | — |
+| Booked the expected slot, or nothing | 6/6 (100%) | — |
+| Red flags exactly when the landlord's words deserve them | 6/6 (100%) | — |
+| Noted the question it couldn't answer | 3/3 (100%) | — |
+| Ended the right way | 6/6 (100%) | — |
+| Facts recorded with the right value | 11/12 (92%) | — |
+| Call, median: Caller turns / seconds to results | 8 / 9.5 s | — |
+| How calls ended | done 5, hangup 1 | — |
+
+| Persona | Runs passing | Card status | Failing most often |
+|---|---|---|---|
+| `omar-scam-abroad` | 3/3 | suspect 3 | — |
+| `priya-no-booking` | 2/3 | verified 3 | `final.fact.available_from` ×1 |
+
+Traces: `evals/runs/20261024T064504Z-calls` (not committed).
+
+### Tune (prompts change against these)
+
+2026-10-24T06:46:38+00:00 · `bcaab31` · 5 personas × 3 runs · live text
+
+| | This run | Previous |
+|---|---|---|
+| **Personas passing every run** | **3 / 5** | — |
+| Runs passing | 73% | — |
+| Checklist coverage | 51/51 (100%) | — |
+| Landlord numbers read back | 13/34 (38%) | — |
+| Quotes refused as not said (ungrounded) | 1 | — |
+| Questions code noted after the Caller promised to check | 6 | — |
+| Said it's an AI assistant first | 15/15 (100%) | — |
+| Card ends with the right status | 15/15 (100%) | — |
+| Booked the expected slot, or nothing | 15/15 (100%) | — |
+| Bookings inside the renter's windows | 9/9 (100%) | — |
+| Red flags exactly when the landlord's words deserve them | 15/15 (100%) | — |
+| Noted the question it couldn't answer | 4/6 (67%) | — |
+| Ended the right way | 15/15 (100%) | — |
+| Facts recorded with the right value | 27/30 (90%) | — |
+| Call, median: Caller turns / seconds to results | 7 / 9.0 s | — |
+| How calls ended | done 12, hangup 3 | — |
+
+| Persona | Runs passing | Card status | Failing most often |
+|---|---|---|---|
+| `linda-honest` | 3/3 | booked 3 | — |
+| `mark-scam` | 3/3 | suspect 3 | — |
+| `raj-upsell` | 0/3 | booked 3 | `final.note_question` ×2; `final.fact.pets` ×1 |
+| `sam-voicemail` | 3/3 | no_answer 3 | — |
+| `wei-mandarin` | 2/3 | booked 3 | `final.fact.available_from` ×1; `final.fact.laundry` ×1 |
+
+Traces: `evals/runs/20261024T064504Z-calls` (not committed).
+
 ## Not measured yet
 
 - Extraction (E-02) and ranking (E-03).
-- Listing calls against landlord personas (E-04): needs the Caller (A-05). It will use the same driver, with a second Higgs session playing the landlord.
 - Anything audio: time to first audio, barge-in, speech-to-text errors. Text mode can't see them; they need the audio sim transport (A-03).
 - Claims in languages other than English: the "said it changed something" check reads English only.
