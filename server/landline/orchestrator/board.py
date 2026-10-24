@@ -7,15 +7,16 @@ from __future__ import annotations
 
 from landline.contracts import Card, Listing, SessionView
 from landline.db.catalogue import Catalogue
+from landline.orchestrator import feedback
 from landline.orchestrator.state import SessionState
-from landline.scoring import FeatureMatrix, Ranked, explain, rank
+from landline.scoring import FeatureMatrix, Ranked, explain
 
 BOARD_SIZE = 6
 
 
 def build(state: SessionState, version: int, catalogue: Catalogue, matrix: FeatureMatrix) -> SessionView:
     status = state.statuses()
-    ranking = rank(matrix, state.preferences, previous=state.board, status=status)
+    ranking = feedback.ranked(state, catalogue, matrix, status)   # the renter's reactions move it (O-04)
     by_id = catalogue.by_id
     matches = [lid for lid in ranking.order if by_id[lid].lat is not None]
     shown = matches[:BOARD_SIZE]
