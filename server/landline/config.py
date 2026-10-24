@@ -32,6 +32,10 @@ class Settings:
     # without the token every Twilio webhook is refused.
     boson_api_key: str | None = None
     twilio_auth_token: str | None = None
+    # Texting the renter the board link needs the account SID too; it goes out from the number they
+    # dialled, or TWILIO_PHONE_NUMBER when that isn't known.
+    twilio_account_sid: str | None = None
+    twilio_phone_number: str | None = None
     # The API's public origin, e.g. https://landline.134.87.8.230.sslip.io. Twilio signs this URL, and the
     # media stream's wss:// URL is built from it. Unset: taken from the request (local runs only).
     public_url: str | None = None
@@ -53,6 +57,8 @@ class Settings:
             judge_start_window_s=int(os.getenv("JUDGE_START_WINDOW_S") or 600),
             boson_api_key=os.getenv("BOSON_API_KEY") or None,
             twilio_auth_token=os.getenv("TWILIO_AUTH_TOKEN") or None,
+            twilio_account_sid=os.getenv("TWILIO_ACCOUNT_SID") or None,
+            twilio_phone_number=os.getenv("TWILIO_PHONE_NUMBER") or None,
             public_url=(os.getenv("PUBLIC_URL") or "").rstrip("/") or None,
             higgs_voice_renter=os.getenv("HIGGS_VOICE_RENTER") or "default",
         )

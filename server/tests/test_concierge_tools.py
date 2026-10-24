@@ -1,5 +1,6 @@
 """The Concierge's tools against a real session runtime (in memory): each tool's event changes the session,
 and its spoken reply comes from the board that event produced."""
+import json
 from datetime import UTC, datetime
 
 import pytest
@@ -79,6 +80,20 @@ async def test_update_preferences_re_ranks_and_speaks_the_board(ctx):
     assert {c.address for c in view.board} >= {"412 Markham St", "200 Bloor St W"}
     await _say(ctx, "update_preferences", '{"max_monthly": 2000}')   # the same tool call again: a no-op
     assert _view(ctx).version == before + 1 and _view(ctx).preferences.max_monthly == 3000
+
+
+async def test_only_the_first_preferences_of_a_call_text_the_link_and_say_so(ctx):
+    texts = []
+    ctx.text_link = lambda: texts.append(1) or True
+    first = json.loads(await _say(ctx, "update_preferences", '{"max_monthly": 3000}'))
+    assert first == {"result": _view(ctx).agent_says, "texted_link": True}
+    assert await _say(ctx, "update_preferences", '{"min_beds": 2}', "fc_2") == _view(ctx).agent_says
+    assert texts == [1]
+
+
+async def test_no_texted_link_field_when_the_text_could_not_go(ctx):
+    ctx.text_link = lambda: False
+    assert await _say(ctx, "update_preferences", '{"max_monthly": 3000}') == _view(ctx).agent_says
 
 
 async def test_focus_listing_by_rank_reads_the_card_back(ctx):

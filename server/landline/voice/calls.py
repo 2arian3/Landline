@@ -27,6 +27,7 @@ class RenterCall:
     session_id: str
     caller: str | None
     opened_at: float
+    called: str | None = None   # the number the renter dialled; texts go out from it
     claimed: bool = False
     end_reason: str | None = None
 
@@ -38,7 +39,8 @@ class RenterCalls:
         self.live: dict[str, RenterCall] = {}
         self.recent: deque[RenterCall] = deque(maxlen=50)   # ended calls, newest last
 
-    def open(self, caller: str | None, session_id: str | None = None) -> RenterCall | None:
+    def open(self, caller: str | None, session_id: str | None = None,
+             called: str | None = None) -> RenterCall | None:
         """A new call with its ids, or None when every line is taken. Judge mode passes the session it
         already started; a phone call gets a new one."""
         now = self.clock()
@@ -47,7 +49,7 @@ class RenterCalls:
         if len(self.live) >= self.cap:
             return None
         call = RenterCall(call_id=mint("c_"), session_id=session_id or mint("s_"), caller=caller,
-                          opened_at=now)
+                          opened_at=now, called=called)
         self.live[call.call_id] = call
         return call
 

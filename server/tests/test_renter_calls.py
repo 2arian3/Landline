@@ -191,6 +191,67 @@ def test_a_tool_call_changes_the_session_and_speaks_its_board():
         ]
 
 
+class FakeTexter:
+    """Stands in for voice.sms.Texter: records each text instead of calling Twilio."""
+    ready = True
+
+    def __init__(self):
+        self.sent = []
+
+    def send_soon(self, to, from_, body):
+        self.sent.append((to, from_, body))
+
+    async def close(self):
+        pass
+
+
+def _outputs(fake: FakeHiggs) -> list[str]:
+    return [e["item"]["output"] for e in fake.sent if e["type"] == "conversation.item.create"]
+
+
+def test_the_first_preferences_of_a_phone_call_text_the_board_link():
+    fake = FakeHiggs(script=[
+        _tool_call("update_preferences", {"max_monthly": 3000}, "fc_1"),
+        _tool_call("update_preferences", {"min_beds": 2}, "fc_2"),
+        {"type": "response.output_audio.delta", "delta": "AAAA"},   # both tools ran before this
+    ])
+    texter = FakeTexter()
+    with _client() as c:
+        c.app.state.connect_higgs, c.app.state.texter = fake.connect, texter
+        call = c.app.state.calls.open(caller="+14165550100", called="+12892765257")
+        with c.websocket_connect("/twilio/media") as ws:
+            ws.send_json(_start(call.call_id))
+            assert ws.receive_json()["event"] == "media"
+            view = c.app.state.runtime.get(call.session_id)
+            ws.send_json({"event": "stop", "streamSid": "MZ1"})
+    first, second = _outputs(fake)
+    assert json.loads(first)["texted_link"] is True and json.loads(first)["result"].endswith("is on top.")
+    assert second == view.agent_says   # only the first one of the call texts
+    assert texter.sent == [("+14165550100", "+12892765257",
+                            bridge.LINK_TEXT.format(link=f"http://localhost:3000/s/{call.session_id}"))]
+
+
+def test_a_browser_call_is_never_texted():
+    fake = FakeHiggs(script=[
+        _tool_call("update_preferences", {"max_monthly": 3000}),
+        {"type": "response.output_audio.delta", "delta": base64.b64encode(b"\0\0").decode()},
+    ])
+    texter = FakeTexter()
+    with _client(judge_audio_ready=True) as c:
+        c.app.state.connect_higgs, c.app.state.texter = fake.connect, texter
+        start = c.post("/api/judge/start").json()
+        with c.websocket_connect(start["ws_url"]) as ws:
+            ws.receive_bytes()
+            _hang_up_and_wait(c, ws, start["session_id"])
+    assert texter.sent == [] and "texted_link" not in _outputs(fake)[0]
+
+
+def test_twiml_remembers_the_number_the_renter_dialled():
+    with _client() as c:
+        call_id = re.search(r'value="(c_[\w-]{10})"', _ring(c).text).group(1)
+        assert c.app.state.calls.live[call_id].called == "+16475550199"
+
+
 def test_bridge_refuses_a_stream_with_an_unknown_call_id():
     fake = FakeHiggs()
     with _client() as c:
