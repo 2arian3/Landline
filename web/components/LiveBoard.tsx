@@ -2,7 +2,7 @@
 
 import { AnimatePresence, motion } from "motion/react";
 import dynamic from "next/dynamic";
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Drawer } from "vaul";
 import { Board } from "./Board";
 import { DemoControls } from "./DemoControls";
@@ -247,7 +247,15 @@ export function LiveBoard({
           <Drawer.Content
             aria-describedby={undefined}
             className="fixed inset-x-0 bottom-0 z-20 flex h-[96dvh] flex-col rounded-t-[22px] bg-ground outline-none"
-            style={{ boxShadow: "0 -1px 0 var(--color-line), 0 -8px 28px rgba(26,24,21,.10)" }}
+            style={
+              {
+                boxShadow: "0 -1px 0 var(--color-line), 0 -8px 28px rgba(26,24,21,.10)",
+                // vaul starts a sheet with snap points off screen and slides it to the first stop. Starting
+                // at the stop (the offset vaul computes: the viewport less PEEK) puts the panel on screen in
+                // its first frame, so the places paint where they'll stay.
+                "--initial-transform": `calc(100dvh - ${PEEK})`,
+              } as CSSProperties
+            }
           >
             <Drawer.Title className="sr-only">Places Landline found</Drawer.Title>
             <div aria-hidden className="mx-auto mb-2 mt-2.5 h-1 w-10 shrink-0 rounded-full bg-ink/20" />
