@@ -114,6 +114,11 @@ class DemoRun:
     live_at: dict[str, float] = field(default_factory=dict)       # by listing: when it went live (clock)
 
 
+# The ?dev=1 demo's scripted brief, which a fresh demo session opens with. Other pages start empty.
+DEMO_BRIEF = Preferences(max_monthly=2800, min_beds=1, priorities=["cost", "size"])
+NOTHING_HEARD = "Tell me what you're looking for, and the map will follow."   # as the Narrator's first line
+
+
 class DemoSessions:
     """In-memory sessions with a version counter that SSE subscribers wait on."""
 
@@ -142,11 +147,15 @@ class DemoSessions:
         self.areas: dict[str, Area] = {}
         self.changed = asyncio.Condition()
 
-    def get(self, session_id: str) -> SessionView:
-        if session_id not in self.views:
-            prefs = Preferences(max_monthly=2800, min_beds=1, priorities=["cost", "size"])
-            self.views[session_id] = self._build(session_id, prefs, version=1, focus=None)
-        return self.views[session_id]
+    def get(self, session_id: str, dev: bool = False) -> SessionView:
+        """The session, made on first sight. Only the ?dev=1 demo starts from its scripted brief; any other
+        page shows nothing heard until the renter says something. A ?dev=1 page whose stream asked first
+        still gets the brief, as long as nothing has changed the session yet."""
+        view = self.views.get(session_id)
+        if view is None or (dev and view.version == 1 and view.preferences == Preferences()):
+            prefs = DEMO_BRIEF if dev else Preferences()
+            view = self.views[session_id] = self._build(session_id, prefs, version=1, focus=None)
+        return view
 
     async def react(self, session_id: str, listing_id: str, reaction: str, reason: str | None) -> SessionView:
         """Demo hook for FeedbackGiven: records the reaction on the card. Re-ranking is O-04's job."""
@@ -322,6 +331,8 @@ class DemoSessions:
         top = board[0].address if board else None
         says = (f"{len(matches)} places fit. {top} is on top." if top
                 else "Nothing fits yet. Want to widen the budget or the area?")
+        if prefs == Preferences() and not said and not run.plan:   # nothing heard yet: no brief implied
+            says = NOTHING_HEARD
         if (session_id in self.returning and session_id not in self.moved_on and run.phase == "open"
                 and not run.plan):
             # A returning call opens with the welcome and what the last call found (docs/DEMO.md, 2:00).
