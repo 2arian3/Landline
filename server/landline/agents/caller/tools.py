@@ -30,7 +30,7 @@ from landline.agents.auditor import grounding
 from landline.agents.auditor.flags import red_flags
 from landline.agents.auditor.values import call_day, free_from, from_parts, spoken_day
 from landline.agents.caller import slots
-from landline.agents.caller.brief import Brief
+from landline.agents.caller.brief import Brief, disclosure
 from landline.contracts import EndReason, Fact, FactRecorded, QuestionNoted, Shareable, ViewingBooked
 from landline.contracts.tools import (
     CALLER_TOOLS,
@@ -86,6 +86,7 @@ class CallerContext:
     flagged_at: int | None = None                     # the landlord turn a scam warning first matched
     covered_at: int | None = None                     # the landlord turn by which the checklist was covered
     ended_by_code: bool = False                       # `over` ended it: the Caller never called end_call
+    opened: bool = False                              # its first turn is over, so the disclosure is said
 
     def flags(self) -> list[str]:
         return [f.reason for f in red_flags(self.said)]
@@ -105,10 +106,21 @@ async def handle(name: str, arguments: str, tool_call_id: str, ctx: CallerContex
     log.info("caller tool %s call=%s args=%s", name, ctx.call_id, args.model_dump_json(exclude_none=True))
     meta = {"session_id": ctx.session_id, "at": ctx.clock(), "idem_key": f"{ctx.call_id}:{tool_call_id}"}
     try:
-        reply = await HANDLERS[name](args, ctx, meta)
+        reply = wrap_up(ctx, name, await HANDLERS[name](args, ctx, meta))
     except Refused as exc:
-        return str(exc)
-    return wrap_up(ctx, name, reply)
+        reply = str(exc)
+    return first_words(ctx, reply)
+
+
+def first_words(ctx: CallerContext, reply: str) -> str:
+    """Before the Caller's first turn is over, a tool reply leads with the disclosure (hard rule 6). A
+    landlord who picks up with a fact gets a tool call first, and its "Start your reply with" put the
+    read-back ahead of "I'm an AI assistant" (omar-scam-abroad-3). Once the first turn is over, replies are
+    as they were."""
+    if ctx.opened:
+        return reply
+    reply = reply.replace("Start your reply with", "After it, say")
+    return f'Your first words are the disclosure: "{disclosure(ctx.brief)}" Then: {reply}'
 
 
 async def record_fact(args: RecordFact, ctx: CallerContext, meta: dict) -> str:
@@ -334,7 +346,9 @@ def over(ctx: CallerContext, caller_said: str, called: list[str]) -> bool:
     """After a Caller turn that didn't end the call: whether it is over anyway, so the runner ends it in code
     (through its usual return, so `finalize` runs once). It is when the Caller or the landlord said
     goodbye, or a turn has passed since a scam warning or since the checklist was covered. A call still
-    on its checklist goes on."""
+    on its checklist goes on. The runners call it after every Caller turn, so it also marks the first one
+    over (`first_words`)."""
+    ctx.opened = True
     if ctx.hang_up or "end_call" in called:
         return False
     turn = len(ctx.said)
