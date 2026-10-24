@@ -58,8 +58,8 @@ Every figure here comes from a file in this repo, and each row names the run it 
 | Voice on Higgs audio: end of the other side's voice → the agent's first audio, p50 / p90 | Concierge (browser) 1,472 / 1,804 ms (n=12); Caller (phone) 1,516 / 2,344 ms (n=20). From Higgs' `speech_stopped`, p50 922 ms and 960 ms. Greeting, `response.create` → first audio, p50 508 ms (n=2) | 08:56, `674e37d` · latest.md, Voice |
 | Barge-in on Higgs audio | 12/12 recovered (heard, audio cleared, the next reply answers it); heard 292 ms (p50) after the voice starts | 08:56, `674e37d` · latest.md, Voice |
 | Higgs Realtime spike, μ-law | 487 ms from connect to the first audio; 282 ms from `response.create`; 8 sessions opened at once with no 1013 close | Fri 23 Oct, A-01 spike · [higgs-realtime skill](.claude/skills/higgs-realtime/SKILL.md) |
-| Matcher on 3 holdout renter briefs, pure code | hit@3 100%; precision@3 89%; 0 monotonicity violations | 15:03, `e637cdd` · latest.md, Matcher holdout |
-| Ranking time, warm, in memory | p50 1.345 ms, p95 1.628 ms on 4,000 listings; p95 0.235 ms on 400 (target < 5 ms) | 15:03, `e637cdd` · latest.md, Matcher checks |
+| Matcher on 3 holdout renter briefs, pure code | hit@3 100%; precision@3 89%; 0 monotonicity violations | 15:09, `dba1e10` · latest.md, Matcher holdout |
+| Ranking time, warm, in memory | p50 1.332 ms, p95 1.476 ms on 4,000 listings; p95 0.284 ms on 400 (target < 5 ms) | 15:09, `dba1e10` · latest.md, Matcher checks |
 | Listings in production | 1,082 active Toronto listings. All 1,082 are at street precision, in one of the City's 158 neighbourhoods, and matched to the nearest of 68 TTC subway stations; 424 (39%) are within a 15-minute walk of one. All 1,082 have a light score, 1,077 of them with photo brightness | Sat 09:45 · [BACKLOG.md](BACKLOG.md) D-04, D-05, D-07 |
 
 What these numbers don't show:
