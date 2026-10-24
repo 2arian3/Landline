@@ -13,12 +13,20 @@ from starlette.websockets import WebSocketDisconnect
 
 from landline.app import create_app
 from landline.config import Settings
-from landline.contracts import CallPlan, CallsRequested, Listing, SessionEnded, SessionStarted
+from landline.contracts import CallOutcome, CallPlan, CallsRequested, Listing, SessionEnded, SessionStarted
 from landline.db.catalogue import Catalogue
 from landline.orchestrator import SessionRuntime
 from landline.voice import twilio
 from landline.voice.dispatch import CallResult, Dial, Dispatcher
-from landline.voice.outbound import DISCLOSURE, NotAllowed, OutboundCalls, TwilioRunner, opening
+from landline.voice.outbound import (
+    DISCLOSURE,
+    NotAllowed,
+    Outbound,
+    OutboundCalls,
+    TwilioRunner,
+    no_caller,
+    opening,
+)
 
 NOW = datetime(2026, 10, 24, 15, 0, tzinfo=UTC)   # Saturday 11:00 in Toronto
 SID = "s_outb000001"
@@ -42,11 +50,14 @@ def _catalogue() -> Catalogue:
 
 
 class FakeTwilio:
-    """Twilio's REST API. Each new call plays `script(call_id)`, the webhooks Twilio would send."""
+    """Twilio's REST API. Each new call plays `script(call_id)`, the webhooks Twilio would send. A live call
+    switched to new TwiML lands in `updated` (answered with `update_status`); one put down, in `hung_up`."""
 
-    def __init__(self, script=None):
+    def __init__(self, script=None, update_status=200):
         self.script = script
+        self.update_status = update_status
         self.created: list[dict] = []
+        self.updated: list[tuple[str, str]] = []
         self.hung_up: list[str] = []
         self._tasks: set[asyncio.Task] = set()
 
@@ -59,7 +70,11 @@ class FakeTwilio:
                 task = asyncio.ensure_future(self.script(call_id))
                 self._tasks.add(task)
             return httpx.Response(201, json={"sid": f"CA{len(self.created)}"})
-        self.hung_up.append(request.url.path.rsplit("/", 1)[1].removesuffix(".json"))
+        sid = request.url.path.rsplit("/", 1)[1].removesuffix(".json")
+        if "Twiml" in form:
+            self.updated.append((sid, form["Twiml"]))
+            return httpx.Response(self.update_status, json={})
+        self.hung_up.append(sid)
         return httpx.Response(200, json={})
 
     def client(self) -> httpx.AsyncClient:
@@ -103,17 +118,18 @@ async def test_dial_asks_twilio_for_amd_a_status_callback_and_our_own_urls():
     assert form["Url"] == f"{PUBLIC}/twiml/outbound/c_test000001"
     assert form["StatusCallback"] == f"{PUBLIC}/twilio/outbound/status/c_test000001"
     assert form["MachineDetection"] == "DetectMessageEnd"   # a machine still waits for the beep
-    # AMD's waits are dead air for a person who answers: 2 s for a quiet pickup (Twilio's minimum), 0.8 s
-    # after a "Hello?". The speech threshold is left at Twilio's default, so a long hello stays a person.
-    assert form["MachineDetectionSilenceTimeout"] == "2000"
-    assert form["MachineDetectionSpeechEndThreshold"] == "800"
-    assert "MachineDetectionSpeechThreshold" not in form
+    # Detection runs alongside the call, so the Caller talks from the answer and the verdict comes later.
+    assert form["AsyncAmd"] == "true" and form["AsyncAmdStatusCallbackMethod"] == "POST"
+    assert form["AsyncAmdStatusCallback"] == f"{PUBLIC}/twilio/outbound/amd/c_test000001"
+    # Nobody waits on it now, so its waits keep Twilio's defaults, which tell machines from people best.
+    assert not {"MachineDetectionSilenceTimeout", "MachineDetectionSpeechEndThreshold",
+                "MachineDetectionSpeechThreshold"} & set(form)
     assert set(form["StatusCallbackEvent"]) == {"initiated", "ringing", "answered", "completed"}
 
 
 # (b) busy, no-answer, failed and machine-answered each end via finalize exactly once
 
-async def _run_plan(script, n_listings=1):
+async def _run_plan(script, n_listings=1, converse=no_caller):
     """A brief with a plan ends; the Dispatcher calls through the Twilio runner and fake Twilio plays
     `script` for each call. Returns the runtime, the CallEnded events, and fake Twilio."""
     rt = SessionRuntime(_catalogue())
@@ -125,7 +141,8 @@ async def _run_plan(script, n_listings=1):
     settings = _settings()
     calls = OutboundCalls()
     twilio_api = FakeTwilio(lambda cid: script(calls, cid))
-    calls.runner = runner = TwilioRunner(settings, calls, runtime=rt, client=twilio_api.client())
+    calls.runner = runner = TwilioRunner(settings, calls, runtime=rt, client=twilio_api.client(),
+                                         converse=converse)
     d = Dispatcher(rt, settings, runner=runner, clock=lambda: NOW)
     await rt.start(SessionStarted(session_id=SID, at=NOW, idem_key=f"{SID}:start", channel="phone",
                                   caller_phone="+14165550199"))
@@ -166,6 +183,64 @@ async def test_a_machine_gets_the_voicemail_and_the_call_ends_once_as_voicemail(
     rt, ended, twilio_api, calls = await _run_plan(machine)
     assert [e.reason for e in ended] == ["voicemail"]
     assert rt.state(SID).outcomes["t:1"].end_reason == "voicemail"
+
+
+async def test_a_machine_found_mid_call_gets_the_voicemail_and_ends_voicemail_once():
+    stream: asyncio.Queue = asyncio.Queue()   # what Twilio sends the Caller; None is the stream ending
+    stopped = asyncio.Event()
+
+    class Stream:
+        async def receive_audio(self):
+            return await stream.get()
+
+    async def converse(dial, transport):
+        while await transport.receive_audio() is not None:
+            pass
+        stopped.set()   # the Caller stops, and closes its Higgs session, as the stream ends
+        return CallResult("hangup", CallOutcome(call_id=dial.call_id, listing_id=dial.listing_id,
+                                                end_reason="hangup"))
+
+    async def machine(calls: OutboundCalls, cid: str):
+        await calls.set_state(cid, "ringing")
+        assert "<Stream" in calls.runner.answered_twiml(cid, "", "wss://x")   # no AnsweredBy: talk at once
+        call = calls.claim(cid)
+        await calls.set_state(cid, "live")
+        call.media.set_result(Stream())
+        await calls.runner.detected(cid, "machine_end_beep")   # the beep, while the Caller talks
+        await stream.put(None)                                   # the new TwiML ends the stream
+        await stopped.wait()
+        for _ in range(2):                                       # the voicemail hangs up
+            calls.finalize(cid, calls.end_reason(cid, "completed"))
+        await calls.runner.detected(cid, "machine_end_beep")   # a verdict after the end: nothing
+    rt, ended, twilio_api, calls = await _run_plan(machine, converse=converse)
+    assert [e.reason for e in ended] == ["voicemail"]
+    assert rt.state(SID).outcomes["t:1"].end_reason == "voicemail"   # not what the Caller made of it
+    [(sid, twiml)] = twilio_api.updated
+    assert sid == "CA1" and "<Say>" in twiml and "<Hangup/>" in twiml and "1 Dial St" in twiml
+    assert DISCLOSURE.split(".")[0] in twiml
+
+
+async def test_a_voicemail_stays_one_when_the_stream_starts_late():
+    said = []
+
+    async def report(state):
+        said.append(state)
+    calls = OutboundCalls()
+    calls.live["c_test000001"] = call = Outbound(dial=_dial(), report=report)
+    for state in ("ringing", "voicemail", "live", "ringing"):
+        await calls.set_state("c_test000001", state)
+    assert said == ["ringing", "voicemail"] and call.state == "voicemail"
+
+
+async def test_a_voicemail_twilio_wont_play_hangs_up_instead():
+    twilio_api = FakeTwilio(update_status=500)
+    calls = OutboundCalls()
+    runner = TwilioRunner(_settings(), calls, client=twilio_api.client())
+    calls.live["c_test000001"] = call = Outbound(dial=_dial(), report=_nothing, twilio_sid="CA1")
+    await runner.detected("c_test000001", "machine_end_silence")
+    assert len(twilio_api.updated) == 1 and twilio_api.hung_up == ["CA1"]
+    assert call.state == "voicemail" and not call.done   # Twilio's final status still ends it, as voicemail
+    assert calls.end_reason("c_test000001", "completed") == "voicemail"
 
 
 async def test_a_call_that_never_ends_is_cut_at_the_deadline_and_hung_up():
@@ -266,7 +341,8 @@ def _place_in_app(c: TestClient, twilio_api: FakeTwilio, converse=None):
     return future, states
 
 
-@pytest.mark.parametrize("path", ["/twilio/outbound/status/c_test000001", "/twiml/outbound/c_test000001"])
+@pytest.mark.parametrize("path", ["/twilio/outbound/status/c_test000001", "/twiml/outbound/c_test000001",
+                                  "/twilio/outbound/amd/c_test000001"])
 def test_an_outbound_webhook_with_a_bad_signature_is_refused(path):
     twilio_api = FakeTwilio()
     with _client() as c:
@@ -323,6 +399,74 @@ def test_a_person_answers_the_stream_connects_and_the_caller_talks():
             assert future.result(timeout=3).end_reason == "done"
         assert heard == ["/w=="] and states == ["live"]
         assert twilio_api.hung_up == ["CA1"]   # the line is put down once the Caller is done
+
+
+AMD = "/twilio/outbound/amd/c_test000001"
+START = {"event": "start", "streamSid": "MZ1",
+         "start": {"streamSid": "MZ1", "customParameters": {"call_id": "c_test000001"}}}
+
+
+def _wait_for(check):
+    for _ in range(300):
+        if check():
+            return
+        time.sleep(0.01)
+    raise AssertionError("timed out")
+
+
+def test_the_caller_talks_from_the_answer_and_a_machine_found_later_gets_the_voicemail():
+    stopped = []
+
+    async def converse(dial, transport):
+        await transport.send_audio("AAAA")   # straight away: nothing waited on machine detection
+        while await transport.receive_audio() is not None:
+            pass
+        stopped.append(dial.call_id)
+        return CallResult("hangup")
+
+    twilio_api = FakeTwilio()
+    with _client() as c:
+        future, states = _place_in_app(c, twilio_api, converse)
+        r = _post(c, "/twiml/outbound/c_test000001", {"CallSid": "CA1"})   # AsyncAmd: no AnsweredBy yet
+        assert "<Stream" in r.text
+        with c.websocket_connect("/twilio/outbound/media") as ws:
+            ws.send_json(START)
+            assert ws.receive_json()["media"]["payload"] == "AAAA"
+            params = {"CallSid": "CA1", "AnsweredBy": "machine_end_beep", "MachineDetectionDuration": "4100"}
+            assert _post(c, AMD, params).status_code == 204
+            [(sid, twiml)] = twilio_api.updated
+            assert sid == "CA1" and "<Say>" in twiml and "1 Dial St" in twiml
+            ws.send_json({"event": "stop"})   # Twilio ends the stream as it switches to the voicemail
+            _wait_for(lambda: stopped)
+            assert not future.done() and twilio_api.hung_up == []   # the message plays out
+            completed = {"CallSid": "CA1", "CallStatus": "completed"}
+            for _ in range(2):
+                _post(c, "/twilio/outbound/status/c_test000001", completed)
+            result = future.result(timeout=3)
+        assert result.end_reason == "voicemail" and result.outcome is None and states == ["live", "voicemail"]
+        assert _post(c, AMD, params).status_code == 204 and len(twilio_api.updated) == 1   # after the end
+
+
+def test_a_person_found_by_machine_detection_changes_nothing():
+    async def converse(dial, transport):
+        await transport.receive_audio()
+        await transport.send_audio("AAAA")
+        await transport.receive_audio()
+        return CallResult("done")
+
+    twilio_api = FakeTwilio()
+    with _client() as c:
+        future, states = _place_in_app(c, twilio_api, converse)
+        _post(c, "/twiml/outbound/c_test000001", {"CallSid": "CA1"})
+        with c.websocket_connect("/twilio/outbound/media") as ws:
+            ws.send_json(START)
+            ws.send_json({"event": "media", "media": {"payload": "/w=="}})
+            assert ws.receive_json()["media"]["payload"] == "AAAA"
+            for answered_by in ("human", "unknown"):
+                assert _post(c, AMD, {"CallSid": "CA1", "AnsweredBy": answered_by}).status_code == 204
+            ws.send_json({"event": "media", "media": {"payload": "/w=="}})
+            assert future.result(timeout=3).end_reason == "done"
+        assert twilio_api.updated == [] and states == ["live"]
 
 
 def test_a_stream_for_an_unknown_call_is_refused():
