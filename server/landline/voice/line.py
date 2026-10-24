@@ -23,8 +23,9 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
-from landline.contracts import Card, Event, ListingFocused, SessionView
+from landline.contracts import Card, Event, Listing, ListingFocused, SessionView
 from landline.orchestrator import SessionRuntime
+from landline.scoring.reasons import to_station
 
 log = logging.getLogger(__name__)
 
@@ -150,7 +151,8 @@ class Lines:
         card = next((c for c in view.board if c.listing_id == event.listing_id), None)
         if card is None:
             return
-        await line.push(Item("focus", f"{LOOKING} {describe(card)}", self.clock(), key=card.listing_id))
+        said = describe(card, self.runtime.catalogue.by_id.get(card.listing_id))
+        await line.push(Item("focus", f"{LOOKING} {said}", self.clock(), key=card.listing_id))
 
     async def on_board(self, event: Event, view: SessionView) -> None:
         """A background re-rank (a place geocoded after the renter named it): the Narrator's line for it,
@@ -161,12 +163,17 @@ class Lines:
         await line.push(Item("board", f"{BOARD} {view.agent_says}", self.clock()))
 
 
-def describe(card: Card) -> str:
-    """The tapped place as the board shows it: the address, then numbers from the card, never a model's."""
+def describe(card: Card, listing: Listing | None = None) -> str:
+    """The tapped place as the board shows it: the address, then numbers from the card, never a model's, and
+    its neighbourhood and the walk to its nearest station, so a TTC question isn't guessed (#166)."""
     where = f"{card.address}, {card.unit_label}" if card.unit_label else card.address
     parts = ["studio" if card.beds == 0 else f"{card.beds:g} bed", f"${card.monthly_cost:,} a month"]
     if card.floor is not None:
         parts.append(f"floor {card.floor}")
     if card.sqft:
         parts.append(f"{card.sqft:,} sq ft")
+    if card.neighbourhood:
+        parts.append(f"in {card.neighbourhood}")
+    if listing and (walk := to_station(listing.transit_walk_min, listing.transit_station)):
+        parts.append(walk)
     return f"{where}: {', '.join(parts)}"
