@@ -57,6 +57,9 @@ class ToolContext:
     call_id: str
     runtime: SessionRuntime
     hang_up: bool = False   # set by end_session; the bridge hangs up once the goodbye has played
+    # The response that called end_session without a word. A goodbye was asked for after it, and the call
+    # ends when a later response is done.
+    bye_response: str | None = None
     # Phone calls only: texts the renter the link to their board, and says whether a text went out. The
     # first update_preferences of the call uses it, so the renter can watch the listings as they talk.
     text_link: Callable[[], bool] | None = None
