@@ -136,7 +136,9 @@ def _diff(before: SessionView, after: SessionView) -> list[str]:
         return count or ["The list stays the same."]
     climbs = [(old.index(lid) - i if lid in old else len(old), i, c)
               for i, (lid, c) in enumerate(zip(new, after.board, strict=True)) if i]
-    gain, i, card = max(climbs, key=lambda x: x[0])
+    # Only the top card left (a budget cut the rest): nobody climbed, and max() of nothing used to raise and
+    # lose the renter's update.
+    gain, i, card = max(climbs, key=lambda x: x[0], default=(0, 0, top))
     said = [*count, f"{_name(top, after.board)} stays on top."]
     if gain > 0:
         verb = "joins at" if card.listing_id not in old else "moves up to"
