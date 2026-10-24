@@ -208,11 +208,14 @@ async def test_a_conversation_ends_once_and_a_late_completed_status_changes_noth
 
 
 def test_the_opening_says_the_disclosure_first_and_keeps_the_instructions():
-    event = opening("Ask about parking.")
-    text = event["response"]["instructions"]
-    assert event["type"] == "response.create"
+    text, start = opening("Ask about parking.")
     assert text.startswith("Ask about parking.") and f'exactly: "{DISCLOSURE}"' in text
     assert DISCLOSURE == "I'm an AI assistant calling for a renter."
+    # A quoted note, then a plain response.create: no response object, whose instructions would replace
+    # the session's, disclosure and all (#129).
+    assert start[0]["item"]["content"][0]["text"] == "[The call was just answered.]"
+    assert start[-1] == {"type": "response.create"}
+    assert all("response" not in event for event in start)
 
 
 # The webhooks, through the app

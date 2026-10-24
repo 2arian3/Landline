@@ -27,7 +27,7 @@ from landline.agents.auditor import llm as auditor_llm
 from landline.agents.concierge import backstop, tools
 from landline.agents.concierge.prompt import (
     CALL_CONNECTED,
-    GREETING,
+    FIRST_CALL,
     INSTRUCTIONS,
     LINK_SENT,
     RETURNING,
@@ -136,19 +136,19 @@ def _link_texter(texter: Texter | None, call: RenterCall, settings: Settings) ->
 
 
 def opening(remembered: str | None, language: str | None = None) -> tuple[str, list[dict[str, Any]]]:
-    """The Concierge's session instructions for a call, and the events that start it. A first-time caller
-    gets GREETING as the first response's instructions, which is all it needs. A returning caller (O-05)
-    gets the welcome in the session instructions next to what code remembers, and the call starts with a
-    quoted note and a plain response.create: instructions on response.create would replace the session's,
-    and the welcome then ignored the memory and made one up (docs/EVAL_FINDINGS.md). A returning caller
-    whose stored language isn't English is welcomed back in it."""
+    """The Concierge's session instructions for a call, and the events that start it. Every call opens the
+    same way: how it opens sits in the session instructions (FIRST_CALL, or WELCOME_BACK next to what code
+    remembers, O-05), and the call starts with a quoted note and a plain response.create. Never a response
+    object on response.create: its instructions replace the session's, so a welcome ignored the memory and
+    made one up (docs/EVAL_FINDINGS.md), and first-time calls sent GREETING that way called no tools all call
+    (#129). A returning caller whose stored language isn't English is welcomed back in it."""
+    note = {"type": "message", "role": "user", "content": [{"type": "input_text", "text": CALL_CONNECTED}]}
+    start = [{"type": "conversation.item.create", "item": note}, {"type": "response.create"}]
     if not remembered:
-        return INSTRUCTIONS, [{"type": "response.create", "response": {"instructions": GREETING}}]
+        return f"{INSTRUCTIONS}{FIRST_CALL}", start
     spoke = primary(language)
     before = SPOKE_BEFORE.format(language=language_name(spoke)) if spoke and spoke != "en" else ""
-    note = {"type": "message", "role": "user", "content": [{"type": "input_text", "text": CALL_CONNECTED}]}
-    return (f"{INSTRUCTIONS}{before}{WELCOME_BACK}{RETURNING}{remembered}",
-            [{"type": "conversation.item.create", "item": note}, {"type": "response.create"}])
+    return f"{INSTRUCTIONS}{before}{WELCOME_BACK}{RETURNING}{remembered}", start
 
 
 def _reader() -> Any | None:

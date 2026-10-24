@@ -41,6 +41,11 @@ def _texts(sent):
     return [e["item"]["content"][0]["text"] for e in sent if e["type"] == "conversation.item.create"]
 
 
+def _taps(sent):
+    """The tap notes alone: a call through the bridge also opens with the connected note (#129)."""
+    return [t for t in _texts(sent) if t.startswith(LOOKING)]
+
+
 def _tap(clock, n, key=None):
     return Item("focus", f"{LOOKING} {n} Test St", clock(), key=key or f"t:{n}")
 
@@ -213,8 +218,8 @@ def test_a_tap_on_the_board_reaches_a_browser_call():
             while sid not in c.app.state.lines.live and time.monotonic() < deadline:
                 time.sleep(0.01)
             assert c.post(f"/api/sessions/{sid}/focus", json={"listing_id": "t:2"}).status_code == 200
-            while not _texts(fake.sent) and time.monotonic() < deadline:
+            while not _taps(fake.sent) and time.monotonic() < deadline:
                 time.sleep(0.01)
             ws.close(1000)
-        assert _texts(fake.sent) == [f"{LOOKING} 2 Test St: 1 bed, $2,402 a month"]
+        assert _taps(fake.sent) == [f"{LOOKING} 2 Test St: 1 bed, $2,402 a month"]
         assert fake.sent[-1] == {"type": "response.create"}
