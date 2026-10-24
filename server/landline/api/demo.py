@@ -374,8 +374,8 @@ def _lower(s: str) -> str:
 
 
 def _pinned(c: Card) -> bool:
-    """Inside the box MapView.tsx draws pins in. A place outside it (701 Don Mills Rd's flipped longitude
-    in the fixture) stays in the list without a pin, so the demo doesn't plan it: its status couldn't show."""
+    """Inside the box MapView.tsx draws pins in (the parser nulls points outside it since #17). A place
+    without a pin stays in the list, so the demo doesn't plan it: its status couldn't show."""
     return c.lat is not None and c.lng is not None and 43.3 < c.lat < 44.4 and -80.3 < c.lng < -78.6
 
 

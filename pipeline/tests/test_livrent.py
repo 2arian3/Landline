@@ -92,3 +92,28 @@ def test_positive_longitude_outside_toronto_is_nulled():
 def test_toronto_point_leaves_good_and_missing_points_alone():
     assert livrent.toronto_point(43.65, -79.39) == (43.65, -79.39, False)
     assert livrent.toronto_point(None, None) == (None, None, False)
+
+
+def test_points_outside_greater_toronto_are_nulled():
+    for lat, lon in ((0.0, 0.0), (45.50, -73.57), (4.37, -79.39), (43.65, -7.94)):   # 0,0; Montreal; slips
+        assert livrent.toronto_point(lat, lon) == (None, None, False), (lat, lon)
+
+
+def test_coordinates_are_read_as_numbers_or_dropped():
+    assert livrent.toronto_point("43.65", "-79.39") == (43.65, -79.39, False)
+    assert livrent.toronto_point("n/a", -79.39) == (None, None, False)
+    assert livrent.toronto_point(43.65, None) == (None, None, False)
+
+
+def test_a_flipped_longitude_keeps_what_the_site_sent_and_is_counted_alone():
+    from pipeline import stages
+
+    flipped = _unit_at(43.7082251, 79.335082)
+    assert flipped.provenance["lng"].version == livrent.LNG_FLIP
+    assert flipped.provenance["lng"].quote == "79.335082"
+    plain = _unit_at(43.65, -79.39)
+    # a longitude derived some other way (a geocoder, say) isn't a sign flip
+    geocoded = plain.model_copy(update={"provenance": {**plain.provenance,
+                                                       "lng": flipped.provenance["lng"].model_copy(
+                                                           update={"version": "geocode-v1"})}})
+    assert "longitude sign flipped: 1" in stages.report([flipped, plain, geocoded])
