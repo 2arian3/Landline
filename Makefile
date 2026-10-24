@@ -46,7 +46,7 @@ lint:
 	uv run ruff check server pipeline scripts
 
 eval:
-	@echo "added in E-01: writes evals/reports/latest.md"
+	uv run python -m evals.run_concierge
 
 # Rewrites server/tests/snapshots/contracts.json after a contract change; commit it with the change.
 contracts-snapshot:

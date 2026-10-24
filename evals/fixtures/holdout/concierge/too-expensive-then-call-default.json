@@ -1,0 +1,59 @@
+{
+  "id": "too-expensive-then-call-default",
+  "about": "Dislikes the top card on cost, asks for the best ones to be called (the default three), refuses booking",
+  "lines": [
+    {
+      "say": "Two bedrooms, up to 3,000 a month."
+    },
+    {
+      "say": "The first one is too expensive for what it is.",
+      "expect": {
+        "reactions": [
+          {
+            "ref": "rank:1",
+            "reaction": "dislike",
+            "attribute": "cost"
+          }
+        ]
+      }
+    },
+    {
+      "say": "Go ahead and call the best ones for me."
+    },
+    {
+      "say": "I can view on Sunday from noon to 4."
+    },
+    {
+      "say": "No, don't book anything, I want to decide myself."
+    },
+    {
+      "say": "Thanks, goodbye."
+    }
+  ],
+  "final": {
+    "prefs": {
+      "max_monthly": 3000,
+      "min_beds": 2
+    },
+    "reactions": [
+      {
+        "ref": "rank:1",
+        "at": 1,
+        "reaction": "dislike",
+        "attribute": "cost"
+      }
+    ],
+    "request": {
+      "listings": "top:3",
+      "availability": [
+        {
+          "day": "sunday",
+          "from": "12:00",
+          "to": "16:00"
+        }
+      ],
+      "may_book": false
+    },
+    "ended": true
+  }
+}

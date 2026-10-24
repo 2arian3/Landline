@@ -1,0 +1,35 @@
+{
+  "id": "change-mind-budget",
+  "about": "Raises the budget and the bedrooms in one sentence; the later values must replace the first",
+  "lines": [
+    {
+      "say": "I need a one bedroom under 2,400.",
+      "expect": {
+        "prefs": {
+          "max_monthly": 2400,
+          "min_beds": 1
+        }
+      }
+    },
+    {
+      "say": "Actually, my partner is moving in with me, so make it two bedrooms, and we can go up to 3,200 together.",
+      "expect": {
+        "prefs": {
+          "max_monthly": 3200,
+          "min_beds": 2
+        }
+      }
+    },
+    {
+      "say": "That's it for today, thank you. Goodbye."
+    }
+  ],
+  "final": {
+    "prefs": {
+      "max_monthly": 3200,
+      "min_beds": 2
+    },
+    "no_request": true,
+    "ended": true
+  }
+}

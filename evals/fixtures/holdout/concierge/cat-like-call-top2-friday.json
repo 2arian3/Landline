@@ -1,0 +1,63 @@
+{
+  "id": "cat-like-call-top2-friday",
+  "about": "Has a cat, likes the top card, asks for the top two to be called on a Friday evening, then allows booking",
+  "lines": [
+    {
+      "say": "Hey, I want a one bedroom under 2,600, and I have a cat.",
+      "expect": {
+        "prefs": {
+          "max_monthly": 2600,
+          "min_beds": 1,
+          "pets": [
+            "cat"
+          ]
+        }
+      }
+    },
+    {
+      "say": "The first one looks great.",
+      "expect": {
+        "reactions": [
+          {
+            "ref": "rank:1",
+            "reaction": "like"
+          }
+        ]
+      }
+    },
+    {
+      "say": "Can you call the top two places?"
+    },
+    {
+      "say": "Friday evening works for me, from 5 to 8."
+    },
+    {
+      "say": "Sure, book a viewing if they can do that time."
+    },
+    {
+      "say": "Perfect, bye."
+    }
+  ],
+  "may_book_from": 4,
+  "final": {
+    "reactions": [
+      {
+        "ref": "rank:1",
+        "at": 1,
+        "reaction": "like"
+      }
+    ],
+    "request": {
+      "listings": "top:2",
+      "availability": [
+        {
+          "day": "friday",
+          "from": "17:00",
+          "to": "20:00"
+        }
+      ],
+      "may_book": true
+    },
+    "ended": true
+  }
+}
