@@ -74,6 +74,12 @@ class CallLog:
             return
         self._then(call_id, lambda db: db.calls.finalize(call_id, reason), last=True)
 
+    async def flushed(self, call_id: str) -> None:
+        """Wait until this call's queued writes, including the one `ended` just added, have landed."""
+        task = self._last.get(call_id)
+        if task is not None:
+            await asyncio.gather(task, return_exceptions=True)
+
     def _then(self, call_id: str, write: Callable[[Database], Awaitable[object]], last: bool = False) -> None:
         if self.db is None:
             return
