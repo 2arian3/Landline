@@ -82,8 +82,11 @@ def brief(listing: Listing, plan: CallPlan, wants: frozenset[str] = frozenset())
     for n, question in enumerate(plan.questions, start=1):
         items.append(Item(f"q{n}", f"the renter's question: {question} (record their answer as other)",
                           ["other"]))
-    if plan.may_book and plan.windows:
+    if plan.windows and plan.may_book:
         items.append(Item("viewing", "a viewing inside the renter's times, booked with book_viewing", []))
+    elif plan.windows:   # the renter gave times but didn't allow booking: get a time for them (#189)
+        items.append(Item("viewing", "what time inside the renter's times they could show it, given to "
+                          "book_viewing (it notes the time for the renter and books nothing)", ["other"]))
     return Brief(listing, plan, items)
 
 
@@ -110,6 +113,9 @@ def instructions(b: Brief) -> str:
     booking = ("You may book one viewing: call book_viewing with the time they offer, in their words. "
                "Book only a time inside the renter's windows; the reply tells you if it's booked.") \
         if plan.may_book and plan.windows else \
+        ("You may not book. Ask what time inside the renter's times they could show it, and pass that time "
+         "to book_viewing: it notes it for the renter and books nothing, so never tell them it's booked.") \
+        if plan.windows else \
         "You may not book anything, so don't ask about viewings."
     return CALLER.format(address=_place(x), listing=_listing(x), checklist=checklist, windows=windows,
                          share=share, booking=booking)
