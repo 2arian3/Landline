@@ -380,10 +380,22 @@ async def call_listings(args: CallListings, ctx: ToolContext, meta: dict) -> str
     if not ids:
         return "There's nothing on the list to call yet."
     questions = list(dict.fromkeys([*(before.questions if before else []), *(args.extra_questions or [])]))
-    invented = bool(args.availability) and not _named_when(ctx)
-    if invented:   # times the renter never gave: with may_book, the Caller would book them (#174)
+    lines = _when_lines(ctx)
+    parsed = _windows_from(lines) if lines is not None else []
+    # A day alone ("tomorrow") is 09:00–18:00, whatever clock the model sent (#218). Those bounds accept a
+    # booking; they are not hours the renter gave, so the reply below never reads them out.
+    day_only = bool(args.availability and parsed and lines is not None
+                    and not any(_hours_in(line) for line in lines))
+    invented = bool(args.availability) and lines is not None and not any(_WHEN.search(line) for line in lines)
+    if day_only:
+        log.info("call %s: a day alone, so the model's hours were replaced with the default bounds",
+                 ctx.call_id)
+        availability = parsed
+    elif invented:   # times the renter never gave: with may_book, the Caller would book them (#174)
         log.info("call %s: call_listings had viewing times the renter never said; not kept", ctx.call_id)
-    availability = (None if invented else args.availability) or (before.availability if before else [])
+        availability = list(before.availability) if before else []
+    else:
+        availability = args.availability or (list(before.availability) if before else [])
     may_book = args.may_book if args.may_book is not None else bool(before and before.may_book)
     asked = ctx.agent_before or ctx.agent_said   # the line the renter's latest answers
     unasked = args.may_book is True and not _agrees_to_book(ctx.renter_said, asked)
@@ -393,8 +405,14 @@ async def call_listings(args: CallListings, ctx: ToolContext, meta: dict) -> str
                                           availability=availability, may_book=may_book))
     addresses = [_told_apart(ctx, lid, board) for lid in ids]
     # The call's timing comes first, so a viewing window is never read back as when the calls go out.
-    times = f"Viewing window: {_join([_window(a) for a in availability])}." if availability \
-        else f"No viewing times yet.{' Ask when they are free for a viewing.' if invented else ''}"
+    # A day alone names the day and no clock (#218): the default bounds stay in the plan, unsaid.
+    if availability and day_only:
+        times = (f"Viewing: {_join([_day_label(a) for a in availability])}. "
+                 "They gave no hours, so don't name any.")
+    elif availability:
+        times = f"Viewing window: {_join([_window(a) for a in availability])}."
+    else:
+        times = f"No viewing times yet.{' Ask when they are free for a viewing.' if invented else ''}"
     # New viewing times and nothing said about booking (#189): the landlord said "yes, tomorrow" and the
     # Caller couldn't take a time, so the Concierge asks. Not after a "don't book", nor for the same times.
     ask = not may_book and args.may_book is None and bool(availability) and \
@@ -463,7 +481,8 @@ def asks_for_the_best(line: str | None) -> bool:
     return bool(line and _THE_BEST.search(line) and not _A_COUNT.search(line))
 
 
-# When a renter says they can view (#174): a day, and maybe a part of it. A day alone is 09:00 to 18:00.
+# When a renter says they can view (#174): a day, and maybe a part of it. A day alone is 09:00 to 18:00,
+# a bound for accepting a booking. It is never spoken as hours the renter gave (#218).
 _DAY_WORD = re.compile(r"\b(today|tonight|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|"
                        r"weekend)\b", re.I)
 _PARTS = {"morning": ("09:00", "12:00"), "afternoon": ("12:00", "17:00"), "evening": ("17:00", "20:00"),
@@ -471,6 +490,11 @@ _PARTS = {"morning": ("09:00", "12:00"), "afternoon": ("12:00", "17:00"), "eveni
 _SPAN = re.compile(r"\b(?:between|from)\s+(\d{1,2})(?::(\d\d))?\s*(am|pm)?\s+(?:and|to|until|-)\s+"
                    r"(\d{1,2})(?::(\d\d))?\s*(am|pm)?", re.I)
 _AT = re.compile(r"\bat\s+(\d{1,2})(?::(\d\d))?\s*(am|pm)?\b", re.I)
+# A clock, a part of the day, or a span. "tomorrow" and "Saturday" have none; "9 to 5" and "afternoon" do.
+_HOURS = re.compile(r"\b(?:noon|midnight|morning|afternoon|evening|tonight)\b|"
+                    r"\b\d{1,2}(?::\d\d)?\s*(?:a\.?m\.?|p\.?m\.?)\b|"
+                    r"\b\d{1,2}(?::\d\d)?\s*(?:to|until|-|and)\s*\d{1,2}\b|"
+                    r"\bat\s+\d{1,2}\b", re.I)
 _WHEN = re.compile(r"\b(today|tonight|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|"
                    r"weekend|morning|afternoon|evening|noon|ma[ñn]ana|lunes|martes|mi[ée]rcoles|jueves|viernes|"
                    r"s[áa]bado|domingo|demain|lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\b|"
@@ -499,7 +523,7 @@ def windows_in(text: str) -> list[Availability]:
         days += [d for d in named if d not in days]
     if not days:
         return []
-    start, end = "09:00", "18:00"
+    start, end = "09:00", "18:00"   # a day alone: stored, and not said back as their hours (#218)
     if span := _SPAN.search(t):
         start = _hour(span.group(1), span.group(2), span.group(3) or span.group(6))
         end = _hour(span.group(4), span.group(5), span.group(6))
@@ -515,15 +539,41 @@ def windows_in(text: str) -> list[Availability]:
     return [Availability(day=d, **{"from": start}, to=end) for d in days]
 
 
+def _hours_in(text: str) -> bool:
+    """Whether a line names a clock or a part of the day, not only a day (#218)."""
+    return _HOURS.search(text) is not None
+
+
+def _when_lines(ctx: ToolContext) -> list[str] | None:
+    """Lines a viewing time is read from, or None when the model's times stand: no transcript, or a line
+    in another script. A plain yes includes the question it answers ("Yes" to "tomorrow at 10?")."""
+    from landline.agents.concierge.backstop import foreign  # backstop imports this module
+    lines = list(ctx.renter_lines or ([ctx.renter_said] if ctx.renter_said else []))
+    if not lines or any(foreign(line) for line in lines):
+        return None
+    if ctx.agent_before and plain_yes(lines[-1]):
+        lines.append(ctx.agent_before)
+    return lines
+
+
+def _windows_from(lines: list[str]) -> list[Availability]:
+    """Days the lines name. A later line wins for the same day, and a day alone is 09:00 to 18:00."""
+    by_day: dict[str, Availability] = {}
+    order: list[str] = []
+    for line in lines:
+        for window in windows_in(line):
+            if window.day not in by_day:
+                order.append(window.day)
+            by_day[window.day] = window
+    return [by_day[day] for day in order]
+
+
 def _named_when(ctx: ToolContext) -> bool:
     """Whether the renter named a day or a time on this call, so viewing times aren't the model's guess.
     With no line to go by, or a line in another script, the model's word stands, as in _agrees_to_book."""
-    from landline.agents.concierge.backstop import foreign  # backstop imports this module
-    lines = ctx.renter_lines or ([ctx.renter_said] if ctx.renter_said else [])
-    if not lines or any(foreign(line) for line in lines):
+    lines = _when_lines(ctx)
+    if lines is None:
         return True
-    if ctx.agent_before and plain_yes(lines[-1]):   # "Yes" to "Should I book tomorrow at 10?" names it too
-        lines = [*lines, ctx.agent_before]
     return any(_WHEN.search(line) for line in lines)
 
 
@@ -591,9 +641,12 @@ def _money(amount: int) -> str:
     return f"${amount:,}"
 
 
+def _day_label(a: Availability) -> str:
+    return a.day if a.day in ("today", "tomorrow") else a.day.capitalize()
+
+
 def _window(a: Availability) -> str:
-    day = a.day if a.day in ("today", "tomorrow") else a.day.capitalize()
-    return f"{day} {_clock(a.from_)} to {_clock(a.to)}"
+    return f"{_day_label(a)} {_clock(a.from_)} to {_clock(a.to)}"
 
 
 def _clock(hhmm: str) -> str:

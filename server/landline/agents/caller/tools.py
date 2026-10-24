@@ -299,6 +299,9 @@ async def book_viewing(args: BookViewing, ctx: CallerContext, meta: dict) -> str
         if (left := slots.open_times(windows, now)) is None:
             return (f"{why} The renter's viewing times have all passed, so don't book. Say your client will "
                     f"be in touch about a viewing, and carry on.")
+        if names := slots.bound_days(windows):   # the default bounds are not hours to offer (#218)
+            return (f"{why} Ask what time on {names} works. Don't name hours as when the renter can view. "
+                    "Don't repeat your last question.")
         return f"{why} Offer them a time {left}. Don't repeat your last question."
     clash = [v for lid, v in state.viewings.items()
              if lid != ctx.listing_id and abs(v.starts_at - at) < CLASH]
@@ -322,7 +325,12 @@ def _ask_time(day, windows, now: datetime) -> str:
     """They said a day but no time: nothing is booked or noted until they give one in the renter's times."""
     today = now.astimezone(slots.TORONTO).date()
     said = "today" if day == today else "tomorrow" if (day - today).days == 1 else f"on {day:%A}"
-    left = slots.open_times([w for w in windows if w.start.astimezone(slots.TORONTO).date() == day], now)
+    that_day = [w for w in windows if w.start.astimezone(slots.TORONTO).date() == day]
+    if that_day and all(slots.day_bound(w) for w in that_day):
+        name = slots.WEEKDAYS[day.weekday()].capitalize()
+        return (f"They said {said} but no time. Ask what time on {name} works. "
+                "Don't name hours as when the renter can view. Then pass it to book_viewing.")
+    left = slots.open_times(that_day, now)
     can = f": the renter can do {left}" if left else ""
     return (f"They said {said} but no time. Ask what time {said} works for them{can}. "
             f"Then pass it to book_viewing.")
@@ -553,5 +561,7 @@ HANDLERS: dict[str, Callable[[Any, CallerContext, dict], Awaitable[str]]] = {
 def _windows(windows) -> str:
     if not windows:
         return "when the renter can make it"
+    if names := slots.bound_days(windows):
+        return f"on {names}"
     spoken = [f"{slots.spoken(w.start)} to {slots.spoken(w.end).split(' at ')[1]}" for w in windows]
     return "on " + (spoken[0] if len(spoken) == 1 else ", ".join(spoken[:-1]) + " or " + spoken[-1])
