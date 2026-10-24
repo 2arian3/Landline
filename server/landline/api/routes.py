@@ -12,9 +12,10 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from landline.api.demo import PLANNED, _pinned
+from landline.api.demo import PLANNED, _pinned, area_named
 from landline.api.judge import client_ip
 from landline.contracts import (
+    AreaFocused,
     CallsRequested,
     CataloguePoint,
     Event,
@@ -189,6 +190,23 @@ async def returning(session_id: str, body: ReturningBody, request: Request) -> S
     name = (body.name or "").strip() or None
     _demo_only(request, session_id)
     return await request.app.state.sessions.welcome_back(session_id, body.returning, name)
+
+
+class AreaBody(BaseModel):
+    place: str = Field(max_length=60)
+
+
+@router.post("/api/sessions/{session_id}/area", response_model=SessionView)
+async def focus_area(session_id: str, body: AreaBody, request: Request) -> SessionView:
+    """Demo hook: stands in for the Concierge's focus_area ("show me Christie Pits") until the voice layer
+    exists. The session's focus_area becomes that place, and the map flies there. A runtime session gets
+    it as AreaFocused."""
+    area = area_named(body.place)
+    if area is None:
+        raise HTTPException(404, "unknown place")
+    if _live(request, session_id):
+        return await _emit(request, AreaFocused(**_meta(session_id), **area.model_dump()))
+    return await request.app.state.sessions.focus_area(session_id, area)
 
 
 @router.post("/api/sessions/{session_id}/preferences", response_model=SessionView)

@@ -103,6 +103,30 @@ def test_focus_rejects_unknown_listing():
         assert focused["focus_listing_id"] == "t:2"
 
 
+def test_area_hook_sets_where_the_map_flies():
+    with _client() as c:
+        assert c.get("/api/sessions/s_area").json()["focus_area"] is None
+        v = c.post("/api/sessions/s_area/area", json={"place": "  Christie   PITS "}).json()
+        assert v["focus_area"] == {"label": "Christie Pits", "lat": 43.6646, "lng": -79.4206, "zoom": 15.0}
+        assert v["version"] == 2
+        # it stays through the next re-rank, and a place the demo doesn't know is a 404
+        later = c.post("/api/sessions/s_area/preferences", json={"max_monthly": 3000}).json()
+        assert later["focus_area"]["label"] == "Christie Pits"
+        assert c.post("/api/sessions/s_area/area", json={"place": "Atlantis"}).status_code == 404
+        king_and_bay = c.post("/api/sessions/s_area/area", json={"place": "King and Bay"}).json()
+        assert king_and_bay["focus_area"]["zoom"] == 15.5
+
+
+def test_area_hook_sends_a_runtime_session_area_focused():
+    with _judge_client(2) as c:
+        sid = c.post("/api/judge/start").json()["session_id"]
+        v = c.post(f"/api/sessions/{sid}/area", json={"place": "Yorkville"}).json()
+        assert v["focus_area"]["label"] == "Yorkville" and v["version"] == 2
+        assert c.app.state.runtime.state(sid).focus_area.label == "Yorkville"
+        assert sid not in c.app.state.sessions.views   # one writer: the demo store never saw it
+        assert c.post(f"/api/sessions/{sid}/area", json={"place": "Atlantis"}).status_code == 404
+
+
 def test_feedback_shows_on_the_card():
     with _client() as c:
         assert c.get("/api/sessions/s_fb").json()["board"][0]["reaction"] is None

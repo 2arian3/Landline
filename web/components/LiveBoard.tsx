@@ -92,6 +92,12 @@ export function LiveBoard({
   const serverFocus =
     view?.focus_listing_id && view.focus_listing_id !== openingFocus.current ? view.focus_listing_id : null;
   const focusId = selected ?? serverFocus;
+  // The same for an area the renter names ("show me Christie Pits"): the map flies there when it changes.
+  const openingArea = useRef<string | null | undefined>(undefined);
+  const area = view?.focus_area ?? null;
+  const areaKey = area ? `${area.lat},${area.lng},${area.zoom}` : null;
+  if (view && openingArea.current === undefined) openingArea.current = areaKey;
+  const focusArea = area && areaKey !== openingArea.current ? area : null;
   const selectedCard = board.find((c) => c.listing_id === selected);
 
   function select(id: string) {
@@ -133,6 +139,7 @@ export function LiveBoard({
       focusId={focusId}
       hoverId={hover}
       marks={marks}
+      focusArea={focusArea}
       padding={padding}
       showZoom={desktop === true}
       onSelect={select}
