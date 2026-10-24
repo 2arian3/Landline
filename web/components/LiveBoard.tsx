@@ -8,6 +8,7 @@ import { Board } from "./Board";
 import { DemoControls } from "./DemoControls";
 import { ListingDetail, type Reaction } from "./ListingDetail";
 import type { Padding } from "./MapView";
+import { PEEK, Shell } from "./Shell";
 import { Activity, Brand, Heard, Welcome } from "./Summary";
 import { postJSON, useCatalogue, useLiveSession } from "@/lib/live";
 import { useMedia } from "@/lib/useMedia";
@@ -19,7 +20,6 @@ const MapView = dynamic(() => import("./MapView").then((m) => m.MapView), {
   loading: () => <div className="absolute inset-0 bg-map-land" aria-hidden />,
 });
 
-const PEEK = "196px";
 const SNAPS: (string | number)[] = [PEEK, 0.56, 1];
 
 /**
@@ -187,10 +187,10 @@ export function LiveBoard({
       </AnimatePresence>
     );
 
-  // Until the browser says which layout this is, show the ground and nothing else.
-  // The shell is `fixed inset-0`: nothing can scroll the page itself, not even
+  // Until the browser says which layout this is, show the shell the server sent.
+  // Both are `fixed inset-0`: nothing can scroll the page itself, not even
   // focus or scrollIntoView on something inside the panel.
-  if (desktop === null) return <div className="fixed inset-0 bg-ground" aria-busy="true" />;
+  if (desktop === null) return <Shell idle={!!intro && !sessionId} />;
 
   const idle = !!intro && !sessionId;
 
