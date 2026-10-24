@@ -46,6 +46,11 @@ VOICEMAIL = ("Hi, I'm an AI assistant calling for a renter about your listing at
              "We'll try again later. Thank you.")
 # Twilio's AnsweredBy with MachineDetection=DetectMessageEnd: a machine waits for the beep.
 MACHINE = ("machine_end_beep", "machine_end_silence", "machine_end_other", "fax")
+# Twilio answers the call's URL only once AMD has decided, so its waits are dead air for a person. A quiet
+# pickup is a person after 2 s (Twilio's minimum; 5 s by default), and a "Hello?" is over after 0.8 s of
+# silence (1.2 s by default). The speech threshold stays Twilio's, so a long hello isn't taken for a machine.
+AMD_SILENCE_MS = 2000
+AMD_SPEECH_END_MS = 800
 # Twilio's CallStatus once a call is over, and what it means if nothing else ended it first.
 STATUS_END: dict[str, EndReason] = {"busy": "busy", "no-answer": "no_answer", "failed": "failed",
                                     "canceled": "failed", "completed": "hangup"}
@@ -195,6 +200,8 @@ class TwilioRunner:
             "StatusCallback": f"{base}/twilio/outbound/status/{cid}",
             "StatusCallbackEvent": ["initiated", "ringing", "answered", "completed"],
             "MachineDetection": "DetectMessageEnd",
+            "MachineDetectionSilenceTimeout": str(AMD_SILENCE_MS),
+            "MachineDetectionSpeechEndThreshold": str(AMD_SPEECH_END_MS),
             "Timeout": str(RING_S),
             "TimeLimit": str(int(s.listing_call_max_s)),   # Twilio's own cap, behind our deadline
         })
