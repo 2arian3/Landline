@@ -254,6 +254,22 @@ def test_judge_mode_opens_soon_until_the_browser_audio_is_ready():
         assert c.app.state.judges.open == {} and c.get("/health").json()["sessions"] == 0
 
 
+def test_judge_done_ends_the_brief_behind_the_gate():
+    with _judge_client(2, ready=False) as c:
+        shut = c.post("/api/judge/s_anything/done")
+        assert shut.status_code == 503 and shut.json()["reason"] == "closed"
+    with _judge_client(2) as c:
+        sid = c.post("/api/judge/start").json()["session_id"]
+        plan = c.post(f"/api/sessions/{sid}/calls").json()["plan"]   # the judge said "call the top ones"
+        done = c.post(f"/api/judge/{sid}/done").json()
+        assert plan and done["phase"] == "calling" and done["plan"] == plan   # on to the Dispatcher (A-06)
+        assert sid not in c.app.state.judges.open   # the line is free for the next judge
+        assert c.post(f"/api/judge/{sid}/done").json()["version"] == done["version"]   # it ends once
+        unplanned = c.post("/api/judge/start").json()["session_id"]
+        assert c.post(f"/api/judge/{unplanned}/done").json()["phase"] == "closed"   # nothing to call
+        assert c.post("/api/judge/s_unknown000/done").status_code == 404   # not a judge session
+
+
 def test_judge_start_mints_a_session_and_its_audio_socket():
     with _judge_client(2) as c:
         r = c.post("/api/judge/start")
