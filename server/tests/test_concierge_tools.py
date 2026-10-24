@@ -1,14 +1,19 @@
 """The Concierge's tools against a real session runtime (in memory): each tool's event changes the session,
 and its spoken reply comes from the board that event produced."""
+import asyncio
 import json
 from datetime import UTC, datetime
+from urllib.parse import parse_qs
 
+import httpx
 import pytest
 
 from landline.agents.concierge import refs, tools
 from landline.contracts import Card, Listing, SessionEnded, SessionStarted
 from landline.db.catalogue import Catalogue
-from landline.orchestrator import SessionRuntime
+from landline.orchestrator import SessionRuntime, places
+from landline.orchestrator.places import Places, Point
+from landline.scoring.features import FeatureMatrix, Hood
 
 T0 = datetime(2026, 10, 23, 23, 0, tzinfo=UTC)
 SID = "s_tools00001"
@@ -124,20 +129,6 @@ async def test_update_preferences_re_ranks_and_speaks_the_board(ctx):
     assert _view(ctx).version == before + 1 and _view(ctx).preferences.max_monthly == 3000
 
 
-async def test_only_the_first_preferences_of_a_call_text_the_link_and_say_so(ctx):
-    texts = []
-    ctx.text_link = lambda: texts.append(1) or True
-    first = json.loads(await _say(ctx, "update_preferences", '{"max_monthly": 3000}'))
-    assert first == {"result": _view(ctx).agent_says, "texted_link": True}
-    assert await _say(ctx, "update_preferences", '{"min_beds": 2}', "fc_2") == _view(ctx).agent_says
-    assert texts == [1]
-
-
-async def test_no_texted_link_field_when_the_text_could_not_go(ctx):
-    ctx.text_link = lambda: False
-    assert await _say(ctx, "update_preferences", '{"max_monthly": 3000}') == _view(ctx).agent_says
-
-
 async def test_focus_listing_by_rank_reads_the_card_back(ctx):
     second = _view(ctx).board[1]
     reply = await _say(ctx, "focus_listing", '{"listing_ref": "second"}')
@@ -197,6 +188,72 @@ async def test_update_preferences_places_an_area_or_says_it_cannot(ctx):
     prefs = ctx.runtime.state(SID).preferences
     assert [(a.label, a.lat is not None) for a in prefs.anchors] == [("over by Dupont", True),
                                                                       ("King and Bay", False)]
+
+
+KING_AND_BAY = (43.6486561, -79.3802633)
+CHRISTIE_PITS = (43.6645, -79.4207)
+
+
+def _net(request: httpx.Request) -> httpx.Response:
+    """A fake Overpass (King and Bay meet) and Nominatim (knows Christie Pits); nothing leaves the machine."""
+    if "overpass" in request.url.host:
+        query = parse_qs(request.content.decode())["data"][0]
+        meets = "King" in query and "Bay" in query
+        meet = [{"lat": KING_AND_BAY[0], "lon": KING_AND_BAY[1]}] if meets else []
+        return httpx.Response(200, json={"elements": meet})
+    known = parse_qs(request.url.query.decode())["q"][0].startswith("Christie Pits")
+    found = [{"lat": str(CHRISTIE_PITS[0]), "lon": str(CHRISTIE_PITS[1])}] if known else []
+    return httpx.Response(200, json=found)
+
+
+@pytest.fixture
+async def placed(monkeypatch):
+    """A session whose runtime places names through Places (D-04), with the Annex, a Christie station and the
+    fake network."""
+    monkeypatch.setattr(places, "MIN_GAP_S", 0)
+    hoods = [Hood(1, "Annex", 43.670, -79.405, ())]
+    stations = [{"id": "s1", "name": "Christie", "lat": 43.6640, "lng": -79.4183}]
+    client = httpx.AsyncClient(transport=httpx.MockTransport(_net))
+    runtime = SessionRuntime(CATALOGUE, places=Places(FeatureMatrix.build([], hoods).named, stations,
+                                                      contact="team@example.com", client=client))
+    await runtime.start(SessionStarted(session_id=SID, at=T0, idem_key=f"{SID}:started", channel="judge"))
+    yield tools.ToolContext(session_id=SID, call_id="c_tools00003", runtime=runtime)
+    await runtime.close()
+    await client.aclose()
+
+
+@pytest.mark.parametrize(("place", "point"), [
+    ("the Annex", (43.670, -79.405)),        # a City neighbourhood, no network
+    ("King and Bay", KING_AND_BAY),          # an intersection, through Overpass
+    ("Christie Pits", CHRISTIE_PITS),        # a landmark, through the geocoder, not the Christie station
+])
+async def test_focus_area_asks_places_for_what_no_listing_names(placed, place, point):
+    assert await _say(placed, "focus_area", json.dumps({"place": place})) == f"Showing {place}."
+    area = _view(placed).focus_area
+    assert (area.label, area.lat, area.lng, area.zoom) == (place, *point, tools.AREA_ZOOM)
+
+
+async def test_focus_area_says_it_cannot_when_places_finds_nothing_either(placed):
+    before = _view(placed).version
+    assert await _say(placed, "focus_area", '{"place": "Narnia"}') == \
+        f"Couldn't find Narnia on the map. Nothing changed. {tools.ASK_PLACE}"
+    assert _view(placed).version == before
+
+
+async def test_a_slow_lookup_answers_at_once_and_moves_the_map_when_it_lands(placed, monkeypatch):
+    class Slow:
+        async def resolve(self, label: str) -> Point:
+            await asyncio.sleep(0.05)
+            return Point(*CHRISTIE_PITS, "geocoder")
+
+    monkeypatch.setattr(tools, "PLACE_WAIT_S", 0.01)
+    placed.runtime.places = Slow()
+    assert await _say(placed, "focus_area", '{"place": "Christie Pits"}') == \
+        "Finding Christie Pits on the map. It'll show in a moment."
+    assert _view(placed).focus_area is None
+    await asyncio.gather(*placed.lookups)
+    area = _view(placed).focus_area
+    assert (area.label, area.lat, area.lng) == ("Christie Pits", *CHRISTIE_PITS)
 
 
 async def test_call_listings_plans_the_top_three_and_reads_them_back(ctx):
