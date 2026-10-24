@@ -89,7 +89,7 @@ export function ListingDetail({
         <button
           type="button"
           onClick={onBack}
-          className="-ml-2 rounded-[var(--radius-control)] px-2 py-1 text-support text-ink-2 hover:bg-press"
+          className="-ml-2 inline-flex min-h-11 items-center rounded-[var(--radius-control)] px-2 text-support text-ink-2 hover:bg-press"
         >
           ← All places
         </button>
@@ -115,6 +115,7 @@ export function ListingDetail({
                 src={p}
                 alt={i === 0 ? `Photo of ${detail.address}` : ""}
                 loading={i < 2 ? "eager" : "lazy"}
+                fetchPriority={i === 0 ? "high" : "auto"}
                 className="aspect-[4/3] w-[82%] shrink-0 snap-start overflow-hidden rounded-[var(--radius-photo)] bg-press object-cover text-[0px] sm:w-[70%]"
               />
             ))}
@@ -228,12 +229,20 @@ export function ListingDetail({
           <p className="mt-3 text-support text-ink-2">Building: {detail.amenities.slice(0, 8).join(", ")}</p>
         )}
         {detail && (
-          <p className="mt-4 text-meta text-ink-3">
-            From {src}, last seen {new Date(detail.last_seen).toLocaleDateString("en-CA", { month: "short", day: "numeric" })}.{" "}
-            <a href={detail.url} target="_blank" rel="noreferrer" className="text-ink-2 underline underline-offset-2">
+          <div className="mt-4">
+            <p className="text-meta text-ink-3">
+              From {src}, last seen {new Date(detail.last_seen).toLocaleDateString("en-CA", { month: "short", day: "numeric" })}.
+            </p>
+            {/* On its own line, so the whole 44 px row is the tap target. */}
+            <a
+              href={detail.url}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex min-h-11 items-center text-meta text-ink-2 underline underline-offset-2"
+            >
               See the listing on {src} ↗
             </a>
-          </p>
+          </div>
         )}
       </section>
     </article>

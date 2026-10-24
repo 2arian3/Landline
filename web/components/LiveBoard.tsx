@@ -119,6 +119,9 @@ export function LiveBoard({
     if (!sessionId) return;
     if (selected === null) listTop.current = scroller.current?.scrollTop ?? 0;
     else scroller.current?.scrollTo({ top: 0 }); // another place's detail, from its pin
+    // The detail's first photo starts loading with the tap, not after the detail's own fetch.
+    const photo = board.find((c) => c.listing_id === id)?.photo;
+    if (photo) new Image().src = photo;
     setSelected(id);
     if (!desktop && snap === PEEK) setSnap(0.56);
     void postJSON(`/api/sessions/${encodeURIComponent(sessionId)}/focus`, { listing_id: id });
