@@ -19,8 +19,8 @@ from typing import Any
 from landline.agents import auditor
 from landline.agents.auditor.extract import Complete
 from landline.agents.caller import tools as caller_tools
-from landline.agents.caller.brief import brief, instructions
-from landline.contracts import CallOutcome, Listing, Viewing
+from landline.agents.caller.brief import brief, instructions, wants
+from landline.contracts import CallOutcome, Listing, Preferences, Viewing
 from landline.orchestrator import SessionRuntime
 from landline.voice import bridge
 from landline.voice.bridge import HANG_UP_GRACE_S, Playback
@@ -40,9 +40,13 @@ class PhoneCaller:
             runtime, connect_higgs, api_key, voice, clock)
         self.extractor = extractor   # the Auditor's text LLM (A-07); None: rules and the live record only
 
+    def _preferences(self, session_id: str) -> Preferences | None:
+        """The renter's preferences, for what the checklist asks; None once the session is gone."""
+        return self.runtime.state(session_id).preferences if self.runtime.has(session_id) else None
+
     async def __call__(self, dial: Dial, transport: Any) -> CallResult:
         listing = self.runtime.catalogue.by_id[dial.listing_id]
-        b = brief(listing, dial.plan)
+        b = brief(listing, dial.plan, wants(self._preferences(dial.session_id)))
         ctx = caller_tools.CallerContext(session_id=dial.session_id, call_id=dial.call_id,
                                          listing_id=dial.listing_id, brief=b, runtime=self.runtime,
                                          clock=self.clock)
