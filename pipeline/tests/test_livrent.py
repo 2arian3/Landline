@@ -69,3 +69,26 @@ def test_rooms_and_non_monthly_prices():
     room = livrent.to_listing(raws[1], SEEN, {})
     assert room.unit_type == "room"
     assert livrent.to_listing(raws[2], SEEN, {}) is None    # daily price: not a rental we can rank
+
+
+def _unit_at(lat: float, lon: float):
+    building = {**BUILDING, "location": {"__typename": "Location", "lat": lat, "lon": lon}}
+    return livrent.to_listing(next(livrent.raw_listings(_page([building], LD))), SEEN, {})
+
+
+def test_dropped_minus_sign_is_flipped_when_it_lands_in_toronto():
+    unit = _unit_at(43.7082251, 79.335082)                  # 701 Don Mills Rd as the site sends it
+    assert (unit.lat, unit.lng, unit.geocode_precision) == (43.7082251, -79.335082, "street")
+    assert unit.provenance["lng"].source == "derived"
+    assert unit.provenance["lat"].source == "scraped"
+
+
+def test_positive_longitude_outside_toronto_is_nulled():
+    unit = _unit_at(43.65, 120.5)
+    assert (unit.lat, unit.lng, unit.geocode_precision) == (None, None, "none")
+    assert "lat" not in unit.provenance and "lng" not in unit.provenance
+
+
+def test_toronto_point_leaves_good_and_missing_points_alone():
+    assert livrent.toronto_point(43.65, -79.39) == (43.65, -79.39, False)
+    assert livrent.toronto_point(None, None) == (None, None, False)
