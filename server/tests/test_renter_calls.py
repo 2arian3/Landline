@@ -288,6 +288,36 @@ def test_playback_clock_counts_audio_sent_and_resets_on_barge_in():
     assert clock.remaining() == 0
 
 
+def test_an_open_socket_holds_its_judge_line_past_the_connect_window():
+    spoken = base64.b64encode(b"\x01\x00").decode()
+    fake = FakeHiggs(script=[{"type": "response.output_audio.delta", "delta": spoken}])
+    with _client(judge_audio_ready=True, higgs_max_sessions=1) as c:
+        c.app.state.connect_higgs = fake.connect
+        now = [0.0]
+        c.app.state.judges.clock = lambda: now[0]
+        start = c.post("/api/judge/start").json()
+        now[0] = 5.0
+        with c.websocket_connect(start["ws_url"]) as ws:
+            ws.receive_bytes()   # the socket is up, so it holds the line
+            now[0] = 60.0        # well past the connect window
+            assert c.post("/api/judge/start").json()["reason"] == "busy"
+
+
+def test_a_socket_after_the_connect_window_is_refused():
+    fake = FakeHiggs()
+    with _client(judge_audio_ready=True, higgs_max_sessions=1) as c:
+        c.app.state.connect_higgs = fake.connect
+        now = [0.0]
+        c.app.state.judges.clock = lambda: now[0]
+        start = c.post("/api/judge/start").json()
+        now[0] = 16.0   # the line freed at 15 s and may belong to another judge by now
+        with c.websocket_connect(start["ws_url"]) as ws:
+            with pytest.raises(WebSocketDisconnect) as closed:
+                ws.receive_bytes()
+        assert closed.value.code == 1008 and fake.session is None
+        assert start["session_id"] not in c.app.state.judges.open
+
+
 def test_judge_start_hands_out_the_socket_this_route_serves():
     assert Settings(database_url=None, web_url="", transport="stub").judge_ws_path == JUDGE_AUDIO_PATH
 

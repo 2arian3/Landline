@@ -16,7 +16,7 @@ Full requirements and the video script are in `docs/DEMO.md`.
    - *How we built it:* each Higgs model and its role (Realtime for the renter and every listing call, with function tools and mid-sentence language switching; TTS for voicemail; Avatar for the debrief if shipped), and what was hard (parallel live calls run from a frozen brief that book viewings on their own, grounded extraction, the call lifecycle).
 4. **Team:** GitHub handles and what each built. Known limitations, stated plainly (snapshot data, demo phone numbers only, City data covers larger rental buildings only).
 5. **Repo hygiene:** `gitleaks detect`; `.env.example` complete; README has setup steps and example input and output (a transcript and the resulting card); the repo is public.
-6. **Pin it:** `git tag submission && git push origin submission`; paste the SHA into the form.
+6. **Ship and pin it:** Arian makes the last ship (`deploy/README.md`): Vercel deploys only when the tip of `release` is a commit he authored, so the final commit is his, on `main` and `release` both. Then `git tag submission && git push origin submission` on that commit, and paste its SHA into the form. Check that `https://landline-mu.vercel.app` serves that build before submitting.
 7. Keep the VM and Vercel up until judging ends; check `/health` from a phone.
 
 ## The first sentence

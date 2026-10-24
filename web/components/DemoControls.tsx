@@ -4,12 +4,16 @@ import { useEffect, useState } from "react";
 import { postJSON } from "@/lib/live";
 import type { Phase, Preferences } from "@/lib/types";
 
+/** The places the demo store knows (AREAS in server/landline/api/demo.py). */
+const AREAS = ["Christie Pits", "King and Bay", "Liberty Village", "The Annex", "Yorkville"];
+
 /**
  * Shown with ?dev=1. Stands in for the voice agent until the Concierge exists:
  * update_preferences, then docs/DEMO.md's hand-off (call_listings records the
  * plan, the renter hangs up, the calls go out and come back as results), so the
  * live loop and every call status can be exercised from a browser. The
- * returning-renter switch stands in for a known phone number (O-05).
+ * returning-renter switch stands in for a known phone number (O-05), and the
+ * area picker for the Concierge's focus_area ("show me Christie Pits").
  */
 export function DemoControls({
   sessionId,
@@ -59,6 +63,10 @@ export function DemoControls({
         : phase === "calling"
           ? null
           : { path: "reset", label: "Start over", note: "Back to the brief, with nothing planned." };
+
+  function showArea(place: string) {
+    void postJSON(`/api/sessions/${encodeURIComponent(sessionId)}/area`, { place });
+  }
 
   async function take(path: string) {
     setDialing(true);
@@ -125,6 +133,22 @@ export function DemoControls({
       <p className="mt-1.5 text-meta text-ink-3">
         {step ? step.note : "Scripted agents, and the fourth doesn\u2019t pick up. No phone rings."}
       </p>
+      <label className="mt-3 flex items-center justify-between gap-3 text-meta text-ink-2" htmlFor="demo-area">
+        Show an area
+        <select
+          id="demo-area"
+          value=""
+          onChange={(e) => e.target.value && showArea(e.target.value)}
+          className="rounded-[10px] bg-press px-2 py-1.5 text-support text-ink"
+        >
+          <option value="">Pick a place</option>
+          {AREAS.map((a) => (
+            <option key={a} value={a}>
+              {a}
+            </option>
+          ))}
+        </select>
+      </label>
       <div className="mt-3 flex items-center gap-3">
         <label className="flex shrink-0 items-center gap-2 text-meta text-ink-2" htmlFor="demo-returning">
           <input

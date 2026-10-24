@@ -10,7 +10,7 @@ import type { Mark } from "./ListingCard";
 import { ListingDetail, type Reaction } from "./ListingDetail";
 import type { Padding } from "./MapView";
 import { PEEK, Shell } from "./Shell";
-import { Activity, Brand, Heard, Welcome } from "./Summary";
+import { Activity, Brand, Heard, Results, Welcome } from "./Summary";
 import { postJSON, useCatalogue, useLiveSession } from "@/lib/live";
 import { useMedia } from "@/lib/useMedia";
 
@@ -30,17 +30,20 @@ const SNAPS: (string | number)[] = [PEEK, 0.56, 1];
  * becomes a bottom sheet with three stops; at the lowest stop the renter sees
  * the activity line, one line of what was heard, and the top place.
  *
- * Judge mode reuses it: `intro` replaces the panel until a session exists, and
- * `dock` (the voice controls) stays pinned to the panel.
+ * Judge mode reuses it: `intro` replaces the panel until a session exists,
+ * `dock` (the voice controls) stays pinned to the panel, and `line` puts the
+ * voice line's state in the header while it isn't live.
  */
 export function LiveBoard({
   sessionId,
   intro,
   dock,
+  line = null,
 }: {
   sessionId: string | null;
   intro?: ReactNode;
   dock?: ReactNode;
+  line?: string | null;
 }) {
   const { view, stale } = useLiveSession(sessionId);
   const points = useCatalogue();
@@ -92,6 +95,12 @@ export function LiveBoard({
   const serverFocus =
     view?.focus_listing_id && view.focus_listing_id !== openingFocus.current ? view.focus_listing_id : null;
   const focusId = selected ?? serverFocus;
+  // The same for an area the renter names ("show me Christie Pits"): the map flies there when it changes.
+  const openingArea = useRef<string | null | undefined>(undefined);
+  const area = view?.focus_area ?? null;
+  const areaKey = area ? `${area.lat},${area.lng},${area.zoom}` : null;
+  if (view && openingArea.current === undefined) openingArea.current = areaKey;
+  const focusArea = area && areaKey !== openingArea.current ? area : null;
   const selectedCard = board.find((c) => c.listing_id === selected);
 
   function select(id: string) {
@@ -133,6 +142,7 @@ export function LiveBoard({
       focusId={focusId}
       hoverId={hover}
       marks={marks}
+      focusArea={focusArea}
       padding={padding}
       showZoom={desktop === true}
       onSelect={select}
@@ -145,6 +155,7 @@ export function LiveBoard({
   const list = (
     <div className={desktop ? "space-y-4" : "space-y-3"}>
       <Welcome view={view} compact={!desktop} />
+      <Results view={view} compact={!desktop} />
       <Activity view={view} compact={!desktop} />
       <Heard view={view} compact={!desktop} />
       <Board
@@ -186,6 +197,7 @@ export function LiveBoard({
               id={selected}
               card={selectedCard}
               mark={marks[selected]}
+              results={view?.phase === "done" ? view.results : null}
               onBack={() => setSelected(null)}
               onReact={(reaction, reason) => react(selected, reaction, reason)}
             />
@@ -222,7 +234,7 @@ export function LiveBoard({
           aria-label="Places Landline found"
         >
           <div className="px-4 pb-4 pt-5">
-            <Brand stale={stale} connected={!!view} idle={idle} />
+            <Brand stale={stale} connected={!!view} idle={idle} line={line} />
             <p className="mt-0.5 text-meta text-ink-3">Toronto rentals, checked by phone</p>
           </div>
           <div className="relative min-h-0 flex-1 overflow-y-auto">{panel}</div>
@@ -248,7 +260,7 @@ export function LiveBoard({
           className="pointer-events-auto rounded-[var(--radius-card)] bg-surface/95 px-4 py-2.5"
           style={{ boxShadow: "0 0 0 1px var(--color-line), 0 4px 16px rgba(26,24,21,.08)" }}
         >
-          <Brand stale={stale} connected={!!view} idle={idle} />
+          <Brand stale={stale} connected={!!view} idle={idle} line={line} />
         </div>
       </header>
       )}
