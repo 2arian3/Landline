@@ -19,6 +19,7 @@ import logging
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from functools import partial
 from typing import Any, Protocol
 
 from fastapi import WebSocket, WebSocketDisconnect
@@ -56,6 +57,8 @@ HANG_UP_GRACE_S = 0.5     # after the goodbye has played, before hanging up
 KEEP_AUDIO_EVERY_S = 5    # how often the call's audio so far is stored (voice/recorder.py)
 SESSION_END = {"hangup": "hangup", "end_session": "end_session", "deadline": "timeout"}   # else "closed"
 LINK_TEXT = "Landline: here are the places that fit what you've told us. They update as we talk: {link}"
+# When a session's listing calls would start if its brief ended at a given time (Dispatcher.calls_start).
+CallsStart = Callable[[str, datetime], datetime | None]
 
 
 class Transport(Protocol):
@@ -95,11 +98,13 @@ class Playback:
 async def converse(transport: Transport, call: RenterCall, *, calls: RenterCalls, runtime: SessionRuntime,
                    connect_higgs: ConnectHiggs, settings: Settings,
                    set_status: Callable[[str], None] = lambda _: None, texter: Texter | None = None,
-                   lines: Lines | None = None) -> str:
+                   lines: Lines | None = None, calls_start: CallsStart | None = None) -> str:
     """Runs one claimed call to its end, finalizes it and ends its session. Returns why it ended. The
     caller owns the socket and closes it afterwards. With a `texter`, a phone caller is texted the link
     to their board once, when the call connects, whatever the Concierge does next (a returning caller's
-    board is already there). With `lines`, map taps reach the Concierge between turns (voice/line.py)."""
+    board is already there). With `lines`, map taps reach the Concierge between turns (voice/line.py). With
+    `calls_start`, call_listings says when the listing calls will really go out, or that they can only be
+    queued."""
     reason = "error"
     # The call, its transcript and its audio are stored for the admin panel (orchestrator/calllog.py).
     kind = "voice" if transport.audio_format == PCMU else "browser"
@@ -108,7 +113,7 @@ async def converse(transport: Transport, call: RenterCall, *, calls: RenterCalls
                           deadline_at=datetime.now(UTC) + timedelta(seconds=settings.renter_call_max_s))
     try:
         reason = await _talk(transport, call, runtime, connect_higgs, settings, set_status,
-                             _link_texter(texter, call, settings), recorder, lines)
+                             _link_texter(texter, call, settings), recorder, lines, calls_start)
     finally:
         calls.finalize(call.call_id, reason)
         try:   # before it ends, and never in the way of ending it
@@ -169,7 +174,7 @@ def hint(remembered: str | None, language: str | None) -> str | None:
 async def _talk(transport: Transport, call: RenterCall, runtime: SessionRuntime, connect_higgs: ConnectHiggs,
                 settings: Settings, set_status: Callable[[str], None],
                 text_link: Callable[[], bool] | None, recorder: CallRecorder,
-                lines: Lines | None = None) -> str:
+                lines: Lines | None = None, calls_start: CallsStart | None = None) -> str:
     remembered = runtime.opening(call.session_id)
     language = runtime.state(call.session_id).preferences.language   # restored by Profiles, from code
     instructions, start = opening(remembered, language)
@@ -187,7 +192,8 @@ async def _talk(transport: Transport, call: RenterCall, runtime: SessionRuntime,
     if text_link is not None:
         text_link()
 
-    ctx = tools.ToolContext(session_id=call.session_id, call_id=call.call_id, runtime=runtime)
+    ctx = tools.ToolContext(session_id=call.session_id, call_id=call.call_id, runtime=runtime,
+                            calls_start=partial(calls_start, call.session_id) if calls_start else None)
     playback = Playback(transport.bytes_per_second)
     pumps: set[asyncio.Task[str]] = set()
     keeper = asyncio.create_task(_keep_every(runtime, call.call_id, recorder, settings.record_audio))
@@ -252,10 +258,12 @@ class TwilioTransport:
 async def run_bridge(ws: WebSocket, *, calls: RenterCalls, runtime: SessionRuntime,
                      connect_higgs: ConnectHiggs, settings: Settings,
                      set_status: Callable[[str], None] = lambda _: None,
-                     texter: Texter | None = None, lines: Lines | None = None) -> None:
+                     texter: Texter | None = None, lines: Lines | None = None,
+                     calls_start: CallsStart | None = None) -> None:
     """A Twilio media stream for a call that /twiml/renter minted; its id comes back in `start`. The call
     starts its session in the runtime, the way /api/judge/start does for the browser. With a `texter`,
-    the caller gets their board link by text; with `lines`, map taps reach the Concierge."""
+    the caller gets their board link by text; with `lines`, map taps reach the Concierge; with
+    `calls_start` (the Dispatcher's), the Concierge says when the listing calls will go out."""
     await ws.accept()
     start = await _wait_for_start(ws)
     call_id = str(((start or {}).get("customParameters") or {}).get("call_id", ""))
@@ -276,7 +284,8 @@ async def run_bridge(ws: WebSocket, *, calls: RenterCalls, runtime: SessionRunti
     try:
         transport = TwilioTransport(ws, str(start.get("streamSid", "")))
         await converse(transport, call, calls=calls, runtime=runtime, connect_higgs=connect_higgs,
-                       settings=settings, set_status=set_status, texter=texter, lines=lines)
+                       settings=settings, set_status=set_status, texter=texter, lines=lines,
+                       calls_start=calls_start)
     finally:
         await close_socket(ws)
 

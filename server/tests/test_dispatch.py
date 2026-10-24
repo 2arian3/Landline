@@ -210,6 +210,19 @@ async def test_phone_calls_wait_for_business_hours_and_sim_calls_do_not():
     assert len(sim.dials) == 1 and sim.dials[0].to is None and slept == [9.5 * 3600]
 
 
+async def test_the_concierge_learns_when_the_calls_would_start_or_that_nothing_would_place_them():
+    """#95: what call_listings asks while the renter is still on the line. In memory, no network."""
+    rt = _runtime()
+    await _brief(rt, ["t:1"])
+    late = datetime(2026, 10, 24, 3, 30, tzinfo=UTC)   # 23:30 Friday in Toronto
+    nine = datetime(2026, 10, 24, 9, 0, tzinfo=TORONTO)
+    assert _dispatcher(rt).calls_start(SID, NOW) is None                   # no runner: only queued
+    assert _dispatcher(rt, FakeRunner()).calls_start(SID, NOW) == NOW      # a phone call, inside hours
+    assert _dispatcher(rt, FakeRunner()).calls_start(SID, late) == nine    # at night it waits for 9:00
+    assert _dispatcher(rt, FakeRunner(), force_business_hours=True).calls_start(SID, late) == late
+    assert _dispatcher(rt, FakeRunner(uses_phone=False)).calls_start(SID, late) == late   # the sim: any hour
+
+
 async def test_a_judge_session_is_never_texted():
     rt, texter = _runtime(), FakeTexter()
     d = _dispatcher(rt, FakeRunner(uses_phone=False), texter)

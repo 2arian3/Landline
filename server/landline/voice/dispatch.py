@@ -14,7 +14,9 @@ Each call ends once (`CallEnded`, keyed on the call) and its outcome follows (`O
 call in the plan has an outcome, it emits `CallsCompleted`, and the renter is texted the results once.
 
 Placing one call is a `CallRunner`'s job: the Caller over Twilio (A-05), the sim landlord (A-03), or a fake
-in tests. With no runner, the plan is still frozen and its calls stay queued: nothing is made up.
+in tests. With no runner, the plan is still frozen and its calls stay queued: nothing is made up. The
+Concierge asks `calls_start` while the renter is still talking, so it says so instead of promising a call
+and a text, and the renter's next call hears that those calls didn't go through (orchestrator/profiles.py).
 """
 from __future__ import annotations
 
@@ -138,6 +140,17 @@ class Dispatcher:
         judge's calls never reach the phone network; any other runner takes every session's calls."""
         pick = getattr(self.runner, "for_session", None)
         return pick(session_id) if pick is not None else self.runner
+
+    def calls_start(self, session_id: str, at: datetime) -> datetime | None:
+        """When this session's calls would start if the brief ended at `at`: then, or at 9:00 Toronto for
+        phone calls outside business hours. None when no runner takes them (a phone renter while
+        TRANSPORT=stub), so they would only be queued. In memory, no network: the Concierge asks mid-call."""
+        runner = self.runner_for(session_id)
+        if runner is None:
+            return None
+        if runner.uses_phone and not self.settings.force_business_hours:
+            return at + timedelta(seconds=until_open(at))
+        return at
 
     # One call
 

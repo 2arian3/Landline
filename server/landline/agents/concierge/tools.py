@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from functools import cache
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ValidationError
 
@@ -72,6 +73,10 @@ class ToolContext:
     session_id: str
     call_id: str
     runtime: SessionRuntime
+    # When this session's listing calls would start if the renter hung up at the given time, from the
+    # Dispatcher (Dispatcher.calls_start, in memory; the bridge passes it in): that time, 9:00 for a phone
+    # call outside business hours, or None when nothing would place them. Unset: at once (tests, evals).
+    calls_start: Callable[[datetime], datetime | None] | None = None
     hang_up: bool = False   # set by end_session; the bridge hangs up once the goodbye has played
     # The response that called end_session without a word. A goodbye was asked for after it, and the call
     # ends when a later response is done.
@@ -289,7 +294,9 @@ async def _show_area(ctx: ToolContext, meta: dict, place: str, lat: float, lng: 
 async def call_listings(args: CallListings, ctx: ToolContext, meta: dict) -> str:
     """Records the plan, or updates the one already recorded: what this call leaves out (the listings,
     the viewing times, the permission to book) stays as it was, and extra questions add up. The reply
-    says the whole plan as it now stands, so the agent reads back what was saved."""
+    says the whole plan as it now stands, so the agent reads back what was saved, and when the calls will
+    really go out: after the renter hangs up, at 9 am outside business hours, or, with nothing to place
+    them (a phone renter while TRANSPORT=stub), only queued, with no call or text promised."""
     view = ctx.runtime.get(ctx.session_id)
     board = view.board
     before = ctx.runtime.state(ctx.session_id).request
@@ -313,7 +320,18 @@ async def call_listings(args: CallListings, ctx: ToolContext, meta: dict) -> str
     times = f"Viewings {_join([_window(a) for a in availability])}." if availability \
         else "No viewing times yet."
     booking = "I may book one." if may_book else "I won't book."
-    return f"I'll call {_join(addresses)} after you hang up, and text you what they say. {times} {booking}"
+    now = meta["at"]
+    start = ctx.calls_start(now) if ctx.calls_start is not None else now
+    if start is None:
+        return (f"I've queued {_join(addresses)}, but calls can't go out right now, so I can't say when "
+                f"they'll be made. Promise no call or text. {times} {booking}")
+    when = "after you hang up"
+    if start > now:   # a phone call outside business hours waits for them
+        toronto = ZoneInfo("America/Toronto")
+        local = start.astimezone(toronto)
+        day = "tomorrow " if local.date() > now.astimezone(toronto).date() else ""
+        when = f"{day}at {_clock(f'{local:%H:%M}')}, once business hours start"
+    return f"I'll call {_join(addresses)} {when}, and text you what they say. {times} {booking}"
 
 
 async def end_session(args: BaseModel, ctx: ToolContext, meta: dict) -> str:
