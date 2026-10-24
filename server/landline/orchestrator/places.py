@@ -98,8 +98,8 @@ class Places:
             elif (m := _STREET_NAME.match(label)) and (p := await self._street_line(m["core"], m["dir"])):
                 return p
             return await self._geocode(label)
-        except (httpx.HTTPError, ValueError, KeyError) as e:
-            log.warning("place %r: lookup failed (%s)", label, e)
+        except Exception as e:   # one line, with what failed: a timeout's message is empty
+            log.warning("place %r: lookup failed (%r)", label, e)
             return None
 
     async def _intersection(self, a: str, b: str) -> Point | None:
