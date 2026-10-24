@@ -182,6 +182,9 @@ class SessionRuntime:
         """Wait for the subscribers already running (tests, and a clean shutdown)."""
         while self._tasks:
             await asyncio.gather(*list(self._tasks), return_exceptions=True)
+            # gather finishes without yielding when every task is already done (Python 3.12), so give the
+            # finished tasks their turn to leave the set.
+            await asyncio.sleep(0)
 
     async def close(self) -> None:
         for task in list(self._tasks):
