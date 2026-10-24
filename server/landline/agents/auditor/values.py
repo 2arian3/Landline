@@ -30,7 +30,7 @@ UTILITIES = {"heat": r"heat|heating|暖气", "water": r"water|水费|水", "hydr
              "internet": r"internet|wi-?fi|网", "gas": r"\bgas\b|燃气|煤气"}
 FEE_NAMES = {   # how a fee is said → the name it's compared by
     "parking": r"parking|spot|space|garage|车位|停车", "locker": r"locker|storage|储物",
-    "key_deposit": r"key|fob|钥匙", "pet_fee": r"pet fee|pet deposit|宠物",   # before plain deposit
+    "key_deposit": r"key|fob|钥匙", "pet_fee": r"pet (fee|deposit|rent)|宠物",   # before plain deposit
     "deposit": r"deposit|first and last|last month|押金|定金",
     "utilities": r"utilit|hydro|electric|water|heat|水电", "internet": r"internet|wi-?fi|网",
     "amenity": r"amenity|gym|maintenance|condo fee|管理费",
@@ -205,9 +205,11 @@ def _money(field: str, value: str, quote: str, amount: float | None, count: int 
     fname = fee_name(name or "") if name and fee_name(name) != "other" else fee_name(f"{value} {quote}")
     per = period if period in ("monthly", "one_time") else ("one_time" if _ONE_TIME.search(f"{value} {quote}")
                                                              else "monthly")
+    if fname == "pet_fee" and period is None:   # a pet fee is paid once unless they say rent or a month
+        per = "monthly" if re.search(r"pet rent|a month|monthly|per month", quote, re.I) else "one_time"
     must = mandatory if mandatory is not None else (
         False if _OPTIONAL.search(quote)
-        else True if _MANDATORY.search(quote) or fname == "deposit" else None)
+        else True if _MANDATORY.search(quote) or fname in ("deposit", "pet_fee") else None)
     when = "a month" if per == "monthly" else "one time"
     opt = "" if must is None else (", required" if must else ", optional")
     times = f" × {n}" if n > 1 else ""
