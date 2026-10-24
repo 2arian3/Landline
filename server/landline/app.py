@@ -57,8 +57,9 @@ def create_app(settings: Settings | None = None, catalogue: Catalogue | None = N
         app.state.lines = Lines(app.state.runtime)
         app.state.judges = JudgeLines(settings.higgs_max_sessions)
         app.state.judge_limit = StartLimit(settings.judge_starts_per_ip, settings.judge_start_window_s)
-        # For /health. The renter's call bridge sets "ok" or "error: …" each time it opens a Higgs session.
-        app.state.higgs = "not configured"
+        # For /health. The renter's call bridge sets "ok" or "error: …" each time it opens a Higgs session;
+        # until then, a key means ready, not broken.
+        app.state.higgs = "ready (no call since restart)" if settings.boson_api_key else "not configured"
         # The renter's phone calls (A-02, A-04). Tests swap connect_higgs for a fake.
         app.state.calls = RenterCalls(settings.higgs_max_sessions)
         app.state.connect_higgs = higgs.connect
