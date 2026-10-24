@@ -1,0 +1,3880 @@
+{
+  "event": {
+    "$defs": {
+      "AnchorRef": {
+        "properties": {
+          "label": {
+            "description": "A place as the renter said it, e.g. King and Bay",
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label"
+        ],
+        "title": "AnchorRef",
+        "type": "object"
+      },
+      "AnchorResolved": {
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "idem_key": {
+            "title": "Idem Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "lat": {
+            "title": "Lat",
+            "type": "number"
+          },
+          "lng": {
+            "title": "Lng",
+            "type": "number"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "AnchorResolved",
+            "default": "AnchorResolved",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "at",
+          "idem_key",
+          "label",
+          "lat",
+          "lng"
+        ],
+        "title": "AnchorResolved",
+        "type": "object"
+      },
+      "AreaFocused": {
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "idem_key": {
+            "title": "Idem Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "lat": {
+            "title": "Lat",
+            "type": "number"
+          },
+          "lng": {
+            "title": "Lng",
+            "type": "number"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "AreaFocused",
+            "default": "AreaFocused",
+            "title": "Type",
+            "type": "string"
+          },
+          "zoom": {
+            "title": "Zoom",
+            "type": "number"
+          }
+        },
+        "required": [
+          "session_id",
+          "at",
+          "idem_key",
+          "label",
+          "lat",
+          "lng",
+          "zoom"
+        ],
+        "title": "AreaFocused",
+        "type": "object"
+      },
+      "Availability": {
+        "description": "When the renter can view, as the Concierge heard it. Code makes Toronto datetimes of it.",
+        "properties": {
+          "day": {
+            "enum": [
+              "monday",
+              "tuesday",
+              "wednesday",
+              "thursday",
+              "friday",
+              "saturday",
+              "sunday",
+              "today",
+              "tomorrow"
+            ],
+            "title": "Day",
+            "type": "string"
+          },
+          "from": {
+            "description": "24-hour time, e.g. 13:00",
+            "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
+            "title": "From",
+            "type": "string"
+          },
+          "to": {
+            "description": "24-hour time, e.g. 13:00",
+            "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
+            "title": "To",
+            "type": "string"
+          }
+        },
+        "required": [
+          "day",
+          "from",
+          "to"
+        ],
+        "title": "Availability",
+        "type": "object"
+      },
+      "CallEnded": {
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "call_id": {
+            "title": "Call Id",
+            "type": "string"
+          },
+          "idem_key": {
+            "title": "Idem Key",
+            "type": "string"
+          },
+          "reason": {
+            "enum": [
+              "done",
+              "refused",
+              "wrong_number",
+              "voicemail",
+              "hangup",
+              "no_answer",
+              "busy",
+              "failed",
+              "blocked",
+              "timeout"
+            ],
+            "title": "Reason",
+            "type": "string"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "CallEnded",
+            "default": "CallEnded",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "at",
+          "idem_key",
+          "call_id",
+          "reason"
+        ],
+        "title": "CallEnded",
+        "type": "object"
+      },
+      "CallOutcome": {
+        "description": "One per listing call, from the Auditor.",
+        "properties": {
+          "call_id": {
+            "title": "Call Id",
+            "type": "string"
+          },
+          "conflicts": {
+            "items": {
+              "$ref": "#/$defs/Conflict"
+            },
+            "title": "Conflicts",
+            "type": "array"
+          },
+          "end_reason": {
+            "enum": [
+              "done",
+              "refused",
+              "wrong_number",
+              "voicemail",
+              "hangup",
+              "no_answer",
+              "busy",
+              "failed",
+              "blocked",
+              "timeout"
+            ],
+            "title": "End Reason",
+            "type": "string"
+          },
+          "facts": {
+            "items": {
+              "$ref": "#/$defs/Fact"
+            },
+            "title": "Facts",
+            "type": "array"
+          },
+          "listing_id": {
+            "title": "Listing Id",
+            "type": "string"
+          },
+          "open_questions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Open Questions",
+            "type": "array"
+          },
+          "red_flags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Red Flags",
+            "type": "array"
+          },
+          "viewing": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Viewing"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "call_id",
+          "listing_id",
+          "end_reason"
+        ],
+        "title": "CallOutcome",
+        "type": "object"
+      },
+      "CallPlan": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "language": {
+            "default": "en",
+            "title": "Language",
+            "type": "string"
+          },
+          "listing_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 5,
+            "minItems": 1,
+            "title": "Listing Ids",
+            "type": "array"
+          },
+          "may_book": {
+            "default": false,
+            "title": "May Book",
+            "type": "boolean"
+          },
+          "questions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Questions",
+            "type": "array"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "shareable": {
+            "$ref": "#/$defs/Shareable"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "User Id"
+          },
+          "windows": {
+            "items": {
+              "$ref": "#/$defs/Window"
+            },
+            "title": "Windows",
+            "type": "array"
+          }
+        },
+        "required": [
+          "session_id",
+          "listing_ids",
+          "created_at"
+        ],
+        "title": "CallPlan",
+        "type": "object"
+      },
+      "CallStateChanged": {
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "call_id": {
+            "title": "Call Id",
+            "type": "string"
+          },
+          "idem_key": {
+            "title": "Idem Key",
+            "type": "string"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "queued",
+              "blocked",
+              "dialing",
+              "ringing",
+              "live",
+              "voicemail",
+              "ended"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "twilio_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Twilio Status"
+          },
+          "type": {
+            "const": "CallStateChanged",
+            "default": "CallStateChanged",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "at",
+          "idem_key",
+          "call_id",
+          "state"
+        ],
+        "title": "CallStateChanged",
+        "type": "object"
+      },
+      "CallsCompleted": {
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "call_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Call Ids",
+            "type": "array"
+          },
+          "idem_key": {
+            "title": "Idem Key",
+            "type": "string"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "CallsCompleted",
+            "default": "CallsCompleted",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "at",
+          "idem_key",
+          "call_ids"
+        ],
+        "title": "CallsCompleted",
+        "type": "object"
+      },
+      "CallsRequested": {
+        "description": "Records the plan; dials nothing. The listing ids are the refs code resolved against the board.",
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "availability": {
+            "items": {
+              "$ref": "#/$defs/Availability"
+            },
+            "title": "Availability",
+            "type": "array"
+          },
+          "extra_questions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Extra Questions",
+            "type": "array"
+          },
+          "idem_key": {
+            "title": "Idem Key",
+            "type": "string"
+          },
+          "listing_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 5,
+            "minItems": 1,
+            "title": "Listing Ids",
+            "type": "array"
+          },
+          "may_book": {
+            "default": false,
+            "title": "May Book",
+            "type": "boolean"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "CallsRequested",
+            "default": "CallsRequested",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "at",
+          "idem_key",
+          "listing_ids"
+        ],
+        "title": "CallsRequested",
+        "type": "object"
+      },
+      "CallsScheduled": {
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "call_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Call Ids",
+            "type": "array"
+          },
+          "idem_key": {
+            "title": "Idem Key",
+            "type": "string"
+          },
+          "plan": {
+            "$ref": "#/$defs/CallPlan"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "CallsScheduled",
+            "default": "CallsScheduled",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "at",
+          "idem_key",
+          "plan",
+          "call_ids"
+        ],
+        "title": "CallsScheduled",
+        "type": "object"
+      },
+      "Conflict": {
+        "description": "A call said something different from the listing or the City record.",
+        "properties": {
+          "against": {
+            "default": "listing",
+            "enum": [
+              "listing",
+              "city"
+            ],
+            "title": "Against",
+            "type": "string"
+          },
+          "field": {
+            "title": "Field",
+            "type": "string"
+          },
+          "heard": {
+            "title": "Heard",
+            "type": "string"
+          },
+          "listed": {
+            "title": "Listed",
+            "type": "string"
+          },
+          "quote": {
+            "title": "Quote",
+            "type": "string"
+          }
+        },
+        "required": [
+          "field",
+          "listed",
+          "heard",
+          "quote"
+        ],
+        "title": "Conflict",
+        "type": "object"
+      },
+      "Fact": {
+        "properties": {
+          "at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "At"
+          },
+          "field": {
+            "title": "Field",
+            "type": "string"
+          },
+          "quote": {
+            "title": "Quote",
+            "type": "string"
+          },
+          "speaker": {
+            "title": "Speaker",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "field",
+          "value",
+          "quote",
+          "speaker"
+        ],
+        "title": "Fact",
+        "type": "object"
+      },
+      "FactRecorded": {
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "call_id": {
+            "title": "Call Id",
+            "type": "string"
+          },
+          "confirmed": {
+            "default": false,
+            "title": "Confirmed",
+            "type": "boolean"
+          },
+          "field": {
+            "enum": [
+              "available",
+              "available_from",
+              "rent",
+              "fees",
+              "parking",
+              "parking_cost",
+              "pets",
+              "laundry",
+              "ac",
+              "utilities_included",
+              "furnished",
+              "lease_months",
+              "sqft",
+              "floor",
+              "light",
+              "elevator",
+              "step_free",
+              "outdoor_space",
+              "other"
+            ],
+            "title": "Field",
+            "type": "string"
+          },
+          "idem_key": {
+            "title": "Idem Key",
+            "type": "string"
+          },
+          "quote": {
+            "title": "Quote",
+            "type": "string"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "turn_idx": {
+            "title": "Turn Idx",
+            "type": "integer"
+          },
+          "type": {
+            "const": "FactRecorded",
+            "default": "FactRecorded",
+            "title": "Type",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "at",
+          "idem_key",
+          "call_id",
+          "field",
+          "value",
+          "quote",
+          "turn_idx"
+        ],
+        "title": "FactRecorded",
+        "type": "object"
+      },
+      "FeedbackGiven": {
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "attribute": {
+            "anyOf": [
+              {
+                "enum": [
+                  "light",
+                  "location",
+                  "size",
+                  "cost",
+                  "parking"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Attribute"
+          },
+          "idem_key": {
+            "title": "Idem Key",
+            "type": "string"
+          },
+          "listing_id": {
+            "title": "Listing Id",
+            "type": "string"
+          },
+          "reaction": {
+            "enum": [
+              "like",
+              "dislike",
+              "reject"
+            ],
+            "title": "Reaction",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Reason"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "FeedbackGiven",
+            "default": "FeedbackGiven",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "at",
+          "idem_key",
+          "listing_id",
+          "reaction"
+        ],
+        "title": "FeedbackGiven",
+        "type": "object"
+      },
+      "ListingFocused": {
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "idem_key": {
+            "title": "Idem Key",
+            "type": "string"
+          },
+          "listing_id": {
+            "title": "Listing Id",
+            "type": "string"
+          },
+          "origin": {
+            "enum": [
+              "ui",
+              "voice"
+            ],
+            "title": "Origin",
+            "type": "string"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "ListingFocused",
+            "default": "ListingFocused",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "at",
+          "idem_key",
+          "listing_id",
+          "origin"
+        ],
+        "title": "ListingFocused",
+        "type": "object"
+      },
+      "OutcomeReady": {
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "idem_key": {
+            "title": "Idem Key",
+            "type": "string"
+          },
+          "outcome": {
+            "$ref": "#/$defs/CallOutcome"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "OutcomeReady",
+            "default": "OutcomeReady",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "at",
+          "idem_key",
+          "outcome"
+        ],
+        "title": "OutcomeReady",
+        "type": "object"
+      },
+      "PreferenceDelta": {
+        "description": "update_preferences, and the PreferencesUpdated payload. Only what changed; None means unchanged.",
+        "properties": {
+          "anchors": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/$defs/AnchorRef"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Places the renter wants to be near",
+            "title": "Anchors"
+          },
+          "areas": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Neighbourhoods or areas the renter named",
+            "title": "Areas"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "BCP 47 code of the language the renter speaks, e.g. fa",
+            "title": "Language"
+          },
+          "max_monthly": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Most the renter will pay per month, in CAD",
+            "title": "Max Monthly"
+          },
+          "min_beds": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "0 means a studio is fine",
+            "title": "Min Beds"
+          },
+          "move_in": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "When the renter wants to move in, in their words",
+            "title": "Move In"
+          },
+          "must_have": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Must Have"
+          },
+          "occupants": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Occupants"
+          },
+          "pets": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Pets the renter has, e.g. dog",
+            "title": "Pets"
+          },
+          "priorities": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "What matters most, in the renter's order",
+            "title": "Priorities"
+          }
+        },
+        "title": "PreferenceDelta",
+        "type": "object"
+      },
+      "PreferencesUpdated": {
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "delta": {
+            "$ref": "#/$defs/PreferenceDelta"
+          },
+          "idem_key": {
+            "title": "Idem Key",
+            "type": "string"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "PreferencesUpdated",
+            "default": "PreferencesUpdated",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "at",
+          "idem_key",
+          "delta"
+        ],
+        "title": "PreferencesUpdated",
+        "type": "object"
+      },
+      "QuestionNoted": {
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "call_id": {
+            "title": "Call Id",
+            "type": "string"
+          },
+          "idem_key": {
+            "title": "Idem Key",
+            "type": "string"
+          },
+          "question": {
+            "title": "Question",
+            "type": "string"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "QuestionNoted",
+            "default": "QuestionNoted",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "at",
+          "idem_key",
+          "call_id",
+          "question"
+        ],
+        "title": "QuestionNoted",
+        "type": "object"
+      },
+      "SessionEnded": {
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "idem_key": {
+            "title": "Idem Key",
+            "type": "string"
+          },
+          "reason": {
+            "enum": [
+              "hangup",
+              "end_session",
+              "closed",
+              "timeout"
+            ],
+            "title": "Reason",
+            "type": "string"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "SessionEnded",
+            "default": "SessionEnded",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "at",
+          "idem_key",
+          "reason"
+        ],
+        "title": "SessionEnded",
+        "type": "object"
+      },
+      "SessionStarted": {
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "caller_phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Caller Phone"
+          },
+          "channel": {
+            "enum": [
+              "phone",
+              "browser",
+              "judge"
+            ],
+            "title": "Channel",
+            "type": "string"
+          },
+          "idem_key": {
+            "title": "Idem Key",
+            "type": "string"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "SessionStarted",
+            "default": "SessionStarted",
+            "title": "Type",
+            "type": "string"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "User Id"
+          }
+        },
+        "required": [
+          "session_id",
+          "at",
+          "idem_key",
+          "channel"
+        ],
+        "title": "SessionStarted",
+        "type": "object"
+      },
+      "Shareable": {
+        "description": "What a Caller may tell a landlord: only the fields listed in user_profiles.shareable.",
+        "properties": {
+          "move_in": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Move In"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Name"
+          },
+          "occupants": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Occupants"
+          },
+          "pets": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Pets",
+            "type": "array"
+          }
+        },
+        "title": "Shareable",
+        "type": "object"
+      },
+      "Viewing": {
+        "properties": {
+          "slot_text": {
+            "title": "Slot Text",
+            "type": "string"
+          },
+          "starts_at": {
+            "format": "date-time",
+            "title": "Starts At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "starts_at",
+          "slot_text"
+        ],
+        "title": "Viewing",
+        "type": "object"
+      },
+      "ViewingBooked": {
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "call_id": {
+            "title": "Call Id",
+            "type": "string"
+          },
+          "idem_key": {
+            "title": "Idem Key",
+            "type": "string"
+          },
+          "listing_id": {
+            "title": "Listing Id",
+            "type": "string"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "slot_text": {
+            "title": "Slot Text",
+            "type": "string"
+          },
+          "starts_at": {
+            "format": "date-time",
+            "title": "Starts At",
+            "type": "string"
+          },
+          "type": {
+            "const": "ViewingBooked",
+            "default": "ViewingBooked",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "at",
+          "idem_key",
+          "call_id",
+          "listing_id",
+          "starts_at",
+          "slot_text"
+        ],
+        "title": "ViewingBooked",
+        "type": "object"
+      },
+      "Window": {
+        "properties": {
+          "end": {
+            "format": "date-time",
+            "title": "End",
+            "type": "string"
+          },
+          "start": {
+            "format": "date-time",
+            "title": "Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ],
+        "title": "Window",
+        "type": "object"
+      }
+    },
+    "discriminator": {
+      "mapping": {
+        "AnchorResolved": "#/$defs/AnchorResolved",
+        "AreaFocused": "#/$defs/AreaFocused",
+        "CallEnded": "#/$defs/CallEnded",
+        "CallStateChanged": "#/$defs/CallStateChanged",
+        "CallsCompleted": "#/$defs/CallsCompleted",
+        "CallsRequested": "#/$defs/CallsRequested",
+        "CallsScheduled": "#/$defs/CallsScheduled",
+        "FactRecorded": "#/$defs/FactRecorded",
+        "FeedbackGiven": "#/$defs/FeedbackGiven",
+        "ListingFocused": "#/$defs/ListingFocused",
+        "OutcomeReady": "#/$defs/OutcomeReady",
+        "PreferencesUpdated": "#/$defs/PreferencesUpdated",
+        "QuestionNoted": "#/$defs/QuestionNoted",
+        "SessionEnded": "#/$defs/SessionEnded",
+        "SessionStarted": "#/$defs/SessionStarted",
+        "ViewingBooked": "#/$defs/ViewingBooked"
+      },
+      "propertyName": "type"
+    },
+    "oneOf": [
+      {
+        "$ref": "#/$defs/SessionStarted"
+      },
+      {
+        "$ref": "#/$defs/PreferencesUpdated"
+      },
+      {
+        "$ref": "#/$defs/FeedbackGiven"
+      },
+      {
+        "$ref": "#/$defs/ListingFocused"
+      },
+      {
+        "$ref": "#/$defs/AreaFocused"
+      },
+      {
+        "$ref": "#/$defs/AnchorResolved"
+      },
+      {
+        "$ref": "#/$defs/CallsRequested"
+      },
+      {
+        "$ref": "#/$defs/SessionEnded"
+      },
+      {
+        "$ref": "#/$defs/CallsScheduled"
+      },
+      {
+        "$ref": "#/$defs/CallStateChanged"
+      },
+      {
+        "$ref": "#/$defs/FactRecorded"
+      },
+      {
+        "$ref": "#/$defs/QuestionNoted"
+      },
+      {
+        "$ref": "#/$defs/ViewingBooked"
+      },
+      {
+        "$ref": "#/$defs/CallEnded"
+      },
+      {
+        "$ref": "#/$defs/OutcomeReady"
+      },
+      {
+        "$ref": "#/$defs/CallsCompleted"
+      }
+    ]
+  },
+  "models": {
+    "Anchor": {
+      "properties": {
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "lat": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Lat"
+        },
+        "lng": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Lng"
+        }
+      },
+      "required": [
+        "label"
+      ],
+      "title": "Anchor",
+      "type": "object"
+    },
+    "Area": {
+      "properties": {
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "lat": {
+          "title": "Lat",
+          "type": "number"
+        },
+        "lng": {
+          "title": "Lng",
+          "type": "number"
+        },
+        "zoom": {
+          "title": "Zoom",
+          "type": "number"
+        }
+      },
+      "required": [
+        "label",
+        "lat",
+        "lng",
+        "zoom"
+      ],
+      "title": "Area",
+      "type": "object"
+    },
+    "CallOutcome": {
+      "$defs": {
+        "Conflict": {
+          "description": "A call said something different from the listing or the City record.",
+          "properties": {
+            "against": {
+              "default": "listing",
+              "enum": [
+                "listing",
+                "city"
+              ],
+              "title": "Against",
+              "type": "string"
+            },
+            "field": {
+              "title": "Field",
+              "type": "string"
+            },
+            "heard": {
+              "title": "Heard",
+              "type": "string"
+            },
+            "listed": {
+              "title": "Listed",
+              "type": "string"
+            },
+            "quote": {
+              "title": "Quote",
+              "type": "string"
+            }
+          },
+          "required": [
+            "field",
+            "listed",
+            "heard",
+            "quote"
+          ],
+          "title": "Conflict",
+          "type": "object"
+        },
+        "Fact": {
+          "properties": {
+            "at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "At"
+            },
+            "field": {
+              "title": "Field",
+              "type": "string"
+            },
+            "quote": {
+              "title": "Quote",
+              "type": "string"
+            },
+            "speaker": {
+              "title": "Speaker",
+              "type": "string"
+            },
+            "value": {
+              "title": "Value",
+              "type": "string"
+            }
+          },
+          "required": [
+            "field",
+            "value",
+            "quote",
+            "speaker"
+          ],
+          "title": "Fact",
+          "type": "object"
+        },
+        "Viewing": {
+          "properties": {
+            "slot_text": {
+              "title": "Slot Text",
+              "type": "string"
+            },
+            "starts_at": {
+              "format": "date-time",
+              "title": "Starts At",
+              "type": "string"
+            }
+          },
+          "required": [
+            "starts_at",
+            "slot_text"
+          ],
+          "title": "Viewing",
+          "type": "object"
+        }
+      },
+      "description": "One per listing call, from the Auditor.",
+      "properties": {
+        "call_id": {
+          "title": "Call Id",
+          "type": "string"
+        },
+        "conflicts": {
+          "items": {
+            "$ref": "#/$defs/Conflict"
+          },
+          "title": "Conflicts",
+          "type": "array"
+        },
+        "end_reason": {
+          "enum": [
+            "done",
+            "refused",
+            "wrong_number",
+            "voicemail",
+            "hangup",
+            "no_answer",
+            "busy",
+            "failed",
+            "blocked",
+            "timeout"
+          ],
+          "title": "End Reason",
+          "type": "string"
+        },
+        "facts": {
+          "items": {
+            "$ref": "#/$defs/Fact"
+          },
+          "title": "Facts",
+          "type": "array"
+        },
+        "listing_id": {
+          "title": "Listing Id",
+          "type": "string"
+        },
+        "open_questions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Open Questions",
+          "type": "array"
+        },
+        "red_flags": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Red Flags",
+          "type": "array"
+        },
+        "viewing": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Viewing"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "call_id",
+        "listing_id",
+        "end_reason"
+      ],
+      "title": "CallOutcome",
+      "type": "object"
+    },
+    "CallPlan": {
+      "$defs": {
+        "Shareable": {
+          "description": "What a Caller may tell a landlord: only the fields listed in user_profiles.shareable.",
+          "properties": {
+            "move_in": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Move In"
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Name"
+            },
+            "occupants": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Occupants"
+            },
+            "pets": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Pets",
+              "type": "array"
+            }
+          },
+          "title": "Shareable",
+          "type": "object"
+        },
+        "Window": {
+          "properties": {
+            "end": {
+              "format": "date-time",
+              "title": "End",
+              "type": "string"
+            },
+            "start": {
+              "format": "date-time",
+              "title": "Start",
+              "type": "string"
+            }
+          },
+          "required": [
+            "start",
+            "end"
+          ],
+          "title": "Window",
+          "type": "object"
+        }
+      },
+      "properties": {
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "language": {
+          "default": "en",
+          "title": "Language",
+          "type": "string"
+        },
+        "listing_ids": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 5,
+          "minItems": 1,
+          "title": "Listing Ids",
+          "type": "array"
+        },
+        "may_book": {
+          "default": false,
+          "title": "May Book",
+          "type": "boolean"
+        },
+        "questions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Questions",
+          "type": "array"
+        },
+        "session_id": {
+          "title": "Session Id",
+          "type": "string"
+        },
+        "shareable": {
+          "$ref": "#/$defs/Shareable"
+        },
+        "user_id": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "User Id"
+        },
+        "windows": {
+          "items": {
+            "$ref": "#/$defs/Window"
+          },
+          "title": "Windows",
+          "type": "array"
+        }
+      },
+      "required": [
+        "session_id",
+        "listing_ids",
+        "created_at"
+      ],
+      "title": "CallPlan",
+      "type": "object"
+    },
+    "CallView": {
+      "properties": {
+        "call_id": {
+          "title": "Call Id",
+          "type": "string"
+        },
+        "listing_id": {
+          "title": "Listing Id",
+          "type": "string"
+        },
+        "started_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Started At"
+        },
+        "state": {
+          "enum": [
+            "queued",
+            "blocked",
+            "dialing",
+            "ringing",
+            "live",
+            "voicemail",
+            "ended"
+          ],
+          "title": "State",
+          "type": "string"
+        }
+      },
+      "required": [
+        "call_id",
+        "listing_id",
+        "state"
+      ],
+      "title": "CallView",
+      "type": "object"
+    },
+    "Card": {
+      "$defs": {
+        "Fact": {
+          "properties": {
+            "at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "At"
+            },
+            "field": {
+              "title": "Field",
+              "type": "string"
+            },
+            "quote": {
+              "title": "Quote",
+              "type": "string"
+            },
+            "speaker": {
+              "title": "Speaker",
+              "type": "string"
+            },
+            "value": {
+              "title": "Value",
+              "type": "string"
+            }
+          },
+          "required": [
+            "field",
+            "value",
+            "quote",
+            "speaker"
+          ],
+          "title": "Fact",
+          "type": "object"
+        }
+      },
+      "properties": {
+        "address": {
+          "title": "Address",
+          "type": "string"
+        },
+        "baths": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Baths"
+        },
+        "beds": {
+          "title": "Beds",
+          "type": "number"
+        },
+        "facts": {
+          "items": {
+            "$ref": "#/$defs/Fact"
+          },
+          "title": "Facts",
+          "type": "array"
+        },
+        "floor": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Floor"
+        },
+        "lat": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Lat"
+        },
+        "light_score": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Light Score"
+        },
+        "listing_id": {
+          "title": "Listing Id",
+          "type": "string"
+        },
+        "lng": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Lng"
+        },
+        "monthly_cost": {
+          "title": "Monthly Cost",
+          "type": "integer"
+        },
+        "neighbourhood": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Neighbourhood"
+        },
+        "photo": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Photo"
+        },
+        "rank": {
+          "title": "Rank",
+          "type": "integer"
+        },
+        "reaction": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reaction"
+        },
+        "reasons": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Reasons",
+          "type": "array"
+        },
+        "red_flags": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Red Flags",
+          "type": "array"
+        },
+        "rent": {
+          "title": "Rent",
+          "type": "integer"
+        },
+        "source": {
+          "title": "Source",
+          "type": "string"
+        },
+        "sqft": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sqft"
+        },
+        "status": {
+          "default": "pending",
+          "enum": [
+            "pending",
+            "calling",
+            "verified",
+            "suspect",
+            "dead",
+            "no_answer",
+            "booked"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "unit_label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unit Label"
+        },
+        "unit_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unit Type"
+        },
+        "url": {
+          "title": "Url",
+          "type": "string"
+        },
+        "watch_out": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Watch Out"
+        }
+      },
+      "required": [
+        "listing_id",
+        "address",
+        "rent",
+        "monthly_cost",
+        "beds",
+        "source",
+        "url",
+        "rank"
+      ],
+      "title": "Card",
+      "type": "object"
+    },
+    "CataloguePoint": {
+      "properties": {
+        "beds": {
+          "title": "Beds",
+          "type": "number"
+        },
+        "lat": {
+          "title": "Lat",
+          "type": "number"
+        },
+        "listing_id": {
+          "title": "Listing Id",
+          "type": "string"
+        },
+        "lng": {
+          "title": "Lng",
+          "type": "number"
+        },
+        "monthly_cost": {
+          "title": "Monthly Cost",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "listing_id",
+        "lat",
+        "lng",
+        "monthly_cost",
+        "beds"
+      ],
+      "title": "CataloguePoint",
+      "type": "object"
+    },
+    "Fact": {
+      "properties": {
+        "at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "At"
+        },
+        "field": {
+          "title": "Field",
+          "type": "string"
+        },
+        "quote": {
+          "title": "Quote",
+          "type": "string"
+        },
+        "speaker": {
+          "title": "Speaker",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "field",
+        "value",
+        "quote",
+        "speaker"
+      ],
+      "title": "Fact",
+      "type": "object"
+    },
+    "Fee": {
+      "properties": {
+        "amount": {
+          "title": "Amount",
+          "type": "integer"
+        },
+        "mandatory": {
+          "title": "Mandatory",
+          "type": "boolean"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "period": {
+          "enum": [
+            "monthly",
+            "one_time"
+          ],
+          "title": "Period",
+          "type": "string"
+        },
+        "quote": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Quote"
+        }
+      },
+      "required": [
+        "name",
+        "amount",
+        "period",
+        "mandatory"
+      ],
+      "title": "Fee",
+      "type": "object"
+    },
+    "Listing": {
+      "$defs": {
+        "Fee": {
+          "properties": {
+            "amount": {
+              "title": "Amount",
+              "type": "integer"
+            },
+            "mandatory": {
+              "title": "Mandatory",
+              "type": "boolean"
+            },
+            "name": {
+              "title": "Name",
+              "type": "string"
+            },
+            "period": {
+              "enum": [
+                "monthly",
+                "one_time"
+              ],
+              "title": "Period",
+              "type": "string"
+            },
+            "quote": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Quote"
+            }
+          },
+          "required": [
+            "name",
+            "amount",
+            "period",
+            "mandatory"
+          ],
+          "title": "Fee",
+          "type": "object"
+        },
+        "Provenance": {
+          "properties": {
+            "at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "At"
+            },
+            "quote": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Quote"
+            },
+            "source": {
+              "enum": [
+                "scraped",
+                "llm",
+                "city",
+                "call",
+                "derived",
+                "synthetic"
+              ],
+              "title": "Source",
+              "type": "string"
+            },
+            "version": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Version"
+            }
+          },
+          "required": [
+            "source"
+          ],
+          "title": "Provenance",
+          "type": "object"
+        }
+      },
+      "properties": {
+        "ac": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ac"
+        },
+        "address": {
+          "title": "Address",
+          "type": "string"
+        },
+        "amenities": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Amenities",
+          "type": "array"
+        },
+        "available_from": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Available From"
+        },
+        "baths": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Baths"
+        },
+        "beds": {
+          "title": "Beds",
+          "type": "number"
+        },
+        "building_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Building Name"
+        },
+        "building_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Building Type"
+        },
+        "city": {
+          "default": "Toronto",
+          "title": "City",
+          "type": "string"
+        },
+        "dens": {
+          "default": 0,
+          "title": "Dens",
+          "type": "integer"
+        },
+        "fees": {
+          "items": {
+            "$ref": "#/$defs/Fee"
+          },
+          "title": "Fees",
+          "type": "array"
+        },
+        "first_seen": {
+          "format": "date-time",
+          "title": "First Seen",
+          "type": "string"
+        },
+        "floor": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Floor"
+        },
+        "furnished": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Furnished"
+        },
+        "geocode_precision": {
+          "default": "none",
+          "enum": [
+            "rooftop",
+            "street",
+            "postal",
+            "none"
+          ],
+          "title": "Geocode Precision",
+          "type": "string"
+        },
+        "last_seen": {
+          "format": "date-time",
+          "title": "Last Seen",
+          "type": "string"
+        },
+        "lat": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Lat"
+        },
+        "laundry": {
+          "default": "unknown",
+          "enum": [
+            "in_suite",
+            "shared",
+            "none",
+            "unknown"
+          ],
+          "title": "Laundry",
+          "type": "string"
+        },
+        "light_score": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Light Score"
+        },
+        "listing_id": {
+          "title": "Listing Id",
+          "type": "string"
+        },
+        "lng": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Lng"
+        },
+        "monthly_cost": {
+          "title": "Monthly Cost",
+          "type": "integer"
+        },
+        "neighbourhood": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Neighbourhood"
+        },
+        "parking": {
+          "default": "unknown",
+          "enum": [
+            "included",
+            "extra",
+            "none",
+            "unknown"
+          ],
+          "title": "Parking",
+          "type": "string"
+        },
+        "parking_cost": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parking Cost"
+        },
+        "pets": {
+          "default": "unknown",
+          "enum": [
+            "any",
+            "cats_only",
+            "dogs_only",
+            "small_only",
+            "none",
+            "case_by_case",
+            "unknown"
+          ],
+          "title": "Pets",
+          "type": "string"
+        },
+        "photos": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Photos",
+          "type": "array"
+        },
+        "postal_code": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Postal Code"
+        },
+        "provenance": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Provenance"
+          },
+          "title": "Provenance",
+          "type": "object"
+        },
+        "red_flags": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Red Flags",
+          "type": "array"
+        },
+        "rent": {
+          "title": "Rent",
+          "type": "integer"
+        },
+        "source": {
+          "title": "Source",
+          "type": "string"
+        },
+        "source_id": {
+          "title": "Source Id",
+          "type": "string"
+        },
+        "sqft": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sqft"
+        },
+        "status": {
+          "default": "active",
+          "enum": [
+            "active",
+            "stale",
+            "removed"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title"
+        },
+        "transit_station": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Transit Station"
+        },
+        "transit_walk_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Transit Walk Min"
+        },
+        "unit_label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unit Label"
+        },
+        "unit_type": {
+          "anyOf": [
+            {
+              "enum": [
+                "apartment",
+                "condo",
+                "house",
+                "townhouse",
+                "basement",
+                "room",
+                "other"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unit Type"
+        },
+        "url": {
+          "title": "Url",
+          "type": "string"
+        },
+        "utilities_included": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Utilities Included",
+          "type": "array"
+        }
+      },
+      "required": [
+        "listing_id",
+        "source",
+        "source_id",
+        "url",
+        "first_seen",
+        "last_seen",
+        "address",
+        "rent",
+        "monthly_cost",
+        "beds"
+      ],
+      "title": "Listing",
+      "type": "object"
+    },
+    "Preferences": {
+      "$defs": {
+        "Anchor": {
+          "properties": {
+            "label": {
+              "title": "Label",
+              "type": "string"
+            },
+            "lat": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Lat"
+            },
+            "lng": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Lng"
+            }
+          },
+          "required": [
+            "label"
+          ],
+          "title": "Anchor",
+          "type": "object"
+        }
+      },
+      "properties": {
+        "anchors": {
+          "items": {
+            "$ref": "#/$defs/Anchor"
+          },
+          "title": "Anchors",
+          "type": "array"
+        },
+        "areas": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Areas",
+          "type": "array"
+        },
+        "language": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Language"
+        },
+        "max_monthly": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Monthly"
+        },
+        "min_beds": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Min Beds"
+        },
+        "move_in": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Move In"
+        },
+        "must_have": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Must Have",
+          "type": "array"
+        },
+        "occupants": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Occupants"
+        },
+        "pets": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Pets",
+          "type": "array"
+        },
+        "priorities": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Priorities",
+          "type": "array"
+        }
+      },
+      "title": "Preferences",
+      "type": "object"
+    },
+    "Provenance": {
+      "properties": {
+        "at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "At"
+        },
+        "quote": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Quote"
+        },
+        "source": {
+          "enum": [
+            "scraped",
+            "llm",
+            "city",
+            "call",
+            "derived",
+            "synthetic"
+          ],
+          "title": "Source",
+          "type": "string"
+        },
+        "version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Version"
+        }
+      },
+      "required": [
+        "source"
+      ],
+      "title": "Provenance",
+      "type": "object"
+    },
+    "SessionView": {
+      "$defs": {
+        "Anchor": {
+          "properties": {
+            "label": {
+              "title": "Label",
+              "type": "string"
+            },
+            "lat": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Lat"
+            },
+            "lng": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Lng"
+            }
+          },
+          "required": [
+            "label"
+          ],
+          "title": "Anchor",
+          "type": "object"
+        },
+        "Area": {
+          "properties": {
+            "label": {
+              "title": "Label",
+              "type": "string"
+            },
+            "lat": {
+              "title": "Lat",
+              "type": "number"
+            },
+            "lng": {
+              "title": "Lng",
+              "type": "number"
+            },
+            "zoom": {
+              "title": "Zoom",
+              "type": "number"
+            }
+          },
+          "required": [
+            "label",
+            "lat",
+            "lng",
+            "zoom"
+          ],
+          "title": "Area",
+          "type": "object"
+        },
+        "CallView": {
+          "properties": {
+            "call_id": {
+              "title": "Call Id",
+              "type": "string"
+            },
+            "listing_id": {
+              "title": "Listing Id",
+              "type": "string"
+            },
+            "started_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Started At"
+            },
+            "state": {
+              "enum": [
+                "queued",
+                "blocked",
+                "dialing",
+                "ringing",
+                "live",
+                "voicemail",
+                "ended"
+              ],
+              "title": "State",
+              "type": "string"
+            }
+          },
+          "required": [
+            "call_id",
+            "listing_id",
+            "state"
+          ],
+          "title": "CallView",
+          "type": "object"
+        },
+        "Card": {
+          "properties": {
+            "address": {
+              "title": "Address",
+              "type": "string"
+            },
+            "baths": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Baths"
+            },
+            "beds": {
+              "title": "Beds",
+              "type": "number"
+            },
+            "facts": {
+              "items": {
+                "$ref": "#/$defs/Fact"
+              },
+              "title": "Facts",
+              "type": "array"
+            },
+            "floor": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Floor"
+            },
+            "lat": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Lat"
+            },
+            "light_score": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Light Score"
+            },
+            "listing_id": {
+              "title": "Listing Id",
+              "type": "string"
+            },
+            "lng": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Lng"
+            },
+            "monthly_cost": {
+              "title": "Monthly Cost",
+              "type": "integer"
+            },
+            "neighbourhood": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Neighbourhood"
+            },
+            "photo": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Photo"
+            },
+            "rank": {
+              "title": "Rank",
+              "type": "integer"
+            },
+            "reaction": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Reaction"
+            },
+            "reasons": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Reasons",
+              "type": "array"
+            },
+            "red_flags": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Red Flags",
+              "type": "array"
+            },
+            "rent": {
+              "title": "Rent",
+              "type": "integer"
+            },
+            "source": {
+              "title": "Source",
+              "type": "string"
+            },
+            "sqft": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Sqft"
+            },
+            "status": {
+              "default": "pending",
+              "enum": [
+                "pending",
+                "calling",
+                "verified",
+                "suspect",
+                "dead",
+                "no_answer",
+                "booked"
+              ],
+              "title": "Status",
+              "type": "string"
+            },
+            "unit_label": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Unit Label"
+            },
+            "unit_type": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Unit Type"
+            },
+            "url": {
+              "title": "Url",
+              "type": "string"
+            },
+            "watch_out": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Watch Out"
+            }
+          },
+          "required": [
+            "listing_id",
+            "address",
+            "rent",
+            "monthly_cost",
+            "beds",
+            "source",
+            "url",
+            "rank"
+          ],
+          "title": "Card",
+          "type": "object"
+        },
+        "Fact": {
+          "properties": {
+            "at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "At"
+            },
+            "field": {
+              "title": "Field",
+              "type": "string"
+            },
+            "quote": {
+              "title": "Quote",
+              "type": "string"
+            },
+            "speaker": {
+              "title": "Speaker",
+              "type": "string"
+            },
+            "value": {
+              "title": "Value",
+              "type": "string"
+            }
+          },
+          "required": [
+            "field",
+            "value",
+            "quote",
+            "speaker"
+          ],
+          "title": "Fact",
+          "type": "object"
+        },
+        "Preferences": {
+          "properties": {
+            "anchors": {
+              "items": {
+                "$ref": "#/$defs/Anchor"
+              },
+              "title": "Anchors",
+              "type": "array"
+            },
+            "areas": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Areas",
+              "type": "array"
+            },
+            "language": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Language"
+            },
+            "max_monthly": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Max Monthly"
+            },
+            "min_beds": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Min Beds"
+            },
+            "move_in": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Move In"
+            },
+            "must_have": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Must Have",
+              "type": "array"
+            },
+            "occupants": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Occupants"
+            },
+            "pets": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Pets",
+              "type": "array"
+            },
+            "priorities": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Priorities",
+              "type": "array"
+            }
+          },
+          "title": "Preferences",
+          "type": "object"
+        }
+      },
+      "properties": {
+        "agent_says": {
+          "default": "",
+          "title": "Agent Says",
+          "type": "string"
+        },
+        "board": {
+          "items": {
+            "$ref": "#/$defs/Card"
+          },
+          "title": "Board",
+          "type": "array"
+        },
+        "calls": {
+          "items": {
+            "$ref": "#/$defs/CallView"
+          },
+          "title": "Calls",
+          "type": "array"
+        },
+        "focus_area": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Area"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "focus_listing_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Focus Listing Id"
+        },
+        "matches": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Matches",
+          "type": "array"
+        },
+        "phase": {
+          "default": "open",
+          "enum": [
+            "open",
+            "calling",
+            "done",
+            "closed"
+          ],
+          "title": "Phase",
+          "type": "string"
+        },
+        "plan": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Plan",
+          "type": "array"
+        },
+        "preferences": {
+          "$ref": "#/$defs/Preferences"
+        },
+        "results": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Results"
+        },
+        "returning": {
+          "default": false,
+          "title": "Returning",
+          "type": "boolean"
+        },
+        "session_id": {
+          "title": "Session Id",
+          "type": "string"
+        },
+        "user_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "User Name"
+        },
+        "version": {
+          "title": "Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "session_id",
+        "version"
+      ],
+      "title": "SessionView",
+      "type": "object"
+    }
+  },
+  "tools": {
+    "caller": [
+      {
+        "description": "Record something the landlord said as soon as they say it, with their exact words.",
+        "name": "record_fact",
+        "parameters": {
+          "properties": {
+            "field": {
+              "enum": [
+                "available",
+                "available_from",
+                "rent",
+                "fees",
+                "parking",
+                "parking_cost",
+                "pets",
+                "laundry",
+                "ac",
+                "utilities_included",
+                "furnished",
+                "lease_months",
+                "sqft",
+                "floor",
+                "light",
+                "elevator",
+                "step_free",
+                "outdoor_space",
+                "other"
+              ],
+              "type": "string"
+            },
+            "quote": {
+              "description": "The landlord's exact words",
+              "type": "string"
+            },
+            "value": {
+              "description": "What the landlord said, in short words",
+              "type": "string"
+            }
+          },
+          "required": [
+            "field",
+            "value",
+            "quote"
+          ],
+          "type": "object"
+        },
+        "type": "function"
+      },
+      {
+        "description": "The landlord asked something you can't answer. Say you'll check with your client, then call this.",
+        "name": "note_question",
+        "parameters": {
+          "properties": {
+            "question": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "question"
+          ],
+          "type": "object"
+        },
+        "type": "function"
+      },
+      {
+        "description": "Book a viewing at a time the landlord offered. The reply says if it's booked.",
+        "name": "book_viewing",
+        "parameters": {
+          "properties": {
+            "slot": {
+              "description": "The time the landlord offered, in spoken words, e.g. Saturday at two",
+              "type": "string"
+            }
+          },
+          "required": [
+            "slot"
+          ],
+          "type": "object"
+        },
+        "type": "function"
+      },
+      {
+        "description": "End the call. done is accepted only once every checklist item is covered.",
+        "name": "end_call",
+        "parameters": {
+          "properties": {
+            "reason": {
+              "enum": [
+                "done",
+                "refused",
+                "wrong_number",
+                "voicemail"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "reason"
+          ],
+          "type": "object"
+        },
+        "type": "function"
+      }
+    ],
+    "concierge": [
+      {
+        "description": "Call it every time the renter's needs change. Send only what changed.",
+        "name": "update_preferences",
+        "parameters": {
+          "properties": {
+            "anchors": {
+              "description": "Places the renter wants to be near",
+              "items": {
+                "properties": {
+                  "label": {
+                    "description": "A place as the renter said it, e.g. King and Bay",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "label"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "areas": {
+              "description": "Neighbourhoods or areas the renter named",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "language": {
+              "description": "BCP 47 code of the language the renter speaks, e.g. fa",
+              "type": "string"
+            },
+            "max_monthly": {
+              "description": "Most the renter will pay per month, in CAD",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "min_beds": {
+              "description": "0 means a studio is fine",
+              "minimum": 0,
+              "type": "number"
+            },
+            "move_in": {
+              "description": "When the renter wants to move in, in their words",
+              "type": "string"
+            },
+            "must_have": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "occupants": {
+              "minimum": 1,
+              "type": "integer"
+            },
+            "pets": {
+              "description": "Pets the renter has, e.g. dog",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "priorities": {
+              "description": "What matters most, in the renter's order",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        },
+        "type": "function"
+      },
+      {
+        "description": "The renter reacted to a listing. Map their reason to its attribute (too dark is light).",
+        "name": "give_feedback",
+        "parameters": {
+          "properties": {
+            "attribute": {
+              "description": "What the reason is about, e.g. too dark is light",
+              "enum": [
+                "light",
+                "location",
+                "size",
+                "cost",
+                "parking"
+              ],
+              "type": "string"
+            },
+            "listing_ref": {
+              "description": "Address words or rank number; defaults to the focused listing",
+              "type": "string"
+            },
+            "reaction": {
+              "enum": [
+                "like",
+                "dislike",
+                "reject"
+              ],
+              "type": "string"
+            },
+            "reason": {
+              "description": "The renter's reason, in their words",
+              "type": "string"
+            }
+          },
+          "required": [
+            "reaction"
+          ],
+          "type": "object"
+        },
+        "type": "function"
+      },
+      {
+        "description": "Show one listing on the map, by address words or rank number.",
+        "name": "focus_listing",
+        "parameters": {
+          "properties": {
+            "listing_ref": {
+              "description": "Address words or rank number",
+              "type": "string"
+            }
+          },
+          "required": [
+            "listing_ref"
+          ],
+          "type": "object"
+        },
+        "type": "function"
+      },
+      {
+        "description": "Fly the map to a place.",
+        "name": "focus_area",
+        "parameters": {
+          "properties": {
+            "place": {
+              "description": "A neighbourhood, intersection or landmark",
+              "type": "string"
+            }
+          },
+          "required": [
+            "place"
+          ],
+          "type": "object"
+        },
+        "type": "function"
+      },
+      {
+        "description": "Record which listings to call after the renter hangs up, their extra questions and when they can view. Nothing dials until the session ends. Read the addresses back from the reply.",
+        "name": "call_listings",
+        "parameters": {
+          "properties": {
+            "availability": {
+              "description": "When the renter can view",
+              "items": {
+                "properties": {
+                  "day": {
+                    "enum": [
+                      "monday",
+                      "tuesday",
+                      "wednesday",
+                      "thursday",
+                      "friday",
+                      "saturday",
+                      "sunday",
+                      "today",
+                      "tomorrow"
+                    ],
+                    "type": "string"
+                  },
+                  "from": {
+                    "description": "24-hour time, e.g. 13:00",
+                    "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
+                    "type": "string"
+                  },
+                  "to": {
+                    "description": "24-hour time, e.g. 13:00",
+                    "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "day",
+                  "from",
+                  "to"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "extra_questions": {
+              "description": "Questions the renter wants asked on every call",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "listing_refs": {
+              "description": "Address words or rank numbers, at most 5; defaults to the top 3",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 5,
+              "type": "array"
+            },
+            "may_book": {
+              "description": "True if the renter allows booking a viewing",
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        },
+        "type": "function"
+      },
+      {
+        "description": "The renter agrees to be remembered by phone number next time.",
+        "name": "remember_me",
+        "parameters": {
+          "properties": {},
+          "type": "object"
+        },
+        "type": "function"
+      },
+      {
+        "description": "Delete everything remembered about the renter.",
+        "name": "forget_me",
+        "parameters": {
+          "properties": {},
+          "type": "object"
+        },
+        "type": "function"
+      },
+      {
+        "description": "End the session after you have said goodbye.",
+        "name": "end_session",
+        "parameters": {
+          "properties": {},
+          "type": "object"
+        },
+        "type": "function"
+      }
+    ]
+  }
+}

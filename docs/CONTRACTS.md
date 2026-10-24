@@ -21,7 +21,7 @@ Every event has `type`, `session_id`, `at`, `idem_key` and a payload. Handlers a
 
 | Event | Payload | Emitted by |
 |---|---|---|
-| `SessionStarted` | `channel`, `caller_phone?`, `user_id?` | voice / judge API |
+| `SessionStarted` | `channel` (phone / browser / judge), `caller_phone?`, `user_id?` | voice / judge API |
 | `PreferencesUpdated` | `PreferenceDelta` | Concierge tool |
 | `FeedbackGiven` | `listing_id`, `reaction` (like / dislike / reject), `reason?`, `attribute?` | Concierge tool, UI tap |
 | `ListingFocused` | `listing_id`, `origin` (ui / voice) | UI tap, Concierge tool |
@@ -58,7 +58,7 @@ Return values are spoken aloud: at most 25 words, written as speech, no ids.
 | `give_feedback` | `listing_ref?` (defaults to the focused listing), `reaction`, `reason?`, `attribute?` (light / location / size / cost / parking) | The Concierge maps the reason to its attribute ("too dark" → light); code applies the weight change from `docs/SCORING.md` |
 | `focus_listing` | `listing_ref` (address words or rank number) | Resolved by code against the current board |
 | `focus_area` | `place` | Map flies there |
-| `call_listings` | `listing_refs?[]` (default: top 3), `extra_questions?[]`, `availability?[]` (`{day, from, to}`, e.g. `saturday`, `13:00`, `17:00`), `may_book?` | Records the plan; nothing dials until the session ends. Code resolves the refs against the board, and the reply reads the addresses back. At most 5 listings. Refused while an earlier plan is still calling |
+| `call_listings` | `listing_refs?[]` (default: top 3), `extra_questions?[]`, `availability?[]` (`{day, from, to}`, e.g. `saturday`, `13:00`, `17:00`; `day` is a weekday, `today` or `tomorrow`), `may_book?` | Records the plan; nothing dials until the session ends. Code resolves the refs against the board, and the reply reads the addresses back. At most 5 listings. Refused while an earlier plan is still calling |
 | `remember_me` / `forget_me` | — | Sets consent / deletes the profile |
 | `end_session` | — | Code hangs up once the goodbye has played |
 
@@ -68,7 +68,7 @@ The Caller gets the renter's shareable answers and viewing windows in its instru
 
 | Tool | Arguments | Notes |
 |---|---|---|
-| `record_fact` | `field` (from the feature dictionary), `value`, `quote` | Use as soon as something is said; quote = landlord's exact words |
+| `record_fact` | `field` (from the feature dictionary), `value`, `quote` | Use as soon as something is said; quote = landlord's exact words. `field` is one of `available`, `available_from`, `rent`, `fees`, `parking`, `parking_cost`, `pets`, `laundry`, `ac`, `utilities_included`, `furnished`, `lease_months`, `sqft`, `floor`, `light`, `elevator`, `step_free`, `outdoor_space`, `other` (the answer to one of the renter's extras) |
 | `note_question` | `question` | The landlord asked something the brief can't answer. The Caller says it will check with its client; the question comes back in the results |
 | `book_viewing` | `slot` (spoken words, e.g. "Saturday at two") | Code converts it to a Toronto datetime and accepts it only if booking is allowed, it falls inside a window, it doesn't overlap another booking in the plan, the listing isn't dead or suspect, and no red-flag rule matched this call. The reply says it's booked, or what to say instead |
 | `end_call` | `reason` (done / refused / wrong_number / voicemail) | Code accepts `done` only when the checklist is complete |
@@ -83,7 +83,11 @@ The only thing the calls read from the brief. Built by code on `SessionEnded`, s
 
 One per listing call, from the Auditor.
 
-`call_id`, `listing_id`, `end_reason`, `facts[]`, `conflicts[]`, `red_flags[]`, `open_questions[]`, `viewing?` (`{starts_at, slot_text}`).
+`call_id`, `listing_id`, `end_reason`, `facts[]` (the card's `Fact`: `field, value, quote, speaker, at`), `conflicts[]` (`{field, listed, heard, quote, against}`, where `against` is `listing` or `city`), `red_flags[]` (strings, as on the card), `open_questions[]`, `viewing?` (`{starts_at, slot_text}`).
+
+`end_reason` (also on `CallEnded`) is `end_call`'s reason (`done` / `refused` / `wrong_number` / `voicemail`) or the voice layer's (`hangup` / `no_answer` / `busy` / `failed` / `blocked` / `timeout`).
+
+The Pydantic models are in `contracts/events.py` (every event, and the `Event` union keyed on `type`), `contracts/plan.py` (`CallPlan`, `CallOutcome`), `contracts/tools.py` (tool arguments, and `concierge_tools()` / `caller_tools()` for `session.update`) and `contracts/session.py` (what the web app reads).
 
 ## Where it is stored
 
@@ -113,8 +117,8 @@ Only into the Concierge, only between turns, as one `user` `input_text` item, qu
 | POST | `/api/judge/start` | `{session_id, ws_url}` for browser audio |
 | GET | `/health` | `{status, listings, sessions, transport, higgs}` |
 
-`SessionView` = `{session_id, version, phase, user: {name?, returning}, preferences, focus: {listing_id?, area?}, matches: [listing_id], board: [Card], agent_says, plan: [listing_id], calls: [{call_id, listing_id, state, started_at}], results?}`. `phase` is `open` / `calling` / `done` / `closed`; call `state` includes `queued`.
+`SessionView` = `{session_id, version, phase, user_name?, returning, preferences, focus_listing_id?, focus_area?, matches: [listing_id], board: [Card], agent_says, plan: [listing_id], calls: [{call_id, listing_id, state, started_at?}], results?}`. `phase` is `open` / `calling` / `done` / `closed`. Call `state` is `queued` / `blocked` / `dialing` / `ringing` / `live` / `voicemail` / `ended` (the call lifecycle in ARCHITECTURE.md). `focus_area` is `{label, lat, lng, zoom}`. `results` is the Narrator's results text for the page, set once the phase is `done`. `preferences` also carries `anchors[]` (`{label, lat?, lng?}`, coordinates filled by `AnchorResolved`), `move_in?`, `occupants?` and `language?`.
 
-`Card` = listing summary (`listing_id, address, unit_label, lat, lng, monthly_cost, rent, beds, baths, sqft, floor, photo, light_score`) + `rank`, `status`, `reasons[]`, `watch_out?`, `reaction?`, `facts[]` (`field, value, quote, speaker, at`), `red_flags[]`.
+`Card` = listing summary (`listing_id, address, unit_label, neighbourhood, lat, lng, monthly_cost, rent, beds, baths, sqft, floor, unit_type, photo, light_score, source, url`) + `rank`, `status`, `reasons[]`, `watch_out?`, `reaction?`, `facts[]` (`field, value, quote, speaker, at`), `red_flags[]`.
 
-Contract tests: `server/tests/test_contracts.py` checks that `web/lib/types.ts` and the Pydantic models agree (a JSON Schema snapshot), and a sample `SessionView` fixture lives in `web/lib/fixtures/session.json` for UI work before the backend exists.
+Contract tests: `server/tests/test_contracts.py` checks that `web/lib/types.ts` has the same fields as the Pydantic models, that the models match the JSON Schema snapshot in `server/tests/snapshots/contracts.json` (regenerate it with `make contracts-snapshot` and commit it with the change), and that no tool argument carries an id, a phone number, a time or a total. A sample `SessionView` (phase `calling`, one card per status) lives in `web/lib/fixtures/session.json` for UI work before the backend exists.
