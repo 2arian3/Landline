@@ -87,6 +87,7 @@ class CallerContext:
     covered_at: int | None = None                     # the landlord turn by which the checklist was covered
     ended_by_code: bool = False                       # `over` ended it: the Caller never called end_call
     opened: bool = False                              # its first turn is over, so the disclosure is said
+    unnoted: int = 0                                  # offered times _offered couldn't note
     spoke: bool = False                               # this response spoke before its tool call (run_tool)
 
     def flags(self) -> list[str]:
@@ -329,6 +330,11 @@ async def _offered(slot: str, ctx: CallerContext, meta: dict) -> str:
     fact when the landlord said it (the slot's words are in their turns), so the viewing item is covered
     even when the Caller reaches for book_viewing instead of record_fact."""
     if not await _note_offer(slot, ctx, meta):
+        ctx.unnoted += 1
+        if ctx.unnoted > 1:   # never round again (priya asked for a time three times; #156's repeat rule)
+            left = [i for i in ctx.brief.missing() if i.key != "viewing"]
+            nxt = f"then ask {left[0].ask}." if left else "then thank them and end the call."
+            return f"Don't ask about times again. Say you'll pass the viewing time to your client, {nxt}"
         return "The renter didn't allow booking. Ask which times they could offer and record them as other."
     left = ctx.brief.missing()
     nxt = f"then ask {left[0].ask}." if left else "then thank them and end the call."
@@ -340,13 +346,20 @@ async def _note_offer(slot: str, ctx: CallerContext, meta: dict) -> bool:
     """The time they offered goes back to the renter as an `other` fact, when the landlord said it (the slot's
     words are in their turns), and covers the viewing item. False when they didn't say it."""
     match = grounding.find(slot, ctx.said)
+    quote, source = slot, match.source if match else -1
     if match is None:
-        return False
+        # Their words in another order (priya: "6:30 pm on Thursday" for "Thursday at 6:30 pm", asked three
+        # times): the same time named in their latest turn counts, quoted from that turn.
+        now, windows = ctx.clock(), ctx.brief.plan.windows
+        at = slots.parse(slot, now, windows)
+        if at is None or not ctx.said or slots.parse(ctx.said[-1], now, windows) != at:
+            return False
+        quote, source = ctx.said[-1], len(ctx.said) - 1
     value = f"viewing offered: {slot}"
     if not any(f.field == "other" and f.value == value for f in ctx.facts):
         await ctx.runtime.emit(FactRecorded(**meta, call_id=ctx.call_id, field="other", value=value,
-                                            quote=slot, turn_idx=match.source))
-        ctx.facts.append(Fact(field="other", value=value, quote=slot, speaker="Agent heard", at=meta["at"]))
+                                            quote=quote, turn_idx=source))
+        ctx.facts.append(Fact(field="other", value=value, quote=quote, speaker="Agent heard", at=meta["at"]))
     for item in ctx.brief.items:
         if item.key == "viewing":
             item.done = True
