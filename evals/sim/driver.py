@@ -22,7 +22,16 @@ from landline.contracts import ListingFocused, PreferencesUpdated, SessionStarte
 from landline.contracts.tools import PreferenceDelta
 from landline.db.catalogue import Catalogue
 from landline.orchestrator import SessionRuntime
-from landline.voice.bridge import ends_call, opening, run_tool
+from landline.voice.bridge import (
+    discard_tool,
+    dropping,
+    note_speech,
+    note_user_turn,
+    open_response,
+    opening,
+    response_settles,
+    run_tool,
+)
 from landline.voice.higgs import ConnectHiggs, session_config
 from landline.voice.line import LOOKING, describe
 
@@ -163,6 +172,7 @@ async def simulate(case_id: str, run: int, opponent: Opponent, *, catalogue: Cat
             if not line.startswith(LOOKING):   # a spoken line: call_listings' viewing-times guard (#174)
                 ctx.agent_before = ctx.agent_said = said   # what a plain "Yes" answers (#174)
                 ctx.renter_lines.append(line)
+            note_user_turn(ctx)
             await higgs.send({"type": "conversation.item.create", "item": {
                 "type": "message", "role": "user", "content": [{"type": "input_text", "text": line}]}})
             await higgs.send({"type": "response.create"})
@@ -182,6 +192,7 @@ async def simulate(case_id: str, run: int, opponent: Opponent, *, catalogue: Cat
             if not ctx.hang_up and "end_session" not in trace.agent[-1].tools and backstop.says_goodbye(line):
                 # As the bridge does: a goodbye with no end_session gets one note, then the call ends.
                 note = {"type": "input_text", "text": backstop.SAID_BYE}
+                note_user_turn(ctx)
                 await higgs.send({"type": "conversation.item.create",
                                   "item": {"type": "message", "role": "user", "content": [note]}})
                 await higgs.send({"type": "response.create"})
@@ -220,12 +231,24 @@ async def _agent_turn(stream, higgs: Recorded, ctx: tools.ToolContext, trace: Tr
                 raise HiggsClosed() from None
             kind = event.get("type")
             if kind == "response.created":
+                open_response(ctx)
                 spoke = False
+            elif dropping(ctx):
+                if kind == "response.function_call_arguments.done":
+                    await discard_tool(higgs, event, ctx)
+                elif kind == "response.done":
+                    ctx.dropping = False
+                    break
             elif kind == "response.output_text.delta":   # streams before a tool call in the same response;
-                spoke = spoke or bool(str(event.get("delta") or "").strip())   # its .done comes after it
+                if str(event.get("delta") or "").strip():   # its .done comes after it
+                    spoke = True
+                    note_speech(ctx)
             elif kind == "response.output_text.done":
-                texts.append(str(event.get("text") or ""))
-                spoke = spoke or bool(texts[-1].strip())
+                text = str(event.get("text") or "")
+                texts.append(text)
+                if text.strip():
+                    spoke = True
+                    note_speech(ctx)
             elif kind == "response.function_call_arguments.done":
                 board = _board(ctx.runtime, ctx.session_id)
                 await run_tool(higgs, event, ctx, spoke=spoke)
@@ -235,11 +258,8 @@ async def _agent_turn(stream, higgs: Recorded, ctx: tools.ToolContext, trace: Tr
                                             output=_output_for(higgs, str(event.get("call_id", "")))))
             elif kind == "error":
                 trace.errors.append(str(event.get("error")))
-            elif kind == "response.done":
-                output = (event.get("response") or {}).get("output") or []
-                if ends_call(event, ctx) or (not ctx.hang_up
-                                             and not any(o.get("type") == "function_call" for o in output)):
-                    break
+            elif kind == "response.done" and response_settles(ctx, event):
+                break
     text = " ".join(t.strip() for t in texts if t.strip())
     trace.agent.append(AgentTurn(line=line, text=text, tools=names,
                                  ms=round((time.monotonic() - started) * 1000)))

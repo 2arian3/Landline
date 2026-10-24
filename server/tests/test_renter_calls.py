@@ -490,6 +490,51 @@ def test_end_session_with_nothing_said_asks_for_a_goodbye_before_hanging_up(monk
             {"type": "response.create"}]
 
 
+class WaitingHiggs(FakeHiggs):
+    """A FakeHiggs whose script can pause: {"type": "test.wait", "s": seconds}, read only if the bridge
+    keeps going."""
+
+    async def events(self):
+        for event in self.script:
+            if event.get("type") == "test.wait":
+                await asyncio.sleep(event["s"])
+                continue
+            yield event
+        await self._done.wait()
+
+
+def test_a_goodbye_already_in_the_response_plays_once_and_the_line_drops(monkeypatch):
+    """#219, c_btUi6Djj0B: end_session came before the goodbye's audio, so a second goodbye was asked for
+    and the line stayed up for both. The goodbye plays once and the line drops within 3s of it."""
+    monkeypatch.setattr(bridge, "HANG_UP_GRACE_S", 0.01)
+    goodbye = base64.b64encode(b"\x00\x00" * 2400).decode()   # 0.1 s of 24 kHz PCM16
+    line = "I'll call them as soon as we hang up and text you what they say. Bye for now!"
+    fake = WaitingHiggs(script=[
+        {"type": "response.created", "response": {"id": "r1"}},
+        {**_tool_call("end_session", {}, "fc_bye"), "response_id": "r1"},
+        {"type": "response.output_audio.delta", "delta": goodbye},
+        {"type": "response.output_audio_transcript.done", "transcript": line},
+        {"type": "response.done", "response": {"id": "r1", "output": [
+            {"type": "function_call"}, {"type": "message"}]}},
+        {"type": "test.wait", "s": 5},
+        {"type": "response.created", "response": {"id": "r2"}},
+        {"type": "response.output_audio.delta", "delta": goodbye},
+        {"type": "response.output_audio_transcript.done", "transcript": line},
+        {"type": "response.done", "response": {"id": "r2", "output": [{"type": "message"}]}},
+    ])
+    with _client(judge_audio_ready=True) as c:
+        c.app.state.connect_higgs = fake.connect
+        start = c.post("/api/judge/start").json()
+        started = time.monotonic()
+        with c.websocket_connect(start["ws_url"]) as ws:
+            audio = ws.receive_bytes()
+            with pytest.raises(WebSocketDisconnect):
+                ws.receive_bytes()
+        elapsed = time.monotonic() - started
+        assert len(audio) == 4800 and elapsed < 3
+        assert c.app.state.calls.recent[-1].end_reason == "end_session"
+
+
 class SpyLog:
     """Stands in for the runtime's CallLog (orchestrator/calllog.py): keeps what the bridge reports."""
 
