@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
 
-from landline.api.demo import TORONTO, DemoSessions, window
+from landline.api.demo import LAST_RESULTS, TORONTO, DemoSessions, window
 from landline.api.judge import JudgeLines, StartLimit, client_ip
 from landline.app import create_app
 from landline.config import Settings
@@ -103,6 +103,30 @@ def test_focus_rejects_unknown_listing():
         assert focused["focus_listing_id"] == "t:2"
 
 
+def test_area_hook_sets_where_the_map_flies():
+    with _client() as c:
+        assert c.get("/api/sessions/s_area").json()["focus_area"] is None
+        v = c.post("/api/sessions/s_area/area", json={"place": "  Christie   PITS "}).json()
+        assert v["focus_area"] == {"label": "Christie Pits", "lat": 43.6646, "lng": -79.4206, "zoom": 15.0}
+        assert v["version"] == 2
+        # it stays through the next re-rank, and a place the demo doesn't know is a 404
+        later = c.post("/api/sessions/s_area/preferences", json={"max_monthly": 3000}).json()
+        assert later["focus_area"]["label"] == "Christie Pits"
+        assert c.post("/api/sessions/s_area/area", json={"place": "Atlantis"}).status_code == 404
+        king_and_bay = c.post("/api/sessions/s_area/area", json={"place": "King and Bay"}).json()
+        assert king_and_bay["focus_area"]["zoom"] == 15.5
+
+
+def test_area_hook_sends_a_runtime_session_area_focused():
+    with _judge_client(2) as c:
+        sid = c.post("/api/judge/start").json()["session_id"]
+        v = c.post(f"/api/sessions/{sid}/area", json={"place": "Yorkville"}).json()
+        assert v["focus_area"]["label"] == "Yorkville" and v["version"] == 2
+        assert c.app.state.runtime.state(sid).focus_area.label == "Yorkville"
+        assert sid not in c.app.state.sessions.views   # one writer: the demo store never saw it
+        assert c.post(f"/api/sessions/{sid}/area", json={"place": "Atlantis"}).status_code == 404
+
+
 def test_feedback_shows_on_the_card():
     with _client() as c:
         assert c.get("/api/sessions/s_fb").json()["board"][0]["reaction"] is None
@@ -174,7 +198,8 @@ async def test_hanging_up_queues_the_plan_then_walks_it_to_results():
     assert done.results == (
         f"I booked {addr[plan[2]]} for Saturday at 2 pm, inside your Saturday afternoon. "
         f"{addr[plan[0]]} is really $2,180 a month with parking. "
-        "Its agent asked, \u201cWould they sign a 12-month lease?\u201d I said I'd check with you. "
+        f"The agent at {addr[plan[0]]} asked, \u201cWould they sign a 12-month lease?\u201d "
+        "I said I'd check with you. "
         f"{addr[plan[1]]} wants a deposit by e-transfer before anyone sees the unit, so I'd skip it. "
         f"Nobody picked up at {addr[plan[3]]}."
     )
@@ -406,3 +431,19 @@ def test_returning_renter_is_welcomed_by_name():
         assert (off["returning"], off["user_name"]) == (False, None)
         assert c.post("/api/sessions/s_back/returning", json={"name": " "}).json()["user_name"] is None
         assert c.post("/api/sessions/s_back/returning", json={"name": "x" * 41}).status_code == 422
+
+
+async def test_a_returning_call_opens_with_the_last_results():
+    s = DemoSessions(_one_bedrooms(), tick_s=0)
+    first = await s.welcome_back("s1", True, "Sara")
+    assert first.agent_says == f"Welcome back, Sara. {LAST_RESULTS}"   # nothing run yet: the fixture
+    await s.plan_top("s1")
+    await s.hang_up("s1")
+    await s.dialing["s1"]
+    results = s.get("s1").results
+    assert results and not s.get("s1").agent_says.startswith("Welcome back")   # calls done: Landline moved on
+    again = await s.reset("s1")   # the renter calls again
+    assert again.agent_says == f"Welcome back, Sara. {results}"
+    assert (await s.plan_top("s1")).agent_says.endswith("is on top.")   # once there's a plan, it moves on
+    await s.reset("s1")
+    assert (await s.welcome_back("s1", False, None)).agent_says.endswith("is on top.")

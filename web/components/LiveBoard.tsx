@@ -10,7 +10,7 @@ import type { Mark } from "./ListingCard";
 import { ListingDetail, type Reaction } from "./ListingDetail";
 import type { Padding } from "./MapView";
 import { PEEK, Shell } from "./Shell";
-import { Activity, Brand, Heard, Welcome } from "./Summary";
+import { Activity, Brand, Heard, Results, Welcome } from "./Summary";
 import { postJSON, useCatalogue, useLiveSession } from "@/lib/live";
 import { useMedia } from "@/lib/useMedia";
 
@@ -95,6 +95,12 @@ export function LiveBoard({
   const serverFocus =
     view?.focus_listing_id && view.focus_listing_id !== openingFocus.current ? view.focus_listing_id : null;
   const focusId = selected ?? serverFocus;
+  // The same for an area the renter names ("show me Christie Pits"): the map flies there when it changes.
+  const openingArea = useRef<string | null | undefined>(undefined);
+  const area = view?.focus_area ?? null;
+  const areaKey = area ? `${area.lat},${area.lng},${area.zoom}` : null;
+  if (view && openingArea.current === undefined) openingArea.current = areaKey;
+  const focusArea = area && areaKey !== openingArea.current ? area : null;
   const selectedCard = board.find((c) => c.listing_id === selected);
 
   function select(id: string) {
@@ -136,6 +142,7 @@ export function LiveBoard({
       focusId={focusId}
       hoverId={hover}
       marks={marks}
+      focusArea={focusArea}
       padding={padding}
       showZoom={desktop === true}
       onSelect={select}
@@ -148,6 +155,7 @@ export function LiveBoard({
   const list = (
     <div className={desktop ? "space-y-4" : "space-y-3"}>
       <Welcome view={view} compact={!desktop} />
+      <Results view={view} compact={!desktop} />
       <Activity view={view} compact={!desktop} />
       <Heard view={view} compact={!desktop} />
       <Board
@@ -189,6 +197,7 @@ export function LiveBoard({
               id={selected}
               card={selectedCard}
               mark={marks[selected]}
+              results={view?.phase === "done" ? view.results : null}
               onBack={() => setSelected(null)}
               onReact={(reaction, reason) => react(selected, reaction, reason)}
             />
