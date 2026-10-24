@@ -52,6 +52,7 @@ eval:
 	uv run python -m evals.run_calls
 	uv run python -m evals.run_extraction
 	uv run python -m evals.run_ranking
+	uv run python -m evals.run_audio
 
 # Rewrites server/tests/snapshots/contracts.json after a contract change; commit it with the change.
 contracts-snapshot:
