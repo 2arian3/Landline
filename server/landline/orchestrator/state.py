@@ -56,6 +56,7 @@ class SessionState(BaseModel):
     outcomes: dict[str, CallOutcome] = Field(default_factory=dict)  # from the Auditor, by listing
     results: str | None = None
     board: list[str] = Field(default_factory=list)   # the last board's order, so ties keep their place
+    ranks_at_hangup: dict[str, int] = Field(default_factory=dict)   # the board when the brief ended
 
     def listing_of(self, call_id: str) -> str | None:
         call = self.calls.get(call_id)

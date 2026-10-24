@@ -126,6 +126,8 @@ def session_ended(state: SessionState, e: SessionEnded, known: Known) -> bool:
     if state.phase != "open":
         return False
     state.phase = "calling" if state.request else "closed"
+    # The results say where each called place moved since this board (the Narrator).
+    state.ranks_at_hangup = {lid: n for n, lid in enumerate(state.board, start=1)}
     return True
 
 

@@ -225,7 +225,9 @@ def test_the_first_preferences_of_a_phone_call_text_the_board_link():
             view = c.app.state.runtime.get(call.session_id)
             ws.send_json({"event": "stop", "streamSid": "MZ1"})
     first, second = _outputs(fake)
-    assert json.loads(first)["texted_link"] is True and json.loads(first)["result"].endswith("is on top.")
+    # The Narrator's line for the first change (O-06), with the texted link flagged beside it.
+    reply = json.loads(first)
+    assert reply["texted_link"] is True and reply["result"].startswith("Got it: up to $3,000.")
     assert second == view.agent_says   # only the first one of the call texts
     assert texter.sent == [("+14165550100", "+12892765257",
                             bridge.LINK_TEXT.format(link=f"http://localhost:3000/s/{call.session_id}"))]

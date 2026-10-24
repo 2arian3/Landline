@@ -20,7 +20,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections import defaultdict
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import asynccontextmanager, nullcontext
 from dataclasses import dataclass, field
 
@@ -29,7 +29,7 @@ from psycopg import AsyncConnection
 from landline.contracts import Event, SessionStarted, SessionView
 from landline.db.catalogue import Catalogue
 from landline.db.pool import Database
-from landline.orchestrator import board, handlers
+from landline.orchestrator import board, handlers, narrator
 from landline.orchestrator.state import SessionState
 from landline.scoring import FeatureMatrix
 
@@ -116,7 +116,7 @@ class SessionRuntime:
                 return self._live[sid].view
             state = SessionState(session_id=sid, channel=event.channel, user_id=event.user_id,
                                  caller_phone=event.caller_phone)
-            view = self._build(state, 1)
+            view = self._build(state, 1, events=[event])
             if self.db is not None:
                 async with self.db.transaction() as conn:
                     await self.db.sessions.create(sid, event.channel, event.user_id, conn=conn)
@@ -143,7 +143,7 @@ class SessionRuntime:
                 yield tx
                 if not tx.events:
                     return
-                view = self._build(tx.state, live.view.version + 1)
+                view = self._build(tx.state, live.view.version + 1, live.view, tx.events)
                 if conn is not None:
                     await self._persist(tx, view, expected_version=live.view.version)
             live.state, live.view = tx.state, view
@@ -161,10 +161,18 @@ class SessionRuntime:
             raise UnknownSession(session_id)
         return live
 
-    def _build(self, state: SessionState, version: int) -> SessionView:
+    def _build(self, state: SessionState, version: int, before: SessionView | None = None,
+               events: Sequence[Event] = ()) -> SessionView:
+        """The board for `state`, with the Narrator's line for what changed since `before`, and the
+        results text the first time the calls are all done."""
         view = board.build(state, version, self.catalogue, self.matrix)
         state.board = [c.listing_id for c in view.board]
-        return view
+        if state.phase == "done" and state.results is None:
+            state.results = narrator.results(state, view, self.catalogue)
+        says = narrator.line(before, view, events, state, self.catalogue)
+        if says is None and before is not None:
+            says = before.agent_says
+        return view.model_copy(update={"agent_says": says or view.agent_says, "results": state.results})
 
     async def _persist(self, tx: Tx, view: SessionView, expected_version: int) -> None:
         db, conn, state = self.db, tx.conn, tx.state
