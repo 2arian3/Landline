@@ -30,7 +30,7 @@ async def twiml_renter(request: Request) -> Response:
         raise HTTPException(403, "invalid Twilio signature")
     if not settings.boson_api_key:
         return _xml(twilio.twiml_say_hangup(NOT_READY))
-    call = request.app.state.calls.open(caller=params.get("From"))
+    call = request.app.state.calls.open(caller=params.get("From"), called=params.get("To"))
     if call is None:
         return _xml(twilio.twiml_say_hangup(BUSY))
     log.info("renter call %s opened session %s", call.call_id, call.session_id)
@@ -41,7 +41,8 @@ async def twiml_renter(request: Request) -> Response:
 async def twilio_media(ws: WebSocket) -> None:
     state = ws.app.state
     await run_bridge(ws, calls=state.calls, runtime=state.runtime, connect_higgs=state.connect_higgs,
-                     settings=state.settings, set_status=lambda status: setattr(state, "higgs", status))
+                     settings=state.settings, set_status=lambda status: setattr(state, "higgs", status),
+                     texter=state.texter)
 
 
 def _signed_url(request: Request) -> str:

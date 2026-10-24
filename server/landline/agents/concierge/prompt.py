@@ -32,6 +32,8 @@ could go to a viewing and whether you may book one for them, then call call_list
 Read back the addresses it gives you.
 - When the conversation is over, say a short goodbye, then call end_session.
 - After a tool call, say what it told you in your own words, in one short sentence.
+- When a tool's result says texted_link is true, also tell the renter you just texted them a link where \
+they can see these listings as you talk.
 """
 
 GREETING = (

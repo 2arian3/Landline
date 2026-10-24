@@ -31,6 +31,7 @@ from landline.orchestrator import SessionRuntime
 from landline.voice import twilio
 from landline.voice.calls import RenterCall, RenterCalls
 from landline.voice.higgs import PCMU, ConnectHiggs, session_config
+from landline.voice.sms import Texter
 
 log = logging.getLogger(__name__)
 
@@ -38,6 +39,7 @@ START_TIMEOUT_S = 10      # Twilio sends `connected` then `start` right after th
 POLICY_VIOLATION = 1008
 HANG_UP_GRACE_S = 0.5     # after the goodbye has played, before hanging up
 SESSION_END = {"hangup": "hangup", "end_session": "end_session", "deadline": "timeout"}   # else "closed"
+LINK_TEXT = "Landline: here are the places that fit what you've told us. They update as we talk: {link}"
 
 
 class Transport(Protocol):
@@ -76,20 +78,38 @@ class Playback:
 
 async def converse(transport: Transport, call: RenterCall, *, calls: RenterCalls, runtime: SessionRuntime,
                    connect_higgs: ConnectHiggs, settings: Settings,
-                   set_status: Callable[[str], None] = lambda _: None) -> str:
+                   set_status: Callable[[str], None] = lambda _: None, texter: Texter | None = None) -> str:
     """Runs one claimed call to its end, finalizes it and ends its session. Returns why it ended. The
-    caller owns the socket and closes it afterwards."""
+    caller owns the socket and closes it afterwards. With a `texter`, a phone caller is texted the link
+    to their board the first time their preferences change."""
     reason = "error"
     try:
-        reason = await _talk(transport, call, runtime, connect_higgs, settings, set_status)
+        reason = await _talk(transport, call, runtime, connect_higgs, settings, set_status,
+                             _link_texter(texter, call, settings))
     finally:
         calls.finalize(call.call_id, reason)
         await _end_session(runtime, call.session_id, reason)
     return reason
 
 
+def _link_texter(texter: Texter | None, call: RenterCall, settings: Settings) -> Callable[[], bool] | None:
+    """For a phone call: texts the renter the link to their board, in the background. None when there's
+    no one to text (a browser call) or no way to send (no Twilio credentials or sending number)."""
+    sender = call.called or settings.twilio_phone_number
+    if texter is None or not texter.ready or not call.caller or not sender:
+        return None
+    link = f"{settings.web_url.rstrip('/')}/s/{call.session_id}"
+
+    def text() -> bool:
+        log.info("call %s: texting the board link", call.call_id)
+        texter.send_soon(call.caller, sender, LINK_TEXT.format(link=link))
+        return True
+    return text
+
+
 async def _talk(transport: Transport, call: RenterCall, runtime: SessionRuntime, connect_higgs: ConnectHiggs,
-                settings: Settings, set_status: Callable[[str], None]) -> str:
+                settings: Settings, set_status: Callable[[str], None],
+                text_link: Callable[[], bool] | None) -> str:
     try:
         higgs = await connect_higgs(settings.boson_api_key or "", session_config(
             instructions=INSTRUCTIONS, tools=tools.TOOLS, voice=settings.higgs_voice_renter,
@@ -100,7 +120,8 @@ async def _talk(transport: Transport, call: RenterCall, runtime: SessionRuntime,
         return "higgs_error"
     set_status("ok")
 
-    ctx = tools.ToolContext(session_id=call.session_id, call_id=call.call_id, runtime=runtime)
+    ctx = tools.ToolContext(session_id=call.session_id, call_id=call.call_id, runtime=runtime,
+                            text_link=text_link)
     playback = Playback(transport.bytes_per_second)
     pumps: set[asyncio.Task[str]] = set()
     try:
@@ -158,9 +179,11 @@ class TwilioTransport:
 
 async def run_bridge(ws: WebSocket, *, calls: RenterCalls, runtime: SessionRuntime,
                      connect_higgs: ConnectHiggs, settings: Settings,
-                     set_status: Callable[[str], None] = lambda _: None) -> None:
+                     set_status: Callable[[str], None] = lambda _: None,
+                     texter: Texter | None = None) -> None:
     """A Twilio media stream for a call that /twiml/renter minted; its id comes back in `start`. The call
-    starts its session in the runtime, the way /api/judge/start does for the browser."""
+    starts its session in the runtime, the way /api/judge/start does for the browser. With a `texter`,
+    the caller gets their board link by text."""
     await ws.accept()
     start = await _wait_for_start(ws)
     call_id = str(((start or {}).get("customParameters") or {}).get("call_id", ""))
@@ -181,7 +204,7 @@ async def run_bridge(ws: WebSocket, *, calls: RenterCalls, runtime: SessionRunti
     try:
         transport = TwilioTransport(ws, str(start.get("streamSid", "")))
         await converse(transport, call, calls=calls, runtime=runtime, connect_higgs=connect_higgs,
-                       settings=settings, set_status=set_status)
+                       settings=settings, set_status=set_status, texter=texter)
     finally:
         await close_socket(ws)
 
