@@ -13,6 +13,7 @@ from landline.api.judge import JudgeLines, StartLimit
 from landline.api.routes import router
 from landline.config import Settings
 from landline.db.catalogue import Catalogue
+from landline.db.pool import Database
 from landline.voice import higgs
 from landline.voice.calls import RenterCalls
 
@@ -36,6 +37,8 @@ def create_app(settings: Settings | None = None, catalogue: Catalogue | None = N
     async def lifespan(app: FastAPI):
         app.state.settings = settings
         app.state.catalogue = catalogue or Catalogue.load(settings.database_url)
+        # Call turns for /api/calls/{id}/turns. Without DATABASE_URL only the demo store's calls have any.
+        app.state.db = await Database.open(settings.database_url) if settings.database_url else None
         app.state.sessions = DemoSessions(app.state.catalogue)
         app.state.judges = JudgeLines(settings.higgs_max_sessions)
         app.state.judge_limit = StartLimit(settings.judge_starts_per_ip, settings.judge_start_window_s)
@@ -46,6 +49,8 @@ def create_app(settings: Settings | None = None, catalogue: Catalogue | None = N
         app.state.connect_higgs = higgs.connect
         yield
         app.state.sessions.close()
+        if app.state.db is not None:
+            await app.state.db.close()
 
     app = FastAPI(title="Landline", version="0.1.0", lifespan=lifespan)
     # The web app normally reaches the API through its own /api proxy (same origin, no CORS).
