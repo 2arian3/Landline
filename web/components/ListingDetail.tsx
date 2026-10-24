@@ -7,7 +7,7 @@ import { Money } from "./Money";
 import { bathsLabel, bedsLabel, sizeLabel, sourceName, unitLabel } from "@/lib/format";
 import { api } from "@/lib/live";
 import { callNotes } from "@/lib/outcome";
-import type { Card, ListingDetail as Detail, Provenance } from "@/lib/types";
+import type { CallView, Card, ListingDetail as Detail, Provenance } from "@/lib/types";
 
 export type { Reaction };
 
@@ -31,6 +31,7 @@ export function ListingDetail({
   card,
   mark,
   results,
+  calls,
   onBack,
   onReact,
 }: {
@@ -39,6 +40,8 @@ export function ListingDetail({
   mark?: Mark;
   /** The session's results text once its calls are done; this place's sentences show here. */
   results?: string | null;
+  /** The session's calls; a finished one carries what it settled for this place. */
+  calls?: CallView[];
   onBack: () => void;
   onReact?: (reaction: Reaction, reason: string | null) => void;
 }) {
@@ -76,7 +79,7 @@ export function ListingDetail({
   const address = detail?.address ?? card?.address;
   const place = [detail?.building_name, card?.neighbourhood].find((p) => p && p !== address) ?? null;
   const flags = card?.red_flags ?? [];
-  const notes = callNotes(card, results);
+  const notes = callNotes(card, results, calls);
   const noted = !!notes.viewing || notes.questions.length > 0;
 
   return (

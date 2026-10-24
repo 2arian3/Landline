@@ -53,7 +53,34 @@ export type Preferences = {
   language?: string | null;
 };
 
-export type CallView = { call_id: string; listing_id: string; state: CallState; started_at?: string | null };
+// Why finalize() ended a call: end_call's reasons, then the voice layer's.
+export type EndReason =
+  | "done" | "refused" | "wrong_number" | "voicemail"
+  | "hangup" | "no_answer" | "busy" | "failed" | "blocked" | "timeout";
+
+export type Viewing = { starts_at: string; slot_text: string }; // slot_text: as the landlord said it
+
+export type Conflict = { field: string; listed: string; heard: string; quote: string; against: "listing" | "city" };
+
+/** What one listing call settled, from the Auditor. */
+export type CallOutcome = {
+  call_id: string;
+  listing_id: string;
+  end_reason: EndReason;
+  facts: Fact[];
+  conflicts: Conflict[];
+  red_flags: string[];
+  open_questions: string[]; // landlord questions the brief couldn't answer
+  viewing?: Viewing | null;
+};
+
+export type CallView = {
+  call_id: string;
+  listing_id: string;
+  state: CallState;
+  started_at?: string | null;
+  outcome?: CallOutcome | null; // once the call has ended
+};
 
 export type SessionView = {
   session_id: string;
