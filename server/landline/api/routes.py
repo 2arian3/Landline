@@ -159,6 +159,43 @@ async def call_turns(call_id: str, request: Request, after: int = -1) -> list[Tu
     return [Turn.model_validate(row, from_attributes=True) for row in rows]
 
 
+class AvatarClipView(BaseModel):
+    """One call's clip, without the MP4. `address` is the listing's, empty on the renter's call."""
+    call_id: str
+    role: str
+    address: str | None = None
+    status: str
+
+
+def _clip_address(request: Request, listing_id: str | None) -> str | None:
+    if not listing_id:
+        return None
+    found = request.app.state.catalogue.by_id.get(listing_id)
+    return found.address if found is not None else None
+
+
+@router.get("/api/sessions/{session_id}/avatars", response_model=list[AvatarClipView])
+async def session_avatars(session_id: str, request: Request) -> list[AvatarClipView]:
+    """The session's clips, the renter's call first. No video bytes: the player asks for each MP4."""
+    clips = getattr(request.app.state, "clips", None)
+    if clips is None:
+        return []
+    rows = await clips.listed(session_id)
+    return [AvatarClipView(call_id=row.call_id, role=row.role, status=row.status,
+                           address=_clip_address(request, row.listing_id)) for row in rows]
+
+
+@router.get("/api/sessions/{session_id}/avatars/{call_id}", response_class=Response,
+            responses={200: {"content": {"video/mp4": {}}}, 404: {"description": "no clip yet"}})
+async def session_avatar(session_id: str, call_id: str, request: Request) -> Response:
+    """The clip's MP4 once it is ready, and only for a call in this session. Otherwise 404."""
+    clips = getattr(request.app.state, "clips", None)
+    video = await clips.mp4(call_id, session_id) if clips is not None else None
+    if not video:
+        raise HTTPException(404, "no clip yet")
+    return Response(video, media_type="video/mp4", headers={"Cache-Control": "private"})
+
+
 @router.post("/api/sessions/{session_id}/calls", response_model=SessionView)
 async def plan_calls(session_id: str, request: Request) -> SessionView:
     """Demo hook: stands in for the Concierge's call_listings until the voice layer exists. The top four

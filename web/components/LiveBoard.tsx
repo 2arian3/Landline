@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from "motion/react";
 import dynamic from "next/dynamic";
 import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Drawer } from "vaul";
+import { AvatarClips } from "./AvatarClips";
 import { Board } from "./Board";
 import { DemoControls } from "./DemoControls";
 import type { Mark } from "./ListingCard";
@@ -14,7 +15,8 @@ import { Activity, Brand, Heard, Results, Welcome } from "./Summary";
 import { type Opened, follows } from "@/lib/follow";
 import { nothingHeard } from "@/lib/format";
 import { type Unheard, unheard } from "@/lib/outcome";
-import { postJSON, useCatalogue, useLiveSession } from "@/lib/live";
+import { useAvatarClips } from "@/lib/avatars";
+import { api, postJSON, useCatalogue, useLiveSession } from "@/lib/live";
 import { useMedia } from "@/lib/useMedia";
 
 // MapLibre is a 1 MB chunk. Loading it after the panel lets the places paint first on a slow phone;
@@ -50,6 +52,7 @@ export function LiveBoard({
   line?: string | null;
 }) {
   const { view, stale, unreachable } = useLiveSession(sessionId);
+  const clips = useAvatarClips(sessionId, view?.phase ?? null);
   const points = useCatalogue();
   const desktop = useMedia(SPLIT);
   // A phone on its side gets the split layout but keeps the phone's short summaries, so a place shows.
@@ -215,6 +218,14 @@ export function LiveBoard({
   ) : (
     <div className={desktop ? "space-y-4" : "space-y-3"}>
       <Welcome view={view} compact={compact} />
+      {sessionId && (
+        <AvatarClips
+          clips={clips}
+          videoUrl={(callId) =>
+            api(`/api/sessions/${encodeURIComponent(sessionId)}/avatars/${encodeURIComponent(callId)}`)
+          }
+        />
+      )}
       <Results view={view} compact={compact} />
       {blank ? (
         <p className="text-support text-ink">{view?.agent_says || "Tell Landline what you\u2019re looking for."}</p>

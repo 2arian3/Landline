@@ -114,6 +114,8 @@ Only into the Concierge, only between turns, as one `user` `input_text` item, qu
 | GET | `/api/catalogue` | `[{listing_id, lat, lng, monthly_cost, beds}]`, cached |
 | GET | `/api/listings/{listing_id}` | `ListingDetail` (with provenance and City record) |
 | GET | `/api/calls/{call_id}/turns` | live captions for a call |
+| GET | `/api/sessions/{id}/avatars` | `[{call_id, role, address, status}]` in call order, the renter's call first. A clip of Landline's voice for each finished call. No video bytes. `status` is `queued` / `rendering` / `ready` / `failed` / `skipped`. `address` is the listing's, empty on the renter's call |
+| GET | `/api/sessions/{id}/avatars/{call_id}` | that clip's MP4 when `ready`, otherwise 404. Only a call in this session |
 | POST | `/api/judge/start` | `{session_id, ws_url}` for browser audio |
 | GET | `/health` | `{status, listings, sessions, transport, higgs}` |
 | POST | `/api/me` | `{phone}` → that number's saved search, chosen places, sessions and calls (the admin user shape). 422 when `phone` isn't a number; 404 when it isn't stored or there is no database. Transcripts and recordings stay on the admin routes. |
@@ -121,6 +123,7 @@ Only into the Concierge, only between turns, as one `user` `input_text` item, qu
 | GET | `/api/admin/users/{user_id}` | Admin: one renter's saved search, chosen places, sessions and calls |
 | GET | `/api/admin/calls/{call_id}` | Admin: one call with its transcript (each line with `audio_start_ms`/`audio_end_ms` when known), the facts heard, and `audio` (whether it has a recording) |
 | GET | `/api/admin/calls/{call_id}/audio` | Admin: the call's recording as a PCM16 WAV. `track=both` (stereo: caller left, agent right; default), `caller` or `agent`; `from_ms`/`to_ms` for one stretch, e.g. one line. 404 when nothing was recorded there |
+| GET | `/api/admin/calls/{call_id}/avatar` | Admin: that call's Higgs Avatar clip as an MP4, the same file as `/api/sessions/{id}/avatars/{call_id}`. 404 until it is ready |
 | GET | `/api/admin/export` | Admin: the whole database as one consistent, read-only copy (gzipped JSON header + `COPY` blocks, `server/landline/db/export.py`), for `make db-pull`. Call recordings only with `audio=true` |
 
 `SessionView` = `{session_id, version, phase, user_name?, returning, preferences, focus_listing_id?, focus_area?, matches: [listing_id], board: [Card], agent_says, plan: [listing_id], calls: [{call_id, listing_id, state, started_at?}], results?}`. `phase` is `open` / `calling` / `done` / `closed`. Call `state` is `queued` / `blocked` / `dialing` / `ringing` / `live` / `voicemail` / `ended` (the call lifecycle in ARCHITECTURE.md). `focus_area` is `{label, lat, lng, zoom}`. `results` is the Narrator's results text for the page, set once the phase is `done`. `preferences` also carries `anchors[]` (`{label, lat?, lng?}`, coordinates filled by `AnchorResolved`), `move_in?`, `occupants?` and `language?`.

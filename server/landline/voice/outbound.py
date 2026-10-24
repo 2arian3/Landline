@@ -441,7 +441,8 @@ def _caller(state: Any, settings: Settings, extractor: Any) -> Converse:
         return no_caller
     return PhoneCaller(state.runtime, lambda key, cfg: state.connect_higgs(key, cfg),
                        settings.boson_api_key or "", voice=settings.higgs_voice_renter,
-                       extractor=extractor, record_audio=settings.record_audio)
+                       extractor=extractor, record_audio=settings.record_audio,
+                       clips=getattr(state, "clips", None))
 
 
 async def uninstall(calls: OutboundCalls) -> None:

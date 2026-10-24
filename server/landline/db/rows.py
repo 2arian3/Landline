@@ -69,6 +69,32 @@ class TurnRow:
 
 
 @dataclass(frozen=True)
+class AvatarRow:
+    """One call's Higgs Avatar clip (call_avatar), without the MP4 bytes."""
+    call_id: str
+    status: str                 # queued | rendering | ready | failed | skipped
+    boson_video_id: str | None
+    error: str | None
+    updated_at: datetime
+
+
+@dataclass(frozen=True)
+class AvatarFile:
+    """A clip's status and its MP4, for the player."""
+    status: str
+    video: bytes | None
+
+
+@dataclass(frozen=True)
+class AvatarClip:
+    """A clip as the board lists it: which call, and whether the MP4 is ready. No bytes."""
+    call_id: str
+    role: str                   # renter | listing
+    listing_id: str | None
+    status: str
+
+
+@dataclass(frozen=True)
 class AudioRow:
     """A chunk of one side of a call's audio (call_audio)."""
     call_id: str
