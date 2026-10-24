@@ -95,10 +95,11 @@ export function Activity({ view, compact = false }: { view: SessionView | null; 
     );
   }
   if (done.length) {
+    // The calls' tally is the demo's payoff, so on a phone it wraps rather than losing its end.
     return (
       <p className="flex items-baseline gap-x-1.5 text-meta" aria-live="polite">
         <span aria-hidden className="h-2 w-2 shrink-0 self-center rounded-full bg-real" />
-        <span className={`font-label text-ink ${rest}`}>{capitalize(done.join(" · "))}</span>
+        <span className="font-label text-ink">{capitalize(done.join(" · "))}</span>
       </p>
     );
   }
@@ -113,17 +114,41 @@ export function Activity({ view, compact = false }: { view: SessionView | null; 
 
 /**
  * What the calls found, once they're all done: the results text (written by code from the outcomes,
- * the same words the renter gets by text), at the top of the panel.
+ * the same words the renter gets by text), at the top of the panel, one line per place with the
+ * booking first.
  */
 export function Results({ view, compact = false }: { view: SessionView | null; compact?: boolean }) {
   if (view?.phase !== "done" || !view.results) return null;
+  const lines = perPlace(view.results, view.board.map((c) => c.address));
   return (
     <section aria-label="What the calls found">
       <p className="text-meta text-ink-3">What the calls found</p>
-      <p className={`text-ink ${compact ? "text-support" : "text-fact"}`}>{view.results}</p>
+      <ul className="mt-1 space-y-1.5">
+        {lines.map((line) => (
+          <li key={line} className={`text-ink ${compact ? "text-support" : "text-fact"}`}>
+            {line}
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }
+
+/** The results text as one line per place: a sentence that names no other place stays with the one before. */
+function perPlace(results: string, addresses: string[]): string[] {
+  const lines: { text: string; place?: string }[] = [];
+  for (const sentence of results.split(SENTENCE_END)) {
+    const place = addresses.find((a) => sentence.includes(a));
+    const last = lines.at(-1);
+    if (last && (!place || place === last.place)) last.text += ` ${sentence}`;
+    else lines.push({ text: sentence, place });
+  }
+  const booked = (l: { text: string }) => Number(/\bbooked\b/i.test(l.text));
+  return lines.sort((a, b) => booked(b) - booked(a)).map((l) => l.text);
+}
+
+// Between sentences, but not after "St." in "64 St. Clair Avenue West".
+const SENTENCE_END = /(?<=[.!?])(?<!\bSt\.)\s+(?=[A-Z0-9“"])/;
 
 /**
  * The first thing in the panel for a renter Landline knows (U-08). Landline
