@@ -8,87 +8,92 @@ The real Concierge (its prompt and tools) on Higgs Realtime in text mode, talkin
 
 ### Holdout (quote these)
 
-2026-10-24T06:00:25+00:00 · `dde000c` · 6 cases × 3 runs · live text · listings.json (400 listings)
+2026-10-24T08:42:35+00:00 · `9ca2759` · 6 cases × 3 runs · live text · listings.json (400 listings)
 
 | | This run | Previous |
 |---|---|---|
-| **Cases passing every run** | **4 / 6** | **4 / 5** |
-| Runs passing | 78% | 80% |
-| Checks on time (in the turn they belong to) | 48/51 (94%) | 48/51 (94%) |
-| Preferences recorded | 48/48 (100%) | 39/39 (100%) |
+| **Cases passing every run** | **4 / 6** | **3 / 6** |
+| Runs passing | 78% | 78% |
+| Checks on time (in the turn they belong to) | 45/51 (88%) | 48/51 (94%) |
+| Preferences recorded | 42/48 (88%) | 48/48 (100%) |
 | Reaction on the right listing | 6/9 (67%) | 6/9 (67%) |
 | Focused listing | 3/3 (100%) | 3/3 (100%) |
-| A call request recorded | 6/6 (100%) | 5/6 (83%) |
-| Listings to call | 5/6 (83%) | 5/5 (100%) |
-| Viewing windows | 6/6 (100%) | 5/5 (100%) |
-| Permission to book | 6/6 (100%) | 5/5 (100%) |
-| No booking allowed before the renter said so | 2/3 (67%) | 3/3 (100%) |
-| No calls when none were asked for | 6/6 (100%) | 3/3 (100%) |
+| A call request recorded | 6/6 (100%) | 6/6 (100%) |
+| Listings to call | 3/6 (50%) | 5/6 (83%) |
+| Viewing windows | 5/6 (83%) | 6/6 (100%) |
+| Permission to book | 6/6 (100%) | 6/6 (100%) |
+| No booking allowed before the renter said so | 3/3 (100%) | 3/3 (100%) |
+| No calls when none were asked for | 6/6 (100%) | 6/6 (100%) |
 | Replies in the renter's language | 3/3 (100%) | 3/3 (100%) |
-| Welcome back named what was remembered | 3/3 (100%) | — |
-| Welcome back said nothing it didn't know | 6/6 (100%) | — |
-| Ended with end_session after the goodbye | 17/18 (94%) | 15/15 (100%) |
-| Said goodbye before hanging up | 17/18 (94%) | 15/15 (100%) |
-| Turns over two sentences | 28 of 90 turns | 19 of 84 turns |
-| Tool replies "which one?" (ref didn't resolve) | 1 | 4 |
-| Agent turn, median / p90 (text, tools included) | 0.9 s / 1.2 s | 1.0 s / 1.2 s |
-| How runs ended | end_session 17, script_done 1 | end_session 15 |
+| Welcome back named what was remembered | 3/3 (100%) | 3/3 (100%) |
+| Welcome back said nothing it didn't know | 6/6 (100%) | 6/6 (100%) |
+| Ended with end_session after the goodbye | 18/18 (100%) | 17/18 (94%) |
+| Said goodbye before hanging up | 18/18 (100%) | 17/18 (94%) |
+| Turns over two sentences | 47 of 90 turns | 46 of 90 turns |
+| Said it changed something, with no tool call | 2 | 0 |
+| Tool replies "which one?" (ref didn't resolve) | 2 | 3 |
+| Agent turn, median / p90 (text, tools included) | 0.9 s / 1.1 s | 0.9 s / 1.1 s |
+| How runs ended | end_session 18 | end_session 17, script_done 1 |
 
 | Case | Runs passing | Failing most often |
 |---|---|---|
-| `cat-like-call-top2-friday` | 0/3 | `final.reaction.rank:1` ×3; `final.may_book.not_before_permission` ×1; `final.ended` ×1 |
-| `mandarin-renter` | 3/3 | — |
+| `cat-like-call-top2-friday` | 3/3 | — |
+| `mandarin-renter` | 2/3 | `final.prefs.max_monthly` ×1; `final.prefs.min_beds` ×1; `final.prefs.pets` ×1 |
 | `parking-must-and-focus` | 3/3 | — |
 | `returning-calls-running` | 3/3 | — |
 | `studio-near-work` | 3/3 | — |
-| `too-expensive-then-call-default` | 2/3 | `final.request.listings` ×1 |
+| `too-expensive-then-call-default` | 0/3 | `final.reaction.rank:1` ×3; `final.request.listings` ×3; `final.prefs.max_monthly` ×1 |
 
-Traces: `evals/runs/20261024T055922Z` (not committed).
+Traces: `evals/runs/20261024T084106Z` (not committed).
 
 ### Tune (prompts change against these)
 
-2026-10-24T06:00:25+00:00 · `dde000c` · 9 cases × 3 runs · live text · listings.json (400 listings)
+2026-10-24T08:42:35+00:00 · `9ca2759` · 13 cases × 3 runs · live text · listings.json (400 listings)
 
 | | This run | Previous |
 |---|---|---|
-| **Cases passing every run** | **2 / 9** | **3 / 8** |
-| Runs passing | 63% | 75% |
-| Checks on time (in the turn they belong to) | 57/69 (83%) | 67/69 (97%) |
-| Preferences recorded | 42/54 (78%) | 44/45 (98%) |
-| Reaction on the right listing | 9/9 (100%) | 8/9 (89%) |
-| Focused listing | 6/6 (100%) | 6/6 (100%) |
+| **Cases passing every run** | **6 / 13** | **4 / 13** |
+| Runs passing | 74% | 51% |
+| Checks on time (in the turn they belong to) | 90/99 (91%) | 84/99 (85%) |
+| Preferences recorded | 46/54 (85%) | 42/54 (78%) |
+| Reaction on the right listing | 15/18 (83%) | 14/18 (78%) |
+| Focused listing | 12/12 (100%) | 12/12 (100%) |
 | Map moved to the area | 3/3 (100%) | 3/3 (100%) |
-| A call request recorded | 6/6 (100%) | 6/6 (100%) |
-| Listings to call | 6/6 (100%) | 6/6 (100%) |
-| Viewing windows | 6/6 (100%) | 6/6 (100%) |
-| Permission to book | 6/6 (100%) | 6/6 (100%) |
+| A call request recorded | 12/12 (100%) | 12/12 (100%) |
+| Listings to call | 12/12 (100%) | 11/12 (92%) |
+| Viewing windows | 12/12 (100%) | 12/12 (100%) |
+| Permission to book | 12/12 (100%) | 12/12 (100%) |
 | Renter's extra questions | 3/3 (100%) | 3/3 (100%) |
-| No booking allowed before the renter said so | 3/3 (100%) | 3/3 (100%) |
-| No calls when none were asked for | 12/12 (100%) | 9/9 (100%) |
-| Replies in the renter's language | 0/3 (0%) | 3/3 (100%) |
-| Welcome back named what was remembered | 5/6 (83%) | — |
-| Welcome back said nothing it didn't know | 3/3 (100%) | — |
-| Ended with end_session after the goodbye | 20/27 (74%) | 19/24 (79%) |
-| Said goodbye before hanging up | 20/27 (74%) | 19/24 (79%) |
-| Turns over two sentences | 51 of 138 turns | 51 of 132 turns |
-| Said it changed something, with no tool call | 10 | 2 |
-| Tool replies "which one?" (ref didn't resolve) | 3 | 4 |
-| Agent turn, median / p90 (text, tools included) | 0.8 s / 1.1 s | 0.9 s / 1.2 s |
-| How runs ended | end_session 20, script_done 7 | end_session 19, script_done 5 |
+| No booking allowed before the renter said so | 6/6 (100%) | 6/6 (100%) |
+| No calls when none were asked for | 18/18 (100%) | 18/18 (100%) |
+| Replies in the renter's language | 1/3 (33%) | 0/3 (0%) |
+| Welcome back named what was remembered | 4/6 (67%) | 5/6 (83%) |
+| Welcome back said nothing it didn't know | 3/3 (100%) | 3/3 (100%) |
+| Ended with end_session after the goodbye | 34/39 (87%) | 28/39 (72%) |
+| Said goodbye before hanging up | 34/39 (87%) | 28/39 (72%) |
+| Turns over two sentences | 123 of 212 turns | 115 of 213 turns |
+| Said it changed something, with no tool call | 6 | 11 |
+| Tool replies "which one?" (ref didn't resolve) | 7 | 7 |
+| Agent turn, median / p90 (text, tools included) | 0.9 s / 1.2 s | 0.9 s / 1.2 s |
+| How runs ended | end_session 34, script_done 5 | end_session 28, script_done 11 |
 
 | Case | Runs passing | Failing most often |
 |---|---|---|
 | `ambiguous-street-then-rank` | 3/3 | — |
-| `budget-beds-goodbye` | 2/3 | `final.ended` ×1; `final.ended.goodbye` ×1 |
-| `call-named-no-book-parking` | 2/3 | `final.ended` ×1; `final.ended.goodbye` ×1 |
-| `call-top3-saturday-book` | 3/3 | — |
+| `budget-beds-goodbye` | 3/3 | — |
+| `call-named-no-book-parking` | 3/3 | — |
+| `call-top3-saturday-book` | 2/3 | `final.ended` ×1; `final.ended.goodbye` ×1 |
 | `change-mind-budget` | 2/3 | `final.ended` ×1; `final.ended.goodbye` ×1 |
-| `farsi-switch` | 0/3 | `final.prefs.max_monthly` ×3; `final.prefs.min_beds` ×3; `final.prefs.pets` ×3 |
-| `feedback-light-and-like` | 2/3 | `final.ended` ×1; `final.ended.goodbye` ×1 |
+| `farsi-switch` | 1/3 | `final.prefs.max_monthly` ×2; `final.prefs.min_beds` ×2; `final.prefs.pets` ×2 |
+| `feedback-light-and-like` | 2/3 | `final.reaction.rank:2` ×1 |
 | `focus-rank-street-area` | 2/3 | `final.ended` ×1; `final.ended.goodbye` ×1 |
-| `returning-results-ready` | 1/3 | `final.ended` ×1; `final.ended.goodbye` ×1; `final.greeting.says.Saturday` ×1 |
+| `like-looks-amazing-dislike-far` | 0/3 | `final.reaction.rank:2` ×2; `final.ended` ×2; `final.ended.goodbye` ×2 |
+| `returning-results-ready` | 2/3 | `final.greeting.says.Erskine` ×1; `final.greeting.says.Saturday` ×1 |
+| `shared-address-ask-by-price` | 3/3 | — |
+| `shared-address-focused-then-call` | 3/3 | — |
+| `tap-is-not-a-like` | 3/3 | — |
 
-Traces: `evals/runs/20261024T055922Z` (not committed).
+Traces: `evals/runs/20261024T084106Z` (not committed).
 
 ## Listing calls: the Caller against landlord personas (text)
 

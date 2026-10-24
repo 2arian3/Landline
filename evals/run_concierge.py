@@ -58,7 +58,9 @@ async def run(sets: list[str], runs: int, concurrency: int, only: set[str], use_
             trace = await simulate(case.id, n, ScriptedRenter([line.say for line in case.lines]),
                                    catalogue=catalogue, connect_higgs=connect, api_key=key,
                                    remembered=back.opening if back else None,
-                                   prefs=back.prefs if back else None)
+                                   prefs=back.prefs if back else None,
+                                   taps={i: int(line.tap.split(":")[1]) for i, line in enumerate(case.lines)
+                                         if line.tap})
         result = score(case, trace, catalogue)
         folder = out / name
         folder.mkdir(parents=True, exist_ok=True)

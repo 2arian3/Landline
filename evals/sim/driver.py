@@ -18,12 +18,13 @@ from datetime import UTC, datetime
 from typing import Any, Protocol
 
 from landline.agents.concierge import tools
-from landline.contracts import PreferencesUpdated, SessionStarted
+from landline.contracts import ListingFocused, PreferencesUpdated, SessionStarted
 from landline.contracts.tools import PreferenceDelta
 from landline.db.catalogue import Catalogue
 from landline.orchestrator import SessionRuntime
 from landline.voice.bridge import ends_call, opening, run_tool
 from landline.voice.higgs import ConnectHiggs, session_config
+from landline.voice.line import LOOKING, describe
 
 TURN_TIMEOUT_S = 30   # one agent turn, tools included
 MAX_LINES = 14        # the other side's lines; a script is shorter, so this only stops a runaway
@@ -116,10 +117,11 @@ class Recorded:
 async def simulate(case_id: str, run: int, opponent: Opponent, *, catalogue: Catalogue,
                    connect_higgs: ConnectHiggs, api_key: str = "", max_lines: int = MAX_LINES,
                    turn_timeout_s: float = TURN_TIMEOUT_S, remembered: str | None = None,
-                   prefs: dict[str, Any] | None = None) -> Trace:
+                   prefs: dict[str, Any] | None = None, taps: dict[int, int] | None = None) -> Trace:
     """One conversation between the Concierge and `opponent`, to its end. Never raises for what the
     agent or Higgs did: that goes in the trace. With `remembered` (what Profiles would say about this
-    number) and `prefs` (the search it would restore), the caller is a returning one."""
+    number) and `prefs` (the search it would restore), the caller is a returning one. `taps` maps a line
+    to the rank of the pin the renter taps instead of speaking it."""
     sid = f"s_sim_{case_id}_{run}"          # ids come from code, never from the model
     runtime = SessionRuntime(catalogue)
     await runtime.start(SessionStarted(session_id=sid, at=datetime.now(UTC), idem_key=f"{sid}:started",
@@ -147,6 +149,12 @@ async def simulate(case_id: str, run: int, opponent: Opponent, *, catalogue: Cat
                 trace.end = "script_done"
                 break
             trace.boards.append(_board(runtime, sid))
+            if taps and len(trace.lines) in taps:   # a pin tap: the map focuses it, the agent gets a note
+                card = runtime.get(sid).board[taps[len(trace.lines)] - 1]
+                await runtime.emit(ListingFocused(session_id=sid, at=datetime.now(UTC), origin="ui",
+                                                  idem_key=f"{sid}:tap{len(trace.lines)}",
+                                                  listing_id=card.listing_id))
+                line = f"{LOOKING} {describe(card)}"
             trace.lines.append(line)
             await higgs.send({"type": "conversation.item.create", "item": {
                 "type": "message", "role": "user", "content": [{"type": "input_text", "text": line}]}})

@@ -105,6 +105,10 @@ def _wants(want: Want, state: dict, trace: Trace, catalogue: Catalogue, *, kind:
                 and (r.attribute is None or said.get("attribute") == r.attribute)
             check(f"reaction.{r.ref}", ok, f"want {r.reaction}/{r.attribute} on {_addr(catalogue, lid)}, "
                                            f"got {said}")
+        for r in want.no_reactions or []:
+            lid = _one(r.ref, _board(trace, r.at if r.at is not None else own), catalogue)
+            said = state["reactions"].get(lid)
+            check(f"no_reaction.{r.ref}", said is None, f"got {said} on {_addr(catalogue, lid)}")
         if want.focus is not None:
             lid = _one(want.focus.ref, _board(trace, want.focus.at if want.focus.at is not None else own),
                        catalogue)
@@ -135,6 +139,9 @@ def _wants(want: Want, state: dict, trace: Trace, catalogue: Catalogue, *, kind:
         if want.replies_in is not None:
             ok, detail = _replies_in(want.replies_in, trace)
             check(f"replies_in.{want.replies_in}", ok, detail)
+        for word in want.replies_avoid or []:
+            hits = [a.line for a in trace.agent if word.lower() in a.text.lower()]
+            check(f"replies_avoid.{word}", not hits, f"said on lines {hits}")
         greeting = trace.agent[0].text if trace.agent else ""
         for word in want.greeting_says or []:
             check(f"greeting.says.{word}", word.lower() in greeting.lower(), f"greeting: {greeting!r}")
@@ -192,7 +199,10 @@ def hygiene(trace: Trace, catalogue: Catalogue) -> dict[str, int]:
         counts["ids_read"] += any(x in turn.text for x in ids | numbers)
         counts["markdown"] += bool(MARKDOWN.search(turn.text))
     for name, reply in REPLIES.items():
-        counts[name] = sum(t.output == reply for t in trace.tools)
+        # "which" also counts the replies that name a shared address's cards, and a feedback with no ref.
+        counts[name] = sum(t.output == reply or (name == "which" and (t.output.startswith("Which one?")
+                                                                      or t.output == tools.NO_REF))
+                           for t in trace.tools)
     counts["higgs_errors"] = len(trace.errors)
     return counts
 
