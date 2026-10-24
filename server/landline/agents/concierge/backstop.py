@@ -1,5 +1,6 @@
 """The gaps code fills for the Concierge (A-04): a renter line in another writing system that the
-Concierge answered without a tool, and a renter asking for calls or a viewing that the Concierge answered
+Concierge answered without a tool; an English line whose reply claimed a save with no tool ("I've updated
+your budget…", #96, `claims_save`); and a renter asking for calls or a viewing that the Concierge answered
 without call_listings (#127, at the end of this file).
 
 Seen in the eval (docs/EVAL_FINDINGS.md): after a renter switches to Korean or Farsi, the Concierge answers
@@ -57,12 +58,27 @@ def foreign(line: str) -> bool:
     return latin * 2 < len(letters)
 
 
+# A save the Concierge claimed without a tool (#96, #129): "I've updated your budget to three thousand
+# dollars", "Perfect, I've saved that", "Got it, two bedrooms", and nothing was saved. Only a reply that
+# starts with such a claim lets an English line be read: reading every line made false updates ("it'll
+# just be me" became studios).
+_CLAIM = re.compile(r"^\W*(?:(?:ok(?:ay)?|great|perfect|sure|alright|all\s+right|thanks|thank\s+you)\W+)?"
+                    r"(?:i've|i’ve|i\s+have)\s+(?:updated|noted|saved|set|added|changed)\b"
+                    r"|^\W*got\s+it\s*[,:–—-]\s*\w", re.I)
+
+
+def claims_save(reply: str) -> bool:
+    """Whether the Concierge's reply starts by saying it saved something."""
+    return bool(_CLAIM.search(reply or ""))
+
+
 async def catch_up(reader: Any | None, line: str, ctx: tools.ToolContext,
-                   timeout_s: float = TIMEOUT_S) -> str | None:
+                   timeout_s: float = TIMEOUT_S, *, claimed: bool = False) -> str | None:
     """Saves what `line` says through update_preferences, and returns the tool's reply; None when the line
     isn't one for this, there's no text model, it couldn't be read, or it says nothing to save.
-    `reader` is an agents.auditor.llm.Chat (its `json` method)."""
-    if reader is None or not foreign(line):
+    `reader` is an agents.auditor.llm.Chat (its `json` method). `claimed`: the Concierge's reply to this
+    line claimed a save with no tool (see `claims_save`), so an English line is read too."""
+    if reader is None or not (claimed or foreign(line)):
         return None
     try:
         out = await asyncio.wait_for(reader.json(SYSTEM, line, SCHEMA, name="preferences"), timeout_s)
@@ -92,7 +108,9 @@ class Turn:
 
     def _reset(self) -> None:
         self.heard: str | None = None
+        self.said: str | None = None   # the start of the Concierge's reply to it
         self.replied = self.tooled = self.answered = self.taken = self.call_taken = False
+        self.claim_taken = False
         self.tools: set[str] = set()
 
     def speech_started(self) -> None:
@@ -115,9 +133,23 @@ class Turn:
     def transcript(self, text: str) -> None:
         self.heard = text
 
+    def agent_said(self, text: str) -> None:
+        """What the Concierge said in reply. Only its first line counts, and only once it replied to this
+        turn: a talked-over reply's transcript can land after the renter started speaking again."""
+        if self.replied and self.said is None:
+            self.said = text
+
     def line(self) -> str | None:
         if self.heard and self.answered and not self.tooled and not self.taken and foreign(self.heard):
             self.taken = True
+            return self.heard
+        return None
+
+    def claimed_line(self) -> str | None:
+        """The renter's line (Latin script) when the reply claimed a save and no tool ran, once."""
+        if (self.heard and self.answered and not self.tooled and not self.claim_taken and self.said
+                and claims_save(self.said) and not foreign(self.heard)):
+            self.claim_taken = True
             return self.heard
         return None
 
