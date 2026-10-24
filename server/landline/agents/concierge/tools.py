@@ -21,6 +21,7 @@ from landline.agents.concierge import refs
 from landline.contracts import (
     AreaFocused,
     CallsRequested,
+    Card,
     FeedbackGiven,
     ListingFocused,
     PreferencesUpdated,
@@ -49,6 +50,10 @@ UNKNOWN = "Sorry, I can't do that yet."
 NOT_CAUGHT = "Sorry, I didn't catch that. Could you say it again?"
 WHICH = "Which one do you mean? You can say its street or its number on the list."
 BROKEN = "Sorry, something went wrong on my side."
+# give_feedback with no listing_ref and nothing focused: the renter usually did say which ("the second
+# one"), and the agent left it out. Asking them again would annoy them; the agent can fix it itself.
+NO_REF = "Not saved: no listing_ref. Call give_feedback again now with listing_ref set to the number or " \
+         "street the renter said; ask them only if they named none."
 # end_session's answer when it came before any word: the bridge asks for one more response to say it in.
 SAY_GOODBYE = "You haven't said goodbye yet. Say a short goodbye now, in the renter's language; the line " \
               "closes after it."
@@ -156,21 +161,25 @@ async def update_preferences(args: PreferenceDelta, ctx: ToolContext, meta: dict
 async def give_feedback(args: GiveFeedback, ctx: ToolContext, meta: dict) -> str:
     view = ctx.runtime.get(ctx.session_id)
     if args.listing_ref:
-        card = refs.resolve(args.listing_ref, view.board)
-        listing_id = card.listing_id if card else None
+        found = refs.match(args.listing_ref, view.board, view.focus_listing_id)
+        if found.card is None:
+            return _which(found)
+        listing_id = found.card.listing_id
     else:
         listing_id = view.focus_listing_id
     if listing_id is None:
-        return WHICH
+        return NO_REF
     view = await ctx.runtime.emit(FeedbackGiven(**meta, listing_id=listing_id, reaction=args.reaction,
                                                 reason=args.reason, attribute=args.attribute))
     return f"Noted for {_address(ctx, listing_id)}. {view.agent_says}"
 
 
 async def focus_listing(args: FocusListing, ctx: ToolContext, meta: dict) -> str:
-    card = refs.resolve(args.listing_ref, ctx.runtime.get(ctx.session_id).board)
+    view = ctx.runtime.get(ctx.session_id)
+    found = refs.match(args.listing_ref, view.board, view.focus_listing_id)
+    card = found.card
     if card is None:
-        return WHICH
+        return _which(found)
     await ctx.runtime.emit(ListingFocused(**meta, listing_id=card.listing_id, origin="voice"))
     return f"{card.address}: {_beds(card.beds)}, {_money(card.monthly_cost)} a month."
 
@@ -187,13 +196,14 @@ async def call_listings(args: CallListings, ctx: ToolContext, meta: dict) -> str
     """Records the plan, or updates the one already recorded: what this call leaves out (the listings,
     the viewing times, the permission to book) stays as it was, and extra questions add up. The reply
     says the whole plan as it now stands, so the agent reads back what was saved."""
-    board = ctx.runtime.get(ctx.session_id).board
+    view = ctx.runtime.get(ctx.session_id)
+    board = view.board
     before = ctx.runtime.state(ctx.session_id).request
     if args.listing_refs:
-        cards = [refs.resolve(ref, board) for ref in args.listing_refs]
-        if any(c is None for c in cards):
-            return WHICH
-        ids = list(dict.fromkeys(c.listing_id for c in cards))
+        found = [refs.match(ref, board, view.focus_listing_id) for ref in args.listing_refs]
+        if unclear := next((f for f in found if f.card is None), None):
+            return _which(unclear)
+        ids = list(dict.fromkeys(f.card.listing_id for f in found if f.card))
     elif before is not None:
         ids = list(before.listing_ids)
     else:
@@ -205,7 +215,7 @@ async def call_listings(args: CallListings, ctx: ToolContext, meta: dict) -> str
     may_book = args.may_book if args.may_book is not None else bool(before and before.may_book)
     await ctx.runtime.emit(CallsRequested(**meta, listing_ids=ids, extra_questions=questions,
                                           availability=availability, may_book=may_book))
-    addresses = [_address(ctx, lid) for lid in ids]
+    addresses = [_told_apart(ctx, lid, board) for lid in ids]
     times = f"Viewings {_join([_window(a) for a in availability])}." if availability \
         else "No viewing times yet."
     booking = "I may book one." if may_book else "I won't book."
@@ -225,6 +235,25 @@ HANDLERS: dict[str, Callable[[Any, ToolContext, dict], Awaitable[str]]] = {
     "call_listings": call_listings,
     "end_session": end_session,
 }
+
+
+def _which(found: refs.Match) -> str:
+    """"Which one?", naming the cards a shared address fits by their number and price, so the agent can
+    ask the renter and then answer with a number."""
+    options = found.options
+    if len(options) < 2 or len({c.address for c in options}) > 1:
+        return WHICH
+    named = _join([f"number {c.rank} at {_money(c.monthly_cost)}" for c in options[:3]])
+    more = f" and {len(options) - 3} more" if len(options) > 3 else ""
+    return f"Which one? {len(options)} share {options[0].address}: {named}{more}. Ask, then use its number."
+
+
+def _told_apart(ctx: ToolContext, listing_id: str, board: list[Card]) -> str:
+    """The address, plus its number on the list when another card on the board has the same one."""
+    address = _address(ctx, listing_id)
+    card = next((c for c in board if c.listing_id == listing_id), None)
+    twins = card is not None and sum(c.address == address for c in board) > 1
+    return f"{address}, number {card.rank}," if twins and card else address
 
 
 def _address(ctx: ToolContext, listing_id: str) -> str:
