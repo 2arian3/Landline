@@ -124,7 +124,7 @@ def bare(quote: str) -> str | None:
     t = quote.strip().lower().replace("’", "'")
     if _BARE_NO.search(t):
         return "no"
-    if _BARE_YES.search(t):
+    if _BARE_YES.search(t) and not _NEGATED.search(t):   # "Yeah, it's not." is no yes; dropped, not guessed
         return "yes"
     return None
 
@@ -345,7 +345,8 @@ _RULES: dict[str, tuple[tuple[str, str], ...]] = {
     ),
     "furnished": (("no", r"unfurnished|not furnished|无家具|不带家具"),
                   ("yes", r"furnished|comes with furniture|带家具")),
-    "ac": (("no", r"no (ac|a/c|air)|window unit you bring|没有空调"),
+    "ac": (("no", r"no (ac|a/c|air)|(doesn't|does not|don't|do not) have (ac|a/c|air)|window unit you bring|"
+                  r"没有空调"),
            ("yes", r"central air|\bac\b|a/c|air condition|空调")),
     "elevator": (("no", r"no elevator|walk[- ]up|stairs only|没有电梯"), ("yes", r"elevator|lift|电梯")),
     "step_free": (("no", r"stairs|steps up|not accessible"),
@@ -358,7 +359,9 @@ _BARE_YES = re.compile(r"^(yes|yeah|yep|yup|sure|of course|absolutely|definitely
                        r"it does|they do|we do)\b[^.!?]{0,20}[.!?]?$")
 _BARE_NO = re.compile(r"^(no|nope|nah)\b(?!\s*(problem|worries|issue))[^.!?]{0,20}[.!?]?$|"
                       r"^(not really|it isn't|it's not|they aren't|they're not|it doesn't|we don't|"
-                      r"they don't)\b[^.!?]{0,20}[.!?]?$")
+                      r"they don't|it is not|they are not|it does not|they do not|we do not|of course not)\b"
+                      r"(?![^.!?]*\b(problem|worries|issue)\b)[^.!?]{0,20}[.!?]?$")
+_NEGATED = re.compile(r"\bnot\b|n't\b|\bnever\b")
 _ASKS = {
     "available": r"available|still (on the market|open|free)|rented",
     "pets": r"\bpets?\b|\bdogs?\b|\bcats?\b|animal",
