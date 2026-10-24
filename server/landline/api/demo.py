@@ -20,6 +20,7 @@ for word, so the quotes below are written once and used by both.
 from __future__ import annotations
 
 import asyncio
+import os
 import secrets
 import time
 from collections.abc import Callable
@@ -47,6 +48,8 @@ from landline.scoring import FeatureMatrix, Ranked, explain, rank
 
 BOARD_SIZE = 6
 TICK_S = 1.2     # each step of the scripted calls: dialing, ringing, live, then one hang-up per tick
+if os.getenv("DEMO_TICK_S"):   # slower scripted calls for a video take, so their captions can be read
+    TICK_S = float(os.environ["DEMO_TICK_S"])
 PLANNED = 4      # the demo plans the top four places with a pin; the fourth never picks up
 TORONTO = ZoneInfo("America/Toronto")
 # "I'm free Saturday afternoon, book one if you can": the renter's window, and the slot an agent offers.
