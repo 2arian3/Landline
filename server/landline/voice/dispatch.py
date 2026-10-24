@@ -88,8 +88,10 @@ class CallRunner(Protocol):
 class Dispatcher:
     def __init__(self, runtime: SessionRuntime, settings: Settings, *, runner: CallRunner | None = None,
                  texter: Texter | None = None, clock: Callable[[], datetime] = lambda: datetime.now(UTC),
-                 sleep: Callable[[float], Awaitable[None]] = asyncio.sleep):
+                 sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+                 translate: Callable[[str, str | None], Awaitable[str]] | None = None):
         self.runtime, self.settings, self.runner, self.texter = runtime, settings, runner, texter
+        self.translate = translate   # the results into the renter's language (voice/translate.py)
         self.clock, self.sleep = clock, sleep
         self.cap = settings.call_concurrency or max(1, settings.higgs_max_sessions - 1)
         self._lines = asyncio.Semaphore(self.cap)
@@ -211,7 +213,10 @@ class Dispatcher:
             log.warning("session %s: results ready but no way to text them", event.session_id)
             return
         link = f"{self.settings.web_url.rstrip('/')}/s/{event.session_id}"
-        self.texter.send_soon(state.caller_phone, sender, results_text(view.results, link))
+        results = view.results
+        if self.translate is not None and state.plan is not None:
+            results = await self.translate(results, state.plan.language)   # English when it can't
+        self.texter.send_soon(state.caller_phone, sender, results_text(results, link))
 
     # Tasks
 

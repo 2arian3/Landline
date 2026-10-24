@@ -17,7 +17,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
-from landline.agents.concierge import tools
+from landline.agents.concierge import backstop, tools
 from landline.contracts import ListingFocused, PreferencesUpdated, SessionStarted
 from landline.contracts.tools import PreferenceDelta
 from landline.db.catalogue import Catalogue
@@ -80,6 +80,7 @@ class Trace:
     end: str = "error"   # end_session | script_done | max_lines | timeout | higgs_closed | error
     errors: list[str] = field(default_factory=list)         # Higgs `error` events
     events: list[dict] = field(default_factory=list)        # {"dir": "in" | "out", "event": ...}
+    caught: list[dict] = field(default_factory=list)        # code's catch-ups (agents/concierge/backstop.py)
 
     def to_json(self) -> dict:
         return asdict(self)
@@ -117,11 +118,13 @@ class Recorded:
 async def simulate(case_id: str, run: int, opponent: Opponent, *, catalogue: Catalogue,
                    connect_higgs: ConnectHiggs, api_key: str = "", max_lines: int = MAX_LINES,
                    turn_timeout_s: float = TURN_TIMEOUT_S, remembered: str | None = None,
-                   prefs: dict[str, Any] | None = None, taps: dict[int, int] | None = None) -> Trace:
+                   prefs: dict[str, Any] | None = None, taps: dict[int, int] | None = None,
+                   reader: Any | None = None) -> Trace:
     """One conversation between the Concierge and `opponent`, to its end. Never raises for what the
     agent or Higgs did: that goes in the trace. With `remembered` (what Profiles would say about this
     number) and `prefs` (the search it would restore), the caller is a returning one. `taps` maps a line
-    to the rank of the pin the renter taps instead of speaking it."""
+    to the rank of the pin the renter taps instead of speaking it. `reader` (a text model) turns on the
+    bridge's catch-up for a line in another script answered with no tool; replays leave it off."""
     sid = f"s_sim_{case_id}_{run}"          # ids come from code, never from the model
     runtime = SessionRuntime(catalogue)
     await runtime.start(SessionStarted(session_id=sid, at=datetime.now(UTC), idem_key=f"{sid}:started",
@@ -160,6 +163,10 @@ async def simulate(case_id: str, run: int, opponent: Opponent, *, catalogue: Cat
                 "type": "message", "role": "user", "content": [{"type": "input_text", "text": line}]}})
             await higgs.send({"type": "response.create"})
             said = await _agent_turn(stream, higgs, ctx, trace, len(trace.lines) - 1, turn_timeout_s)
+            if reader is not None and not trace.agent[-1].tools and not ctx.hang_up:   # as the bridge does
+                caught = await backstop.catch_up(reader, line, ctx)
+                if caught is not None:
+                    trace.caught.append({"line": len(trace.lines) - 1, "output": caught})
             trace.states.append(runtime.state(sid).model_dump(mode="json"))
         if ctx.hang_up:
             trace.end = "end_session"

@@ -1,0 +1,40 @@
+{
+  "id": "punjabi-renter",
+  "about": "Speaks Punjabi (Gurmukhi) from the first line; budget, beds, a dog, language pa",
+  "lines": [
+    {
+      "say": "ਸਤ ਸ੍ਰੀ ਅਕਾਲ। ਮੈਨੂੰ ਇੱਕ ਬੈੱਡਰੂਮ ਵਾਲਾ ਅਪਾਰਟਮੈਂਟ ਚਾਹੀਦਾ ਹੈ, ਮਹੀਨੇ ਦਾ ਵੱਧ ਤੋਂ ਵੱਧ 2300 ਡਾਲਰ।",
+      "expect": {
+        "prefs": {
+          "max_monthly": 2300,
+          "min_beds": 1
+        }
+      }
+    },
+    {
+      "say": "ਮੇਰੇ ਕੋਲ ਇੱਕ ਕੁੱਤਾ ਹੈ।",
+      "expect": {
+        "prefs": {
+          "pets": [
+            "dog"
+          ]
+        }
+      }
+    },
+    {
+      "say": "ਧੰਨਵਾਦ, ਬੱਸ ਏਨਾ ਹੀ। ਰੱਬ ਰਾਖਾ।"
+    }
+  ],
+  "final": {
+    "prefs": {
+      "max_monthly": 2300,
+      "min_beds": 1,
+      "pets": [
+        "dog"
+      ],
+      "language": "pa"
+    },
+    "replies_in": "pa",
+    "ended": true
+  }
+}

@@ -34,6 +34,7 @@ Verified against docs.boson.ai on 21 Oct 2026. When something fails, re-check `h
 - Voices: `"default"`, a Boson preset, or `voice_<id>` (custom voice from `POST /v1/audio/voices`). OpenAI names like `alloy` fail the update.
 - The update fails if you send `include`, `prompt`, `tracing` or `idle_timeout_ms`. `truncation` accepts only `"auto"` or `"disabled"`.
 - `server_vad` threshold defaults to 0.55; `min_speech_duration` (default 0.125) is an extension. `semantic_vad` also exists.
+- **Languages** (docs.boson.ai sessions guide, checked 24 Oct): Higgs detects the spoken language and replies in kind; nothing sets a conversation language. `transcription.language` (ISO-639-1, unknown values ignored) only hints the transcript, and after the first reply the transcription follows the conversation on its own. No event reports the detected language, so the Concierge records it with `update_preferences(language=…)`. We hint only a returning caller's stored language (`bridge.hint`).
 
 ## Events you handle
 

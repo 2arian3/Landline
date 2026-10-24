@@ -1,0 +1,43 @@
+{
+  "id": "korean-switch",
+  "about": "Starts in English, switches to Korean; replies, beds, budget, a cat and language ko must follow",
+  "lines": [
+    {
+      "say": "Hi, I need help finding a place to rent."
+    },
+    {
+      "say": "사실 한국어가 더 편해요. 방 두 개짜리 아파트를 찾고 있고, 한 달에 3000달러까지 괜찮아요.",
+      "expect": {
+        "prefs": {
+          "max_monthly": 3000,
+          "min_beds": 2
+        }
+      }
+    },
+    {
+      "say": "고양이 한 마리 키워요.",
+      "expect": {
+        "prefs": {
+          "pets": [
+            "cat"
+          ]
+        }
+      }
+    },
+    {
+      "say": "감사합니다. 그럼 안녕히 계세요."
+    }
+  ],
+  "final": {
+    "prefs": {
+      "max_monthly": 3000,
+      "min_beds": 2,
+      "pets": [
+        "cat"
+      ],
+      "language": "ko"
+    },
+    "replies_in": "ko",
+    "ended": true
+  }
+}

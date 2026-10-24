@@ -23,8 +23,18 @@ from typing import Any, Protocol
 
 from fastapi import WebSocket, WebSocketDisconnect
 
-from landline.agents.concierge import tools
-from landline.agents.concierge.prompt import CALL_CONNECTED, GREETING, INSTRUCTIONS, RETURNING, WELCOME_BACK
+from landline.agents.auditor import llm as auditor_llm
+from landline.agents.concierge import backstop, tools
+from landline.agents.concierge.prompt import (
+    CALL_CONNECTED,
+    GREETING,
+    INSTRUCTIONS,
+    RETURNING,
+    SPOKE_BEFORE,
+    WELCOME_BACK,
+    language_name,
+    primary,
+)
 from landline.config import Settings
 from landline.contracts import SessionEnded, SessionStarted
 from landline.orchestrator import SessionRuntime
@@ -37,6 +47,8 @@ from landline.voice.sms import Texter
 
 log = logging.getLogger(__name__)
 
+_CATCHING: set[asyncio.Task] = set()   # catch-ups under way (agents/concierge/backstop.py)
+_READER: list[Any] = []   # the text model for them, read from the environment once
 START_TIMEOUT_S = 10      # Twilio sends `connected` then `start` right after the socket opens
 POLICY_VIOLATION = 1008
 HANG_UP_GRACE_S = 0.5     # after the goodbye has played, before hanging up
@@ -122,28 +134,48 @@ def _link_texter(texter: Texter | None, call: RenterCall, settings: Settings) ->
     return text
 
 
-def opening(remembered: str | None) -> tuple[str, list[dict[str, Any]]]:
+def opening(remembered: str | None, language: str | None = None) -> tuple[str, list[dict[str, Any]]]:
     """The Concierge's session instructions for a call, and the events that start it. A first-time caller
     gets GREETING as the first response's instructions, which is all it needs. A returning caller (O-05)
     gets the welcome in the session instructions next to what code remembers, and the call starts with a
     quoted note and a plain response.create: instructions on response.create would replace the session's,
-    and the welcome then ignored the memory and made one up (docs/EVAL_FINDINGS.md)."""
+    and the welcome then ignored the memory and made one up (docs/EVAL_FINDINGS.md). A returning caller
+    whose stored language isn't English is welcomed back in it."""
     if not remembered:
         return INSTRUCTIONS, [{"type": "response.create", "response": {"instructions": GREETING}}]
+    spoke = primary(language)
+    before = SPOKE_BEFORE.format(language=language_name(spoke)) if spoke and spoke != "en" else ""
     note = {"type": "message", "role": "user", "content": [{"type": "input_text", "text": CALL_CONNECTED}]}
-    return (f"{INSTRUCTIONS}{WELCOME_BACK}{RETURNING}{remembered}",
+    return (f"{INSTRUCTIONS}{before}{WELCOME_BACK}{RETURNING}{remembered}",
             [{"type": "conversation.item.create", "item": note}, {"type": "response.create"}])
+
+
+def _reader() -> Any | None:
+    """The text model the catch-up reads a line with: the Auditor's (LLM_PROVIDER, else the first key set,
+    Boson's last). None without a key: the calls go on without catch-ups."""
+    if not _READER:
+        _READER.append(auditor_llm.from_env())
+    return _READER[0]
+
+
+def hint(remembered: str | None, language: str | None) -> str | None:
+    """The transcription hint for a call: a returning caller's stored language, two letters, else None
+    (Higgs detects it). A first-time caller's stored language can only be a default, so it isn't used."""
+    lang = primary(language)
+    return lang if remembered and len(lang) == 2 else None
 
 
 async def _talk(transport: Transport, call: RenterCall, runtime: SessionRuntime, connect_higgs: ConnectHiggs,
                 settings: Settings, set_status: Callable[[str], None],
                 text_link: Callable[[], bool] | None, recorder: CallRecorder,
                 lines: Lines | None = None) -> str:
-    instructions, start = opening(runtime.opening(call.session_id))
+    remembered = runtime.opening(call.session_id)
+    language = runtime.state(call.session_id).preferences.language   # restored by Profiles, from code
+    instructions, start = opening(remembered, language)
     try:
         higgs = await connect_higgs(settings.boson_api_key or "", session_config(
             instructions=instructions, tools=tools.TOOLS, voice=settings.higgs_voice_renter,
-            audio_format=transport.audio_format))
+            audio_format=transport.audio_format, language=hint(remembered, language)))
     except Exception as exc:
         log.exception("Higgs session failed for call %s", call.call_id)
         set_status(f"error: {exc}"[:200])
@@ -160,7 +192,8 @@ async def _talk(transport: Transport, call: RenterCall, runtime: SessionRuntime,
         for event in start:
             await higgs.send(event)
         pumps = {asyncio.create_task(_renter_to_higgs(transport, higgs, recorder)),
-                 asyncio.create_task(_higgs_to_renter(higgs, transport, ctx, playback, recorder, line))}
+                 asyncio.create_task(_higgs_to_renter(higgs, transport, ctx, playback, recorder, line,
+                                                     reader=_reader()))}
         done, _ = await asyncio.wait(pumps, timeout=settings.renter_call_max_s,
                                      return_when=asyncio.FIRST_COMPLETED)
         return _why(done)
@@ -270,10 +303,14 @@ async def _renter_to_higgs(transport: Transport, higgs: Any, recorder: CallRecor
 
 
 async def _higgs_to_renter(higgs: Any, transport: Transport, ctx: tools.ToolContext,
-                           playback: Playback, recorder: CallRecorder, line: Line | None = None) -> str:
+                           playback: Playback, recorder: CallRecorder, line: Line | None = None,
+                           reader: Any | None = None) -> str:
     """The Concierge's audio back to the renter, barge-in and tool calls. Ends when Higgs closes, or once
-    the goodbye has played after end_session. `line` sees every event, to deliver map taps between turns."""
+    the goodbye has played after end_session. `line` sees every event, to deliver map taps between turns.
+    With `reader` (a text model), a renter line in another script that got a reply with no tool is read
+    for its preferences in the background (agents/concierge/backstop.py)."""
     spoke = False   # whether the response under way has sent any audio yet
+    turn = backstop.Turn()
     async for event in higgs.events():
         kind = event.get("type")
         if line is not None:
@@ -282,6 +319,7 @@ async def _higgs_to_renter(higgs: Any, transport: Transport, ctx: tools.ToolCont
             await line.seen(event)
         if kind == "response.created":
             spoke = False
+            turn.response_created()
         elif kind == "response.output_audio.delta":
             spoke = True
             await transport.send_audio(event["delta"])
@@ -292,21 +330,30 @@ async def _higgs_to_renter(higgs: Any, transport: Transport, ctx: tools.ToolCont
             playback.clear()
             recorder.cut()
             recorder.speech_started(event.get("item_id"), event.get("audio_start_ms"))
+            turn.speech_started()
         elif kind == "input_audio_buffer.speech_stopped":
             recorder.speech_stopped(event.get("item_id"), event.get("audio_end_ms"))
         elif kind == "response.function_call_arguments.done":
+            turn.tool_called()
             await run_tool(higgs, event, ctx, spoke=spoke)
-        elif kind == "response.done" and ends_call(event, ctx):
-            await asyncio.sleep(playback.remaining() + HANG_UP_GRACE_S)
-            return "end_session"
+        elif kind == "response.done":
+            if ends_call(event, ctx):
+                await asyncio.sleep(playback.remaining() + HANG_UP_GRACE_S)
+                return "end_session"
+            turn.response_done(event)
         elif kind == "conversation.item.input_audio_transcription.completed":
             log.info("call %s renter: %s", ctx.call_id, event.get("transcript", ""))
             _said(ctx, recorder, "renter", event)
+            turn.transcript(str(event.get("transcript") or ""))
         elif kind == "response.output_audio_transcript.done":
             log.info("call %s concierge: %s", ctx.call_id, event.get("transcript", ""))
             _said(ctx, recorder, "agent", event)
         elif kind == "error":
             log.warning("call %s Higgs error: %s", ctx.call_id, event.get("error"))
+        if reader is not None and not ctx.hang_up and (said := turn.line()) is not None:
+            task = asyncio.create_task(backstop.catch_up(reader, said, ctx))   # off the voice path
+            _CATCHING.add(task)   # held until done, even after the call ends
+            task.add_done_callback(_CATCHING.discard)
     return "higgs_closed"
 
 

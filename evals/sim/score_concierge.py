@@ -27,8 +27,12 @@ SENTENCE_END = re.compile(r"(?<=[.!?。！？؟])\s+")
 MARKDOWN = re.compile(r"\*\*|(^|\n)\s*([-•*]|\d+\.)\s")
 # A last turn that opens a conversation instead of closing it ("Hello! How can I help you today?").
 GREETS = re.compile(r"\bhow can i (help|assist)\b|^(hello|hi)\b", re.I)
-SCRIPTS = {"fa": r"[؀-ۿ]", "ar": r"[؀-ۿ]", "zh": r"[一-鿿]",
-           "ko": r"[가-힯]", "ru": r"[Ѐ-ӿ]", "hi": r"[ऀ-ॿ]"}
+SCRIPTS = {"fa": r"[؀-ۿ]", "ar": r"[؀-ۿ]", "ur": r"[؀-ۿ]", "zh": r"[一-鿿]", "yue": r"[一-鿿]",
+           "ja": "[぀-ヿ]", "ko": r"[가-힯]", "ru": r"[Ѐ-ӿ]", "uk": r"[Ѐ-ӿ]", "hi": r"[ऀ-ॿ]",
+           "pa": "[਀-੿]", "gu": "[઀-૿]", "bn": "[ঀ-৿]",
+           "ta": "[஀-௿]", "he": "[֐-׿]", "el": "[Ͱ-Ͽ]", "th": "[฀-๿]",
+           # Latin script: Spanish by its marks and common words, none of which English replies use.
+           "es": r"(?i)[ñ¿¡áéíóú]|\b(?:que|para|con|una|los|las|está|quiero|busco|tengo|gracias|mes)\b"}
 REPLIES = {"not_caught": tools.NOT_CAUGHT, "which": tools.WHICH, "unknown_tool": tools.UNKNOWN,
            "broken": tools.BROKEN}
 
