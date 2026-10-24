@@ -192,6 +192,30 @@ async def test_every_kind_of_outcome_has_its_sentence_and_bookings_come_first():
     assert rt.state(SID).results == done.results   # written once, for the SMS and the next call's opening
 
 
+# #152: an answered call is never "nobody picked up"
+@pytest.mark.parametrize(("end_reason", "facts", "says"), [
+    ("no_answer", [], "Nobody picked up at 1 Main St."),
+    ("busy", [], "Nobody picked up at 1 Main St."),
+    ("voicemail", [], "I left a message for 1 Main St's agent."),
+    ("hangup", [], "1 Main St's agent hung up before I could ask anything."),
+    ("hangup", [_heard("available", "still available"), _heard("pets", "pets allowed")],
+     "At 1 Main St, pets: pets allowed."),
+    ("timeout", [], "The call to 1 Main St dropped before I learned anything."),
+    ("failed", [], "The call to 1 Main St dropped before I learned anything."),
+    ("blocked", [], "I couldn't place the call to 1 Main St."),
+    ("done", [], "I reached 1 Main St's agent, but didn't learn anything new."),
+    ("refused", [], "1 Main St's agent wouldn't answer my questions."),
+    ("wrong_number", [], "The number I had for 1 Main St didn't reach its agent."),
+    ("failed", [_heard("pets", "pets allowed")], "At 1 Main St, pets: pets allowed."),   # what it heard first
+])
+async def test_each_way_a_call_ends_has_its_own_words(end_reason, facts, says):
+    rt = _runtime(2000)
+    (c1,) = await _session(rt, ["t:1"])
+    await _outcome(rt, c1, "t:1", end_reason=end_reason, facts=facts)
+    done = await rt.emit(CallsCompleted(**_meta("done", 20), call_ids=[c1]))
+    assert done.results == says
+
+
 async def test_voicemail_and_a_call_without_an_outcome():
     rt = _runtime(2000, 2000, 2000)
     c1, c2 = await _session(rt, ["t:1", "t:2"])
