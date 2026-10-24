@@ -14,6 +14,7 @@ from landline.api.routes import router
 from landline.config import Settings
 from landline.db.catalogue import Catalogue
 from landline.db.pool import Database
+from landline.orchestrator import SessionRuntime
 from landline.voice import higgs
 from landline.voice.calls import RenterCalls
 
@@ -37,9 +38,13 @@ def create_app(settings: Settings | None = None, catalogue: Catalogue | None = N
     async def lifespan(app: FastAPI):
         app.state.settings = settings
         app.state.catalogue = catalogue or Catalogue.load(settings.database_url)
-        # Call turns for /api/calls/{id}/turns. Without DATABASE_URL only the demo store's calls have any.
-        app.state.db = await Database.open(settings.database_url) if settings.database_url else None
+        # One pool for the runtime and for call turns (/api/calls/{id}/turns). Without DATABASE_URL only the
+        # demo store's calls have turns.
+        app.state.db = db = await Database.open(settings.database_url) if settings.database_url else None
         app.state.sessions = DemoSessions(app.state.catalogue)
+        # The session runtime (O-02): sessions that voice or judge mode start. It persists to Postgres when
+        # DATABASE_URL is set, else keeps them in memory. Demo sessions stay in `sessions` until A-06.
+        app.state.runtime = SessionRuntime(app.state.catalogue, db, matrix=app.state.sessions.matrix)
         app.state.judges = JudgeLines(settings.higgs_max_sessions)
         app.state.judge_limit = StartLimit(settings.judge_starts_per_ip, settings.judge_start_window_s)
         # For /health. The renter's call bridge sets "ok" or "error: …" each time it opens a Higgs session.
@@ -49,8 +54,9 @@ def create_app(settings: Settings | None = None, catalogue: Catalogue | None = N
         app.state.connect_higgs = higgs.connect
         yield
         app.state.sessions.close()
-        if app.state.db is not None:
-            await app.state.db.close()
+        await app.state.runtime.close()
+        if db is not None:
+            await db.close()
 
     app = FastAPI(title="Landline", version="0.1.0", lifespan=lifespan)
     # The web app normally reaches the API through its own /api proxy (same origin, no CORS).
