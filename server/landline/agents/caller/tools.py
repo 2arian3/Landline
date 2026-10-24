@@ -5,8 +5,9 @@ the runner fills from the Dispatcher's `Dial`, never from the arguments (hard ru
 idem_key is the Higgs tool-call id. The reply is what the Caller hears back, so it says what to do next.
 
 - record_fact keeps a fact only if its quote is something the landlord said (hard rule 3), checked with the
-  Auditor's own `grounding` (A-07), so live and after-call facts pass the same test. Its reply hands the
-  Caller the read-back sentence for any number, price, date or time.
+  Auditor's own `grounding` (A-07), so live and after-call facts pass the same test. The same call again in
+  one turn is a no-op, and a turn is capped, so a retry doesn't loop (#215). Its reply hands the Caller the
+  read-back sentence for any number, price, date or time, or the next checklist item when nothing was kept.
 - book_viewing turns the landlord's words into a Toronto datetime and books it only if the renter allowed
   booking, it is inside one of their windows, it doesn't clash with a viewing already booked in the plan,
   the listing isn't dead or suspect, and no red-flag rule (the Auditor's `flags`) matched this landlord's
@@ -47,6 +48,7 @@ log = logging.getLogger(__name__)
 
 TOOLS: list[dict[str, Any]] = caller_tools()
 CLASH = timedelta(minutes=60)   # two viewings in one plan need this much between them
+MAX_FACT_CALLS = 8              # record_fact calls in one landlord turn; the rest are a no-op (#215)
 WHEN = re.compile(r"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b|\bnow\b|\bthis week\b|"
                   r"\bnext (week|month)\b|\bimmediately\b|\bright away\b|\d", re.I)
 # The Caller promising to come back to the landlord on something.
@@ -89,6 +91,9 @@ class CallerContext:
     opened: bool = False                              # its first turn is over, so the disclosure is said
     unnoted: int = 0                                  # offered times _offered couldn't note
     spoke: bool = False                               # this response spoke before its tool call (run_tool)
+    fact_turn: int = -1                               # len(said) that fact_calls belongs to
+    fact_calls: list[tuple[str, str, str]] = field(default_factory=list)  # record_fact this turn
+    hold_tools: bool = False                          # identical record_fact: don't ask the model again
 
     def flags(self) -> list[str]:
         return [f.reason for f in red_flags(self.said)]
@@ -107,6 +112,9 @@ async def handle(name: str, arguments: str, tool_call_id: str, ctx: CallerContex
         return NOT_CAUGHT
     log.info("caller tool %s call=%s args=%s", name, ctx.call_id, args.model_dump_json(exclude_none=True))
     meta = {"session_id": ctx.session_id, "at": ctx.clock(), "idem_key": f"{ctx.call_id}:{tool_call_id}"}
+    # A new thing they said lifts the brake from the previous turn, so the next fact can still be answered.
+    if ctx.fact_turn != len(ctx.said):
+        ctx.hold_tools = False
     try:
         reply = wrap_up(ctx, name, await HANDLERS[name](args, ctx, meta))
     except Refused as exc:
@@ -125,10 +133,43 @@ def first_words(ctx: CallerContext, reply: str) -> str:
     return f'Your first words are the disclosure: "{disclosure(ctx.brief)}" Then: {reply}'
 
 
+def _roll_facts(ctx: CallerContext) -> None:
+    """fact_calls counts one landlord turn. Their next sentence starts it over."""
+    turn = len(ctx.said)
+    if ctx.fact_turn != turn:
+        ctx.fact_turn = turn
+        ctx.fact_calls = []
+        ctx.hold_tools = False
+
+
+def _move_on(ctx: CallerContext) -> str:
+    """What to say instead of calling record_fact again (#215). No "ask again": that reply is what made the
+    model call the same fact twenty-one times and never speak."""
+    left = ctx.brief.missing()
+    nxt = f"Ask {left[0].ask} next." if left else "Thank them and end the call."
+    return f"{nxt} Don't call record_fact again until they say something new."
+
+
+def _quote_ok(args: RecordFact, ctx: CallerContext) -> bool:
+    """The quote has to be in the landlord's turns. "No." is not in a bare "Yeah.", so that fact is dropped
+    (#215) instead of stored as the opposite of what they said."""
+    return grounding.verify(args.quote, ctx.said)
+
+
 async def record_fact(args: RecordFact, ctx: CallerContext, meta: dict) -> str:
-    if not grounding.verify(args.quote, ctx.said):
+    _roll_facts(ctx)
+    sig = (args.field, args.value.strip(), args.quote.strip())
+    if sig in ctx.fact_calls or len(ctx.fact_calls) >= MAX_FACT_CALLS:
+        # The same arguments again, or a turn that's already full: nothing is written, and the runner
+        # doesn't ask the model for another reply (hold_tools), which is how the loop stayed alive.
+        ctx.hold_tools = True
+        if any(f.field == args.field and f.quote.strip() == sig[2] for f in ctx.facts):
+            return await _record(args, ctx, meta)
+        return f"Already noted. {_move_on(ctx)}"
+    ctx.fact_calls.append(sig)
+    if not _quote_ok(args, ctx):
         ctx.ungrounded += 1
-        return UNSAID
+        return f"Not recorded: that quote isn't what they said. {_move_on(ctx)}"
     if args.field == "fees":
         fees = _fees(args, ctx)
         if isinstance(fees, str):

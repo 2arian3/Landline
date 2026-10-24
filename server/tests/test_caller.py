@@ -532,6 +532,94 @@ async def test_a_sim_call_records_books_and_comes_back_with_its_outcome():
     await runtime.close()
 
 
+class _YeahLoop:
+    """Replays c_aR1pQtPduC: after "Yeah." it calls record_fact with a quote they never said, and keeps
+    calling while the reply tells it to try again. A reply that names the next checklist item stops it."""
+
+    def __init__(self):
+        self.sent, self.closed, self.mode, self.fact_calls = [], False, "greet", 0
+        self.queue: asyncio.Queue = asyncio.Queue()
+
+    def _output(self) -> str:
+        for event in reversed(self.sent):
+            item = event.get("item") or {}
+            if item.get("type") == "function_call_output":
+                return str(item.get("output") or "")
+        return ""
+
+    async def send(self, event):
+        self.sent.append(event)
+        if event.get("type") != "response.create":
+            return
+        if self.mode == "greet":
+            self.mode = "tool"
+            events = _text("c1", "Hi, I'm an AI assistant calling for a renter about 1 Dial St. "
+                                 "Are there any other times you could show the unit?")
+        elif self.mode == "tool":
+            self.mode = "follow"
+            self.fact_calls += 1
+            events = _tool("c2", "record_fact", BARE_YEAH)
+        elif self.mode == "follow":
+            output = self._output().lower()
+            if self.fact_calls < 6 and ("ask again" in output or "try again" in output):
+                self.fact_calls += 1
+                events = _tool(f"c_fact{self.fact_calls}", "record_fact", BARE_YEAH)
+            else:
+                self.mode = "bye"
+                events = _text("c3", "Is it still available, and from when?")
+        else:
+            events = _text("c4", "Thanks, goodbye!")
+        for one in events:
+            self.queue.put_nowait(one)
+
+    async def events(self):
+        while True:
+            yield await self.queue.get()
+
+    async def close(self):
+        self.closed = True
+
+
+async def test_a_sim_call_on_a_bare_yeah_records_nothing_and_asks_the_next_item():
+    landlord = TurnFake([_text("l1", "Hello."), _text("l2", "Yeah."), _text("l3", "Bye! [hang up]")])
+    caller = _YeahLoop()
+    sessions = iter([caller, landlord])
+
+    async def connect(key, session):
+        return next(sessions)
+
+    runtime = SessionRuntime(Catalogue([_listing(1)], "test"))
+    runner = SimRunner(runtime, connect, "test-key", clock=lambda: NOW, turn_timeout_s=5,
+                       persona_for=lambda d, x: Persona(id="ossington", name="Alex"))
+    settings = Settings(database_url=None, web_url="https://landline.example", transport="sim",
+                        higgs_max_sessions=3, listing_call_max_s=15)
+    Dispatcher(runtime, settings, runner=runner, clock=lambda: NOW)
+    sid = "s_yeahloop001"
+    await runtime.start(SessionStarted(session_id=sid, at=NOW, idem_key=f"{sid}:s", channel="judge"))
+    await runtime.emit(CallsRequested(session_id=sid, at=NOW, idem_key=f"{sid}:r", listing_ids=["t:1"],
+                                      availability=[Availability(day="saturday", **{"from": "12:00"},
+                                                                 to="16:00")],
+                                      may_book=True))
+    await runtime.emit(SessionEnded(session_id=sid, at=NOW, idem_key=f"{sid}:e", reason="hangup"))
+    for _ in range(200):
+        if runtime.state(sid).phase == "done":
+            break
+        await asyncio.sleep(0.01)
+    state = runtime.state(sid)
+    assert state.phase == "done"
+    trace = next(iter(runner.traces.values()))
+    facts = [c for c in trace.tool_calls if c["name"] == "record_fact"]
+    assert caller.fact_calls == 1 and len(facts) == 1
+    assert facts[0]["output"].startswith("Not recorded")
+    assert "whether it's still available" in facts[0]["output"]
+    assert "ask again" not in facts[0]["output"].lower()
+    heard = [f for rows in state.heard.values() for f in rows]
+    assert all(f.quote != "No." and "No other times" not in f.value for f in heard)
+    assert all(f.quote != "No." for f in state.outcomes["t:1"].facts)
+    assert any("still available" in t.text.lower() for t in trace.turns if t.speaker == "caller")
+    await runtime.close()
+
+
 def test_the_sim_runner_never_touches_the_phone_network():
     assert SimRunner.uses_phone is False and SimRunner.transport == "sim"
 
@@ -717,6 +805,45 @@ async def test_record_fact_says_an_answer_is_already_recorded_and_moves_on():
     # A different answer is a correction: recorded, and the Auditor keeps the last one.
     changed = await _say(ctx, "record_fact", {"field": "pets", "value": "no", "quote": "No."}, 3)
     assert changed.startswith("Recorded pets: no.") and len(ctx.facts) == 2
+
+
+# c_aR1pQtPduC (#215): "Are there any other times?" / "Yeah." became record_fact 21 times with
+# value "No other times offered" and quote "No.", which the landlord never said.
+BARE_YEAH = {"field": "other", "value": "No other times offered", "quote": "No."}
+
+
+async def test_a_bare_yeah_is_not_recorded_as_no_and_the_same_call_is_a_no_op():
+    ctx = await _ctx(said=["Yeah."])
+    first = await _say(ctx, "record_fact", BARE_YEAH)
+    assert first.startswith("Not recorded: that quote isn't what they said.")
+    assert "ask again" not in first.lower() and "whether it's still available" in first
+    assert ctx.facts == [] and ctx.ungrounded == 1
+    for n in range(2, 22):
+        again = await _say(ctx, "record_fact", BARE_YEAH, n)
+        assert again.startswith("Already noted.") and "whether it's still available" in again
+    assert ctx.facts == [] and ctx.ungrounded == 1 and ctx.hold_tools
+    # Their actual word still counts.
+    yes = await _ctx(said=["Yeah."])
+    reply = await _say(yes, "record_fact", {"field": "available", "value": "yes", "quote": "Yeah."})
+    assert reply.startswith("Recorded available: yes.") and len(yes.facts) == 1
+
+
+async def test_a_repeated_record_fact_does_not_ask_the_model_again():
+    """The second identical call is what used to schedule another model turn, and then another."""
+    ctx = await _ctx(said=["Yeah."])
+    sent: list[dict] = []
+
+    class Higgs:
+        async def send(self, event):
+            sent.append(event)
+
+    raw = json.dumps(BARE_YEAH)
+    for n in range(2):
+        event = {"name": "record_fact", "call_id": f"fc{n}", "response_id": f"r{n}", "arguments": raw}
+        await bridge.run_tool(Higgs(), event, ctx, agent=tools)
+    assert [e["type"] for e in sent] == ["conversation.item.create", "response.create",
+                                         "conversation.item.create"]
+    assert ctx.facts == []
 
 
 # ── a day with no time gets a time, booked or noted (#189) ───────────────────
