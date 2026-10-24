@@ -31,6 +31,9 @@ _START = re.compile(r'\{"__typename":"(?:FullListing|Building)"')
 _BUILDING_KEYS = ("building_id", "street_name", "building_type", "full_street_name", "city", "state", "zip",
                   "building_name", "location", "building_amenities")
 
+# The City of Toronto's extent, padded about 5 km: lat min, lat max, lng min, lng max.
+TORONTO_BOX = (43.53, 43.91, -79.69, -79.06)
+
 UNIT_TYPES = {
     "CONDO": "condo",
     "APARTMENT": "apartment",
@@ -100,6 +103,22 @@ def building_urls(html: str) -> dict[int, str]:
     return urls
 
 
+def toronto_point(lat: float | None, lng: float | None) -> tuple[float | None, float | None, bool]:
+    """Guard a map pin against a dropped minus sign. Returns (lat, lng, flipped).
+
+    Every Toronto longitude is negative. A positive one whose negation lands in
+    the city is the site's typo (three units at 701 Don Mills Rd carry
+    +79.335082), so its sign is flipped. Any other positive longitude is nulled
+    rather than guessed.
+    """
+    if lat is None or lng is None or lng <= 0:
+        return lat, lng, False
+    lat_min, lat_max, lng_min, lng_max = TORONTO_BOX
+    if lat_min <= lat <= lat_max and lng_min <= -lng <= lng_max:
+        return lat, -lng, True
+    return None, None, False
+
+
 def to_listing(raw: dict, seen_at: datetime, urls: dict[int, str]) -> Listing | None:
     """Normalize one liv.rent listing. Returns None if it can't be ranked (no monthly price)."""
     price = raw.get("price")
@@ -109,7 +128,7 @@ def to_listing(raw: dict, seen_at: datetime, urls: dict[int, str]) -> Listing | 
         return None
 
     loc = raw.get("location") or {}
-    lat, lng = loc.get("lat"), loc.get("lon")
+    lat, lng, flipped = toronto_point(loc.get("lat"), loc.get("lon"))
     baths = raw.get("bathrooms")
     if baths is not None:
         baths = float(baths) + 0.5 * float(raw.get("half_bathrooms") or 0)
@@ -147,6 +166,9 @@ def to_listing(raw: dict, seen_at: datetime, urls: dict[int, str]) -> Listing | 
     if not fields["address"]:
         return None
     prov = Provenance(source="scraped", at=seen_at, version=PARSER_VERSION)
+    provenance = {k: prov for k, v in fields.items() if v not in (None, [], "")}
+    if flipped:   # computed from the scraped value, not what the site says
+        provenance["lng"] = Provenance(source="derived", at=seen_at, version=PARSER_VERSION)
 
     return Listing(
         listing_id=f"{SOURCE}:{raw['listing_id']}",
@@ -158,6 +180,6 @@ def to_listing(raw: dict, seen_at: datetime, urls: dict[int, str]) -> Listing | 
         city=raw.get("city") or "Toronto",
         geocode_precision="street" if lat is not None and lng is not None else "none",
         monthly_cost=monthly_cost(rent, []),
-        provenance={k: prov for k, v in fields.items() if v not in (None, [], "")},
+        provenance=provenance,
         **fields,
     )
