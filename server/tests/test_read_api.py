@@ -559,6 +559,7 @@ def test_a_returning_caller_opens_on_welcome_back_with_the_last_results():
 
         run(rt.start, SessionStarted(**_meta(second, 0), channel="phone", caller_phone=phone))
         view = c.get(f"/api/sessions/{second}").json()
-        assert view["returning"] and view["user_name"] == "Sara"
-        # The line the panel's welcome reads: the greeting, then the last call's results.
-        assert view["agent_says"] == f"Welcome back, Sara. {results}"
+        # The last call's results stay on that call. This one does not open on them (#144).
+        assert not view["returning"] and view["user_name"] is None
+        assert not view["agent_says"].startswith("Welcome back")
+        assert results not in view["agent_says"]

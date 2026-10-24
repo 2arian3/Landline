@@ -33,9 +33,9 @@ def session_config(*, instructions: str, tools: list[dict[str, Any]], voice: str
     phone, 24 kHz PCM for a browser), server VAD, and tools when there are any. `modality="text"` is for
     the eval simulator: the same agent answers in `response.output_text.*` events instead of audio.
 
-    Higgs detects the spoken language by itself. `language` (an ISO-639-1 code, from code, e.g. a
-    returning caller's stored language) only hints the transcription of the first turns; after the first
-    reply the transcription follows the conversation on its own (docs.boson.ai, sessions guide)."""
+    Higgs detects the spoken language by itself. `language` (an ISO-639-1 code, from code) only hints the
+    transcription of the first turns; after the first reply the transcription follows the conversation on
+    its own (docs.boson.ai, sessions guide). A renter call does not pass a language from an earlier one."""
     transcription: dict[str, Any] = {"model": "higgs-stt-3.1"}
     if language:
         transcription["language"] = language
