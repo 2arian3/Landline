@@ -28,6 +28,8 @@ evals/
   fixtures/recordings/auditor/*.json       # the extractor's recorded answers, replayed with no key
   run_ranking.py                           # E-03: the Matcher on renter briefs, pure code (no key)
   fixtures/{,holdout/}ranking/*.json      # renter briefs with acceptable listings and a feedback goal
+  fixtures/audio/*.wav                     # E-04: Higgs-synthesized lines for the audio sim (audio_clips.py)
+  run_audio.py sim/audio.py                # E-04: the real voice paths on Higgs audio; reports/audio.json
 ```
 
 ## Concierge sim (E-01)
