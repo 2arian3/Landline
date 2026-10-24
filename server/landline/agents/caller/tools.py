@@ -83,6 +83,9 @@ class CallerContext:
     bye_response: str | None = None                   # as in the Concierge (voice/bridge.py run_tool)
     readbacks: list[str] = field(default_factory=list)   # read-back sentences for the landlord's last turn
     readback_turn: int = -1                           # which landlord turn they belong to (len(said))
+    flagged_at: int | None = None                     # the landlord turn a scam warning first matched
+    covered_at: int | None = None                     # the landlord turn by which the checklist was covered
+    ended_by_code: bool = False                       # `over` ended it: the Caller never called end_call
 
     def flags(self) -> list[str]:
         return [f.reason for f in red_flags(self.said)]
@@ -102,9 +105,10 @@ async def handle(name: str, arguments: str, tool_call_id: str, ctx: CallerContex
     log.info("caller tool %s call=%s args=%s", name, ctx.call_id, args.model_dump_json(exclude_none=True))
     meta = {"session_id": ctx.session_id, "at": ctx.clock(), "idem_key": f"{ctx.call_id}:{tool_call_id}"}
     try:
-        return await HANDLERS[name](args, ctx, meta)
+        reply = await HANDLERS[name](args, ctx, meta)
     except Refused as exc:
         return str(exc)
+    return wrap_up(ctx, name, reply)
 
 
 async def record_fact(args: RecordFact, ctx: CallerContext, meta: dict) -> str:
@@ -295,6 +299,57 @@ async def end_call(args: EndCall, ctx: CallerContext, meta: dict) -> str:
                 "it now from their words; if not, ask. If they don't know, end the call again.")
     ctx.end_reason, ctx.hang_up = args.reason, True
     return "Goodbye."
+
+
+# ── the call ends itself ────────────────────────────────────────────────────
+# On the team's phone test the Caller said goodbye and never called end_call, so the line stayed open. The
+# tool replies say to end in the same turn, and `over` ends the call in code when the Caller still doesn't.
+
+END_CALL = ("say one short thank-you and goodbye, in their language, and call end_call with done in this "
+            "same turn")
+END_NOW = f"{END_CALL}. Ask nothing more."
+SCAM_END = ("What they said matches a scam warning, so stop the checklist: say you'll pass it on to your "
+            f"client, then {END_NOW}")
+OLD_END = "thank them and end the call"
+# The Caller's or the landlord's goodbye.
+BYE = re.compile(r"\b(good ?bye|bye|have a (great|good|nice|lovely) (day|evening|night|one|weekend)|"
+                 r"take care)\b", re.I)
+
+
+def wrap_up(ctx: CallerContext, name: str, reply: str) -> str:
+    """A tool's reply once the call is over: a scam warning stops the checklist, and a covered checklist
+    ends the call in this same turn."""
+    if name == "end_call" or ctx.hang_up:
+        return reply
+    if ctx.flags():
+        return SCAM_END
+    if ctx.brief.missing():
+        return reply
+    if OLD_END in reply:
+        return reply.replace(OLD_END, END_CALL)
+    return f"{reply} Then {END_NOW}"
+
+
+def over(ctx: CallerContext, caller_said: str, called: list[str]) -> bool:
+    """After a Caller turn that didn't end the call: whether it is over anyway, so the runner ends it in code
+    (through its usual return, so `finalize` runs once). It is when the Caller or the landlord said
+    goodbye, or a turn has passed since a scam warning or since the checklist was covered. A call still
+    on its checklist goes on."""
+    if ctx.hang_up or "end_call" in called:
+        return False
+    turn = len(ctx.said)
+    if ctx.flagged_at is None and ctx.flags():
+        ctx.flagged_at = turn
+    if ctx.covered_at is None and not ctx.brief.missing():
+        ctx.covered_at = turn
+    said_bye = bool(BYE.search(caller_said) or (ctx.said and BYE.search(ctx.said[-1])))
+    late = any(at is not None and turn > at for at in (ctx.flagged_at, ctx.covered_at))
+    if not (said_bye or late):
+        return False
+    ctx.end_reason = ctx.end_reason or "done"
+    ctx.ended_by_code = True
+    log.info("call %s: over (%s), ending it in code", ctx.call_id, "goodbye" if said_bye else "a turn late")
+    return True
 
 
 async def kept_promise(ctx: CallerContext, caller_said: str, called: list[str]) -> str | None:

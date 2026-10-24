@@ -232,6 +232,28 @@ async def test_a_recorder_that_fails_never_ends_the_call(monkeypatch, caplog):
     assert len(failed) == 1   # logged once, then the recorder stays off
 
 
+async def test_a_goodbye_with_no_end_call_still_ends_the_call_once_after_it_has_played(monkeypatch):
+    """The team's phone test: the Caller said goodbye and never called end_call, and the line stayed open."""
+    monkeypatch.setattr(phone_caller, "END_AFTER_S", 0)
+    script = [
+        {"type": "response.created"},
+        {"type": "response.output_audio.delta", "delta": "AAAA"},
+        {"type": "response.output_audio_transcript.done", "transcript": DISCLOSURE},
+        {"type": "response.done", "response": {"id": "r1", "output": [{"type": "message"}]}},
+        {"type": "conversation.item.input_audio_transcription.completed",
+         "transcript": "Sorry, I have to run. Bye."},
+        {"type": "response.created"},
+        {"type": "response.output_audio.delta", "delta": "BBBB"},
+        {"type": "response.output_audio_transcript.done", "transcript": "No problem, thanks. Goodbye."},
+        {"type": "response.done", "response": {"id": "r2", "output": [{"type": "message"}]}},
+    ]
+    line = FakeLine()
+    rt, ended, higgs, twilio_api = await _call(script, line)
+    assert [e.reason for e in ended] == ["done"]                          # one end, in code
+    assert twilio_api.hung_up == ["CA1"] and higgs.closed
+    assert line.played == ["AAAA", "BBBB"]                                # the goodbye went out first
+
+
 async def test_speech_over_the_opening_lets_it_play_and_after_it_barges_in(monkeypatch):
     """A "Hello?" while the disclosure is coming or still playing doesn't clear it (hard rule 6); once it
     has played, speech barges in as before."""

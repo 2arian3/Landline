@@ -37,6 +37,7 @@ from landline.voice.recorder import CallRecorder, Chunk, Placed, format_of
 log = logging.getLogger(__name__)
 
 DEADLINE_MARGIN_S = 5   # as in the sim: end before the Dispatcher does, with the outcome
+END_AFTER_S = 3.0       # once a call is over (caller_tools.over), how long its last words get for end_call
 
 
 class PhoneCaller:
@@ -130,8 +131,9 @@ class PhoneCaller:
 
 async def _talk(higgs: Any, transport: Any, ctx: Any, turns: Turns, playback: Playback,
                 recorder: CallRecorder) -> str:
-    """Audio both ways until the Caller's goodbye has played (end_call) or the agent hangs up. The recorder
-    hears both sides, as the bridge's does, through a guard: a recorder error never ends the call."""
+    """Audio both ways until the Caller's goodbye has played (end_call), the agent hangs up, or the call is
+    over with no end_call (ends_itself). The recorder hears both sides, as the bridge's does, through a
+    guard: a recorder error never ends the call."""
     rec = _Guard(ctx.call_id)
 
     async def listen() -> str:
@@ -188,12 +190,26 @@ async def _talk(higgs: Any, transport: Any, ctx: Any, turns: Turns, playback: Pl
                 output = (event.get("response") or {}).get("output") or []
                 if not ctx.hang_up and not any(o.get("type") == "function_call" for o in output):
                     await caller_tools.kept_promise(ctx, said, called)   # the Caller's turn is over
+                    if caller_tools.over(ctx, said, called):
+                        over.set()
                     said, called = "", []
             elif kind == "error":
                 log.warning("call %s Higgs error: %s", ctx.call_id, event.get("error"))
         return "hangup"
 
-    pumps = {asyncio.create_task(listen()), asyncio.create_task(speak())}
+    over = asyncio.Event()
+
+    async def ends_itself() -> str:
+        """A call that is over (caller_tools.over) and still open ends here: once everything the Caller said
+        has played and END_AFTER_S more have passed with no end_call. Its last words are never cut."""
+        await over.wait()
+        while True:
+            await asyncio.sleep(playback.remaining() + END_AFTER_S)
+            if playback.remaining() <= 0:
+                log.info("listing call %s: over with no end_call; hanging up", ctx.call_id)
+                return ctx.end_reason or "done"
+
+    pumps = {asyncio.create_task(listen()), asyncio.create_task(speak()), asyncio.create_task(ends_itself())}
     try:
         done, _ = await asyncio.wait(pumps, return_when=asyncio.FIRST_COMPLETED)
         return next(iter(done)).result()

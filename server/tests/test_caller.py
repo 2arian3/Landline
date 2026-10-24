@@ -518,6 +518,62 @@ async def test_a_landlords_question_about_the_renter_is_noted_when_the_caller_sk
     assert ctx.noted_by_code == (noted is not None)
 
 
+# ── the call ends itself (the team's phone test: the Caller said goodbye and the line stayed open) ───────
+
+SCAM = "I'm overseas, so send an e-transfer to hold it before you see it."
+
+
+async def test_after_a_scam_warning_every_reply_says_to_end_and_code_ends_it_a_turn_later():
+    ctx = await _ctx(said=[SCAM])
+    reply = await _say(ctx, "record_fact", {"field": "other", "value": "wants an e-transfer before a viewing",
+                                            "quote": "send an e-transfer to hold it before you see it"})
+    assert reply == tools.SCAM_END and "call end_call with done in this same turn" in reply
+    assert await _say(ctx, "note_question", {"question": "Can you send a deposit?"}, 2) == tools.SCAM_END
+    assert not tools.over(ctx, "I'll pass that to my client. Are there any monthly fees?", ["record_fact"])
+    ctx.said.append("No fees. So will you send the deposit today?")    # omar: it carries on regardless
+    assert tools.over(ctx, "Could someone else show it to us this Saturday?", [])
+    assert ctx.end_reason == "done" and ctx.ended_by_code
+
+
+async def test_a_covered_checklist_says_to_end_now_and_a_goodbye_with_no_end_call_ends_it():
+    ctx = await _ctx(_plan(may_book=False))
+    await _say(ctx, "record_fact", {"field": "available", "value": "yes",
+                                    "quote": "it's available from November 1st"})
+    ctx.said.append("No extra monthly fees.")
+    reply = await _say(ctx, "record_fact", {"field": "fees", "value": "none",
+                                            "quote": "No extra monthly fees"}, 2)
+    assert not ctx.brief.missing() and tools.END_CALL in reply and "end the call" not in reply
+    assert tools.over(ctx, "Great, thanks so much for your time. Have a great day!", ["record_fact"])
+    assert ctx.end_reason == "done"
+
+
+async def test_a_covered_checklist_with_no_goodbye_ends_a_turn_later():
+    ctx = await _ctx(_plan(may_book=False))
+    await _say(ctx, "record_fact", {"field": "available", "value": "yes",
+                                    "quote": "it's available from November 1st"})
+    ctx.said.append("No extra monthly fees.")
+    await _say(ctx, "record_fact", {"field": "fees", "value": "none", "quote": "No extra monthly fees"}, 2)
+    assert not tools.over(ctx, "So no monthly fees.", ["record_fact"])
+    ctx.said.append("Yep, that's right.")
+    assert tools.over(ctx, "Perfect.", [])
+
+
+async def test_the_landlord_saying_bye_ends_the_call_even_mid_checklist():
+    ctx = await _ctx(said=["Hi, it's available.", "Sorry, I have to run. Bye."])
+    assert ctx.brief.missing()
+    assert tools.over(ctx, "No problem.", [])
+
+
+async def test_a_call_still_on_its_checklist_is_not_ended():
+    ctx = await _ctx()
+    assert not tools.over(ctx, "Great. Are there any monthly fees on top of the rent?", [])
+    ctx.said.append("There's a $40 amenity fee.")
+    assert not tools.over(ctx, "So there's a $40 amenity fee. Does it come with parking?", ["record_fact"])
+    assert ctx.end_reason is None and not ctx.ended_by_code
+    ctx.said.append("Thanks, bye.")
+    assert not tools.over(ctx, "Goodbye!", ["end_call"])                  # it ended the call itself
+
+
 async def test_two_renter_questions_in_one_turn_are_both_noted_and_not_again():
     ctx = await _ctx(said=["Does your client have a guarantor? And would they want the storage locker?"])
     assert await tools.kept_promise(ctx, "Okay.", []) == "And would they want the storage locker?"
