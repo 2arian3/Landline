@@ -16,6 +16,13 @@ The spec is `docs/CONTRACTS.md`, and the database half is in `docs/DATA.md`. The
 5. **Every extracted value carries a quote.** A value without a quote that matches the source text (`grounding.verify`) is dropped and logged as `ungrounded`.
 6. **Migrations are forward-only.** New file `NNNN_<what>.sql`; never edit an applied one. Ask before any `drop`.
 
+## Tool arguments as models really send them
+
+Tool schemas are contracts, but models don't follow them exactly (`docs/EVAL_FINDINGS.md`). Absorb it in the tool handler (`agents/concierge/tools.py` `handle`), not by loosening the contract:
+- **Numbers for string fields.** `"listing_refs": [1, 2]` for `list[str]` fails validation and saves nothing. The handler turns numeric refs into words first.
+- **Keys from another tool's schema** (`availability` in `update_preferences`). Pydantic ignores unknown keys by default, so they vanish while the reply sounds like success. The handler answers "Not saved: …; call call_listings with them."
+- **Partial updates.** A second `call_listings` merges into the recorded plan, so a call that leaves a field out keeps it instead of resetting it.
+
 ## Adding an event
 
 1. Add the model in `contracts/events.py`, with `type: Literal["MyEvent"]`, and add it to the `Event` union.
