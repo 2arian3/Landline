@@ -311,8 +311,9 @@ async def _higgs_to_renter(higgs: Any, transport: Transport, ctx: tools.ToolCont
                            reader: Any | None = None) -> str:
     """The Concierge's audio back to the renter, barge-in and tool calls. Ends when Higgs closes, or once
     the goodbye has played after end_session. `line` sees every event, to deliver map taps between turns.
-    With `reader` (a text model), a renter line in another script that got a reply with no tool is read
-    for its preferences in the background (agents/concierge/backstop.py)."""
+    With `reader` (a text model), a renter line in another script that got a reply with no tool, or one
+    whose reply claimed a save with no tool, is read for its preferences in the background
+    (agents/concierge/backstop.py)."""
     spoke = False   # whether the response under way has sent any audio yet
     turn = backstop.Turn()
     async for event in higgs.events():
@@ -352,11 +353,17 @@ async def _higgs_to_renter(higgs: Any, transport: Transport, ctx: tools.ToolCont
         elif kind == "response.output_audio_transcript.done":
             log.info("call %s concierge: %s", ctx.call_id, event.get("transcript", ""))
             _said(ctx, recorder, "agent", event)
+            turn.agent_said(str(event.get("transcript") or ""))
         elif kind == "error":
             log.warning("call %s Higgs error: %s", ctx.call_id, event.get("error"))
         if reader is not None and not ctx.hang_up and (said := turn.line()) is not None:
             task = asyncio.create_task(backstop.catch_up(reader, said, ctx))   # off the voice path
             _CATCHING.add(task)   # held until done, even after the call ends
+            task.add_done_callback(_CATCHING.discard)
+        if reader is not None and not ctx.hang_up and (claimed := turn.claimed_line()) is not None:
+            # The reply said it saved something and no tool ran (#96): read the line and save it.
+            task = asyncio.create_task(backstop.catch_up(reader, claimed, ctx, claimed=True))
+            _CATCHING.add(task)
             task.add_done_callback(_CATCHING.discard)
         if not ctx.hang_up and (asked := turn.call_line()) is not None:
             task = asyncio.create_task(_calls_asked(asked, ctx, line))
