@@ -192,6 +192,59 @@ async def test_a_phone_call_records_what_the_agent_said_and_ends_once_after_the_
         "Higgs ready, opening sent", "first audio out"]
 
 
+REFUSED = [
+    {"type": "response.created"},
+    {"type": "response.output_audio.delta", "delta": "AAAA"},
+    {"type": "response.output_audio_transcript.done", "transcript": DISCLOSURE},
+    {"type": "response.done", "response": {"id": "r1", "output": [{"type": "message"}]}},
+    {"type": "input_audio_buffer.speech_started"},
+    {"type": "input_audio_buffer.speech_stopped"},
+    {"type": "conversation.item.input_audio_transcription.completed", "transcript": HEARD},
+    {"type": "response.created"},
+    _tool("record_fact", {"field": "parking_cost", "value": "$150 a month",
+                           "quote": "Parking is 150 a month"}, "fc1"),
+    {"type": "response.done", "response": {"id": "r2", "output": [{"type": "function_call"}]}},
+    {"type": "response.created"},
+    _tool("end_call", {"reason": "refused"}, "fc2"),
+    {"type": "response.done", "response": {"id": "r3", "output": [{"type": "function_call"}]}},
+]
+
+
+async def test_the_line_goes_down_as_the_talk_ends_before_the_auditor_runs(monkeypatch):
+    """The team's phone test: after the goodbye the listing agent heard silence while the Auditor ran."""
+    monkeypatch.setattr(phone_caller, "HANG_UP_GRACE_S", 0)
+    order = []
+    hang_up, outcome = TwilioRunner._hang_up, phone_caller.auditor.outcome
+
+    async def hung_up(self, sid):
+        order.append("hang up")
+        await hang_up(self, sid)
+
+    async def audited(record, **kw):
+        order.append("audit")
+        return await outcome(record, **kw)
+    monkeypatch.setattr(TwilioRunner, "_hang_up", hung_up)
+    monkeypatch.setattr(phone_caller.auditor, "outcome", audited)
+    rt, ended, higgs, twilio_api = await _call(REFUSED, FakeLine(["/w=="]))
+    assert order == ["hang up", "audit"] and twilio_api.hung_up == ["CA1"]   # once, first
+    assert [e.reason for e in ended] == ["refused"] and higgs.closed          # the Caller's end, not "hangup"
+    facts = rt.state(SID).outcomes["t:1"].facts
+    assert [(f.field, f.quote) for f in facts] == [("parking_cost", "Parking is 150 a month")]
+
+
+async def test_a_hang_up_that_fails_still_ends_the_call_once_with_its_outcome(monkeypatch, caplog):
+    monkeypatch.setattr(phone_caller, "HANG_UP_GRACE_S", 0)
+
+    async def unreachable(self, sid):
+        raise httpx.ConnectError("Twilio is unreachable")
+    monkeypatch.setattr(TwilioRunner, "_hang_up", unreachable)
+    rt, ended, higgs, _ = await _call(REFUSED, FakeLine(["/w=="]))
+    assert [e.reason for e in ended] == ["refused"] and higgs.closed
+    facts = rt.state(SID).outcomes["t:1"].facts
+    assert [(f.field, f.quote) for f in facts] == [("parking_cost", "Parking is 150 a month")]
+    assert any("hanging up failed (ConnectError" in r.getMessage() for r in caplog.records)
+
+
 class BrokenRecorder:
     """A recorder whose every call fails."""
 

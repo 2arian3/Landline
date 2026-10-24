@@ -71,6 +71,7 @@ class Outbound:
     answered: asyncio.Event = field(default_factory=asyncio.Event)   # a person: Twilio is opening the stream
     state: CallState = "dialing"
     claimed: bool = False
+    hung_up: bool = False   # the line went down as the talk ended, before the Auditor
 
     @property
     def done(self) -> bool:
@@ -199,7 +200,7 @@ class TwilioRunner:
             # The deadline, a crash or the conversation ending: make sure Twilio's line is down too.
             self.calls.finalize(dial.call_id, "timeout")
             self.calls.live.pop(dial.call_id, None)
-            if call.twilio_sid:
+            if call.twilio_sid and not call.hung_up:
                 with contextlib.suppress(Exception):
                     async with asyncio.timeout(HANG_UP_S):
                         await self._hang_up(call.twilio_sid)
@@ -261,13 +262,30 @@ class TwilioRunner:
                     await self._hang_up(call.twilio_sid)
 
     async def _converse(self, call: Outbound, transport: Any, higgs: Any = None) -> CallResult:
+        kw: dict[str, Any] = {"higgs": higgs} if higgs is not None else {}
+        if getattr(self.converse, "takes_hang_up", False):
+            kw["hang_up"] = lambda reason: self._talk_over(call, reason)
         try:
-            if higgs is not None:
-                return await self.converse(call.dial, transport, higgs=higgs)
-            return await self.converse(call.dial, transport)
+            return await self.converse(call.dial, transport, **kw)
         except Exception:
             log.exception("call %s: the conversation failed", call.dial.call_id)
             return CallResult("failed")
+
+    async def _talk_over(self, call: Outbound, reason: EndReason) -> None:
+        """The Caller is done talking: the call ends with its reason, then the line goes down at once, while
+        the Auditor works out the outcome from what was said. A machine's voicemail plays out instead, and
+        Twilio's final status ends that call. A hang-up that fails is logged, and place() tries again."""
+        if call.state == "voicemail":
+            return
+        self.calls.finalize(call.dial.call_id, reason)   # before the hang-up, whose "completed" says "hangup"
+        if not call.twilio_sid:
+            return
+        try:
+            async with asyncio.timeout(HANG_UP_S):
+                await self._hang_up(call.twilio_sid)
+            call.hung_up = True
+        except Exception as exc:
+            log.warning("listing call %s: hanging up failed (%r)", call.dial.call_id, exc)
 
     # What the webhooks hand back to Twilio
 
