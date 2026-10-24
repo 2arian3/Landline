@@ -350,9 +350,15 @@ async def _note_offer(slot: str, ctx: CallerContext, meta: dict) -> bool:
     if match is None:
         # Their words in another order (priya: "6:30 pm on Thursday" for "Thursday at 6:30 pm", asked three
         # times): the same time named in their latest turn counts, quoted from that turn.
+        # A time alone ("6:30 pm works perfectly") answers the day the Caller asked about, when that's one of
+        # the renter's days.
         now, windows = ctx.clock(), ctx.brief.plan.windows
         at = slots.parse(slot, now, windows)
-        if at is None or not ctx.said or slots.parse(ctx.said[-1], now, windows) != at:
+        latest = ctx.said[-1] if ctx.said else ""
+        said = slots.parse(latest, now, windows) or (
+            slots.parse(f"{latest} {at.astimezone(slots.TORONTO):%A}", now, windows)
+            if at is not None and slots.within(at, windows) else None)
+        if at is None or said != at:
             return False
         quote, source = ctx.said[-1], len(ctx.said) - 1
     value = f"viewing offered: {slot}"
