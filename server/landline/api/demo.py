@@ -5,48 +5,80 @@ from the renter's preferences and keeps ties in the previous order; its reasons
 and watch-out go on the cards. Reactions and call outcomes don't re-rank yet:
 that's O-04, once the orchestrator feeds them in.
 
-SCRIPTED CALLS. `call_top` rings four canned listing agents (the fourth never
-picks up) so the board can show every call status before the Caller (A-05)
-exists. Nobody is dialled.
+SCRIPTED CALLS. The demo follows docs/DEMO.md's flow without dialling anyone:
+during the brief `plan_top` records the places to call (the Concierge's
+call_listings), `hang_up` ends the brief (SessionEnded), and then four canned
+listing agents go queued, dialing, ringing and live, hang up one by one, and the
+session ends `done` with a results text. Until the Dispatcher (A-02) and the
+Caller (A-05) exist, this is how the board shows every call status.
 """
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
-from datetime import UTC, datetime
+import secrets
+from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
-from landline.contracts import Card, Fact, Fee, Listing, Preferences, SessionView, monthly_cost
+from landline.api.judge import ID_CHARS
+from landline.contracts import (
+    CallView,
+    Card,
+    Fact,
+    Fee,
+    Listing,
+    Phase,
+    Preferences,
+    SessionView,
+    monthly_cost,
+)
 from landline.contracts.session import CardStatus
 from landline.db.catalogue import Catalogue
 from landline.scoring import FeatureMatrix, Ranked, explain, rank
 
 BOARD_SIZE = 6
-CALL_S = 3.0   # how long a scripted demo call rings before it hangs up
-CALLED = 4     # the demo rings the top four; the fourth never picks up
+TICK_S = 1.2     # each step of the scripted calls: dialing, ringing, live, then one hang-up per tick
+PLANNED = 4      # the demo plans the top four places with a pin; the fourth never picks up
+TORONTO = ZoneInfo("America/Toronto")
+# "I'm free Saturday afternoon, book one if you can": the renter's window, and the slot an agent offers.
+WINDOW_DAY, WINDOW_FROM, WINDOW_TO, SLOT = 5, 13, 17, 14   # Saturday (Monday is 0), 13:00–17:00, at 14:00
+ON_THE_LINE = ("dialing", "ringing", "live")
 
 
 @dataclass(frozen=True)
 class DemoCall:
-    """One listing's scripted call: "calling" until it hangs up, then what its agent said."""
+    """What a scripted listing agent said, applied to its card when its call ends."""
     status: CardStatus
     facts: tuple[Fact, ...] = ()
     fees: tuple[Fee, ...] = ()
     red_flags: tuple[str, ...] = ()
+    questions: tuple[str, ...] = ()      # noted for the renter (note_question); they come back in the results
+    viewing: datetime | None = None      # a booked viewing, inside the renter's window
+
+
+@dataclass
+class DemoRun:
+    """One session's calls, from the places the renter picked to the results."""
+    phase: Phase = "open"
+    plan: list[str] = field(default_factory=list)
+    calls: dict[str, CallView] = field(default_factory=dict)      # by listing, in plan order
+    outcomes: dict[str, DemoCall] = field(default_factory=dict)   # by listing, as each call ends
+    results: str | None = None
 
 
 class DemoSessions:
     """In-memory sessions with a version counter that SSE subscribers wait on."""
 
-    def __init__(self, catalogue: Catalogue, call_s: float = CALL_S):
+    def __init__(self, catalogue: Catalogue, tick_s: float = TICK_S):
         self.catalogue = catalogue
         self.matrix = FeatureMatrix.build(catalogue.listings)   # once, at boot
         self.views: dict[str, SessionView] = {}
         # What the renter said about a listing, shown on its card ("You: too dark").
         self.reactions: dict[str, dict[str, str]] = {}
-        # Scripted calls by listing, and the task that hangs them up.
-        self.calls: dict[str, dict[str, DemoCall]] = {}
+        # Each session's scripted calls, and the task that walks them.
+        self.runs: dict[str, DemoRun] = {}
         self.dialing: dict[str, asyncio.Task] = {}
-        self.call_s = call_s
+        self.tick_s = tick_s
         # Sessions marked as a returning renter, with the name to greet (None: no name on file).
         self.returning: dict[str, str | None] = {}
         self.changed = asyncio.Condition()
@@ -63,30 +95,76 @@ class DemoSessions:
         self.reactions.setdefault(session_id, {})[listing_id] = said
         return await self.update(session_id)
 
-    async def call_top(self, session_id: str) -> SessionView:
-        """Demo hook for CallsRequested: the top CALLED places with a map pin show "calling", and call_s
-        later each hangs up with a scripted outcome (the last with no answer). Calling again restarts
-        the walk."""
-        picked = [c.listing_id for c in self.get(session_id).board if _pinned(c)][:CALLED]
-        if not picked:
+    async def plan_top(self, session_id: str) -> SessionView:
+        """Demo hook for CallsRequested ("call the top four, I'm free Saturday afternoon"): the top
+        places with a map pin become the plan. Nothing dials until the renter hangs up."""
+        run = self.runs.setdefault(session_id, DemoRun())
+        if run.phase != "open":
             return self.get(session_id)
-        if running := self.dialing.pop(session_id, None):
-            running.cancel()
-        calls = self.calls.setdefault(session_id, {})
-        for listing_id in picked:
-            calls[listing_id] = DemoCall("calling")
+        run.plan = [c.listing_id for c in self.get(session_id).board if _pinned(c)][:PLANNED]
+        return await self.update(session_id)
+
+    async def hang_up(self, session_id: str) -> SessionView:
+        """Demo hook for SessionEnded: with a plan, every call in it is queued and the scripted calls
+        start; without one, the brief closes."""
+        run = self.runs.setdefault(session_id, DemoRun())
+        if run.phase != "open":
+            return self.get(session_id)
+        if not run.plan:
+            run.phase = "closed"
+            return await self.update(session_id)
+        run.phase = "calling"
+        run.calls = {lid: CallView(call_id=_call_id(), listing_id=lid, state="queued") for lid in run.plan}
         view = await self.update(session_id)
-        self.dialing[session_id] = asyncio.create_task(self._hang_up(session_id, picked))
+        self.dialing[session_id] = asyncio.create_task(self._dial(session_id, run))
         return view
 
-    async def _hang_up(self, session_id: str, picked: list[str]) -> None:
-        await asyncio.sleep(self.call_s)
-        calls = self.calls[session_id]
-        for listing_id, outcome in zip(picked, _outcomes(datetime.now(UTC)), strict=False):
-            calls[listing_id] = outcome
+    async def reset(self, session_id: str) -> SessionView:
+        """Demo hook: back to an open brief with nothing planned, to run the demo again."""
+        if task := self.dialing.pop(session_id, None):
+            task.cancel()
+        self.runs.pop(session_id, None)
+        return await self.update(session_id)
+
+    async def _dial(self, session_id: str, run: DemoRun) -> None:
+        outcomes = dict(zip(run.plan, _outcomes(datetime.now(UTC)), strict=False))
+        answered = [lid for lid in run.plan if outcomes[lid].status != "no_answer"]
+        for state, who in (("dialing", run.plan), ("ringing", run.plan), ("live", answered)):
+            await asyncio.sleep(self.tick_s)
+            for lid in who:
+                call = run.calls[lid]
+                run.calls[lid] = call.model_copy(update={"state": state,
+                                                         "started_at": call.started_at or datetime.now(UTC)})
+            await self.update(session_id)
+        for lid in run.plan:   # one hang-up a tick, as each outcome comes in
+            await asyncio.sleep(self.tick_s)
+            run.outcomes[lid] = outcomes[lid]
+            run.calls[lid] = run.calls[lid].model_copy(update={"state": "ended"})
+            await self.update(session_id)
+        run.phase, run.results = "done", self._results(run)
         if self.dialing.get(session_id) is asyncio.current_task():
             del self.dialing[session_id]
         await self.update(session_id)
+
+    def _results(self, run: DemoRun) -> str:
+        """The Narrator's results text, written by code from the outcomes: the booking first, then each
+        call in the renter's order."""
+        lines = []
+        for lid in sorted(run.plan, key=lambda lid: run.outcomes[lid].viewing is None):
+            x, out = self.catalogue.by_id[lid], run.outcomes[lid]
+            if out.viewing:
+                when = _when(out.viewing)
+                lines.append(f"I booked {x.address} for {when}, inside your Saturday afternoon.")
+            elif out.status == "suspect" and out.red_flags:
+                lines.append(f"{x.address} {_lower(out.red_flags[0])}, so I'd skip it.")
+            elif out.status == "no_answer":
+                lines.append(f"Nobody picked up at {x.address}.")
+            elif out.fees:
+                cost = monthly_cost(x.rent, [*x.fees, *out.fees])
+                lines.append(f"{x.address} is really ${cost:,} a month with parking.")
+            for q in out.questions:
+                lines.append(f"Its agent asked, “{q}” I said I'd check with you.")
+        return " ".join(lines)
 
     def close(self) -> None:
         for task in self.dialing.values():
@@ -117,43 +195,75 @@ class DemoSessions:
         matches = [lid for lid in ranking.order if by_id[lid].lat is not None]
         board = [_card(by_id[lid], n, ranking.explain(lid))
                  for n, lid in enumerate(matches[:BOARD_SIZE], start=1)]
-        calls = self.calls.get(session_id, {})
-        board = [_with_call(c, calls[c.listing_id], by_id[c.listing_id], prefs)
-                 if c.listing_id in calls else c for c in board]
+        run = self.runs.get(session_id) or DemoRun()
+        board = [_with_call(c, run.outcomes[c.listing_id], by_id[c.listing_id], prefs)
+                 if c.listing_id in run.outcomes
+                 else c.model_copy(update={"status": "calling"})
+                 if c.listing_id in run.calls and run.calls[c.listing_id].state in ON_THE_LINE
+                 else c for c in board]
         said = self.reactions.get(session_id, {})
         board = [c.model_copy(update={"reaction": said[c.listing_id]}) if c.listing_id in said else c
                  for c in board]
         top = board[0].address if board else None
         says = (f"{len(matches)} places fit. {top} is on top." if top
                 else "Nothing fits yet. Want to widen the budget or the area?")
-        return SessionView(session_id=session_id, version=version, preferences=prefs,
+        return SessionView(session_id=session_id, version=version, phase=run.phase, preferences=prefs,
                            user_name=self.returning.get(session_id), returning=session_id in self.returning,
-                           focus_listing_id=focus, matches=matches, board=board, agent_says=says)
+                           focus_listing_id=focus, matches=matches, board=board, agent_says=says,
+                           plan=list(run.plan), calls=list(run.calls.values()), results=run.results)
+
+
+def window(now: datetime) -> tuple[datetime, datetime]:
+    """The renter's next Saturday afternoon, Toronto time: the window a viewing may be booked in."""
+    local = now.astimezone(TORONTO)
+    day = local + timedelta(days=(WINDOW_DAY - local.weekday()) % 7)
+    start = day.replace(hour=WINDOW_FROM, minute=0, second=0, microsecond=0)
+    if start.date() == local.date() and local.hour >= WINDOW_TO:
+        start += timedelta(days=7)
+    return start, start.replace(hour=WINDOW_TO)
 
 
 def _outcomes(at: datetime) -> list[DemoCall]:
-    """What the scripted listing agents say, in rank order; the fourth never picks up. Demo only: A-05's
-    Caller records real facts in the agent's own words, and A-07 decides what's suspect."""
+    """What the scripted listing agents say, in the plan's order; the fourth never picks up. Demo only:
+    A-05's Caller records real facts in the agent's own words, and A-07 decides what's suspect."""
     def heard(field: str, value: str, quote: str) -> Fact:
         return Fact(field=field, value=value, quote=quote, speaker="Agent heard", at=at)
 
     parking = "Parking's a hundred and eighty a month. It comes with the unit, it's not optional."
+    start, _ = window(at)
     return [
         DemoCall("verified", facts=(heard("parking_cost", "Parking is $180 a month, required", parking),),
-                 fees=(Fee(name="parking", amount=180, period="monthly", mandatory=True, quote=parking),)),
+                 fees=(Fee(name="parking", amount=180, period="monthly", mandatory=True, quote=parking),),
+                 questions=("Would they sign a 12-month lease?",)),
         DemoCall("suspect",
                  facts=(heard("red_flags", "First and last month by e-transfer before a viewing",
                               "I'll need first and last by e-transfer before I can show it to you."),),
                  red_flags=("Wants a deposit by e-transfer before anyone sees the unit",)),
-        DemoCall("verified", facts=(heard("pets", "Dogs are fine",
-                                          "Dogs are fine. There are a couple in the building already."),)),
+        DemoCall("booked", facts=(heard("pets", "Dogs are fine",
+                                        "Dogs are fine. There are a couple in the building already."),),
+                 viewing=start.replace(hour=SLOT)),
         DemoCall("no_answer"),
     ]
 
 
+def _call_id() -> str:
+    """`c_` + 10 url-safe characters (docs/CONTRACTS.md), as CallManager.create() mints them."""
+    return "c_" + "".join(secrets.choice(ID_CHARS) for _ in range(10))
+
+
+def _when(at: datetime) -> str:
+    local = at.astimezone(TORONTO)
+    minutes = f":{local:%M}" if local.minute else ""
+    return f"{local:%A} at {local.hour % 12 or 12}{minutes} {'pm' if local.hour >= 12 else 'am'}"
+
+
+def _lower(s: str) -> str:
+    return s[:1].lower() + s[1:]
+
+
 def _pinned(c: Card) -> bool:
     """Inside the box MapView.tsx draws pins in. A place outside it (701 Don Mills Rd's flipped longitude
-    in the fixture) stays in the list without a pin, so the demo doesn't ring it: its status couldn't show."""
+    in the fixture) stays in the list without a pin, so the demo doesn't plan it: its status couldn't show."""
     return c.lat is not None and c.lng is not None and 43.3 < c.lat < 44.4 and -80.3 < c.lng < -78.6
 
 

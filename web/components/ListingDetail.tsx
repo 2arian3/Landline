@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Feedback, type Reaction } from "./Feedback";
-import { STATUS } from "./ListingCard";
+import { MARK, type Mark, STATUS } from "./ListingCard";
 import { Money } from "./Money";
 import { bathsLabel, bedsLabel, sizeLabel, sourceName, unitLabel } from "@/lib/format";
 import { api } from "@/lib/live";
@@ -28,11 +28,13 @@ const SOURCE_LABEL: Record<string, string | null> = {
 export function ListingDetail({
   id,
   card,
+  mark,
   onBack,
   onReact,
 }: {
   id: string;
   card?: Card;
+  mark?: Mark;
   onBack: () => void;
   onReact?: (reaction: Reaction, reason: string | null) => void;
 }) {
@@ -51,7 +53,7 @@ export function ListingDetail({
   }, [id]);
 
   const src = detail ? sourceName(detail.source) : card ? sourceName(card.source) : "the listing";
-  const status = card ? STATUS[card.status] : undefined;
+  const status = mark ? MARK[mark] : card ? STATUS[card.status] : undefined;
   const rows: [field: string, label: string, value: string | null][] = detail
     ? [
         ["beds", "Bedrooms", bedsLabel(detail.beds)],
@@ -85,7 +87,7 @@ export function ListingDetail({
           <p className="flex items-center gap-1.5 text-meta font-label" style={{ color: status.color }}>
             <span
               aria-hidden
-              className={`h-1.5 w-1.5 rounded-full ${card?.status === "calling" ? "live-dot" : ""}`}
+              className={`h-1.5 w-1.5 rounded-full ${card?.status === "calling" || mark === "ringing" ? "live-dot" : ""}`}
               style={{ background: status.color }}
             />
             {status.word}
@@ -166,7 +168,7 @@ export function ListingDetail({
             ))}
           </ul>
         ) : (
-          <p className="mt-1.5 text-support text-ink-2">{noFacts(card?.status)}</p>
+          <p className="mt-1.5 text-support text-ink-2">{noFacts(card?.status, mark)}</p>
         )}
       </section>
 
@@ -223,7 +225,10 @@ function Source({ p }: { p?: Provenance }) {
   );
 }
 
-function noFacts(status?: Card["status"]): string {
+function noFacts(status?: Card["status"], mark?: Mark): string {
+  if (mark === "will_call") return "Landline calls them once you hang up. What they say lands here, with their words.";
+  if (mark === "queued") return "Waiting for its turn on the phone.";
+  if (mark === "ringing") return "Ringing now.";
   if (status === "calling") return "Landline is on the phone with them now. What they say lands here, with their words.";
   if (status === "no_answer") return "Nobody picked up yet.";
   return "Nobody has called about this one yet. Say “call this one” and what the listing agent says lands here, with their words.";
