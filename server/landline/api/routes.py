@@ -8,13 +8,14 @@ import secrets
 from datetime import UTC, datetime
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from landline.api.demo import PLANNED, _pinned
+from landline.api.demo import PLANNED, _pinned, area_named
 from landline.api.judge import client_ip
 from landline.contracts import (
+    AreaFocused,
     CallsRequested,
     CataloguePoint,
     Event,
@@ -123,6 +124,31 @@ async def feedback(session_id: str, body: FeedbackBody, request: Request) -> Ses
     return await request.app.state.sessions.react(session_id, body.listing_id, body.reaction, body.reason)
 
 
+class Turn(BaseModel):
+    """One caption line of a call (a call_turns row): who said what, in order."""
+    idx: int
+    speaker: Literal["agent", "landlord", "renter"]
+    text: str
+    lang: str | None = None
+    t_ms: int | None = None   # milliseconds into the call, when known
+
+
+@router.get("/api/calls/{call_id}/turns", response_model=list[Turn])
+async def call_turns(call_id: str, request: Request, after: int = -1) -> list[Turn]:
+    """CONTRACTS.md: live captions for a call, the lines after `after` in order; poll with the last idx
+    shown. A call the demo store dialled answers from its script, any other from call_turns when there's
+    a database. Unknown everywhere: 404."""
+    state = request.app.state
+    rows = state.sessions.turns(call_id, after)
+    if rows is None and state.db is not None:
+        rows = await state.db.turns.list(call_id, after)
+        if not rows and await state.db.calls.get(call_id) is None:
+            rows = None
+    if rows is None:
+        raise HTTPException(404, "unknown call")
+    return [Turn.model_validate(row, from_attributes=True) for row in rows]
+
+
 @router.post("/api/sessions/{session_id}/calls", response_model=SessionView)
 async def plan_calls(session_id: str, request: Request) -> SessionView:
     """Demo hook: stands in for the Concierge's call_listings until the voice layer exists. The top four
@@ -164,6 +190,23 @@ async def returning(session_id: str, body: ReturningBody, request: Request) -> S
     name = (body.name or "").strip() or None
     _demo_only(request, session_id)
     return await request.app.state.sessions.welcome_back(session_id, body.returning, name)
+
+
+class AreaBody(BaseModel):
+    place: str = Field(max_length=60)
+
+
+@router.post("/api/sessions/{session_id}/area", response_model=SessionView)
+async def focus_area(session_id: str, body: AreaBody, request: Request) -> SessionView:
+    """Demo hook: stands in for the Concierge's focus_area ("show me Christie Pits") until the voice layer
+    exists. The session's focus_area becomes that place, and the map flies there. A runtime session gets
+    it as AreaFocused."""
+    area = area_named(body.place)
+    if area is None:
+        raise HTTPException(404, "unknown place")
+    if _live(request, session_id):
+        return await _emit(request, AreaFocused(**_meta(session_id), **area.model_dump()))
+    return await request.app.state.sessions.focus_area(session_id, area)
 
 
 @router.post("/api/sessions/{session_id}/preferences", response_model=SessionView)
@@ -247,6 +290,15 @@ async def _emit(request: Request, event: Event) -> SessionView:
         return await request.app.state.runtime.emit(event)
     except Refused as e:
         raise HTTPException(409, str(e)) from e
+
+
+@router.post("/api/judge/{session_id}/hang-up", status_code=204)
+async def judge_hang_up(session_id: str, request: Request) -> Response:
+    """/try leaving (a beacon on pagehide) or starting again: the judge's line frees at once instead of at
+    its timeout. Only the line: unlike Done, nothing gets called. Ungated and idempotent, because freeing
+    a line is always safe and a beacon can arrive after Done already freed it."""
+    request.app.state.judges.hang_up(session_id)
+    return Response(status_code=204)
 
 
 def _refused(status: int, reason: str, message: str, retry_after_s: int | None = None) -> JSONResponse:

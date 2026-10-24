@@ -43,16 +43,34 @@ You need Python 3.12 with [uv](https://docs.astral.sh/uv/), Node 22, and Docker 
 ```bash
 git clone https://github.com/2arian3/Landline.git
 cd Landline
-make setup           # git hooks, Python deps, web deps
-cp .env.example .env # set SCRAPER_CONTACT_EMAIL; the rest can wait
-make db-up           # Postgres 17 + PostGIS + pgvector on :54329
-make db-migrate
-make data            # scrape ~1,000 Toronto listings (politely), check, load
-make dev             # API on :8000      (in one terminal)
-make web             # web on :3000      (in another); open /?dev=1 for demo controls
+make setup           # git hooks (they reject AI attribution in commits), Python deps, web deps
+cp .env.example .env
 ```
 
-No database? `make dev` falls back to the latest scrape, then to `web/lib/fixtures/listings.json`, so the web app works on any laptop.
+In `.env`, set two values. No keys are needed to run the demo:
+
+```bash
+SCRAPER_CONTACT_EMAIL=you@example.com                               # goes into the scraper's User-Agent
+DATABASE_URL=postgresql://landline:landline@localhost:54329/landline  # so the API reads the local database
+```
+
+Then:
+
+```bash
+make db-up           # Postgres 17 + PostGIS + pgvector in Docker on :54329
+make db-migrate      # applies db/migrations/*.sql
+make data            # scrapes liv.rent politely (one page every 2 s), checks, loads ~1,000 listings
+make dev             # API on :8000 (one terminal)
+make web             # web app on :3000 (another terminal)
+```
+
+Open http://localhost:3000/?dev=1. The demo controls stand in for the voice agent: set a budget and beds and press **Say it** to re-rank the map, then **Call the top 4** and **Hang up**. Four scripted calls run (no phone rings; the fourth doesn't pick up), and the board ends with a viewing booked and each place's result. **Start over** runs it again.
+
+To check the API, run `curl localhost:8000/health`. It should show `"catalogue":"postgres"` and `"listings"` around 1,000.
+
+- **No Docker?** Skip `db-up`, `db-migrate` and `data`, and leave `DATABASE_URL` empty. `make dev` then falls back to the latest scrape, and after that to `web/lib/fixtures/listings.json` (400 listings, `"catalogue":"fixture"`), so the demo runs on any laptop.
+- `make data` also rewrites `web/lib/fixtures/listings.json`. Commit that file only on purpose.
+- `make test` runs the Python tests and the web typecheck with no keys, phones or network.
 
 **Production:** web app https://landline-mu.vercel.app (Vercel), API https://landline.134.87.8.230.sslip.io (API and database on the Landline VM). Pushing to the `release` branch (`git push origin main:release`) deploys the API once CI passes, and deploys the web app when `web/` changed. The web build runs its own typecheck. See [deploy/README.md](deploy/README.md).
 
