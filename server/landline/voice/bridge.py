@@ -31,6 +31,8 @@ from landline.agents.concierge.prompt import (
     FIRST_CALL,
     INSTRUCTIONS,
     LINK_SENT,
+    language_name,
+    primary,
 )
 from landline.config import Settings
 from landline.contracts import SessionEnded, SessionStarted
@@ -152,6 +154,56 @@ def opening(remembered: str | None = None, language: str | None = None) -> tuple
     return f"{INSTRUCTIONS}{FIRST_CALL}", start
 
 
+def reply_in(language: str | None) -> str:
+    """The rule the session's instructions get once the renter's language is saved (#188). Higgs replies
+    in the language it hears, but English tool replies pull it back to English: Farsi, Arabic and Punjabi
+    renters were understood and answered in English."""
+    lang = primary(language)
+    if not lang or lang == "en":
+        return ""
+    name = language_name(lang)
+    return (f"\n\nThe renter speaks {name}. Reply only in {name} from now on, even when a tool's reply is in "
+            "English. Keep street names, prices and times as they are.")
+
+
+def _in_their_language(ctx: Any) -> str:
+    """" Reply in Persian (Farsi)." after a Concierge tool's reply once the renter's language is saved: the
+    model reads it right before it speaks, and the English reply otherwise pulls it back to English (#188)."""
+    try:
+        lang = primary(ctx.runtime.get(ctx.session_id).preferences.language)
+    except Exception:   # no session (a test's bare context): nothing to add
+        return ""
+    return f" Reply in {language_name(lang)}." if lang and lang != "en" else ""
+
+
+STEER_ON = ("response.created", "response.done", "input_audio_buffer.speech_started")   # between responses
+
+
+class Steer:
+    """One `session.update` each time the renter's saved language changes: the session as it opened, with
+    reply_in's rule added to its instructions (or taken off again for English). Sent between responses,
+    never on a response.create, whose instructions would replace the session's (#136)."""
+
+    def __init__(self, config: dict[str, Any]) -> None:
+        self.config, self.lang, self.busy = config, "", False
+
+    def seen(self, event: dict[str, Any]) -> None:
+        kind = event.get("type")
+        if kind == "response.created":
+            self.busy = True
+        elif kind == "response.done":
+            self.busy = False
+
+    def update(self, language: str | None) -> dict[str, Any] | None:
+        lang = "" if primary(language) in ("", "en") else primary(language)
+        if self.busy or lang == self.lang:
+            return None
+        self.lang = lang
+        session = self.config["session"]
+        instructions = session["instructions"] + reply_in(lang)
+        return {"type": "session.update", "session": {**session, "instructions": instructions}}
+
+
 def _reader() -> Any | None:
     """The text model the catch-up reads a line with: the Auditor's (LLM_PROVIDER, else the first key set,
     Boson's last). None without a key: the calls go on without catch-ups."""
@@ -173,10 +225,11 @@ async def _talk(transport: Transport, call: RenterCall, runtime: SessionRuntime,
     instructions, start = opening(None)
     if text_link is not None:
         instructions += LINK_SENT   # so the Concierge tells them; the text goes once Higgs is up
+    config = session_config(instructions=instructions, tools=tools.TOOLS,
+                            voice=settings.higgs_voice_renter, audio_format=transport.audio_format,
+                            language=hint(None, None))
     try:
-        higgs = await connect_higgs(settings.boson_api_key or "", session_config(
-            instructions=instructions, tools=tools.TOOLS, voice=settings.higgs_voice_renter,
-            audio_format=transport.audio_format, language=hint(None, None)))
+        higgs = await connect_higgs(settings.boson_api_key or "", config)
     except Exception as exc:
         log.exception("Higgs session failed for call %s", call.call_id)
         set_status(f"error: {exc}"[:200])
@@ -197,7 +250,7 @@ async def _talk(transport: Transport, call: RenterCall, runtime: SessionRuntime,
         log.info("call %s: Higgs ready, greeting sent", call.call_id)
         pumps = {asyncio.create_task(_renter_to_higgs(transport, higgs, recorder)),
                  asyncio.create_task(_higgs_to_renter(higgs, transport, ctx, playback, recorder, line,
-                                                     reader=_reader(), wrap=wrap)),
+                                                     reader=_reader(), wrap=wrap, steer=Steer(config))),
                  asyncio.create_task(_wraps_up(higgs, ctx, playback, wrap, line))}
         done, _ = await asyncio.wait(pumps, timeout=settings.renter_call_max_s,
                                      return_when=asyncio.FIRST_COMPLETED)
@@ -313,12 +366,14 @@ async def _renter_to_higgs(transport: Transport, higgs: Any, recorder: CallRecor
 
 async def _higgs_to_renter(higgs: Any, transport: Transport, ctx: tools.ToolContext,
                            playback: Playback, recorder: CallRecorder, line: Line | None = None,
-                           reader: Any | None = None, wrap: WrapUp | None = None) -> str:
+                           reader: Any | None = None, wrap: WrapUp | None = None,
+                           steer: Steer | None = None) -> str:
     """The Concierge's audio back to the renter, barge-in and tool calls. Ends when Higgs closes, or once
     the goodbye has played after end_session. `line` sees every event, to deliver map taps between turns.
     With `reader` (a text model), a renter line in another script that got a reply with no tool, or one
     whose reply claimed a save with no tool, is read for its preferences in the background
-    (agents/concierge/backstop.py). `wrap` is kept up to date for _wraps_up."""
+    (agents/concierge/backstop.py). `wrap` is kept up to date for _wraps_up. `steer` keeps the session's
+    instructions in the renter's saved language (#188)."""
     spoke = False   # whether the response under way has sent any audio yet
     # After a goodbye the reply didn't end on: "asked" once the note went out, "answering" once the
     # response to it started. Its end without end_session ends the call (backstop.SAID_BYE).
@@ -333,6 +388,11 @@ async def _higgs_to_renter(higgs: Any, transport: Transport, ctx: tools.ToolCont
                 line.close()   # saying goodbye: nothing more goes in
             await line.seen(event)
         wrap.seen(event)
+        if steer is not None and kind in STEER_ON:
+            steer.seen(event)
+            if (update := steer.update(ctx.runtime.get(ctx.session_id).preferences.language)) is not None:
+                log.info("call %s: the renter speaks %s; replies follow", ctx.call_id, steer.lang or "en")
+                await higgs.send(update)
         if kind == "response.created":
             spoke = False
             if bye == "asked":
@@ -479,6 +539,8 @@ async def run_tool(higgs: Any, event: dict[str, Any], ctx: Any, *, spoke: bool =
     say_bye = ctx.hang_up and not spoke and ctx.bye_response is None
     if say_bye:
         output, ctx.bye_response = agent.SAY_GOODBYE, str(event.get("response_id") or "")
+    if agent is tools:   # the Concierge only: the Caller talks to a landlord in theirs
+        output += _in_their_language(ctx)
     await higgs.send({"type": "conversation.item.create",
                       "item": {"type": "function_call_output", "call_id": tool_call_id, "output": output}})
     # One response.create per response, however many tools it called: the first already answers them all,

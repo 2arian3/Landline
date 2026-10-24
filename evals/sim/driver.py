@@ -22,7 +22,7 @@ from landline.contracts import ListingFocused, PreferencesUpdated, SessionStarte
 from landline.contracts.tools import PreferenceDelta
 from landline.db.catalogue import Catalogue
 from landline.orchestrator import SessionRuntime
-from landline.voice.bridge import ends_call, opening, run_tool
+from landline.voice.bridge import Steer, ends_call, opening, run_tool
 from landline.voice.higgs import ConnectHiggs, session_config
 from landline.voice.line import LOOKING, describe
 
@@ -137,8 +137,9 @@ async def simulate(case_id: str, run: int, opponent: Opponent, *, catalogue: Cat
     higgs: Recorded | None = None
     try:
         instructions, start = opening(remembered)   # ignored (#144)
-        higgs = Recorded(await connect_higgs(api_key, session_config(
-            instructions=instructions, tools=tools.TOOLS, modality="text")))
+        config = session_config(instructions=instructions, tools=tools.TOOLS, modality="text")
+        steer = Steer(config)   # as the bridge does: replies in the renter's saved language (#188)
+        higgs = Recorded(await connect_higgs(api_key, config))
         stream = higgs.events().__aiter__()
         for event in start:
             await higgs.send(event)
@@ -187,6 +188,8 @@ async def simulate(case_id: str, run: int, opponent: Opponent, *, catalogue: Cat
                 await higgs.send({"type": "response.create"})
                 said = await _agent_turn(stream, higgs, ctx, trace, len(trace.lines) - 1, turn_timeout_s)
                 ctx.hang_up = True
+            if not ctx.hang_up and (update := steer.update(runtime.get(sid).preferences.language)):
+                await higgs.send(update)
             trace.states.append(runtime.state(sid).model_dump(mode="json"))
         if ctx.hang_up:
             trace.end = "end_session"
