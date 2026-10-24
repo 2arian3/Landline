@@ -328,8 +328,8 @@ def test_a_stream_for_an_unknown_call_is_refused():
 
 def test_the_twilio_runner_is_installed_only_for_transport_voice():
     with _client() as c:
-        assert c.app.state.dispatcher.runner is c.app.state.outbound.runner is not None
+        assert c.app.state.dispatcher.runner.phone is c.app.state.outbound.runner is not None
     with _client(transport="stub") as c:
-        assert c.app.state.dispatcher.runner is None and c.app.state.outbound.runner is None
+        assert c.app.state.dispatcher.runner.phone is None and c.app.state.outbound.runner is None
         r = _post(c, "/twiml/outbound/c_test000001", {"CallSid": "CA1", "AnsweredBy": "human"})
         assert r.text.endswith("<Response><Hangup/></Response>")

@@ -32,6 +32,7 @@ from landline.orchestrator import SessionRuntime
 from landline.voice.bridge import ends_call, run_tool
 from landline.voice.dispatch import CallResult, Dial, Report
 from landline.voice.higgs import ConnectHiggs, session_config
+from landline.voice.outbound import Turns
 from landline.voice.personas import DEMO, HANG_UP, Persona
 
 log = logging.getLogger(__name__)
@@ -63,6 +64,12 @@ class SimTrace:
     ungrounded: int = 0
     noted_by_code: int = 0     # questions the Caller promised to check but didn't note; code noted them
     events: dict[str, list[dict]] = field(default_factory=lambda: {"caller": [], "landlord": []})
+    captions: Turns | None = field(default=None, repr=False)   # each line to call_turns, for live captions
+
+    def add(self, turn: Turn) -> None:
+        self.turns.append(turn)
+        if self.captions is not None:
+            self.captions.said("landlord" if turn.speaker == "landlord" else "agent", turn.text)
 
 
 def demo_persona(dial: Dial, listing: Listing) -> Persona:
@@ -94,7 +101,7 @@ class SimRunner:
                                          listing_id=dial.listing_id, brief=b, runtime=self.runtime,
                                          clock=self.clock)
         trace = SimTrace(call_id=dial.call_id, listing_id=dial.listing_id, persona=persona.id,
-                         instructions=instructions(b))
+                         instructions=instructions(b), captions=Turns(self.runtime.db, dial.call_id))
         self._keep(trace)
         reason = "failed"
         sessions: list[Any] = []
@@ -121,6 +128,8 @@ class SimRunner:
             for side in sessions:
                 with contextlib.suppress(Exception):
                     await side.higgs.close()
+            if trace.captions is not None:
+                await trace.captions.flush()
         trace.end_reason, trace.ungrounded, trace.noted_by_code = reason, ctx.ungrounded, ctx.noted_by_code
         viewing = Viewing(starts_at=ctx.booked, slot_text=ctx.slot_text or "") if ctx.booked else None
         return CallResult(reason, await self._audit(dial, listing, reason, ctx, trace, viewing))
@@ -174,7 +183,7 @@ class SimRunner:
         text = " ".join(t.strip() for t in texts if t.strip())
         hung_up = HANG_UP in text.lower()
         text = " ".join(text.replace(HANG_UP, " ").replace(HANG_UP.title(), " ").split())
-        trace.turns.append(Turn("landlord", text, ms=round((time.monotonic() - started) * 1000)))
+        trace.add(Turn("landlord", text, ms=round((time.monotonic() - started) * 1000)))
         return text, hung_up
 
     async def _caller_turn(self, side: _Side, ctx: caller_tools.CallerContext, trace: SimTrace) -> str:
@@ -202,7 +211,7 @@ class SimRunner:
                                                  not any(o.get("type") == "function_call" for o in output)):
                         break
         text = " ".join(t.strip() for t in texts if t.strip())
-        trace.turns.append(Turn("caller", text, names, round((time.monotonic() - started) * 1000)))
+        trace.add(Turn("caller", text, names, round((time.monotonic() - started) * 1000)))
         await caller_tools.kept_promise(ctx, text, names)
         return text
 
