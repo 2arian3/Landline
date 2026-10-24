@@ -3,6 +3,7 @@ stream → fake Higgs) and the browser (judge start → audio socket → fake Hi
 import asyncio
 import base64
 import re
+import time
 from dataclasses import replace
 
 import pytest
@@ -58,6 +59,14 @@ def _client(**overrides) -> TestClient:
     settings = Settings(database_url=None, web_url="http://localhost:3000", transport="stub",
                         boson_api_key="test-key", twilio_auth_token=TOKEN, public_url=PUBLIC)
     return TestClient(create_app(replace(settings, **overrides), Catalogue([], "test")))
+
+
+def _until(condition, within_s: float = 2.0) -> None:
+    """Waits a moment for the server to catch up with what the test client just did."""
+    deadline = time.monotonic() + within_s
+    while not condition():
+        assert time.monotonic() < deadline, f"not within {within_s} s"
+        time.sleep(0.01)
 
 
 def _start(call_id: str, sid: str = "MZ1") -> dict:
@@ -189,6 +198,11 @@ def test_browser_call_streams_pcm_both_ways_and_frees_the_judge_line():
             assert ws.receive_bytes() == spoken
             assert ws.receive_json() == {"type": "clear"}
             ws.send_bytes(b"\x03\x00\x04\x00")   # the judge's microphone
+            # The judge hangs up. Leaving this block makes the TestClient cancel the handler right after it
+            # sends the close, often before the bridge's finally has ended the call, so wait for that here.
+            # (uvicorn never cancels a handler on disconnect; this is the test client's doing.)
+            ws.close(1000)
+            _until(lambda: c.app.state.calls.recent)
         session = fake.session["session"]
         pcm = {"type": "audio/pcm", "rate": 24000}
         assert session["audio"]["input"]["format"] == pcm and session["audio"]["output"]["format"] == pcm
