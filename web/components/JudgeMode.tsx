@@ -176,7 +176,7 @@ function Intro({ phase, waitMin, onStart }: { phase: Phase; waitMin: number; onS
             <p className="text-meta text-ink-3">
               {phase === "asking"
                 ? "Your browser is asking to use the microphone."
-                : "Uses your microphone. You can mute or end any time."}
+                : "Uses your microphone. The call is recorded. You can mute or end any time."}
             </p>
           </>
         )}
