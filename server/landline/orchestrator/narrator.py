@@ -35,6 +35,14 @@ FIELDS = {
     "sqft": "size", "floor": "floor", "light": "light", "elevator": "elevator", "step_free": "step-free",
     "outdoor_space": "outdoor space", "other": "also",
 }
+# How a listed category value reads after "The listing says": "no pets", never "pets no pets".
+LISTED = {
+    "pets": {"no pets": "no pets", "none": "no pets", "no": "no pets", "any": "pets allowed",
+             "allowed": "pets allowed", "yes": "pets allowed", "cats only": "cats only",
+             "dogs only": "dogs only", "small only": "small pets only", "case by case": "pets case by case"},
+    "laundry": {"in suite": "laundry in the unit", "shared": "shared laundry", "none": "no laundry"},
+    "parking": {"included": "parking included", "extra": "parking at extra cost", "none": "no parking"},
+}
 
 
 # The brief
@@ -167,13 +175,28 @@ def _place(state: SessionState, lid: str, view: SessionView, catalogue: Catalogu
     if out and out.conflicts:
         c = out.conflicts[0]
         source = "the City record" if c.against == "city" else "the listing"
-        said.append(f"{source[:1].upper()}{source[1:]} says {FIELDS.get(c.field, c.field)} {c.listed}, "
-                    f"but the agent said {c.heard}.")
+        said.append(f"{source[:1].upper()}{source[1:]} says {_listed(c.field, c.listed)}, "
+                    f"but the agent said {c.heard.rstrip('.')}.")
     if status in ("verified", "booked") and (moved := _moved(state, lid, view)):
         said.append(moved)
     asked = [*state.questions.get(lid, []), *(out.open_questions if out else [])]
     said += [f"Its agent asked, “{q.rstrip('?')}?” I said I'd check with you." for q in dict.fromkeys(asked)]
     return said
+
+
+def _listed(field: str, listed: str) -> str:
+    """What the listing says, in words that follow "The listing says": "no pets", "rent is $1,850",
+    "$2,000 a month", "it's available"."""
+    value = listed.strip().rstrip(".")
+    key = value.lower().replace("_", " ")
+    if field == "available":
+        return "it's available"
+    if field == "monthly_cost":
+        return value
+    name = FIELDS.get(field, field.replace("_", " "))
+    if field in LISTED:
+        return LISTED[field].get(key, key if name in key else f"{name}: {key}")
+    return f"{name} is {value}"
 
 
 def _moved(state: SessionState, lid: str, view: SessionView) -> str | None:
