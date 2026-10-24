@@ -14,14 +14,22 @@ evals/
   sim/driver.py                     # one conversation: the real agent on Higgs (text) vs an Opponent
   sim/cases.py score_concierge.py   # Concierge case format and scorer
   sim/replay.py                     # plays a recorded run back in place of Higgs (make test)
-  run_concierge.py report.py        # make eval; the report
+  sim/calls.py score_calls.py       # listing-call case format (persona + plan + gold) and scorer
+  run_concierge.py run_calls.py     # make eval runs both; report.py builds the report
   fixtures/listings.json            # frozen catalogue, so a new scrape can't move the boards
   fixtures/concierge/*.json         # tune cases
   fixtures/holdout/concierge/*.json # holdout cases: the reported numbers
+  fixtures/personas/*.json          # landlord personas for listing calls (tune)
+  fixtures/holdout/personas/*.json  # landlord personas (holdout)
   fixtures/recordings/*.jsonl       # recorded Higgs events for the replay test
-  reports/concierge.json latest.md  # committed; latest.md is rebuilt from the JSON
+  reports/concierge.json calls.json latest.md   # committed; latest.md is rebuilt from the JSON
   runs/<stamp>/                     # traces, not committed
-  # still to come: fixtures/transcripts (E-02), fixtures/renters (E-03), fixtures/personas (E-04)
+  fixtures/{,holdout/}transcripts/*.json   # E-02: call transcripts with gold facts (run_extraction.py)
+  fixtures/recordings/auditor/*.json       # the extractor's recorded answers, replayed with no key
+  run_ranking.py                           # E-03: the Matcher on renter briefs, pure code (no key)
+  fixtures/{,holdout/}ranking/*.json      # renter briefs with acceptable listings and a feedback goal
+  fixtures/audio/*.wav                     # E-04: Higgs-synthesized lines for the audio sim (audio_clips.py)
+  run_audio.py sim/audio.py                # E-04: the real voice paths on Higgs audio; reports/audio.json
 ```
 
 ## Concierge sim (E-01)
@@ -37,7 +45,16 @@ uv run python -m evals.run_concierge --replay                      # recordings 
 
 A trace (`evals/runs/<stamp>/<set>/<case>-<n>.json`) holds the score and everything that happened: each line and reply, each tool call with its arguments, its reply and the board it saw, the state after each line, and every Higgs event both ways. When a check fails, read the tool replies first. "Which one do you mean?" and "didn't catch that" mean the agent thinks it acted and nothing changed.
 
-The Caller sim (E-04, not built yet) is meant to reuse the driver, with a landlord-persona opponent (a second Higgs text session, no tools) in place of the scripted renter.
+## Listing-call sim (E-04)
+
+`evals/run_calls.py` runs each persona case through the real Dispatcher with the sim runner (`voice/sim.py`). A judge session records a one-listing plan with the case's windows, questions, booking permission and shareable answers, then hangs up. The Caller and a landlord persona then talk on two Higgs text sessions, the persona first. The scorer reads the session afterwards: card status, the booking (a day, or a day and time) and its window, red flags, open questions, and each gold fact's value, with amounts in words counted as numbers. Coverage counts only calls meant to cover the checklist, so a scam or a voicemail doesn't count against it. A persona has a name, a manner, `knows` (said when asked), `offers` (viewing times in order), `asks` (questions the brief can't answer) and `voicemail`. Write a persona's amounts in digits; personas misread "$150" as "fifteen hundred".
+
+```bash
+uv run python -m evals.run_calls --set tune --no-report            # tuning
+uv run python -m evals.run_calls --set tune --case raj-upsell --runs 1 --no-report
+```
+
+Two Higgs sessions per call; `--concurrency` (default 2) calls run at once.
 
 ## Fixture format (transcripts)
 
@@ -84,3 +101,4 @@ See `docs/EVAL_FINDINGS.md` for evidence and status. Known weak spots to write c
 - "Looks great" taken as a focus instead of a like.
 - A returning caller's welcome that ignores or invents memories. A case with `returning` (the opening text and the restored search) and `greeting_says` / `greeting_avoids` checks covers it.
 - Misread amounts ("thirty thousand" for $3,000).
+- Listing calls: answers read back but never recorded, scam calls that won't end, read-backs asked as questions, "I'll check with my client" with no `note_question`, double bookings across calls in one plan, and amounts copied into tool arguments in words.

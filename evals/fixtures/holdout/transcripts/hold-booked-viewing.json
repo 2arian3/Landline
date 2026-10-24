@@ -1,0 +1,46 @@
+{
+ "id": "hold-booked-viewing",
+ "note": "A booked viewing: the spoken slot becomes a Toronto datetime in code.",
+ "end_reason": "done",
+ "listing": {
+  "listing_id": "livrent:e02-16",
+  "address": "11 Wellesley St W",
+  "rent": 2400,
+  "monthly_cost": 2400
+ },
+ "turns": [
+  {
+   "speaker": "agent",
+   "text": "Hi, I'm an AI assistant calling for a renter about the apartment at 11 Wellesley Street West. Is it still available?"
+  },
+  {
+   "speaker": "landlord",
+   "text": "Yes, still available."
+  },
+  {
+   "speaker": "agent",
+   "text": "Could my client view it Sunday morning?"
+  },
+  {
+   "speaker": "landlord",
+   "text": "Sunday at eleven works for me."
+  },
+  {
+   "speaker": "agent",
+   "text": "Great, I'll book Sunday at eleven. Thank you."
+  }
+ ],
+ "tool_facts": [
+  {
+   "field": "available",
+   "value": "yes",
+   "quote": "Yes, still available",
+   "turn_idx": 1
+  }
+ ],
+ "slot_text": "Sunday at eleven",
+ "gold": {
+  "available": "yes",
+  "viewing": "2026-10-25T11:00"
+ }
+}

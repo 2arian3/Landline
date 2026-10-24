@@ -1,0 +1,64 @@
+{
+  "id": "linda-honest",
+  "about": "Honest agent: answers plainly, asks an unanswerable question, offers a time inside the renter's window",
+  "listing_id": "livrent:145662",
+  "persona": {
+    "name": "Linda",
+    "manner": "friendly, organised and honest",
+    "knows": {
+      "availability": "Still available, from November 1st.",
+      "pets": "Cats are fine, but no dogs, sorry.",
+      "parking": "One spot underground, $150 a month on top of the rent.",
+      "laundry": "In-suite washer and dryer.",
+      "noise": "It's a quiet building; most tenants are professionals.",
+      "fees": "No other fees, just a $50 key deposit."
+    },
+    "offers": [
+      "Saturday at 11 am",
+      "Sunday at 2 pm"
+    ],
+    "asks": [
+      "Does your client have a guarantor?"
+    ]
+  },
+  "plan": {
+    "availability": [
+      {
+        "day": "saturday",
+        "from": "10:00",
+        "to": "14:00"
+      }
+    ],
+    "may_book": true,
+    "questions": [
+      "Is the building quiet at night?"
+    ],
+    "shareable": {
+      "move_in": "December 1",
+      "occupants": 1,
+      "pets": [
+        "cat"
+      ]
+    }
+  },
+  "gold": {
+    "facts": {
+      "available_from": [
+        "nov"
+      ],
+      "pets": [
+        "cat"
+      ],
+      "parking_cost": [
+        "150"
+      ],
+      "laundry": [
+        "suite"
+      ]
+    },
+    "booked": "saturday",
+    "note_question": true,
+    "red_flags": false,
+    "status": "booked"
+  }
+}

@@ -1,0 +1,32 @@
+{
+ "model": "higgs-realtime",
+ "user": "Listing: 1 Bloor St E, listed at $2,690 a month\n\nTranscript:\n[0] AGENT: Hi, I'm an AI assistant calling for a renter about the apartment at 1 Bloor Street East. Is it still available?\n[1] LANDLORD: Mm-hm.\n[2] AGENT: It's listed at $2,690 with parking included, right?\n[3] LANDLORD: Mm-hm. It's available December first.\n[4] AGENT: And is there in-suite laundry?\n[5] LANDLORD: Yeah, washer and dryer in the unit.",
+ "response": {
+  "facts": [
+   {
+    "field": "available",
+    "turn": 3,
+    "quote": "It's available December first.",
+    "value": "yes",
+    "amount": null,
+    "count": null,
+    "each": null,
+    "period": null,
+    "mandatory": null,
+    "name": null
+   },
+   {
+    "field": "laundry",
+    "turn": 5,
+    "quote": "Yeah, washer and dryer in the unit.",
+    "value": "in_unit",
+    "amount": null,
+    "count": null,
+    "each": null,
+    "period": null,
+    "mandatory": null,
+    "name": null
+   }
+  ]
+ }
+}

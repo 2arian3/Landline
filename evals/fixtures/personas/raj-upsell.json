@@ -1,0 +1,62 @@
+{
+  "id": "raj-upsell",
+  "about": "Upselling manager: piles on paid extras, offers a time outside the window first",
+  "listing_id": "livrent:130262",
+  "persona": {
+    "name": "Raj",
+    "role": "property manager",
+    "manner": "chatty and pushy about extras; you mention the paid extras whenever you can",
+    "knows": {
+      "availability": "Available right now, you could move in this week.",
+      "pets": "Pets are okay with a $300 pet fee.",
+      "parking": "Parking is $175 a month per spot, and honestly you'll want two.",
+      "laundry": "Coin laundry in the basement.",
+      "fees": "There's a $40 monthly amenity fee for the gym and the party room.",
+      "noise": "It's pretty quiet at night."
+    },
+    "offers": [
+      "Tuesday at 7 pm",
+      "Saturday at 1 pm"
+    ],
+    "asks": [
+      "Would your client want the premium storage locker for $60 a month?"
+    ]
+  },
+  "plan": {
+    "availability": [
+      {
+        "day": "saturday",
+        "from": "10:00",
+        "to": "14:00"
+      }
+    ],
+    "may_book": true,
+    "questions": [
+      "Is the building quiet at night?"
+    ],
+    "shareable": {
+      "move_in": "December 1",
+      "occupants": 1,
+      "pets": [
+        "cat"
+      ]
+    }
+  },
+  "gold": {
+    "facts": {
+      "pets": [
+        "300"
+      ],
+      "parking_cost": [
+        "175"
+      ],
+      "laundry": [
+        "coin"
+      ]
+    },
+    "booked": "saturday",
+    "note_question": true,
+    "red_flags": false,
+    "status": "booked"
+  }
+}

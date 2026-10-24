@@ -7,6 +7,8 @@ nothing, so it stays unknown.
 """
 from __future__ import annotations
 
+import re
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import date
 from math import asin, cos, radians, sin, sqrt
@@ -15,6 +17,16 @@ from landline.contracts import Listing
 
 MIN_SQFT = 150   # below this a stated size is a data error (one listing says 2 sq ft); treated as unknown
 STRONG = ("call", "city")   # provenance that can exclude a listing; a listing's own text only ranks it
+
+
+@dataclass(frozen=True)
+class Hood:
+    """A City neighbourhood (D-05): where its middle is, and which neighbourhoods touch it."""
+    id: int
+    name: str
+    lat: float
+    lng: float
+    adjacent: tuple[int, ...] = ()
 
 
 @dataclass
@@ -43,13 +55,15 @@ class FeatureMatrix:
     strong: list[frozenset[str]]     # fields whose value comes from a call or the City record
     index: dict[str, int] = field(default_factory=dict)
     strong_rows: dict[str, frozenset[int]] = field(default_factory=dict)   # field → rows with such evidence
+    hoods: dict[int, Hood] = field(default_factory=dict)   # the City's neighbourhoods, by id (D-05)
     _distances: dict[tuple[float, float], list[float | None]] = field(default_factory=dict, repr=False)
     # Utility columns by (feature, the preference values it depends on); filled by rank.py.
     _utilities: dict[tuple, tuple[list, list, float | None]] = field(default_factory=dict, repr=False)
 
     @classmethod
-    def build(cls, listings: list[Listing]) -> FeatureMatrix:
-        """Rows are kept in listing-id order, so a stable sort on score alone breaks ties by id."""
+    def build(cls, listings: list[Listing], hoods: Iterable[Hood] = ()) -> FeatureMatrix:
+        """Rows are kept in listing-id order, so a stable sort on score alone breaks ties by id.
+        `hoods` lets a named area count its neighbours and surroundings (docs/SCORING.md, Location)."""
         cols: dict[str, list] = {name: [] for name in cls.__dataclass_fields__ if name not in _DERIVED}
         for x in sorted(listings, key=lambda x: x.listing_id):
             amenities = {a.strip().lower() for a in x.amenities}
@@ -81,6 +95,7 @@ class FeatureMatrix:
             for name, value in row.items():
                 cols[name].append(value)
         matrix = cls(**cols)
+        matrix.hoods = {h.id: h for h in hoods}
         matrix.index = {lid: i for i, lid in enumerate(matrix.ids)}
         by_field: dict[str, set[int]] = {}
         for i, fields in enumerate(matrix.strong):
@@ -91,6 +106,16 @@ class FeatureMatrix:
 
     def __len__(self) -> int:
         return len(self.ids)
+
+    def named(self, areas: Iterable[str]) -> list[Hood]:
+        """The neighbourhoods an area names: every word of it in the neighbourhood's name, so
+        "Liberty Village" finds "Fort York-Liberty Village" and "the Annex" finds "Annex"."""
+        out = []
+        for area in areas:
+            wanted = _words(area) - _FILLER
+            if wanted:
+                out += [h for h in self.hoods.values() if wanted <= _words(h.name) and h not in out]
+        return out
 
     def distances_km(self, lat: float, lng: float) -> list[float | None]:
         """Distance from every listing to one anchor. Computed once per anchor, then cached."""
@@ -113,7 +138,12 @@ def _known(value: str) -> str | None:
     return None if value == "unknown" else value
 
 
-_DERIVED = {"index", "strong_rows", "_distances", "_utilities"}
+def _words(text: str) -> set[str]:
+    return set(re.findall(r"[a-z0-9]+", text.lower().replace("st.", "st")))
+
+
+_FILLER = {"the", "area", "neighbourhood", "neighborhood", "around", "near", "in"}
+_DERIVED = {"index", "strong_rows", "hoods", "_distances", "_utilities"}
 _PARKING = {"parking", "secured underground parking", "underground parking"}
 _IN_SUITE = {"insuite laundry", "in-suite laundry", "in suite laundry", "ensuite laundry"}
 _OUTDOOR = {"balcony", "patio / deck / terrace", "terrace", "patio", "yard", "deck"}

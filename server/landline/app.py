@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from landline.agents.auditor import llm as auditor_llm
 from landline.api import admin, browser_audio, twilio
 from landline.api.demo import DemoSessions
 from landline.api.judge import JudgeLines, StartLimit
@@ -15,9 +16,12 @@ from landline.config import Settings
 from landline.db.catalogue import Catalogue
 from landline.db.pool import Database
 from landline.orchestrator import SessionRuntime
-from landline.voice import higgs
+from landline.voice import higgs, outbound
 from landline.voice.calls import RenterCalls
 from landline.voice.dispatch import Dispatcher
+from landline.voice.line import Lines
+from landline.voice.routing import ByChannel
+from landline.voice.sim import SimRunner
 from landline.voice.sms import Texter
 
 
@@ -46,7 +50,10 @@ def create_app(settings: Settings | None = None, catalogue: Catalogue | None = N
         app.state.sessions = DemoSessions(app.state.catalogue)
         # The session runtime (O-02): sessions that voice or judge mode start. It persists to Postgres when
         # DATABASE_URL is set, else keeps them in memory. Demo sessions stay in `sessions` until A-06.
-        app.state.runtime = SessionRuntime(app.state.catalogue, db, matrix=app.state.sessions.matrix)
+        # Its own matrix (with neighbourhoods), and the contact the place lookup identifies itself with.
+        app.state.runtime = SessionRuntime(app.state.catalogue, db, contact=settings.contact_email)
+        # Map taps and background re-ranks, to the live Concierge between turns (A-02, voice/line.py).
+        app.state.lines = Lines(app.state.runtime)
         app.state.judges = JudgeLines(settings.higgs_max_sessions)
         app.state.judge_limit = StartLimit(settings.judge_starts_per_ip, settings.judge_start_window_s)
         # For /health. The renter's call bridge sets "ok" or "error: …" each time it opens a Higgs session.
@@ -56,11 +63,23 @@ def create_app(settings: Settings | None = None, catalogue: Catalogue | None = N
         app.state.connect_higgs = higgs.connect
         # Texts the phone renter their board link. Tests swap it for a fake.
         app.state.texter = Texter(settings.twilio_account_sid, settings.twilio_auth_token)
-        # The hand-off (A-06): a brief that ends with a plan has its calls queued and run. The Caller (A-05)
-        # sets `runner`; until then the plan is frozen and its calls stay queued.
-        app.state.dispatcher = Dispatcher(app.state.runtime, settings, texter=app.state.texter)
+        # The hand-off (A-06): a brief that ends with a plan has its calls queued and run. A judge's calls
+        # always go to the Caller talking to landlord personas in text (A-03), with no phone. A phone renter's
+        # go over Twilio with TRANSPORT=voice (A-02), to the personas with TRANSPORT=sim, and otherwise stay
+        # queued.
+        chat = auditor_llm.from_env()   # the Auditor's text LLM (A-07); None runs it on rules alone
+        extractor = chat.json if chat else None
+        app.state.outbound = outbound.install(app.state, settings, extractor=extractor)
+        # Hard rule 6: a judge's (or any browser brief's) calls always go to the sim landlords; only a phone
+        # renter's go over Twilio, and only with TRANSPORT=voice (voice/routing.py).
+        sim = SimRunner(app.state.runtime, lambda key, cfg: app.state.connect_higgs(key, cfg),
+                        settings.boson_api_key or "", extractor=extractor)
+        runner = ByChannel(app.state.runtime, phone=app.state.outbound.runner, sim=sim,
+                           sim_for_phone=settings.transport == "sim")
+        app.state.dispatcher = Dispatcher(app.state.runtime, settings, runner=runner, texter=app.state.texter)
         yield
         await app.state.dispatcher.close()
+        await outbound.uninstall(app.state.outbound)
         await app.state.texter.close()
         app.state.sessions.close()
         await app.state.runtime.close()

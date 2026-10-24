@@ -1,0 +1,44 @@
+{
+ "model": "higgs-realtime",
+ "user": "Listing: 322 Dupont St, listed at $3,290 a month\n\nTranscript:\n[0] AGENT: Hi, I'm an AI assistant calling for a renter about the apartment at 322 Dupont St. Is it still available?\n[1] LANDLORD: Yes, it's still available.\n[2] AGENT: Great. Does it come with parking?\n[3] LANDLORD: Parking is separate. We have two spots, 180 each, you can take one or both.\n[4] AGENT: And pets?\n[5] LANDLORD: Cats are fine, no dogs though.",
+ "response": {
+  "facts": [
+   {
+    "field": "available",
+    "turn": 1,
+    "quote": "Yes, it's still available.",
+    "value": "yes",
+    "amount": null,
+    "count": null,
+    "each": null,
+    "period": null,
+    "mandatory": null,
+    "name": null
+   },
+   {
+    "field": "parking",
+    "turn": 3,
+    "quote": "Parking is separate. We have two spots, 180 each, you can take one or both.",
+    "value": "available",
+    "amount": 180,
+    "count": 2,
+    "each": true,
+    "period": "monthly",
+    "mandatory": null,
+    "name": "parking_cost"
+   },
+   {
+    "field": "pets",
+    "turn": 5,
+    "quote": "Cats are fine, no dogs though.",
+    "value": "cats_only",
+    "amount": null,
+    "count": null,
+    "each": null,
+    "period": null,
+    "mandatory": null,
+    "name": null
+   }
+  ]
+ }
+}

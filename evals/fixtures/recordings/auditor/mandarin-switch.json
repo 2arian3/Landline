@@ -1,0 +1,56 @@
+{
+ "model": "higgs-realtime",
+ "user": "Listing: 4800 Yonge St, listed at $2,550 a month\n\nTranscript:\n[0] AGENT: Hi, I'm an AI assistant calling for a renter about the apartment at 4800 Yonge Street. Is it still available?\n[1] LANDLORD: Hello? Yes... sorry, my English is not good. 我可以说中文吗？\n[2] AGENT: 当然可以。请问这套公寓还在出租吗？\n[3] LANDLORD: 还在。房租两千六，比网上写的多一点。\n[4] AGENT: 好的。可以养宠物吗？有停车位吗？\n[5] LANDLORD: 不能养宠物。车位一个月一百五，如果你需要的话。\n[6] AGENT: 明白了，谢谢您。",
+ "response": {
+  "facts": [
+   {
+    "field": "available",
+    "turn": 3,
+    "quote": "还在",
+    "value": "yes",
+    "amount": null,
+    "count": null,
+    "each": null,
+    "period": null,
+    "mandatory": null,
+    "name": null
+   },
+   {
+    "field": "rent",
+    "turn": 3,
+    "quote": "房租两千六",
+    "value": "2600",
+    "amount": null,
+    "count": null,
+    "each": null,
+    "period": null,
+    "mandatory": null,
+    "name": null
+   },
+   {
+    "field": "pets",
+    "turn": 5,
+    "quote": "不能养宠物",
+    "value": "no_pets",
+    "amount": null,
+    "count": null,
+    "each": null,
+    "period": null,
+    "mandatory": null,
+    "name": null
+   },
+   {
+    "field": "parking",
+    "turn": 5,
+    "quote": "车位一个月一百五",
+    "value": "available",
+    "amount": 150,
+    "count": 1,
+    "each": true,
+    "period": "monthly",
+    "mandatory": null,
+    "name": "parking"
+   }
+  ]
+ }
+}
