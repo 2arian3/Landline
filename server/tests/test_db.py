@@ -1,17 +1,16 @@
 """Repository tests against a throwaway schema.
 
 Run with TEST_DATABASE_URL pointing at a Postgres with PostGIS and pgvector available
-(`make test` uses the local landline-db-1). The tests create a schema `t_<random>`,
-apply the migrations into it, and drop it afterwards; the public schema is never
-touched. Without a reachable TEST_DATABASE_URL they skip.
+(`make test` uses the local landline-db-1). The `schema` and `db` fixtures in
+conftest.py create a schema `t_<random>`, apply the migrations into it, and drop it
+afterwards; the public schema is never touched. Without a reachable
+TEST_DATABASE_URL they skip.
 """
 import os
-import secrets
 from datetime import UTC, datetime, timedelta
 
 import psycopg
 import pytest
-from psycopg import sql
 
 from landline.contracts import CallOutcome, OutcomeReady, SessionStarted
 from landline.db.migrations import apply
@@ -23,32 +22,6 @@ URL = os.environ.get("TEST_DATABASE_URL")
 T0 = datetime(2026, 10, 24, 1, 0, tzinfo=UTC)
 SQUARE = {"type": "Polygon", "coordinates": [[[-79.40, 43.64], [-79.37, 43.64], [-79.37, 43.66],
                                               [-79.40, 43.66], [-79.40, 43.64]]]}
-
-
-@pytest.fixture(scope="module")
-def schema():
-    if not URL:
-        pytest.skip("TEST_DATABASE_URL is not set")
-    try:
-        conn = psycopg.connect(URL, autocommit=True, connect_timeout=3)
-    except psycopg.OperationalError as e:
-        pytest.skip(f"no database at TEST_DATABASE_URL: {e}")
-    name = f"t_{secrets.token_hex(4)}"
-    with conn:
-        conn.execute("create extension if not exists postgis with schema public")
-        conn.execute("create extension if not exists vector with schema public")
-        conn.execute(sql.SQL("create schema {}").format(sql.Identifier(name)))
-        try:
-            yield name, apply(conn, schema=name)
-        finally:
-            conn.execute(sql.SQL("drop schema {} cascade").format(sql.Identifier(name)))
-
-
-@pytest.fixture
-async def db(schema):
-    database = await Database.open(URL, schema=schema[0], max_size=4)
-    yield database
-    await database.close()
 
 
 async def _listing(db: Database, lid: str, *, lat=43.65, lng=-79.38, first_seen=T0, status="active") -> str:

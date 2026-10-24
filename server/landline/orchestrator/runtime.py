@@ -1,0 +1,201 @@
+"""The session runtime: the one writer for every session (docs/ARCHITECTURE.md, Orchestration).
+
+    runtime = SessionRuntime(catalogue, db)           # db=None keeps sessions in memory only
+    view = await runtime.start(SessionStarted(...))   # the session id comes from the caller's code
+    view = await runtime.emit(PreferencesUpdated(...))
+    async with runtime.session_tx(sid) as tx:         # several events and writes, one commit
+        await tx.apply(CallsScheduled(...))
+        await db.calls.create(..., conn=tx.conn)
+    runtime.on("SessionEnded", dispatcher.on_session_ended)   # runs after the commit
+
+`session_tx` holds the session's lock, applies each event to a working copy, then
+re-ranks, appends the events, saves the snapshot and bumps the version in one
+Postgres transaction. Only then does the copy become the session, so a handler
+that fails or is refused leaves nothing behind. A duplicate `idem_key` is a no-op.
+After the commit, SSE subscribers wake on `changed` and each subscriber to the
+committed event types runs as a background task, so none of them blocks a turn.
+"""
+from __future__ import annotations
+
+import asyncio
+import logging
+from collections import defaultdict
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager, nullcontext
+from dataclasses import dataclass, field
+
+from psycopg import AsyncConnection
+
+from landline.contracts import Event, SessionStarted, SessionView
+from landline.db.catalogue import Catalogue
+from landline.db.pool import Database
+from landline.orchestrator import board, handlers
+from landline.orchestrator.state import SessionState
+from landline.scoring import FeatureMatrix
+
+log = logging.getLogger(__name__)
+
+Subscriber = Callable[[Event, SessionView], Awaitable[None]]
+
+
+class UnknownSession(KeyError):
+    """No session with that id: sessions are started by code (SessionStarted), never on first sight."""
+
+
+class DuplicateEvent(Exception):
+    """Postgres already holds this idem_key though this process hadn't seen it: the commit rolls back."""
+
+
+@dataclass
+class _Live:
+    state: SessionState
+    view: SessionView
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    seen: set[str] = field(default_factory=set)   # idem keys committed since boot
+
+
+class Tx:
+    """One `session_tx`: a working copy of the session and, with Postgres, the open transaction."""
+
+    def __init__(self, live: _Live, conn: AsyncConnection | None, db: Database | None,
+                 known: handlers.Known):
+        self.state = live.state.model_copy(deep=True)
+        self.conn = conn
+        self.events: list[Event] = []
+        self._seen, self._db, self._known = live.seen, db, known
+
+    async def apply(self, event: Event) -> bool:
+        """Run the event's handler on the working copy. False when it's a duplicate or changes nothing."""
+        if event.session_id != self.state.session_id:
+            raise ValueError(f"{event.type} for {event.session_id} applied to {self.state.session_id}")
+        key = event.idem_key
+        if key in self._seen or any(e.idem_key == key for e in self.events):
+            return False
+        if self._db is not None and await self._db.events.seen(key, conn=self.conn):
+            return False
+        if not handlers.apply(self.state, event, self._known):
+            return False
+        self.events.append(event)
+        return True
+
+
+class SessionRuntime:
+    def __init__(self, catalogue: Catalogue, db: Database | None = None, *,
+                 matrix: FeatureMatrix | None = None):
+        self.catalogue = catalogue
+        self.matrix = matrix or FeatureMatrix.build(catalogue.listings)   # once, at boot
+        self.db = db
+        self.changed = asyncio.Condition()   # SSE subscribers wait on it; notified after every commit
+        self._live: dict[str, _Live] = {}
+        self._starting = asyncio.Lock()
+        self._subscribers: dict[str, list[Subscriber]] = defaultdict(list)
+        self._tasks: set[asyncio.Task] = set()
+
+    def __len__(self) -> int:
+        return len(self._live)
+
+    def has(self, session_id: str) -> bool:
+        return session_id in self._live
+
+    def get(self, session_id: str) -> SessionView:
+        return self._get(session_id).view
+
+    def state(self, session_id: str) -> SessionState:
+        """A copy of the session's state, to read from (the Dispatcher freezes the plan from it)."""
+        return self._get(session_id).state.model_copy(deep=True)
+
+    def on(self, event_type: str, fn: Subscriber) -> None:
+        """Run `fn(event, view)` after every committed event of `event_type`, as a background task."""
+        self._subscribers[event_type].append(fn)
+
+    async def start(self, event: SessionStarted) -> SessionView:
+        """Create the session at version 1. Starting one that exists is a no-op."""
+        sid = event.session_id
+        async with self._starting:
+            if sid in self._live:
+                return self._live[sid].view
+            state = SessionState(session_id=sid, channel=event.channel, user_id=event.user_id,
+                                 caller_phone=event.caller_phone)
+            view = self._build(state, 1)
+            if self.db is not None:
+                async with self.db.transaction() as conn:
+                    await self.db.sessions.create(sid, event.channel, event.user_id, conn=conn)
+                    await self.db.events.append(event, conn=conn)
+                    await self.db.sessions.save(sid, expected_version=0, status=state.phase,
+                                                snapshot=_snapshot(state, view), conn=conn)
+            self._live[sid] = _Live(state, view, seen={event.idem_key})
+        await self._published(sid, [event])
+        return view
+
+    async def emit(self, event: Event) -> SessionView:
+        """Apply one event in its own transaction and return the session as it stands after it."""
+        async with self.session_tx(event.session_id) as tx:
+            await tx.apply(event)
+        return self.get(event.session_id)
+
+    @asynccontextmanager
+    async def session_tx(self, session_id: str) -> AsyncIterator[Tx]:
+        live = self._get(session_id)
+        async with live.lock:
+            transaction = self.db.transaction() if self.db is not None else nullcontext(None)
+            async with transaction as conn:
+                tx = Tx(live, conn, self.db, self.catalogue.by_id.__contains__)
+                yield tx
+                if not tx.events:
+                    return
+                view = self._build(tx.state, live.view.version + 1)
+                if conn is not None:
+                    await self._persist(tx, view, expected_version=live.view.version)
+            live.state, live.view = tx.state, view
+            live.seen.update(e.idem_key for e in tx.events)
+        await self._published(session_id, tx.events)
+
+    async def close(self) -> None:
+        for task in list(self._tasks):
+            task.cancel()
+        await asyncio.gather(*self._tasks, return_exceptions=True)
+
+    def _get(self, session_id: str) -> _Live:
+        live = self._live.get(session_id)
+        if live is None:
+            raise UnknownSession(session_id)
+        return live
+
+    def _build(self, state: SessionState, version: int) -> SessionView:
+        view = board.build(state, version, self.catalogue, self.matrix)
+        state.board = [c.listing_id for c in view.board]
+        return view
+
+    async def _persist(self, tx: Tx, view: SessionView, expected_version: int) -> None:
+        db, conn, state = self.db, tx.conn, tx.state
+        assert db is not None
+        for event in tx.events:
+            if await db.events.append(event, conn=conn) is None:
+                raise DuplicateEvent(event.idem_key)
+        await db.sessions.save(state.session_id, expected_version=expected_version, status=state.phase,
+                               snapshot=_snapshot(state, view), conn=conn)
+        if state.phase in ("done", "closed"):
+            await db.sessions.end(state.session_id, state.phase, conn=conn)
+
+    async def _published(self, session_id: str, events: list[Event]) -> None:
+        async with self.changed:
+            self.changed.notify_all()
+        view = self.get(session_id)
+        for event in events:
+            for fn in self._subscribers.get(event.type, ()):
+                task = asyncio.create_task(self._run(fn, event, view))
+                self._tasks.add(task)
+                task.add_done_callback(self._tasks.discard)
+
+    @staticmethod
+    async def _run(fn: Subscriber, event: Event, view: SessionView) -> None:
+        try:
+            await fn(event, view)
+        except Exception:
+            log.exception("subscriber %s failed on %s %s", getattr(fn, "__qualname__", fn), event.type,
+                          event.idem_key)
+
+
+def _snapshot(state: SessionState, view: SessionView) -> dict:
+    """sessions.snapshot: the state to reload on restart, and the view the page reads."""
+    return {"state": state.model_dump(mode="json"), "view": view.model_dump(mode="json")}
