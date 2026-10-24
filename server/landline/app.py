@@ -17,6 +17,7 @@ from landline.db.pool import Database
 from landline.orchestrator import SessionRuntime
 from landline.voice import higgs
 from landline.voice.calls import RenterCalls
+from landline.voice.sms import Texter
 
 
 def _log_landline_info() -> None:
@@ -52,7 +53,10 @@ def create_app(settings: Settings | None = None, catalogue: Catalogue | None = N
         # The renter's phone calls (A-02, A-04). Tests swap connect_higgs for a fake.
         app.state.calls = RenterCalls(settings.higgs_max_sessions)
         app.state.connect_higgs = higgs.connect
+        # Texts the phone renter their board link. Tests swap it for a fake.
+        app.state.texter = Texter(settings.twilio_account_sid, settings.twilio_auth_token)
         yield
+        await app.state.texter.close()
         app.state.sessions.close()
         await app.state.runtime.close()
         if db is not None:
