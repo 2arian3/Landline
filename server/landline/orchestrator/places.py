@@ -159,17 +159,19 @@ def load_stations(path: Path = STATIONS) -> list[dict]:
 
 
 def _street(name: str) -> str:
-    """An OSM name pattern for a street as people say it: "King" matches "King Street West"."""
-    words = [w for w in re.findall(r"[A-Za-z0-9']+", name)]
+    """An OSM name pattern for a street as people say it: "King" matches "King Street West", and "Queen's
+    Quay" matches "Queens Quay West"."""
+    words = [w for w in re.findall(r"[A-Za-z0-9']+", name.replace("’", "'")) if w.strip("'")]
     while words and re.fullmatch(_STREET_TYPE + r"|" + _DIRECTION, words[-1], re.I):
         words.pop()
-    core = " ".join(re.escape(w) for w in words) or re.escape(name.strip())
+    core = " ".join(_apostrophe_optional(w) for w in words) or re.escape(name.strip())
     return rf"^{core}( {_STREET_TYPE})?( {_DIRECTION})?$"
 
 
 def _named(core: str, direction: str | None) -> str:
     """The OSM name pattern for a street the renter named: with a direction, only that part of it."""
-    words = " ".join(re.escape(w) for w in re.findall(r"[A-Za-z0-9']+", core))
+    words = " ".join(_apostrophe_optional(w) for w in re.findall(r"[A-Za-z0-9']+", core.replace("’", "'"))
+                     if w.strip("'"))
     if not direction:
         return rf"^{words}( {_STREET_TYPE})?( (east|west|north|south))?$"
     side = direction.lower()
@@ -185,6 +187,16 @@ def _thin(path: list[tuple[float, float]]) -> tuple[tuple[float, float], ...]:
         if haversine_km(*kept[-1], *p) >= THIN_KM:
             kept.append(p)
     return (*kept, path[-1])
+
+
+def _apostrophe_optional(word: str) -> str:
+    """A word's pattern whose apostrophe may be there or not, and may come before a final s: "Queens" and
+    "Queen's" both give Queen'?s, "O'Connor" gives O'?Connor. OSM's names don't agree on it."""
+    word = word.strip("'")
+    parts = word.split("'")
+    if len(parts) == 1 and len(word) > 2 and word[-1] in "sS":
+        parts = [word[:-1], word[-1]]
+    return "'?".join(re.escape(p) for p in parts)
 
 
 _APOSTROPHE = re.compile(r"['’]")   # "Queen's", "Queens" and "Queen’s" are one word
