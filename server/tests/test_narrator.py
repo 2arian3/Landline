@@ -26,7 +26,7 @@ from landline.contracts import (
     Viewing,
 )
 from landline.db.catalogue import Catalogue
-from landline.orchestrator import SessionRuntime
+from landline.orchestrator import SessionRuntime, narrator
 from landline.orchestrator.narrator import MAX_WORDS, WIDEN, acknowledge, rank_diff
 
 T0 = datetime(2026, 10, 24, 1, 0, tzinfo=UTC)
@@ -221,3 +221,33 @@ async def test_a_closed_brief_says_goodbye():
     closed = await rt.emit(SessionEnded(**_meta("end", 1), reason="hangup"))
     assert (closed.phase, closed.agent_says) == ("closed", "Bye for now. Call again any time.")
     assert closed.results is None
+
+
+@pytest.mark.parametrize(("field", "listed", "heard", "line"), [
+    # what the Auditor writes (agents/auditor/audit.py conflicts), and how it reads (#117)
+    ("pets", "no pets", "cats only", "The listing says no pets, but the agent said cats only."),
+    ("pets", "any", "no pets", "The listing says pets allowed, but the agent said no pets."),
+    ("pets", "case by case", "dogs only",
+     "The listing says pets case by case, but the agent said dogs only."),
+    ("laundry", "in suite", "laundry in the building",
+     "The listing says laundry in the unit, but the agent said laundry in the building."),
+    ("laundry", "shared", "no laundry",
+     "The listing says laundry in the building, but the agent said no laundry."),
+    ("parking", "included", "$180 a month",
+     "The listing says parking included, but the agent said $180 a month."),
+    ("parking", "none", "parking available",
+     "The listing says no parking, but the agent said parking available."),
+    ("rent", "$2,300", "$2,450", "The listing says the rent is $2,300, but the agent said $2,450."),
+    ("parking_cost", "$150", "$175", "The listing says parking is $150 a month, but the agent said $175."),
+    ("monthly_cost", "$2,300 a month", "$2,475 a month",
+     "The listing says $2,300 a month in all, but with what the agent said it's $2,475 a month."),
+    ("available", "listed as available", "not available",
+     "The listing says it's available, but the agent said it's not available."),
+])
+def test_a_conflict_reads_as_plain_speech_never_a_field_name_before_its_value(field, listed, heard, line):
+    assert narrator._conflict(Conflict(field=field, listed=listed, heard=heard, quote="…")) == line
+
+
+def test_a_conflict_with_the_city_record_says_so():
+    c = Conflict(field="laundry", listed="none", heard="laundry in the unit", quote="…", against="city")
+    assert narrator._conflict(c) == "The City record says no laundry, but the agent said laundry in the unit."
