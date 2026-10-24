@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
 
-from landline.api.demo import TORONTO, DemoSessions, window
+from landline.api.demo import LAST_RESULTS, TORONTO, DemoSessions, window
 from landline.api.judge import JudgeLines, StartLimit, client_ip
 from landline.app import create_app
 from landline.config import Settings
@@ -361,3 +361,19 @@ def test_returning_renter_is_welcomed_by_name():
         assert (off["returning"], off["user_name"]) == (False, None)
         assert c.post("/api/sessions/s_back/returning", json={"name": " "}).json()["user_name"] is None
         assert c.post("/api/sessions/s_back/returning", json={"name": "x" * 41}).status_code == 422
+
+
+async def test_a_returning_call_opens_with_the_last_results():
+    s = DemoSessions(_one_bedrooms(), tick_s=0)
+    first = await s.welcome_back("s1", True, "Sara")
+    assert first.agent_says == f"Welcome back, Sara. {LAST_RESULTS}"   # nothing run yet: the fixture
+    await s.plan_top("s1")
+    await s.hang_up("s1")
+    await s.dialing["s1"]
+    results = s.get("s1").results
+    assert results and not s.get("s1").agent_says.startswith("Welcome back")   # calls done: Landline moved on
+    again = await s.reset("s1")   # the renter calls again
+    assert again.agent_says == f"Welcome back, Sara. {results}"
+    assert (await s.plan_top("s1")).agent_says.endswith("is on top.")   # once there's a plan, it moves on
+    await s.reset("s1")
+    assert (await s.welcome_back("s1", False, None)).agent_says.endswith("is on top.")
