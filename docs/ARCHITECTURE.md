@@ -196,7 +196,7 @@ The three agents never import each other. They share only `contracts/`, where `C
 | Web | Vercel, deployed from `release` by `.github/workflows/deploy-web.yml` when `web/` changes. The browser calls the API's public URL directly (`NEXT_PUBLIC_API_URL`, CORS) |
 | Database | Postgres 17 with PostGIS and pgvector in Docker on the same VM, localhost only |
 | CI/CD | Work lands on `main`; shipping is `git push origin main:release`. Every push to `release` that passes CI is rsynced to the VM through the gateway (SSH jump host), migrated and restarted. The VM's own timer re-scrapes every 6 h. See [deploy/README.md](../deploy/README.md) |
-| Models | Boson Higgs Realtime and Higgs TTS (Avatar is a stretch goal); a text LLM for the Auditor and the pipeline's feature extractor, behind one provider interface |
+| Models | Boson Higgs Realtime and Higgs TTS; Higgs Avatar lip-syncs the renter's call on the board, in a LiveKit Cloud room, when LiveKit keys are set (A-11, `voice/avatar.py`); a text LLM for the Auditor and the pipeline's feature extractor, behind one provider interface |
 
 No tunnels in the demo path. The VM stays up until judging ends.
 
