@@ -1,0 +1,29 @@
+{
+  "id": "like-looks-amazing-dislike-far",
+  "about": "Praise for a card by its number (\"looks amazing\") is a like on that card, not a focus; then a dislike for location",
+  "lines": [
+    {
+      "say": "Two bedrooms, up to 3,200 a month please.",
+      "expect": {"prefs": {"max_monthly": 3200, "min_beds": 2}}
+    },
+    {
+      "say": "Ooh, the second one looks amazing.",
+      "expect": {"reactions": [{"ref": "rank:2", "reaction": "like"}]}
+    },
+    {
+      "say": "The fourth one is way too far out for me though.",
+      "expect": {"reactions": [{"ref": "rank:4", "reaction": ["dislike", "reject"], "attribute": "location"}]}
+    },
+    {
+      "say": "That's all for now, thanks. Bye."
+    }
+  ],
+  "final": {
+    "reactions": [
+      {"ref": "rank:2", "at": 1, "reaction": "like"},
+      {"ref": "rank:4", "at": 2, "reaction": ["dislike", "reject"]}
+    ],
+    "no_request": true,
+    "ended": true
+  }
+}

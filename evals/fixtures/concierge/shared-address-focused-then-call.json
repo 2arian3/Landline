@@ -1,0 +1,40 @@
+{
+  "id": "shared-address-focused-then-call",
+  "about": "Three cards share 30 Carabob Court; after focusing one by number, its address alone means that card for a like and for the call",
+  "lines": [
+    {
+      "say": "One bedroom, 2,400 max please."
+    },
+    {
+      "say": "Tell me about the fifth one.",
+      "expect": {"focus": {"ref": "rank:5"}}
+    },
+    {
+      "say": "Nice, I like 30 Carabob Court.",
+      "expect": {"reactions": [{"ref": "rank:5", "reaction": "like"}]}
+    },
+    {
+      "say": "Could you call 30 Carabob Court for me?"
+    },
+    {
+      "say": "Saturday from 10 to 2 works for a viewing."
+    },
+    {
+      "say": "Yes, go ahead and book one."
+    },
+    {
+      "say": "Thanks, bye!"
+    }
+  ],
+  "may_book_from": 5,
+  "final": {
+    "focus": {"ref": "rank:5", "at": 1},
+    "reactions": [{"ref": "rank:5", "at": 2, "reaction": "like"}],
+    "request": {
+      "listings": "rank:6",
+      "availability": [{"day": "saturday", "from": "10:00", "to": "14:00"}],
+      "may_book": true
+    },
+    "ended": true
+  }
+}

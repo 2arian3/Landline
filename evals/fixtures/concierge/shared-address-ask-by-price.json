@@ -1,0 +1,30 @@
+{
+  "id": "shared-address-ask-by-price",
+  "about": "Asks to call an address three cards share with nothing focused: the Concierge must ask which, and the renter picks by price",
+  "lines": [
+    {
+      "say": "One bedroom, 2,400 max please."
+    },
+    {
+      "say": "Can you call 30 Carabob Court for me?",
+      "expect": {"no_request": true}
+    },
+    {
+      "say": "The one that's 1,950 a month."
+    },
+    {
+      "say": "Sunday afternoon, 1 to 4."
+    },
+    {
+      "say": "No, don't book anything, just ask them. Bye."
+    }
+  ],
+  "final": {
+    "request": {
+      "listings": "rank:5",
+      "availability": [{"day": "sunday", "from": "13:00", "to": "16:00"}],
+      "may_book": false
+    },
+    "ended": true
+  }
+}

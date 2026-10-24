@@ -192,7 +192,10 @@ def hygiene(trace: Trace, catalogue: Catalogue) -> dict[str, int]:
         counts["ids_read"] += any(x in turn.text for x in ids | numbers)
         counts["markdown"] += bool(MARKDOWN.search(turn.text))
     for name, reply in REPLIES.items():
-        counts[name] = sum(t.output == reply for t in trace.tools)
+        # "which" also counts the replies that name a shared address's cards, and a feedback with no ref.
+        counts[name] = sum(t.output == reply or (name == "which" and (t.output.startswith("Which one?")
+                                                                      or t.output == tools.NO_REF))
+                           for t in trace.tools)
     counts["higgs_errors"] = len(trace.errors)
     return counts
 
