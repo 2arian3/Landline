@@ -61,6 +61,26 @@ def day_only(text: str, now: datetime) -> date | None:
     return day if day is not None and _clock(words) is None else None
 
 
+def day_bound(window: Window) -> bool:
+    """09:00–18:00 on one day: the bound a day alone is stored as (#174). A booking may fall inside it.
+    It is not hours the renter gave, so nothing reads it out (#218)."""
+    start, end = window.start.astimezone(TORONTO), window.end.astimezone(TORONTO)
+    return (start.date() == end.date() and (start.hour, start.minute) == (9, 0)
+            and (end.hour, end.minute) == (18, 0))
+
+
+def bound_days(windows: list[Window]) -> str | None:
+    """'Sunday', or 'Saturday and Sunday', when every window is that day-only bound; else None."""
+    if not windows or not all(day_bound(w) for w in windows):
+        return None
+    names: list[str] = []
+    for w in windows:
+        name = WEEKDAYS[w.start.astimezone(TORONTO).weekday()].capitalize()
+        if name not in names:
+            names.append(name)
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+
+
 def within(at: datetime, windows: list[Window]) -> bool:
     return any(w.start <= at < w.end for w in windows)
 
@@ -72,12 +92,17 @@ def open_times(windows: list[Window], now: datetime, most: int = 2) -> str | Non
     today = now.astimezone(TORONTO).date()
     said = []
     for w in sorted(windows, key=lambda w: w.start):
+        if w.end <= now:
+            continue
+        local = w.start.astimezone(TORONTO)
+        day = "today" if local.date() == today else WEEKDAYS[local.weekday()].capitalize()
+        if day_bound(w):   # the default bound is not a time to offer (#218)
+            said.append("today" if day == "today" else day)
+            continue
         start = max(w.start, soonest)
         if start >= w.end:
             continue
-        local = start.astimezone(TORONTO)
         span = f"between {_clock_words(start)} and {_clock_words(w.end)}"
-        day = "today" if local.date() == today else WEEKDAYS[local.weekday()].capitalize()
         said.append(f"{span} today" if day == "today" else f"{day} {span}")
     return ", or ".join(said[:most]) or None
 

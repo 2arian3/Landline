@@ -82,7 +82,14 @@ def brief(listing: Listing, plan: CallPlan, wants: frozenset[str] = frozenset())
     for n, question in enumerate(plan.questions, start=1):
         items.append(Item(f"q{n}", f"the renter's question: {question} (record their answer as other)",
                           ["other"]))
-    if plan.windows and plan.may_book:
+    if names := slots.bound_days(plan.windows):   # a day alone: ask the day, never its stored bounds (#218)
+        ask = f"what time on {names} works"
+        if plan.may_book:
+            items.append(Item("viewing", f"{ask}, booked with book_viewing", []))
+        else:
+            items.append(Item("viewing", f"{ask}, given to book_viewing (it notes the time for the renter "
+                              "and books nothing)", ["other"]))
+    elif plan.windows and plan.may_book:
         items.append(Item("viewing", "a viewing inside the renter's times, booked with book_viewing", []))
     elif plan.windows:   # the renter gave times but didn't allow booking: get a time for them (#189)
         items.append(Item("viewing", "what time inside the renter's times they could show it, given to "
@@ -108,10 +115,17 @@ def wants(prefs: Preferences | None) -> frozenset[str]:
 def instructions(b: Brief) -> str:
     x, plan = b.listing, b.plan
     checklist = "\n".join(f"{n}. Find out {i.ask}." for n, i in enumerate(b.items, start=1))
-    windows = _join([_window(w) for w in plan.windows]) or "none given"
+    names = slots.bound_days(plan.windows)
+    windows = names or _join([_window(w) for w in plan.windows]) or "none given"
     share = _shareable(plan)
-    booking = ("You may book one viewing: call book_viewing with the time they offer, in their words. "
-               "Book only a time inside the renter's windows; the reply tells you if it's booked.") \
+    booking = (f"Ask what time on {names} works. They gave a day and no hours, so never say a clock time "
+               "as when they can view. Call book_viewing with the time they offer.") \
+        if names and plan.may_book else \
+        (f"You may not book. Ask what time on {names} works, and pass that time to book_viewing: it notes "
+         "the time for the renter and books nothing. Never say a clock time as when they can view.") \
+        if names else \
+        ("You may book one viewing: call book_viewing with the time they offer, in their words. "
+         "Book only a time inside the renter's windows; the reply tells you if it's booked.") \
         if plan.may_book and plan.windows else \
         ("You may not book. Ask what time inside the renter's times they could show it, and pass that time "
          "to book_viewing: it notes it for the renter and books nothing, so never tell them it's booked.") \
