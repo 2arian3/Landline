@@ -1,0 +1,35 @@
+{
+  "id": "sam-voicemail",
+  "about": "Nobody picks up: voicemail",
+  "listing_id": "livrent:140431",
+  "persona": {
+    "name": "Sam",
+    "voicemail": true
+  },
+  "plan": {
+    "availability": [
+      {
+        "day": "saturday",
+        "from": "10:00",
+        "to": "14:00"
+      }
+    ],
+    "may_book": true,
+    "questions": [],
+    "shareable": {
+      "move_in": "December 1",
+      "occupants": 1,
+      "pets": []
+    }
+  },
+  "gold": {
+    "facts": {},
+    "booked": null,
+    "red_flags": false,
+    "status": "no_answer",
+    "end": [
+      "voicemail",
+      "hangup"
+    ]
+  }
+}

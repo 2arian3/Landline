@@ -86,6 +86,35 @@ The probe also showed **"$3,000" read as "thirty thousand"** in 3 of 5 welcomes,
 
 Two cases now cover this. The tune case (`returning-results-ready`) checks that the welcome gives the booking and doesn't misread the budget. The holdout case (`returning-calls-running`) checks that it recalls the search and claims no results. Over 5 live runs each: **tune 4 of 5, holdout 5 of 5**. Across the 8 tune runs so far (5 plus 3 in `make eval`), the welcome gave the booking in 6 and made nothing up in any.
 
+### Listing calls: the Caller (A-05) against landlord personas
+
+Added Sat 24 Oct, 02:30–02:50 Toronto. Each run is one renter plan through the real Dispatcher. The sim runner (`voice/sim.py`) puts the Caller on one Higgs text session and a landlord persona on another; the persona has hidden facts, viewing times and questions of its own, and picks up first. Seven personas: 5 tune (honest, upselling, scam, a switch to Mandarin, voicemail) and 2 holdout (an honest agent where booking isn't allowed, and a different scam). The final run on `bcaab31`:
+
+| | Tune (5 × 3) | Holdout (2 × 3) |
+|---|---|---|
+| Runs passing | 73% | 83% |
+| Checklist coverage | 100% | 87% |
+| Right card status, right booking (or none), red flags exactly when deserved | 15/15 | 6/6 |
+| Bookings outside the renter's windows | 0 | 0 |
+| Facts recorded with the right value | 27/30 | 11/12 |
+| Landlord numbers read back | 13/34 | 10/16 |
+| Questions code had to note after a promise to check | 6 | 5 |
+| Median call | 7 Caller turns, 9 s | 8 turns, 9.5 s |
+
+What the first runs found, in order:
+
+- **Talking instead of recording.** The first version read every answer back and called `record_fact` 0 times in 3 calls, so every outcome was empty and the results said "Nobody picked up" for a call that went fine. The same "your tools are the only way anything is saved" rule that fixed the Concierge, plus a worked example of two facts in one turn, took it to 6 facts per call.
+- **"Read it back" turned into a question**, so the landlord confirmed, and in one run it looped three times. Tool replies now say "repeat the number back in a few words, then ask …" and name the next item.
+- **Scam calls never ended.** The Caller kept asking about future viewings until the turn cap. Then `end_call(done)` was refused by the checklist gate, and it restarted its introduction. Now a red flag lets `end_call` through at once, and code ends a call when the Caller repeats itself three turns running.
+- **"I'll check with my client" with no `note_question`**, in about half the calls. As with the goodbye, code now backstops it: it notes the landlord's last question in their own words, counted separately in the report (11 times across 21 calls).
+- **`available` recorded as "yes"**, though the quote held the date. The tool reply now says "They said when, so also record available_from."
+- **A double booking caught.** Two calls in one plan both took Saturday at 11. The clash check refused the second, and the reply now names the taken time, so the Caller doesn't offer 10:30 against 11:00.
+- **Persona and fixture problems, not the Caller's:**
+  - A persona read "$150" as "fifteen hundred dollars", so personas now write amounts in digits.
+  - Wei only switched to Mandarin once told "from your third reply on".
+  - Cases first demanded one exact slot. They now accept any time on the right day inside the windows.
+  - The scorer now counts "one hundred dollars" as 100. Once a landlord said an amount in words, the Caller copied it into its tool arguments despite the digits rule.
+
 ### Data that trips the agent
 
 - **Addresses that several cards share can't be named.** The catalogue has 137 listings on D'Arcy Street and 26 on Carabob Court with no unit labels, so two "30 Carabob Court" cards can sit on one board. The Concierge repeats the address it heard from the board line ("30 Carabob Court moves to the top"), the ref matches two cards, and every call gets "which one?". In one holdout run that meant no plan at all. **Open.**
@@ -99,6 +128,9 @@ Two cases now cover this. The tune case (`returning-results-ready`) checks that 
 5. **About a quarter of turns run past two sentences**, mostly by reading the whole board line back.
 6. **Viewing times made up once**: "today 10 am to 6 pm", before the renter gave any.
 7. **The "claims with no tool call" check reads English only.** The Farsi "I added your cat", with no tool called, wasn't counted.
+8. **The Caller reads back only about half the numbers it hears** (13/34 tune, 10/16 holdout), against the prompt's "read every number back".
+9. **The Caller leans on the code backstop for `note_question`** (11 of 21 calls). An upsell question ("would your client want a locker?") gets recorded as a fact instead of brought back as a question.
+10. **Calls are text only.** Time to first audio, barge-in and speech-to-text on the listing leg need the audio sim, and the phone runner (A-02) is being built in another session.
 
 ## Lessons for the next eval
 

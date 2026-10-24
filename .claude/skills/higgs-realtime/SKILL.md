@@ -98,6 +98,14 @@ The Concierge, as of `6f99149`. Read these before changing its prompt; the detai
 - Misreads money: "$3,000" became "thirty thousand" in most returning-caller welcomes until the prompt said to say amounts as written.
 - A returning caller whose calls are still running isn't told so. About 1 in 4 welcomes skips the booking.
 
+The Caller (`agents/caller/`), as of `bcaab31`, in the listing-call sim:
+- Its first version read every answer back and recorded none. It needs the same "tools are the only way anything is saved" rule and a worked example; tool replies name the next checklist item.
+- Turns "read it back" into a question, then loops on the confirmation. Replies say "repeat the number back in a few words, then ask…".
+- Won't end a scam call on its own. A red flag lets `end_call` through at once, and the sim ends a call after the same Caller line three turns running.
+- Says "I'll check with my client" without `note_question` in about half the calls. `tools.kept_promise` notes the landlord's last question after each turn, and any phone runner must call it too.
+- Reads back only about half the numbers it hears, and copies amounts into tool arguments in words when the landlord says them in words.
+- Records `available` as "yes" and drops the date unless the reply reminds it to record `available_from`.
+
 ## Barge-in
 
 The server cancels and truncates on its own. On `input_audio_buffer.speech_started`, still send Twilio `{"event": "clear", "streamSid": ...}` so buffered audio stops. `conversation.item.truncate` and `response.cancel` are supported but optional.

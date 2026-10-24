@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import sys
 from collections import Counter, defaultdict
+from pathlib import Path
 from typing import Any
 
 from evals.sim.score_concierge import Result
@@ -17,6 +18,7 @@ from landline.config import ROOT
 
 REPORTS = ROOT / "evals" / "reports"
 SUMMARY = REPORTS / "concierge.json"
+CALLS = REPORTS / "calls.json"
 LATEST = REPORTS / "latest.md"
 
 CHECKS = [   # check family → what the report calls it
@@ -93,22 +95,102 @@ def summarize(results: list[Result], meta: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def record(name: str, summary: dict[str, Any]) -> None:
+def record(name: str, summary: dict[str, Any], path: Path = SUMMARY) -> None:
     """Make `summary` the current numbers for set `name`, keeping the current ones as previous."""
-    data = _load()
+    data = _load(path)
     data[name] = {"current": summary, "previous": (data.get(name) or {}).get("current")}
     REPORTS.mkdir(parents=True, exist_ok=True)
-    SUMMARY.write_text(json.dumps(data, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
 
 
 def write() -> str:
-    text = render(_load())
+    text = render(_load(), _load(CALLS))
     REPORTS.mkdir(parents=True, exist_ok=True)
     LATEST.write_text(text, encoding="utf-8")
     return text
 
 
-def render(data: dict[str, Any]) -> str:
+# ── listing calls (E-04) ────────────────────────────────────────────────────
+
+CALL_CHECKS = [
+    ("disclosed", "Said it's an AI assistant first"),
+    ("status", "Card ends with the right status"),
+    ("booked", "Booked the expected slot, or nothing"),
+    ("booked.inside_windows", "Bookings inside the renter's windows"),
+    ("red_flags", "Red flags exactly when the landlord's words deserve them"),
+    ("note_question", "Noted the question it couldn't answer"),
+    ("end", "Ended the right way"),
+    ("fact", "Facts recorded with the right value"),
+]
+
+
+def call_family(check_name: str) -> str:
+    parts = check_name.split(".")[1:]
+    if parts[:2] == ["booked", "inside_windows"]:
+        return "booked.inside_windows"
+    return parts[0] if parts else "?"
+
+
+def summarize_calls(results: list[Any], meta: dict[str, Any]) -> dict[str, Any]:
+    by_case: dict[str, list[Any]] = defaultdict(list)
+    for r in results:
+        by_case[r.case_id].append(r)
+    checks: dict[str, list[int]] = defaultdict(lambda: [0, 0])
+    for r in results:
+        for c in r.checks:
+            checks[call_family(c.name)][0] += c.passed
+            checks[call_family(c.name)][1] += 1
+    cov = [sum(r.coverage[0] for r in results), sum(r.coverage[1] for r in results)]
+    reads = [sum(r.readbacks[0] for r in results), sum(r.readbacks[1] for r in results)]
+    secs = sorted(r.seconds for r in results)
+    turns = sorted(r.caller_turns for r in results)
+    return {
+        **meta, "cases": len(by_case), "run_count": len(results),
+        "cases_all_runs": sum(all(r.passed for r in rs) for rs in by_case.values()),
+        "run_pass_rate": _rate(sum(r.passed for r in results), len(results)),
+        "checks": dict(checks), "coverage_items": cov, "coverage": _rate(*cov) or 0.0, "readbacks": reads,
+        "ungrounded": sum(r.ungrounded for r in results),
+        "noted_by_code": sum(r.noted_by_code for r in results),
+        "seconds_p50": secs[len(secs) // 2] if secs else None,
+        "turns_p50": turns[len(turns) // 2] if turns else None,
+        "ends": dict(Counter(r.end for r in results)),
+        "per_case": {cid: {"passed": sum(r.passed for r in rs), "runs": len(rs),
+                           "statuses": dict(Counter(r.status for r in rs)),
+                           "failing": Counter(c.name for r in rs for c in r.failed()).most_common(3)}
+                     for cid, rs in sorted(by_case.items())},
+    }
+
+
+def _calls(title: str, cur: dict, prev: dict | None) -> list[str]:
+    out = [f"### {title}", "",
+           f"{cur['at']} · `{cur['sha']}` · {cur['cases']} personas × {cur['runs']} runs · {cur['mode']}", "",
+           "| | This run | Previous |", "|---|---|---|"]
+
+    def row(label: str, fn) -> None:
+        out.append(f"| {label} | {fn(cur)} | {fn(prev) if prev else '—'} |")
+
+    row("**Personas passing every run**", lambda s: f"**{s['cases_all_runs']} / {s['cases']}**")
+    row("Runs passing", lambda s: _fmt_rate(s["run_pass_rate"]))
+    row("Checklist coverage", lambda s: _ratio(*s["coverage_items"]))
+    row("Landlord numbers read back", lambda s: _ratio(*s["readbacks"]))
+    row("Quotes refused as not said (ungrounded)", lambda s: str(s["ungrounded"]))
+    row("Questions code noted after the Caller promised to check", lambda s: str(s.get("noted_by_code", 0)))
+    for key, label in CALL_CHECKS:
+        if key in cur["checks"] or (prev and key in prev["checks"]):
+            row(label, lambda s, k=key: _ratio(*s["checks"][k]) if k in s["checks"] else "—")
+    row("Call, median: Caller turns / seconds to results",
+        lambda s: f"{s['turns_p50']} / {s['seconds_p50']} s")
+    row("How calls ended", lambda s: ", ".join(f"{k} {v}" for k, v in sorted(s["ends"].items())))
+    out += ["", "| Persona | Runs passing | Card status | Failing most often |", "|---|---|---|---|"]
+    for cid, c in cur["per_case"].items():
+        failing = "; ".join(f"`{name}` ×{n}" for name, n in c["failing"]) or "—"
+        statuses = ", ".join(f"{k} {v}" for k, v in sorted(c["statuses"].items()))
+        out.append(f"| `{cid}` | {c['passed']}/{c['runs']} | {statuses} | {failing} |")
+    out += ["", f"Traces: `{cur['traces']}` (not committed).", ""]
+    return out
+
+
+def render(data: dict[str, Any], calls: dict[str, Any] | None = None) -> str:
     out = ["# Landline eval report", "",
            "Built by `make eval` (`evals/run_concierge.py`, then `evals/report.py`) from "
            "`evals/reports/concierge.json`. Every number in the submission comes from this file. Quote the "
@@ -125,10 +207,20 @@ def render(data: dict[str, Any]) -> str:
     for name, title in SETS:
         if name in data:
             out += _set(title, data[name]["current"], data[name].get("previous"))
+    out += ["## Listing calls: the Caller against landlord personas (text)", "",
+            "One renter plan per run through the real Dispatcher: the Caller (its brief, prompt and tools) "
+            "phones one listing through the sim runner, where a second Higgs session plays a landlord "
+            "persona with hidden facts, viewing times and questions of its own. Scored in code from the "
+            "session afterwards: the card's status, the booking and its window, red flags, the questions "
+            "noted, and each expected fact's value. Personas in `holdout/` never tune the prompt.", ""]
+    calls = calls or {}
+    if not any(name in calls for name, _ in SETS):
+        out += ["No listing call has been simulated yet. Run `make eval` with `BOSON_API_KEY` set.", ""]
+    for name, title in SETS:
+        if name in calls:
+            out += _calls(title, calls[name]["current"], calls[name].get("previous"))
     out += ["## Not measured yet", "",
             "- Extraction (E-02) and ranking (E-03).",
-            "- Listing calls against landlord personas (E-04): needs the Caller (A-05). It will use the same "
-            "driver, with a second Higgs session playing the landlord.",
             "- Anything audio: time to first audio, barge-in, speech-to-text errors. Text mode can't see "
             "them; they need the audio sim transport (A-03).",
             "- Claims in languages other than English: the \"said it changed something\" check reads English "
@@ -166,10 +258,10 @@ def _set(title: str, cur: dict, prev: dict | None) -> list[str]:
     return out
 
 
-def _load() -> dict[str, Any]:
-    if not SUMMARY.exists():
+def _load(path: Path = SUMMARY) -> dict[str, Any]:
+    if not path.exists():
         return {}
-    return json.loads(SUMMARY.read_text(encoding="utf-8"))
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _rate(ok: int, n: int) -> float | None:
