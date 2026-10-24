@@ -108,7 +108,8 @@ export function ListingDetail({
 
       {detail && detail.photos.length > 0 && (
         <figure className="m-0 -mt-2">
-          <div className="flex snap-x snap-mandatory gap-2 overflow-x-auto px-4 [scrollbar-width:none]">
+          {/* scroll-px-4 snaps the first photo to the gutter, in line with the text; px-4 alone snaps it to the edge. */}
+          <div className="flex snap-x snap-mandatory scroll-px-4 gap-2 overflow-x-auto px-4 [scrollbar-width:none]">
             {detail.photos.map((p, i) => (
               // eslint-disable-next-line @next/next/no-img-element
               <img

@@ -51,7 +51,8 @@ export function Board({
   }
   return (
     <LayoutGroup>
-      <ol className="m-0 list-none space-y-2 p-0" aria-label="Best matches, ranked">
+      {/* No m-0 here: the panel's space-y gap below the list is a margin, and m-0 would override it. */}
+      <ol className="list-none space-y-2 p-0" aria-label="Best matches, ranked">
         <AnimatePresence initial={false}>
           {board.map((card) => (
             <motion.li
