@@ -1,0 +1,414 @@
+{
+ "source": "OpenStreetMap, TTC subway stations inside the City of Toronto (Overpass API, 24 Oct 2026)",
+ "licence": "ODbL 1.0: data © OpenStreetMap contributors, https://www.openstreetmap.org/copyright",
+ "stations": [
+  {
+   "id": "osm:node/5326501680",
+   "name": "Bathurst",
+   "lat": 43.665932,
+   "lng": -79.411236
+  },
+  {
+   "id": "osm:node/25991314",
+   "name": "Bay",
+   "lat": 43.670185,
+   "lng": -79.390269
+  },
+  {
+   "id": "osm:node/5318480907",
+   "name": "Bayview",
+   "lat": 43.766799,
+   "lng": -79.387379
+  },
+  {
+   "id": "osm:node/5318484724",
+   "name": "Bessarion",
+   "lat": 43.769131,
+   "lng": -79.376576
+  },
+  {
+   "id": "osm:node/1157217363",
+   "name": "Bloor-Yonge",
+   "lat": 43.670786,
+   "lng": -79.385687
+  },
+  {
+   "id": "osm:node/14093576258",
+   "name": "Broadview",
+   "lat": 43.676995,
+   "lng": -79.358218
+  },
+  {
+   "id": "osm:node/2707352285",
+   "name": "Castle Frank",
+   "lat": 43.673499,
+   "lng": -79.369046
+  },
+  {
+   "id": "osm:node/5320359169",
+   "name": "Cedarvale",
+   "lat": 43.699244,
+   "lng": -79.436108
+  },
+  {
+   "id": "osm:node/8901485524",
+   "name": "Chester",
+   "lat": 43.678228,
+   "lng": -79.352514
+  },
+  {
+   "id": "osm:node/5262888213",
+   "name": "Christie",
+   "lat": 43.664107,
+   "lng": -79.418397
+  },
+  {
+   "id": "osm:node/34710078",
+   "name": "College",
+   "lat": 43.660662,
+   "lng": -79.382795
+  },
+  {
+   "id": "osm:node/5326551838",
+   "name": "Coxwell",
+   "lat": 43.684152,
+   "lng": -79.323043
+  },
+  {
+   "id": "osm:node/5319182778",
+   "name": "Davisville",
+   "lat": 43.697936,
+   "lng": -79.397291
+  },
+  {
+   "id": "osm:node/5318484736",
+   "name": "Don Mills",
+   "lat": 43.775347,
+   "lng": -79.345944
+  },
+  {
+   "id": "osm:node/5326559427",
+   "name": "Donlands",
+   "lat": 43.681027,
+   "lng": -79.337787
+  },
+  {
+   "id": "osm:node/5061304513",
+   "name": "Downsview Park",
+   "lat": 43.753598,
+   "lng": -79.47841
+  },
+  {
+   "id": "osm:node/5326479603",
+   "name": "Dufferin",
+   "lat": 43.660263,
+   "lng": -79.435387
+  },
+  {
+   "id": "osm:node/25991463",
+   "name": "Dundas West",
+   "lat": 43.656937,
+   "lng": -79.45304
+  },
+  {
+   "id": "osm:node/5320349317",
+   "name": "Dupont",
+   "lat": 43.674705,
+   "lng": -79.406983
+  },
+  {
+   "id": "osm:node/55493345",
+   "name": "Eglinton",
+   "lat": 43.70676,
+   "lng": -79.398572
+  },
+  {
+   "id": "osm:node/56922363",
+   "name": "Finch",
+   "lat": 43.781297,
+   "lng": -79.415899
+  },
+  {
+   "id": "osm:node/410798844",
+   "name": "Finch West",
+   "lat": 43.763974,
+   "lng": -79.491542
+  },
+  {
+   "id": "osm:node/560192986",
+   "name": "Glencairn",
+   "lat": 43.70865,
+   "lng": -79.440685
+  },
+  {
+   "id": "osm:node/5326558129",
+   "name": "Greenwood",
+   "lat": 43.68256,
+   "lng": -79.330265
+  },
+  {
+   "id": "osm:node/424028625",
+   "name": "High Park",
+   "lat": 43.653867,
+   "lng": -79.466864
+  },
+  {
+   "id": "osm:node/5326471419",
+   "name": "Islington",
+   "lat": 43.645335,
+   "lng": -79.524816
+  },
+  {
+   "id": "osm:node/2249683137",
+   "name": "Jane",
+   "lat": 43.649918,
+   "lng": -79.483846
+  },
+  {
+   "id": "osm:node/424028617",
+   "name": "Keele",
+   "lat": 43.655569,
+   "lng": -79.45958
+  },
+  {
+   "id": "osm:node/4875013046",
+   "name": "Kennedy",
+   "lat": 43.732429,
+   "lng": -79.263753
+  },
+  {
+   "id": "osm:node/34710076",
+   "name": "King",
+   "lat": 43.648949,
+   "lng": -79.377754
+  },
+  {
+   "id": "osm:node/432805453",
+   "name": "Kipling",
+   "lat": 43.637616,
+   "lng": -79.535508
+  },
+  {
+   "id": "osm:node/5326476228",
+   "name": "Lansdowne",
+   "lat": 43.659111,
+   "lng": -79.442787
+  },
+  {
+   "id": "osm:node/55786835",
+   "name": "Lawrence",
+   "lat": 43.726348,
+   "lng": -79.402474
+  },
+  {
+   "id": "osm:node/5321922640",
+   "name": "Lawrence West",
+   "lat": 43.715221,
+   "lng": -79.443914
+  },
+  {
+   "id": "osm:node/5318484741",
+   "name": "Leslie",
+   "lat": 43.771073,
+   "lng": -79.365634
+  },
+  {
+   "id": "osm:node/5326541297",
+   "name": "Main Street",
+   "lat": 43.689049,
+   "lng": -79.301604
+  },
+  {
+   "id": "osm:node/5320293827",
+   "name": "Museum",
+   "lat": 43.666846,
+   "lng": -79.393351
+  },
+  {
+   "id": "osm:node/60355167",
+   "name": "North York Centre",
+   "lat": 43.768679,
+   "lng": -79.41263
+  },
+  {
+   "id": "osm:node/59980039",
+   "name": "Old Mill",
+   "lat": 43.649826,
+   "lng": -79.494334
+  },
+  {
+   "id": "osm:node/34710072",
+   "name": "Osgoode",
+   "lat": 43.650802,
+   "lng": -79.386541
+  },
+  {
+   "id": "osm:node/5326487199",
+   "name": "Ossington",
+   "lat": 43.662378,
+   "lng": -79.42633
+  },
+  {
+   "id": "osm:node/5325077186",
+   "name": "Pape",
+   "lat": 43.679921,
+   "lng": -79.344905
+  },
+  {
+   "id": "osm:node/5321964779",
+   "name": "Pioneer Village",
+   "lat": 43.776859,
+   "lng": -79.509282
+  },
+  {
+   "id": "osm:node/34710077",
+   "name": "Queen",
+   "lat": 43.652908,
+   "lng": -79.379458
+  },
+  {
+   "id": "osm:node/280372903",
+   "name": "Queen's Park",
+   "lat": 43.659684,
+   "lng": -79.390192
+  },
+  {
+   "id": "osm:node/14093604271",
+   "name": "Rosedale",
+   "lat": 43.676453,
+   "lng": -79.388446
+  },
+  {
+   "id": "osm:node/5326455477",
+   "name": "Royal York",
+   "lat": 43.648183,
+   "lng": -79.511296
+  },
+  {
+   "id": "osm:node/2249683136",
+   "name": "Runnymede",
+   "lat": 43.651703,
+   "lng": -79.475998
+  },
+  {
+   "id": "osm:node/420561530",
+   "name": "Sheppard West",
+   "lat": 43.749299,
+   "lng": -79.462248
+  },
+  {
+   "id": "osm:node/5318480902",
+   "name": "Sheppard-Yonge",
+   "lat": 43.761452,
+   "lng": -79.410915
+  },
+  {
+   "id": "osm:node/2481423750",
+   "name": "Sherbourne",
+   "lat": 43.672283,
+   "lng": -79.376394
+  },
+  {
+   "id": "osm:node/5320293105",
+   "name": "Spadina",
+   "lat": 43.66854,
+   "lng": -79.404704
+  },
+  {
+   "id": "osm:node/34710073",
+   "name": "St. Andrew",
+   "lat": 43.647792,
+   "lng": -79.384871
+  },
+  {
+   "id": "osm:node/55493312",
+   "name": "St. Clair",
+   "lat": 43.687951,
+   "lng": -79.393695
+  },
+  {
+   "id": "osm:node/5320349308",
+   "name": "St. Clair West",
+   "lat": 43.685003,
+   "lng": -79.415308
+  },
+  {
+   "id": "osm:node/34710071",
+   "name": "St. George",
+   "lat": 43.668439,
+   "lng": -79.398844
+  },
+  {
+   "id": "osm:node/26240971",
+   "name": "St. Patrick",
+   "lat": 43.65482,
+   "lng": -79.388274
+  },
+  {
+   "id": "osm:node/70363937",
+   "name": "Summerhill",
+   "lat": 43.681678,
+   "lng": -79.390504
+  },
+  {
+   "id": "osm:node/26240972",
+   "name": "TMU",
+   "lat": 43.656537,
+   "lng": -79.381022
+  },
+  {
+   "id": "osm:node/5320067932",
+   "name": "Union",
+   "lat": 43.645642,
+   "lng": -79.380208
+  },
+  {
+   "id": "osm:node/5326535707",
+   "name": "Victoria Park",
+   "lat": 43.69488,
+   "lng": -79.288797
+  },
+  {
+   "id": "osm:node/5326530554",
+   "name": "Warden",
+   "lat": 43.71112,
+   "lng": -79.279043
+  },
+  {
+   "id": "osm:node/34710079",
+   "name": "Wellesley",
+   "lat": 43.665524,
+   "lng": -79.383801
+  },
+  {
+   "id": "osm:node/5321922638",
+   "name": "Wilson",
+   "lat": 43.734476,
+   "lng": -79.450062
+  },
+  {
+   "id": "osm:node/5326548040",
+   "name": "Woodbine",
+   "lat": 43.686414,
+   "lng": -79.312625
+  },
+  {
+   "id": "osm:node/56922357",
+   "name": "York Mills",
+   "lat": 43.744037,
+   "lng": -79.406073
+  },
+  {
+   "id": "osm:node/5409164979",
+   "name": "York University",
+   "lat": 43.774123,
+   "lng": -79.499629
+  },
+  {
+   "id": "osm:node/5321922639",
+   "name": "Yorkdale",
+   "lat": 43.724642,
+   "lng": -79.447503
+  }
+ ]
+}

@@ -1,5 +1,5 @@
 [Unit]
-Description=Landline listings refresh (scrape liv.rent, check, load into Postgres)
+Description=Landline listings refresh (scrape liv.rent, check, load; then neighbourhoods, stations, light)
 After=network-online.target docker.service
 Wants=network-online.target
 
@@ -13,6 +13,12 @@ Environment=PYTHONPATH=server:.
 # never overwrites good data (exit 3). SCRAPER_CONTACT_EMAIL comes from .env.
 ExecStart=/home/ubuntu/landline/.venv/bin/python -m pipeline run --source livrent --no-cache \
     --max-pages 40 --min-listings 500 --load
+# Then where each listing is (neighbourhood, nearest station; D-05) and how much light it gets (D-07). Both
+# are cached, so a run only fetches what's new. The "-" lets the refresh carry on if either fails (the
+# City's site down, say): new listings still load and the API still restarts.
+ExecStart=-/home/ubuntu/landline/.venv/bin/python -m pipeline geo --load
+ExecStart=-/home/ubuntu/landline/.venv/bin/python -m pipeline light --photos 2 --load
 # The API reads the catalogue at startup; restart it so new listings show up.
 ExecStartPost=+/usr/bin/systemctl try-restart landline-api.service
-TimeoutStartSec=30min
+# The first light run measures every listing's photos (about an hour); later ones only the new listings'.
+TimeoutStartSec=90min
