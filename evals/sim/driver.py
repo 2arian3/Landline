@@ -179,6 +179,14 @@ async def simulate(case_id: str, run: int, opponent: Opponent, *, catalogue: Cat
                     trace.caught.append({"line": len(trace.lines) - 1, "output": caught})
             if not ctx.hang_up:   # #188, as the bridge does: the language from the line's script
                 await backstop.save_language(line, ctx)
+            if not ctx.hang_up and "end_session" not in trace.agent[-1].tools and backstop.says_goodbye(line):
+                # As the bridge does: a goodbye with no end_session gets one note, then the call ends.
+                note = {"type": "input_text", "text": backstop.SAID_BYE}
+                await higgs.send({"type": "conversation.item.create",
+                                  "item": {"type": "message", "role": "user", "content": [note]}})
+                await higgs.send({"type": "response.create"})
+                said = await _agent_turn(stream, higgs, ctx, trace, len(trace.lines) - 1, turn_timeout_s)
+                ctx.hang_up = True
             trace.states.append(runtime.state(sid).model_dump(mode="json"))
         if ctx.hang_up:
             trace.end = "end_session"
