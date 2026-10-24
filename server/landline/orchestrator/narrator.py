@@ -169,6 +169,8 @@ def _place(state: SessionState, lid: str, view: SessionView, catalogue: Catalogu
         said.append(f"{addr} is already rented.")
     elif out is None:
         said.append(f"I couldn't reach {addr} in time.")
+    elif out.end_reason == "blocked":   # never dialled: no caller, or no allowlisted number
+        said.append(f"I couldn't place the call to {addr}.")
     elif status == "no_answer":
         said.append(f"I left a message for {addr}'s agent." if out.end_reason == "voicemail"
                     else f"Nobody picked up at {addr}.")

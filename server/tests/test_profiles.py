@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from landline.config import Settings
 from landline.contracts import (
     CallOutcome,
     CallPlan,
@@ -26,8 +27,16 @@ from landline.contracts import (
 from landline.contracts.tools import AnchorRef
 from landline.db.catalogue import Catalogue
 from landline.db.pool import Database
+from landline.db.rows import SessionRow
 from landline.orchestrator import SessionRuntime
-from landline.orchestrator.profiles import MAX_OPENING_WORDS, Remembered, opening
+from landline.orchestrator.profiles import (
+    CALLS_STALE_AFTER,
+    MAX_OPENING_WORDS,
+    Remembered,
+    calls_running,
+    opening,
+)
+from landline.voice.dispatch import Dispatcher
 
 T0 = datetime(2026, 10, 23, 12, 0, tzinfo=UTC)
 PHONE = "+14165550100"
@@ -161,6 +170,51 @@ async def test_the_next_call_opens_with_the_results_of_the_last_one(db):
     assert later.agent_says == ("Welcome back. I booked 1 Main St for Saturday at 2 pm. "
                                 "Nobody picked up at 2 Main St.")
     assert "Results of the calls you made for them: I booked 1 Main St" in rt.opening("s_prof000006")
+
+
+async def test_calls_nobody_can_place_end_the_session_and_the_next_call_hears_so(db):
+    # Production with TRANSPORT=stub: a phone session's calls have no runner (issue #95).
+    rt = _runtime(db)
+    d = Dispatcher(rt, Settings(database_url=None, web_url="https://landline.example", transport="stub"))
+    sid = "s_prof000014"
+    await _call(rt, sid)
+    await rt.emit(CallsRequested(**_meta(sid, "plan", 1), listing_ids=["t:1"], may_book=True))
+    await _hang_up(rt, sid)
+    await d.idle()
+    assert (await db.sessions.get(sid)).status == "done"   # not left in `calling`
+    user = await db.users.by_phone(PHONE)
+    assert "called" not in [i.action for i in await db.interactions.for_user(user.user_id)]
+
+    await _call(rt, "s_prof000015")
+    said = rt.opening("s_prof000015")
+    assert "still running" not in said
+    assert "Results of the calls you made for them: I couldn't place the call to 1 Main St." in said
+
+
+async def test_a_session_stuck_in_calling_stops_counting_as_running(db):
+    rt = _runtime(db)   # no Dispatcher, as when the server went down between the hang-up and the calls
+    sid = "s_prof000016"
+    await _call(rt, sid)
+    await rt.emit(CallsRequested(**_meta(sid, "plan", 1), listing_ids=["t:1"]))
+    await _hang_up(rt, sid)
+    assert (await db.sessions.get(sid)).status == "calling"
+    async with db.transaction() as conn:
+        await conn.execute("update sessions set started_at = now() - interval '2 hours' "
+                           "where session_id = %s", (sid,))
+    await _call(rt, "s_prof000017")
+    said = rt.opening("s_prof000017")
+    assert "still running" not in said and "Results" not in said   # no results were ever made
+
+
+def test_calling_counts_as_running_only_while_its_calls_could_still_be_going():
+    def last(status: str, age: timedelta) -> SessionRow:
+        return SessionRow(session_id="s_prof000099", user_id=1, channel="phone", status=status, version=3,
+                          snapshot={}, started_at=T0 - age, ended_at=None)
+
+    assert calls_running(last("calling", timedelta(minutes=20)), T0)
+    assert not calls_running(last("calling", CALLS_STALE_AFTER), T0)
+    assert not calls_running(last("done", timedelta(minutes=5)), T0)
+    assert not calls_running(None, T0)
 
 
 async def test_places_new_since_the_last_call_are_counted(db):
