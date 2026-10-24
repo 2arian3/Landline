@@ -124,6 +124,7 @@ Then:
 make db-up           # Postgres 17 + PostGIS + pgvector in Docker on :54329
 make db-migrate      # applies db/migrations/*.sql
 make data            # scrapes liv.rent politely (one page every 2 s), checks, loads ~1,000 listings
+                     # or: make db-pull, a copy of production's data (needs ADMIN_TOKEN in .env)
 make dev             # API on :8000 (one terminal)
 make web             # web app on :3000 (another terminal)
 ```

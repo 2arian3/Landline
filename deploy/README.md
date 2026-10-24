@@ -130,7 +130,19 @@ On the VM:
 | Manual deploy of what's on disk | `bash ~/landline/deploy/remote.sh no` |
 | After a failed deploy | The live code is unchanged if a migration failed. The refresh timer stays stopped until a deploy succeeds; fix forward, or `sudo systemctl start landline-refresh.timer` |
 
-Database from your laptop, through a tunnel (the VM's Postgres listens only on localhost):
+Production's data on your laptop, for anyone on the team: put `ADMIN_TOKEN` (password manager) in your `.env`, then
+
+```bash
+make db-up
+```
+
+```bash
+make db-pull
+```
+
+It downloads a consistent copy through the API (`GET /api/admin/export`, over HTTPS, no SSH or VPN) and loads it into the local database on :54329, replacing what was there. Production is only read. It refuses any database not on your machine, and production itself even through a tunnel. `make db-pull ARGS=--audio` copies the call recordings too.
+
+The live database from your laptop, through a tunnel (needs your key on the gateway and the VM; the VM's Postgres listens only on localhost):
 
 ```bash
 ssh -N -J ubuntu@134.87.8.230 -L 5433:127.0.0.1:5432 ubuntu@192.168.104.198
