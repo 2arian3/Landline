@@ -20,7 +20,7 @@ from landline.db.catalogue import Catalogue
 from landline.db.pool import Database
 from landline.orchestrator import SessionRuntime
 from landline.voice import higgs, outbound
-from landline.voice.avatar_clip import Clips
+from landline.voice.avatar_clip import Clips, gender_of_voice
 from landline.voice.calls import RenterCalls
 from landline.voice.dispatch import Dispatcher
 from landline.voice.line import Lines
@@ -102,7 +102,8 @@ def create_app(settings: Settings | None = None, catalogue: Catalogue | None = N
         # Hard rule 6: a judge's (or any browser brief's) calls always go to the sim landlords; only a phone
         # renter's go over Twilio, and only with TRANSPORT=voice (voice/routing.py).
         sim = SimRunner(app.state.runtime, lambda key, cfg: app.state.connect_higgs(key, cfg),
-                        settings.boson_api_key or "", extractor=extractor, clips=app.state.clips)
+                        settings.boson_api_key or "", extractor=extractor, clips=app.state.clips,
+                        agent_gender=gender_of_voice(settings.higgs_voice_renter))
         runner = ByChannel(app.state.runtime, phone=app.state.outbound.runner, sim=sim,
                            sim_for_phone=settings.transport == "sim")
         app.state.dispatcher = Dispatcher(app.state.runtime, settings, runner=runner, texter=app.state.texter,
