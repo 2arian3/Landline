@@ -370,6 +370,10 @@ async def _higgs_to_renter(higgs: Any, transport: Transport, ctx: tools.ToolCont
             turn.agent_said(str(event.get("transcript") or ""))
         elif kind == "error":
             log.warning("call %s Higgs error: %s", ctx.call_id, event.get("error"))
+        if not ctx.hang_up and (spoken := turn.language_line()) is not None:   # #188, off the voice path
+            task = asyncio.create_task(backstop.save_language(spoken, ctx))
+            _CATCHING.add(task)
+            task.add_done_callback(_CATCHING.discard)
         if reader is not None and not ctx.hang_up and (said := turn.line()) is not None:
             task = asyncio.create_task(backstop.catch_up(reader, said, ctx))   # off the voice path
             _CATCHING.add(task)   # held until done, even after the call ends
