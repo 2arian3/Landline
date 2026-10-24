@@ -5,9 +5,9 @@ import type { CataloguePoint, SessionView } from "./types";
 
 /**
  * The live session: server-sent events say *that* something changed (a
- * version number); the snapshot says *what*. When the stream goes quiet we
- * poll instead: quiet, not failing, because a proxy that buffers the stream
- * (a Cloudflare tunnel did) stalls it without an error. While it's quiet the
+ * version number); the snapshot says *what*. When the stream fails, or goes
+ * quiet, we poll instead: quiet too, because a proxy that buffers the stream
+ * (a Cloudflare tunnel did) stalls it without an error. While it's down the
  * snapshot is fetched every POLL_MS and the stream gets a fresh connection
  * every REOPEN_MS; its first version or ping stops the polling. Safeguards
  * carried over from Realest's poller:
@@ -59,6 +59,7 @@ export function useLiveSession(sessionId: string | null) {
     let inFlight = false;
     let source: EventSource | null = null;
     let errors = 0;
+    let failing = false; // the stream errored and hasn't been heard from since
     let heardAt = Date.now(); // the stream's last word: opened, a version or a ping
     let openedAt = 0;
     const since = (lastOk.current = Date.now());
@@ -96,6 +97,7 @@ export function useLiveSession(sessionId: string | null) {
       heardAt = lastOk.current = Date.now();
       setStale(false);
       errors = 0;
+      failing = false;
     };
     const open = () => {
       source?.close();
@@ -115,6 +117,7 @@ export function useLiveSession(sessionId: string | null) {
       // The browser retries a failed stream on its own; three failures in a row and it waits for the
       // next reopen, with polling holding the board meanwhile.
       s.onerror = () => {
+        failing = true; // poll from the next tick, not only once the stream has been quiet for STALE_MS
         errors += 1;
         if (errors >= 3) s.close();
       };
@@ -125,9 +128,9 @@ export function useLiveSession(sessionId: string | null) {
     const tick = setInterval(() => {
       const now = Date.now();
       const quiet = now - heardAt > STALE_MS;
-      // Poll while the stream is quiet, and until the first snapshot is in: that one can fail while the
-      // stream is fine, and then nothing else would ask again.
-      if ((quiet || !current.current) && now - polledAt >= POLL_MS) {
+      // Poll while the stream is failing or quiet, and until the first snapshot is in: that one can fail
+      // while the stream is fine, and then nothing else would ask again.
+      if ((failing || quiet || !current.current) && now - polledAt >= POLL_MS) {
         polledAt = now;
         void refresh();
       }
