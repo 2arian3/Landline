@@ -1,0 +1,27 @@
+{
+  "id": "tap-is-not-a-like",
+  "about": "The renter taps a pin, then asks about that place by its address: a tap is a focus only, never a like or an interest",
+  "lines": [
+    {
+      "say": "Two bedrooms, up to 3,200 a month please."
+    },
+    {
+      "tap": "rank:3",
+      "expect": {"focus": {"ref": "rank:3"}, "no_reactions": [{"ref": "rank:3"}]}
+    },
+    {
+      "say": "Is 4500 Jane St close to a subway?",
+      "expect": {"no_reactions": [{"ref": "rank:3", "at": 1}]}
+    },
+    {
+      "say": "Okay, thanks. Bye."
+    }
+  ],
+  "final": {
+    "focus": {"ref": "rank:3", "at": 1},
+    "no_reactions": [{"ref": "rank:3", "at": 1}],
+    "replies_avoid": ["liked", "you like it", "your interest", "you're interested in it", "noted"],
+    "no_request": true,
+    "ended": true
+  }
+}
