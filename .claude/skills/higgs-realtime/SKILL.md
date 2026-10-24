@@ -49,6 +49,12 @@ Verified against docs.boson.ai on 21 Oct 2026. When something fails, re-check `h
 
 Never emitted: `conversation.item.done`, `rate_limits.updated`. Don't gate logic on them.
 
+Timing, verified 24 Oct (A-10, `voice/recorder.py` relies on it):
+- `speech_started` carries `item_id` and `audio_start_ms`; `speech_stopped` carries `item_id` and `audio_end_ms`. Both count milliseconds of input audio appended since the session opened, not since the last turn (a second utterance 8,680 ms in came back at 8,724). `audio_end_ms` includes the VAD's trailing silence, about 0.5 to 0.8 s.
+- `input_audio_transcription.completed`, `output_audio.delta` and `output_audio_transcript.done` all carry the line's `item_id`.
+- Higgs sends a response's audio in one burst, about 10 s of audio in 1.2 s, so what the caller has heard is a clock you keep yourself (`Playback`).
+- `response.output_audio_transcript.length` carries `delta` (a phrase of the transcript) and `length_ms` (the response's audio so far up to it). Unused yet, but it could tell which words played before a barge-in.
+
 ## Tools
 
 1. On `response.function_call_arguments.done`, run the tool in-process with the session and listing taken from the **Call**, never from the arguments. In the Concierge, that's `voice/bridge.py` `run_tool`, which the eval simulator also uses.
@@ -91,6 +97,14 @@ The Concierge, as of `6f99149`. Read these before changing its prompt; the detai
 - Once made up viewing times ("today 10 am to 6 pm") before the renter gave any.
 - Misreads money: "$3,000" became "thirty thousand" in most returning-caller welcomes until the prompt said to say amounts as written.
 - A returning caller whose calls are still running isn't told so. About 1 in 4 welcomes skips the booking.
+
+The Caller (`agents/caller/`), as of `bcaab31`, in the listing-call sim:
+- Its first version read every answer back and recorded none. It needs the same "tools are the only way anything is saved" rule and a worked example; tool replies name the next checklist item.
+- Turns "read it back" into a question, then loops on the confirmation. Replies say "repeat the number back in a few words, then ask…".
+- Won't end a scam call on its own. A red flag lets `end_call` through at once, and the sim ends a call after the same Caller line three turns running.
+- Says "I'll check with my client" without `note_question` in about half the calls. `tools.kept_promise` notes the landlord's last question after each turn, and any phone runner must call it too.
+- Reads back only about half the numbers it hears, and copies amounts into tool arguments in words when the landlord says them in words.
+- Records `available` as "yes" and drops the date unless the reply reminds it to record `available_from`.
 
 ## Barge-in
 

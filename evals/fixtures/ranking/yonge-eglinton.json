@@ -1,0 +1,37 @@
+{
+  "id": "yonge-eglinton",
+  "renter": "Wants Yonge and Eglinton, one bedroom, up to $2,800.",
+  "brief": {
+    "max_monthly": 2800,
+    "min_beds": 1,
+    "priorities": [
+      "location"
+    ],
+    "anchors": [
+      {
+        "label": "Yonge and Eglinton",
+        "lat": 43.7064,
+        "lng": -79.3986
+      }
+    ]
+  },
+  "acceptable": [
+    "livrent:131134",
+    "livrent:128289",
+    "livrent:141658",
+    "livrent:108737",
+    "livrent:110263",
+    "livrent:110268"
+  ],
+  "why": "1+ bed, ≤ $2,800, about as close to Yonge and Eglinton as the closest",
+  "feedback": {
+    "reason": "too small",
+    "attribute": "size",
+    "goal": [
+      "livrent:108737",
+      "livrent:110263",
+      "livrent:137927"
+    ],
+    "why": "same, within 1.5 km and ≥ 680 sq ft"
+  }
+}

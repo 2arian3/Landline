@@ -1,0 +1,44 @@
+{
+ "model": "higgs-realtime",
+ "user": "Listing: 5 St Joseph St, listed at $2,350 a month\n\nTranscript:\n[0] AGENT: Hi, I'm an AI assistant calling for a renter about the apartment at 5 St Joseph Street. Is it still available?\n[1] LANDLORD: It is available.\n[2] AGENT: My client has a dog. Would that be okay?\n[3] LANDLORD: Pets are case by case, I'd have to ask the owner.\n[4] AGENT: And is there parking?\n[5] LANDLORD: No parking, sorry, street parking only.",
+ "response": {
+  "facts": [
+   {
+    "field": "available",
+    "turn": 1,
+    "quote": "It is available.",
+    "value": "yes",
+    "amount": null,
+    "count": null,
+    "each": null,
+    "period": null,
+    "mandatory": null,
+    "name": null
+   },
+   {
+    "field": "pets",
+    "turn": 3,
+    "quote": "Pets are case by case, I'd have to ask the owner.",
+    "value": "case_by_case",
+    "amount": null,
+    "count": null,
+    "each": null,
+    "period": null,
+    "mandatory": null,
+    "name": null
+   },
+   {
+    "field": "parking",
+    "turn": 5,
+    "quote": "No parking, sorry, street parking only.",
+    "value": "none",
+    "amount": null,
+    "count": null,
+    "each": null,
+    "period": null,
+    "mandatory": null,
+    "name": null
+   }
+  ]
+ }
+}

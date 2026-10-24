@@ -1,0 +1,75 @@
+{
+ "id": "deposit-and-locker",
+ "note": "A one-time deposit next to an optional monthly fee: neither changes the monthly cost.",
+ "end_reason": "done",
+ "listing": {
+  "listing_id": "livrent:e02-2",
+  "address": "88 Erskine Ave",
+  "rent": 2450,
+  "monthly_cost": 2450,
+  "parking_cost": null
+ },
+ "turns": [
+  {
+   "speaker": "agent",
+   "text": "Hi, I'm an AI assistant calling for a renter about the apartment at 88 Erskine Avenue. Is it still available?"
+  },
+  {
+   "speaker": "landlord",
+   "text": "It is. We'd need first and last, so a deposit of 2,450 for the last month."
+  },
+  {
+   "speaker": "agent",
+   "text": "Understood. Any monthly fees on top of rent?"
+  },
+  {
+   "speaker": "landlord",
+   "text": "Just a locker if you want one, that's 40 a month, optional."
+  },
+  {
+   "speaker": "agent",
+   "text": "When could someone move in?"
+  },
+  {
+   "speaker": "landlord",
+   "text": "Available from November 15th."
+  }
+ ],
+ "tool_facts": [
+  {
+   "field": "fees",
+   "value": "last month deposit 2450",
+   "quote": "a deposit of 2,450 for the last month",
+   "turn_idx": 1
+  },
+  {
+   "field": "fees",
+   "value": "locker $40/month optional",
+   "quote": "that's 40 a month, optional",
+   "turn_idx": 3
+  },
+  {
+   "field": "available_from",
+   "value": "November 15",
+   "quote": "Available from November 15th",
+   "turn_idx": 5
+  }
+ ],
+ "slot_text": null,
+ "gold": {
+  "available": "yes",
+  "available_from": "11-15",
+  "fees": [
+   {
+    "name": "deposit",
+    "amount": 2450,
+    "period": "one_time"
+   },
+   {
+    "name": "locker",
+    "amount": 40,
+    "period": "monthly"
+   }
+  ]
+ }
+}

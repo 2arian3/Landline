@@ -1,0 +1,20 @@
+{
+ "model": "higgs-realtime",
+ "user": "Listing: 20 Edward St, listed at $2,300 a month\n\nTranscript:\n[0] AGENT: Hi, I'm an AI assistant calling for a renter about the apartment at 20 Edward Street. Is it still available?\n[1] LANDLORD: Oh, sorry, that one's been rented already. Just last weekend.\n[2] AGENT: Thanks for letting me know.",
+ "response": {
+  "facts": [
+   {
+    "field": "available",
+    "turn": 1,
+    "quote": "that one's been rented already. Just last weekend.",
+    "value": "no",
+    "amount": null,
+    "count": null,
+    "each": null,
+    "period": null,
+    "mandatory": null,
+    "name": null
+   }
+  ]
+ }
+}

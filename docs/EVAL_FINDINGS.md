@@ -86,19 +86,93 @@ The probe also showed **"$3,000" read as "thirty thousand"** in 3 of 5 welcomes,
 
 Two cases now cover this. The tune case (`returning-results-ready`) checks that the welcome gives the booking and doesn't misread the budget. The holdout case (`returning-calls-running`) checks that it recalls the search and claims no results. Over 5 live runs each: **tune 4 of 5, holdout 5 of 5**. Across the 8 tune runs so far (5 plus 3 in `make eval`), the welcome gave the booking in 6 and made nothing up in any.
 
+### Listing calls: the Caller (A-05) against landlord personas
+
+Added Sat 24 Oct, 02:30–02:50 Toronto. Each run is one renter plan through the real Dispatcher. The sim runner (`voice/sim.py`) puts the Caller on one Higgs text session and a landlord persona on another; the persona has hidden facts, viewing times and questions of its own, and picks up first. Seven personas: 5 tune (honest, upselling, scam, a switch to Mandarin, voicemail) and 2 holdout (an honest agent where booking isn't allowed, and a different scam). The final run on `bcaab31`:
+
+| | Tune (5 × 3) | Holdout (2 × 3) |
+|---|---|---|
+| Runs passing | 73% | 83% |
+| Checklist coverage | 100% | 87% |
+| Right card status, right booking (or none), red flags exactly when deserved | 15/15 | 6/6 |
+| Bookings outside the renter's windows | 0 | 0 |
+| Facts recorded with the right value | 27/30 | 11/12 |
+| Landlord numbers read back | 13/34 | 10/16 |
+| Questions code had to note after a promise to check | 6 | 5 |
+| Median call | 7 Caller turns, 9 s | 8 turns, 9.5 s |
+
+What the first runs found, in order:
+
+- **Talking instead of recording.** The first version read every answer back and called `record_fact` 0 times in 3 calls, so every outcome was empty and the results said "Nobody picked up" for a call that went fine. The same "your tools are the only way anything is saved" rule that fixed the Concierge, plus a worked example of two facts in one turn, took it to 6 facts per call.
+- **"Read it back" turned into a question**, so the landlord confirmed, and in one run it looped three times. Tool replies now say "repeat the number back in a few words, then ask …" and name the next item.
+- **Scam calls never ended.** The Caller kept asking about future viewings until the turn cap. Then `end_call(done)` was refused by the checklist gate, and it restarted its introduction. Now a red flag lets `end_call` through at once, and code ends a call when the Caller repeats itself three turns running.
+- **"I'll check with my client" with no `note_question`**, in about half the calls. As with the goodbye, code now backstops it: it notes the landlord's last question in their own words, counted separately in the report (11 times across 21 calls).
+- **`available` recorded as "yes"**, though the quote held the date. The tool reply now says "They said when, so also record available_from."
+- **A double booking caught.** Two calls in one plan both took Saturday at 11. The clash check refused the second, and the reply now names the taken time, so the Caller doesn't offer 10:30 against 11:00.
+- **Persona and fixture problems, not the Caller's:**
+  - A persona read "$150" as "fifteen hundred dollars", so personas now write amounts in digits.
+  - Wei only switched to Mandarin once told "from your third reply on".
+  - Cases first demanded one exact slot. They now accept any time on the right day inside the windows.
+  - The scorer now counts "one hundred dollars" as 100. Once a landlord said an amount in words, the Caller copied it into its tool arguments despite the digits rule.
+
 ### Data that trips the agent
 
-- **Addresses that several cards share can't be named.** The catalogue has 137 listings on D'Arcy Street and 26 on Carabob Court with no unit labels, so two "30 Carabob Court" cards can sit on one board. The Concierge repeats the address it heard from the board line ("30 Carabob Court moves to the top"), the ref matches two cards, and every call gets "which one?". In one holdout run that meant no plan at all. **Open.**
+- **Addresses that several cards share can't be named.** The catalogue has 137 listings on D'Arcy Street and 26 on Carabob Court with no unit labels, so two "30 Carabob Court" cards can sit on one board. The Concierge repeats the address it heard from the board line ("30 Carabob Court moves to the top"), the ref matches two cards, and every call gets "which one?". In one holdout run that meant no plan at all. **Fixed in code, Sat 04:45** (see below).
+
+### Concierge fixes, Sat 24 Oct 03:50–04:45 (A-04, `agents/A-04-concierge-fixes`)
+
+**Shared addresses, fixed in code.** `refs.match` returns one card, or the cards an address fits equally. Among those, a rank on the board that is one of them ("30 Carabob Court, number 5"), a price only one of them has ("the 1,950 one"), or the focused card picks one. Otherwise the tool records nothing and answers "Which one? 3 places share 30 Carabob Court: number 1 at $1,999, number 5 at $1,950 and number 6 at $1,999. Ask the renter." The first of them is never taken by default, because a wrong card gets a stranger phoned. A plan's read-back adds the number when the board repeats an address. Unit tests cover each rule. Tune cases: `shared-address-ask-by-price` 3/3 (the renter picks by price after being asked), `shared-address-focused-then-call` 3/3 (the address alone means the focused card). On `main`'s code, run at the same time, both were 0/3.
+
+The first version said "Ask, then use its number". The Concierge then reused the numbers in that reply as "the top two" (`["1", "6"]`, two Carabob cards), and holdout listings-to-call fell from 5/6 to 2/6. Holdout traces were read to find this, and the fix was to reword our own reply, not to tune against holdout.
+
+**Pin taps.** The sim can now tap a pin (`{"tap": "rank:3"}` in a case): the runtime focuses it with `origin="ui"`, and the Concierge gets the same `[renter is looking at] …` note as on a live call (`voice/line.py`). Without a prompt line, 2 of 8 taps were stored as a reaction, and 3 of 8 replies said "noted your interest". A line that said "never say they like it or are interested in it" stopped the reactions, but put "your interest" into 2 of 5 goodbyes. Reworded ("A tap is not an opinion: call no tool for it, and say nothing about what they think of it"): 0 of 5 reactions, 0 of 5 "your interest", then `tap-is-not-a-like` 3/3 in the report run.
+
+**"Looks great" is still a focus.** Prompt wording (praise is a reaction; "if they say anything good or bad about it, that is give_feedback") left "Ooh, the second one looks amazing" a focus in 6 of 6 probe runs. Adding "Did they praise or criticise it? Then call give_feedback" to `focus_listing`'s reply made it invent likes: "Tell me about the fifth one" got a like "for its location near the subway". Invented feedback is worse than a missed like, so it was removed. Holdout `cat-like-call-top2-friday` passed 3/3 in the final report but 1/5 in a 5-run check just before it, which is noise, not a fix.
+
+**Farsi: a Higgs limit in text mode.**
+
+| Probe (same tune lines unless said) | Tool calls after the switch | Replies in Persian |
+|---|---|---|
+| `main`'s prompt | 0 of 5 | 0 of 5 |
+| Three prompt variants (a stronger rule, a worked Farsi example, the rule first) | 0 of 9 | 0 of 9 |
+| Persian digits replaced by Latin ones | 0 of 3 | 0 of 3 |
+| Starting the call in Farsi | 1 of 3 | 0 of 3 |
+| The same lines in Spanish / Mandarin | 3 of 3 / 2 of 3 | 3 of 3 / 3 of 3 |
+| A note after a turn that claimed a change with no tool | 1 of 3 | mixed |
+
+In Farsi the model answers in English, as if it had translated the line ("I'll switch to Persian. I've noted you want a one-bedroom…"), with no text deltas and no tool call. Forcing `tool_choice: "required"` for the session loops until the turn times out.
+
+**A `response` object on `response.create` wipes the context, even with no instructions in it.** `{"type": "response.create", "response": {"tool_choice": "required"}}` came back as "Hi! How can I help you find a place to rent?" in 3 of 3 runs. That's the same failure as response instructions, so send `response.create` bare mid-call.
+
+**Catch-up, tried and dropped.** After each renter turn, a Higgs chat call with a JSON schema (`agents/auditor/llm.py`, Boson) read the renter's line, and code applied only what the tools had missed, through the same handlers. It saved the Farsi search in 5 of 5 runs and "looks amazing" as a like in 5 of 5. A quoted note afterwards made the following replies Persian, but the switch turn itself stayed English. Over the full tune set it cut runs passing to 33% (61% with it off, same time):
+- False updates: "It'll just be me living there" became `min_beds: 0` (studios), and "the one that's 1,950 a month" became a $1,950 budget, which then lined up the wrong listing for a call.
+- More missed `end_session`: the note sits just before the renter's goodbye.
+- `429 Too Many Requests` from `api.boson.ai/v1/chat/completions` three times in one run. That endpoint shares the key, and its limits, with live calls.
+
+| Final report (`make eval`, 3 runs) | Holdout | Tune |
+|---|---|---|
+| Before (`dde000c`, Sat 02:00) | 4/6 cases, 78% of runs | 2/9 cases, 63% |
+| After (this branch) | 4/6 cases, 78% of runs | 6/13 cases, 74% |
+| Same time, same key, holdout 5 runs each | this branch 77%, 3/6 cases | `main` 57%, 1/6 cases |
 
 ## Still open
 
 1. **A returning caller whose calls are still running isn't told so.** None of the 5 holdout welcomes mentioned it; they recall the search instead. The case doesn't check for it yet. Also, about 1 in 4 welcomes skips the booking.
-2. **"The first one looks great" is taken as a focus, not a like** (holdout `cat-like-call-top2-friday`, 0 of 3 runs).
-3. **Shared addresses never resolve.** Unit labels from the pipeline, or have the Concierge use rank numbers when the board repeats an address.
-4. **Farsi still fails a third of runs.** Three prompt changes were tried. A Spanish example made it worse (no tool calls in 3 of 3 runs) and was reverted. This looks like a model limit. The A-04 note saw the same on a real phone call.
+2. **"The first one looks great" is taken as a focus, not a like.** Still open after Sat 04:45: 0 of 6 in a probe whatever the prompt says. See below.
+3. ~~Shared addresses never resolve.~~ Fixed in code (Sat 04:45). Unit labels from the pipeline would still read better than "number 5".
+4. **Farsi fails in Higgs text mode**: no tool calls, answers in English. See below for the evidence and the dropped catch-up.
 5. **About a quarter of turns run past two sentences**, mostly by reading the whole board line back.
 6. **Viewing times made up once**: "today 10 am to 6 pm", before the renter gave any.
 7. **The "claims with no tool call" check reads English only.** The Farsi "I added your cat", with no tool called, wasn't counted.
+8. **Read-backs (mostly fixed, Sat 04:25).** The old count (13/34 tune, 10/16 holdout) also counted numbers in the landlord's own questions ("want a locker for $60?") and goodbyes. The real misses: a landlord turn with an answer and a question, where the last tool reply ("tell them you'll check") won over the read-back, and two numbers in one turn with only one read back. Tool replies now carry every read-back owed for the turn. On `cfb384e`: saved numbers read back 23/24 tune, 12/14 holdout; landlord turns with a number read back 25/47 tune, 14/20 holdout.
+9. **The Caller leans on the code backstop for `note_question`** (11 of 21 calls; on `cfb384e` 20 notes by code in 35 calls, now also when the landlord repeats a question the Caller ignored). An upsell question ("would your client want a locker?") gets recorded as a fact instead of brought back as a question.
+10. **`end_session` is missed after about a third of tune goodbyes today** (Sat 04:30, on `main`'s code too: 10 of 36 runs), against about 1 in 4 on Friday night. The renter hears a goodbye, but the line stays open until they hang up.
+11. **`give_feedback` without a ref isn't resent.** The reply now says "call give_feedback again with listing_ref" instead of asking the renter, but in holdout `too-expensive-then-call-default` the Concierge moved on without resending it.
+12. **Rank numbers go stale after a re-rank.** A like moved the renter's card from 5 to 6, the Concierge sent "5", and a different listing was lined up for a call. A prompt rule ("use the street words for a listing you already talked about") made it send addresses for "the first one" too, so it was reverted. A fix in code would resolve ranks against the board the renter last heard.
+13. **Audio (measured Sat 04:57, `evals/run_audio.py`).** Time to first audio is about 1.5 s from the end of the caller's voice on both paths (about 0.6 s of it is the VAD's end-of-speech wait). Barge-in recovers 12 of 12. Two problems found:
+    - **The interrupted reply isn't trimmed.** Higgs sends a reply's audio in one burst, so the reply is already `completed` when the caller talks over it (0 of 12 cancelled), and the bridge sends no `conversation.item.truncate`. The model then believes it said the whole reply, though the caller heard about 1.6 s. Sending `truncate` with the played ms on `speech_started` works: Higgs acknowledged 6 of 6 with that exact `audio_end_ms`. **Open** (a small change in `voice/bridge.py` and `voice/phone_caller.py`).
+    - **Two tool calls in one reply send two `response.create`s.** `run_tool` asks for a response after each, and Higgs rejects the second with 400 "No user input". Harmless (one reply comes out) but noisy in the logs. **Open.**
+    - Speech-to-text on real voices isn't measured: the clips are synthesized.
 
 ## Lessons for the next eval
 

@@ -1,0 +1,57 @@
+{
+ "id": "readback-corrected",
+ "note": "A read-back the landlord corrects: the later answer wins and the rent conflict is computed.",
+ "end_reason": "done",
+ "listing": {
+  "listing_id": "livrent:e02-7",
+  "address": "33 Isabella St",
+  "rent": 2690,
+  "monthly_cost": 2690
+ },
+ "turns": [
+  {
+   "speaker": "agent",
+   "text": "Hi, I'm an AI assistant calling for a renter about the apartment at 33 Isabella Street. Is it still available?"
+  },
+  {
+   "speaker": "landlord",
+   "text": "Yes. Rent is 2,690 a month."
+  },
+  {
+   "speaker": "agent",
+   "text": "Just to confirm, that's $2,690 a month, utilities extra?"
+  },
+  {
+   "speaker": "landlord",
+   "text": "Oh sorry, I misspoke, it went up last week. It's 2,750 now. Utilities extra, yes."
+  },
+  {
+   "speaker": "agent",
+   "text": "Thank you. Is the lease a year?"
+  },
+  {
+   "speaker": "landlord",
+   "text": "One year lease, then month to month."
+  }
+ ],
+ "tool_facts": [
+  {
+   "field": "rent",
+   "value": "2690",
+   "quote": "Rent is 2,690 a month",
+   "turn_idx": 1
+  },
+  {
+   "field": "lease_months",
+   "value": "12",
+   "quote": "One year lease",
+   "turn_idx": 5
+  }
+ ],
+ "slot_text": null,
+ "gold": {
+  "available": "yes",
+  "rent": "2750",
+  "lease_months": "12"
+ }
+}

@@ -1,0 +1,44 @@
+{
+ "model": "higgs-realtime",
+ "user": "Listing: 155 Yorkville Ave, listed at $3,100 a month\n\nTranscript:\n[0] AGENT: Hi, I'm an AI assistant calling for a renter about the apartment at 155 Yorkville Avenue. Is it still available?\n[1] LANDLORD: It's available from January first. One year lease minimum.\n[2] AGENT: Are there any other monthly costs?\n[3] LANDLORD: There's a mandatory amenity fee of 50 a month, everyone pays it.\n[4] AGENT: Got it, thank you.",
+ "response": {
+  "facts": [
+   {
+    "field": "available",
+    "turn": 1,
+    "quote": "It's available from January first.",
+    "value": "yes",
+    "amount": null,
+    "count": null,
+    "each": null,
+    "period": null,
+    "mandatory": null,
+    "name": null
+   },
+   {
+    "field": "available_from",
+    "turn": 1,
+    "quote": "It's available from January first.",
+    "value": "2024-01-01",
+    "amount": null,
+    "count": null,
+    "each": null,
+    "period": null,
+    "mandatory": null,
+    "name": null
+   },
+   {
+    "field": "fees",
+    "turn": 3,
+    "quote": "There's a mandatory amenity fee of 50 a month, everyone pays it.",
+    "value": "yes",
+    "amount": 50,
+    "count": null,
+    "each": null,
+    "period": "monthly",
+    "mandatory": true,
+    "name": "amenity fee"
+   }
+  ]
+ }
+}

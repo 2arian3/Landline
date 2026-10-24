@@ -1,11 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  adminAudio,
   adminGet,
   type CallDetail,
   type CallRow,
   type ChosenPlace,
+  clockTime,
   duration,
   isRefusal,
   phoneLabel,
@@ -483,17 +485,7 @@ function CallItem({ call, token }: { call: CallRow; token: string }) {
           {isRefusal(detail) && <p className="text-support text-dead">{REFUSED[detail]}</p>}
           {detail && !isRefusal(detail) && (
             <>
-              {detail.transcript.length ? (
-                <ol className="mt-1 space-y-1.5">
-                  {detail.transcript.map((t) => (
-                    <li key={t.idx} className="text-support text-ink">
-                      <span className="font-label text-ink-3">{SPEAKER[t.speaker] ?? t.speaker}</span> {t.text}
-                    </li>
-                  ))}
-                </ol>
-              ) : (
-                <p className="text-support text-ink-2">No lines stored for this call.</p>
-              )}
+              <Transcript detail={detail} token={token} />
               {detail.facts.length > 0 && (
                 <ul className="mt-3 space-y-2">
                   {detail.facts.map((f, n) => (
@@ -512,4 +504,104 @@ function CallItem({ call, token }: { call: CallRow; token: string }) {
       )}
     </li>
   );
+}
+
+/** A call's lines, each playable from the recording when there is one, and the whole call. */
+function Transcript({ detail, token }: { detail: CallDetail; token: string }) {
+  const { playing, refusal, toggle } = usePlayer(detail.call_id, token);
+  return (
+    <>
+      {detail.audio && (
+        <div className="flex flex-wrap items-center gap-x-3">
+          <button
+            type="button"
+            onClick={() => toggle("call", "track=both")}
+            className="-ml-2 min-h-11 rounded-[var(--radius-control)] px-2 text-support font-label text-ink hover:bg-press"
+          >
+            {playing === "call" ? "Stop" : "Play recording"}
+          </button>
+          <span className="text-meta text-ink-3">In stereo: the caller on the left, Landline on the right.</span>
+        </div>
+      )}
+      {refusal && (
+        <p className="text-support text-dead">{refusal === "missing" ? "Nothing was recorded there." : REFUSED[refusal]}</p>
+      )}
+      {detail.transcript.length ? (
+        <ol className="mt-1 space-y-1.5">
+          {detail.transcript.map((t) => {
+            const start = t.audio_start_ms ?? null;
+            const end = t.audio_end_ms ?? null;
+            const key = `line-${t.idx}`;
+            const track = t.speaker === "agent" ? "agent" : "caller";
+            return (
+              <li key={t.idx} className="flex items-start justify-between gap-3 text-support text-ink">
+                <span className="min-w-0">
+                  {detail.audio && start != null && <span className="tnum text-meta text-ink-3">{clockTime(start)} </span>}
+                  <span className="font-label text-ink-3">{SPEAKER[t.speaker] ?? t.speaker}</span> {t.text}
+                </span>
+                {detail.audio && start != null && end != null && end > start && (
+                  <button
+                    type="button"
+                    onClick={() => toggle(key, `track=${track}&from_ms=${start}&to_ms=${end}`)}
+                    aria-label={`${playing === key ? "Stop" : "Play"} line ${t.idx + 1}`}
+                    className="-my-1 min-h-9 shrink-0 rounded-[var(--radius-control)] px-2 text-meta text-ink-2 hover:bg-press"
+                  >
+                    {playing === key ? "Stop" : "Play"}
+                  </button>
+                )}
+              </li>
+            );
+          })}
+        </ol>
+      ) : (
+        <p className="text-support text-ink-2">No lines stored for this call.</p>
+      )}
+    </>
+  );
+}
+
+/** Plays one stretch of a call's recording at a time; pressing what's playing stops it. */
+function usePlayer(callId: string, token: string) {
+  const audio = useRef<HTMLAudioElement | null>(null);
+  const want = useRef<string | null>(null);
+  const [playing, setPlaying] = useState<string | null>(null);
+  const [refusal, setRefusal] = useState<Refusal | null>(null);
+
+  const stop = useCallback(() => {
+    want.current = null;
+    const el = audio.current;
+    audio.current = null;
+    if (el) {
+      el.pause();
+      URL.revokeObjectURL(el.src);
+    }
+    setPlaying(null);
+  }, []);
+
+  useEffect(() => stop, [stop]); // closing the call stops it
+
+  const toggle = useCallback(
+    async (key: string, query: string) => {
+      const again = want.current === key;
+      stop();
+      if (again) return;
+      want.current = key;
+      setPlaying(key);
+      setRefusal(null);
+      const got = await adminAudio(`/api/admin/calls/${encodeURIComponent(callId)}/audio?${query}`, token);
+      if (want.current !== key) return; // something else was pressed while it loaded
+      if (isRefusal(got)) {
+        stop();
+        setRefusal(got);
+        return;
+      }
+      const el = new Audio(URL.createObjectURL(got));
+      audio.current = el;
+      el.onended = () => audio.current === el && stop();
+      el.play().catch(() => audio.current === el && stop());
+    },
+    [callId, token, stop],
+  );
+
+  return { playing, refusal, toggle };
 }

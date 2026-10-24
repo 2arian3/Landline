@@ -13,6 +13,10 @@
                            "to": "14:00"}], "may_book": true, "questions": ["parking"]},
                "ended": true}}
 
+A line can be a tap instead of words: `{"tap": "rank:2"}` focuses that card from the map, as a pin tap
+does, and the Concierge hears the same `[renter is looking at] …` note as on a live call (voice/line.py).
+`no_reactions` and `replies_avoid` check that a tap isn't taken for a like.
+
 A returning caller (O-05) adds `"returning": {"opening": "<what Profiles would say>", "prefs": {...}}`, and
 `final` can then check the welcome with `"greeting_says": ["Erskine"]` and `"greeting_avoids": [...]`.
 
@@ -78,6 +82,8 @@ class Want(_Strict):
     replies_in: str | None = None    # `final` only: once the renter writes in this script, so does the agent
     greeting_says: list[str] | None = None    # `final` only: words the agent's first turn must contain
     greeting_avoids: list[str] | None = None  # `final` only: words it must not (made-up or misread facts)
+    no_reactions: list[FocusWant] | None = None   # cards that must hold no reaction (a tap is not a like)
+    replies_avoid: list[str] | None = None    # `final` only: words no agent turn may contain
 
 
 class Returning(_Strict):
@@ -87,7 +93,8 @@ class Returning(_Strict):
 
 
 class Line(_Strict):
-    say: str
+    say: str = ""
+    tap: str | None = None   # instead of speaking, the renter taps this card's pin (`rank:N`) on the map
     expect: Want | None = None
 
 

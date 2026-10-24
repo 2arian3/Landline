@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
 
-from landline.api.demo import NO_RESULTS_YET, TORONTO, DemoSessions, window
+from landline.api.demo import NO_RESULTS_YET, TORONTO, DemoSessions, slot, window
 from landline.api.judge import JudgeLines, StartLimit, client_ip
 from landline.app import create_app
 from landline.config import Settings
@@ -160,7 +160,7 @@ async def test_demo_plan_is_the_top_four_places_with_a_pin_and_dials_nothing():
 
 
 async def test_hanging_up_queues_the_plan_then_walks_it_to_results():
-    s = DemoSessions(_one_bedrooms(), tick_s=0)
+    s = DemoSessions(_one_bedrooms(), tick_s=0, now=lambda: NOW)   # a Wednesday evening in Toronto
     seen = []
     publish = s.update
 
@@ -216,6 +216,33 @@ async def test_hanging_up_queues_the_plan_then_walks_it_to_results():
         f"{addr[plan[1]]} wants a deposit by e-transfer before anyone sees the unit, so I'd skip it. "
         f"Nobody picked up at {addr[plan[3]]}."
     )
+
+
+def test_the_scripted_viewing_is_never_one_that_has_passed():
+    def at(day: int, hour: int, minute: int = 0) -> datetime:   # October 2026: Saturdays are the 24th, 31st
+        return datetime(2026, 10, day, hour, minute, tzinfo=TORONTO)
+
+    assert slot(at(23, 10)) == at(24, 14)       # the day before: Saturday at 2 pm
+    assert slot(at(24, 13, 40)) == at(24, 15)   # 2 pm is too close: 3 pm
+    assert slot(at(24, 15, 10)) == at(24, 16)   # the afternoon under way: its next whole hour
+    assert slot(at(24, 16, 45)) == at(31, 14)   # no hour left in it: the Saturday after
+    assert slot(at(24, 18)) == at(31, 14)
+
+
+async def test_a_demo_on_a_saturday_afternoon_books_ahead_and_says_which_saturday():
+    cases = {(15, 10): ("Saturday at 4 pm", "Saturday at four"),          # the afternoon under way
+             (16, 45): ("next Saturday at 2 pm", "Next Saturday at two")}   # no hour left in it
+    for (hour, minute), (when, spoken) in cases.items():
+        now = datetime(2026, 10, 24, hour, minute, tzinfo=TORONTO)   # a Saturday
+        s = DemoSessions(_one_bedrooms(), tick_s=0, now=lambda now=now: now)
+        plan = (await s.plan_top("s1")).plan
+        await s.hang_up("s1")
+        await s.dialing["s1"]
+        booked = s.runs["s1"].outcomes[plan[2]]
+        assert booked.viewing > now
+        assert s.get("s1").results.startswith(f"I booked {s.catalogue.by_id[plan[2]].address} for {when}, ")
+        assert booked.said[-2:] == (("landlord", f"{spoken} works."),
+                                    ("agent", f"{when[0].upper()}{when[1:]}, then. I'll let my client know."))
 
 
 async def test_hanging_up_without_a_plan_closes_the_brief():

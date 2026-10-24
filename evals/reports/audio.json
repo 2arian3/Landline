@@ -1,0 +1,116 @@
+{
+ "current": {
+  "greeting_ms": {
+   "n": 2,
+   "missing": 0,
+   "p50": 508,
+   "p90": 515
+  },
+  "concierge": {
+   "from_speech_end": {
+    "n": 12,
+    "missing": 0,
+    "p50": 1472,
+    "p90": 1804
+   },
+   "from_speech_stopped": {
+    "n": 12,
+    "missing": 0,
+    "p50": 922,
+    "p90": 1141
+   },
+   "turns": 12
+  },
+  "caller": {
+   "from_speech_end": {
+    "n": 20,
+    "missing": 1,
+    "p50": 1516,
+    "p90": 2344
+   },
+   "from_speech_stopped": {
+    "n": 20,
+    "missing": 1,
+    "p50": 960,
+    "p90": 1687
+   },
+   "turns": 21
+  },
+  "barge_in": {
+   "tries": 12,
+   "ok": 12,
+   "detected": {
+    "n": 12,
+    "missing": 0,
+    "p50": 292,
+    "p90": 342
+   },
+   "cleared": {
+    "n": 12,
+    "missing": 0,
+    "p50": 292,
+    "p90": 342
+   },
+   "answered": 12,
+   "truncated_by_us": 0,
+   "cancelled": 0,
+   "played_ms": {
+    "n": 12,
+    "missing": 0,
+    "p50": 1594,
+    "p90": 1656
+   },
+   "failures": []
+  },
+  "barge_in_with_truncate": {
+   "tries": 6,
+   "ok": 6,
+   "sent": 6,
+   "acked": 6,
+   "matched": 6,
+   "errors": [],
+   "answered": 6,
+   "detected": {
+    "n": 6,
+    "missing": 0,
+    "p50": 292,
+    "p90": 358
+   }
+  },
+  "calls": [
+   {
+    "persona": "linda-honest",
+    "seconds": 94.5,
+    "end": "hangup",
+    "caller_turns": 9,
+    "facts": 6,
+    "booked": true,
+    "red_flags": 0
+   },
+   {
+    "persona": "raj-upsell",
+    "seconds": 100.5,
+    "end": "hangup",
+    "caller_turns": 8,
+    "facts": 3,
+    "booked": true,
+    "red_flags": 0
+   },
+   {
+    "persona": "mark-scam",
+    "seconds": 69.5,
+    "end": "refused",
+    "caller_turns": 5,
+    "facts": 1,
+    "booked": false,
+    "red_flags": 3
+   }
+  ],
+  "at": "2026-10-24T08:56:30+00:00",
+  "sha": "674e37d",
+  "traces": "evals/runs/20261024T084935Z-audio",
+  "runs": 8,
+  "clips": "synthesized with Higgs TTS (higgs-tts-v3, voice default)"
+ },
+ "previous": null
+}

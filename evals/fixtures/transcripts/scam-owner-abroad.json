@@ -1,0 +1,57 @@
+{
+ "id": "scam-owner-abroad",
+ "note": "Scam: owner abroad, no viewing, Western Union, keys by courier.",
+ "end_reason": "done",
+ "listing": {
+  "listing_id": "livrent:e02-10",
+  "address": "100 Harbour St",
+  "rent": 1600,
+  "monthly_cost": 1600
+ },
+ "turns": [
+  {
+   "speaker": "agent",
+   "text": "Hi, I'm an AI assistant calling for a renter about the apartment at 100 Harbour Street. Is it still available?"
+  },
+  {
+   "speaker": "landlord",
+   "text": "Hello. Yes, the unit is available. I am out of the country for work right now."
+  },
+  {
+   "speaker": "agent",
+   "text": "Would someone be able to show it?"
+  },
+  {
+   "speaker": "landlord",
+   "text": "No, I can't show you the unit. Pay the first month by Western Union and I will courier the keys."
+  },
+  {
+   "speaker": "agent",
+   "text": "Thank you, I'll let my client know."
+  }
+ ],
+ "tool_facts": [
+  {
+   "field": "available",
+   "value": "yes",
+   "quote": "Yes, the unit is available",
+   "turn_idx": 1
+  },
+  {
+   "field": "other",
+   "value": "owner abroad",
+   "quote": "I am out of the country for work right now",
+   "turn_idx": 1
+  }
+ ],
+ "slot_text": null,
+ "gold": {
+  "available": "yes",
+  "red_flags": [
+   "deposit_before_viewing",
+   "untraceable_payment",
+   "owner_away",
+   "no_viewing"
+  ]
+ }
+}

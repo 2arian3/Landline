@@ -1,4 +1,4 @@
-"""Typed rows the repositories return, one per table (db/migrations/0001_init.sql).
+"""Typed rows the repositories return, one per table (db/migrations/).
 
 Field names match the columns, so psycopg's `class_row` builds them directly.
 Geography columns come back as `lat` and `lng`.
@@ -64,6 +64,20 @@ class TurnRow:
     text: str
     lang: str | None
     t_ms: int | None
+    audio_start_ms: int | None = None   # where the line is in the call's audio (call_audio), when known
+    audio_end_ms: int | None = None
+
+
+@dataclass(frozen=True)
+class AudioRow:
+    """A chunk of one side of a call's audio (call_audio)."""
+    call_id: str
+    track: str                  # renter | landlord | agent
+    seq: int
+    start_ms: int               # on the call's clock, as call_turns.audio_start_ms
+    format: str                 # pcmu | pcm16
+    rate: int                   # samples a second
+    audio: bytes
 
 
 @dataclass(frozen=True)

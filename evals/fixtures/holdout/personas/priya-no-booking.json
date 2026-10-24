@@ -1,0 +1,60 @@
+{
+  "id": "priya-no-booking",
+  "about": "Honest agent, but the renter didn't allow booking: bring the times back instead",
+  "listing_id": "livrent:130242",
+  "persona": {
+    "name": "Priya",
+    "manner": "warm and precise",
+    "knows": {
+      "availability": "Available November 15th.",
+      "pets": "Small dogs and cats are both fine.",
+      "parking": "Parking is $100 a month extra.",
+      "laundry": "There's a laundry room on every floor.",
+      "fees": "No extra fees."
+    },
+    "offers": [
+      "Thursday at 6:30 pm"
+    ],
+    "asks": [
+      "What does your client do for work?"
+    ]
+  },
+  "plan": {
+    "availability": [
+      {
+        "day": "thursday",
+        "from": "18:00",
+        "to": "20:00"
+      }
+    ],
+    "may_book": false,
+    "questions": [],
+    "shareable": {
+      "move_in": "December 1",
+      "occupants": 1,
+      "pets": [
+        "dog"
+      ]
+    }
+  },
+  "gold": {
+    "facts": {
+      "available_from": [
+        "15"
+      ],
+      "pets": [
+        "dog"
+      ],
+      "parking_cost": [
+        "100"
+      ],
+      "laundry": [
+        "floor"
+      ]
+    },
+    "booked": null,
+    "note_question": true,
+    "red_flags": false,
+    "status": "verified"
+  }
+}

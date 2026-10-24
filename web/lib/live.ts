@@ -8,8 +8,10 @@ import type { CataloguePoint, SessionView } from "./types";
  * version number); the snapshot says *what*. When the stream fails, or goes
  * quiet, we poll instead: quiet too, because a proxy that buffers the stream
  * (a Cloudflare tunnel did) stalls it without an error. While it's down the
- * snapshot is fetched every POLL_MS and the stream gets a fresh connection
- * every REOPEN_MS; its first version or ping stops the polling. Safeguards
+ * snapshot is fetched every POLL_MS. A stream the browser closed (a refusal) is
+ * opened again after RETRY_MS, backing off to REOPEN_MS; a quiet one gets a
+ * fresh connection every REOPEN_MS. Any word from it (open, version or ping)
+ * stops the polling. Safeguards
  * carried over from Realest's poller:
  *   - one request in flight at a time, so a slow network can't stack them
  *   - a response older than what's on screen is dropped
@@ -26,6 +28,7 @@ import type { CataloguePoint, SessionView } from "./types";
 const STALE_MS = 6500;
 const POLL_MS = 1500;
 const REOPEN_MS = 30_000;
+const RETRY_MS = 2000;
 const UNREACHABLE_MS = 9000;
 
 /**
@@ -59,8 +62,9 @@ export function useLiveSession(sessionId: string | null) {
     let inFlight = false;
     let source: EventSource | null = null;
     let errors = 0;
-    let failing = false; // the stream errored and hasn't been heard from since
-    let heardAt = Date.now(); // the stream's last word: opened, a version or a ping
+    let retryIn = RETRY_MS; // until a closed stream is opened again; doubles up to REOPEN_MS
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    let heardAt = Date.now(); // the stream's last word: opened, a version or a ping (0 once it fails)
     let openedAt = 0;
     const since = (lastOk.current = Date.now());
     let polledAt = since;
@@ -97,9 +101,10 @@ export function useLiveSession(sessionId: string | null) {
       heardAt = lastOk.current = Date.now();
       setStale(false);
       errors = 0;
-      failing = false;
+      retryIn = RETRY_MS;
     };
     const open = () => {
+      clearTimeout(retry);
       source?.close();
       openedAt = Date.now();
       const s = new EventSource(api(`/api/sessions/${encodeURIComponent(sessionId)}/stream`));
@@ -114,12 +119,17 @@ export function useLiveSession(sessionId: string | null) {
           void refresh();
         }
       };
-      // The browser retries a failed stream on its own; three failures in a row and it waits for the
-      // next reopen, with polling holding the board meanwhile.
+      // An error makes the stream quiet at once, so polling holds the board from the next tick. A dropped
+      // connection the browser retries by itself, until three errors in a row; a refused one (a 502 from a
+      // proxy) it closes for good, so it's opened again here, after RETRY_MS, doubling up to REOPEN_MS.
       s.onerror = () => {
-        failing = true; // poll from the next tick, not only once the stream has been quiet for STALE_MS
+        heardAt = 0;
         errors += 1;
         if (errors >= 3) s.close();
+        if (s.readyState === EventSource.CLOSED && source === s) {
+          retry = setTimeout(open, retryIn);
+          retryIn = Math.min(retryIn * 2, REOPEN_MS);
+        }
       };
       source = s;
     };
@@ -128,9 +138,9 @@ export function useLiveSession(sessionId: string | null) {
     const tick = setInterval(() => {
       const now = Date.now();
       const quiet = now - heardAt > STALE_MS;
-      // Poll while the stream is failing or quiet, and until the first snapshot is in: that one can fail
-      // while the stream is fine, and then nothing else would ask again.
-      if ((failing || quiet || !current.current) && now - polledAt >= POLL_MS) {
+      // Poll while the stream is down or quiet, and until the first snapshot is in: that one can fail while
+      // the stream is fine, and then nothing else would ask again.
+      if ((quiet || !current.current) && now - polledAt >= POLL_MS) {
         polledAt = now;
         void refresh();
       }
@@ -149,6 +159,7 @@ export function useLiveSession(sessionId: string | null) {
     document.addEventListener("visibilitychange", onVisible);
     return () => {
       left.abort();
+      clearTimeout(retry);
       source?.close();
       clearInterval(tick);
       document.removeEventListener("visibilitychange", onVisible);

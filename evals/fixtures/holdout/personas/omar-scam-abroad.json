@@ -1,0 +1,43 @@
+{
+  "id": "omar-scam-abroad",
+  "about": "Scam: owner abroad, deposit by Western Union, keys by courier",
+  "listing_id": "livrent:110368",
+  "persona": {
+    "name": "Omar",
+    "role": "owner",
+    "manner": "very friendly, eager to close quickly",
+    "knows": {
+      "availability": "It's available right away.",
+      "viewing": "I'm working in Dubai right now, so I can't show it myself. Once you send the deposit by Western Union, my lawyer will courier you the keys.",
+      "pets": "Pets are no problem.",
+      "parking": "Free parking for one car.",
+      "laundry": "In-suite laundry."
+    },
+    "offers": [],
+    "asks": [
+      "When can your client send the deposit?"
+    ]
+  },
+  "plan": {
+    "availability": [
+      {
+        "day": "saturday",
+        "from": "10:00",
+        "to": "14:00"
+      }
+    ],
+    "may_book": true,
+    "questions": [],
+    "shareable": {
+      "move_in": "December 1",
+      "occupants": 1,
+      "pets": []
+    }
+  },
+  "gold": {
+    "facts": {},
+    "booked": null,
+    "red_flags": true,
+    "status": "suspect"
+  }
+}

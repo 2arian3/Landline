@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 import pytest
 
 from landline.agents.concierge import refs, tools
-from landline.contracts import Listing, SessionEnded, SessionStarted
+from landline.contracts import Card, Listing, SessionEnded, SessionStarted
 from landline.db.catalogue import Catalogue
 from landline.orchestrator import SessionRuntime
 
@@ -63,6 +63,48 @@ async def test_refs_resolve_ranks_and_address_words(ctx):
         assert refs.resolve(ref, board) is None, ref
 
 
+def _card(rank: int, address: str, cost: int, lid: str | None = None) -> Card:
+    return Card(listing_id=lid or f"t:{rank}", address=address, rent=cost, monthly_cost=cost, beds=1,
+                source="t", url="https://example.com", rank=rank)
+
+
+# The eval's board for a one bedroom under $2,400: three cards at 30 Carabob Court with no unit label.
+TWINS = [_card(1, "30 Carabob Court", 1999), _card(2, "701 Don Mills Rd", 1800),
+         _card(3, "1915 Martin Grove Rd", 2039), _card(4, "630 Vesta Dr", 1800),
+         _card(5, "30 Carabob Court", 1950), _card(6, "30 Carabob Court", 1999)]
+
+
+def test_a_shared_address_alone_names_no_card_and_offers_every_twin():
+    for ref in ("30 Carabob Court", "Carabob", "the one on Carabob Court"):
+        found = refs.match(ref, TWINS)
+        assert found.card is None, ref
+        assert [c.rank for c in found.options] == [1, 5, 6], ref
+
+
+def test_a_rank_or_a_price_picks_among_twins():
+    assert refs.resolve("30 Carabob Court, number 5", TWINS) is TWINS[4]
+    assert refs.resolve("the first one on Carabob", TWINS) is TWINS[0]
+    assert refs.resolve("30 Carabob Court for 1950", TWINS) is TWINS[4]
+    assert refs.resolve("Carabob, the last one", TWINS) is TWINS[5]
+    # A rank that isn't one of the twins doesn't pick one; nor does a price two of them share.
+    assert refs.resolve("30 Carabob Court, number 2", TWINS) is None
+    found = refs.match("30 Carabob Court at 1999", TWINS)
+    assert found.card is None and [c.rank for c in found.options] == [1, 6]
+
+
+def test_the_focused_card_picks_among_twins_but_never_another_card():
+    assert refs.resolve("30 Carabob Court", TWINS, focus_id="t:5") is TWINS[4]
+    assert refs.resolve("30 Carabob Court", TWINS, focus_id="t:2") is None   # Don Mills isn't a twin
+    assert refs.resolve("Don Mills", TWINS, focus_id="t:5") is TWINS[1]      # a unique address wins
+    assert refs.resolve("2", TWINS, focus_id="t:5") is TWINS[1]              # so does a rank
+
+
+def test_unit_labels_tell_twins_apart():
+    board = [_card(1, "30 Carabob Court", 1999), _card(2, "30 Carabob Court", 1950)]
+    board[1].unit_label = "1204"
+    assert refs.resolve("30 Carabob Court unit 1204", board) is board[1]
+
+
 def test_place_uses_neighbourhoods_and_street_names_only():
     assert refs.place("Leslieville", CATALOGUE) == pytest.approx((43.662, -79.333))
     assert refs.place("Bloor", CATALOGUE) == pytest.approx((43.669, -79.389))   # the two Bloor listings
@@ -105,7 +147,7 @@ async def test_focus_listing_by_rank_reads_the_card_back(ctx):
 
 
 async def test_give_feedback_lands_on_the_focused_listing(ctx):
-    assert await _say(ctx, "give_feedback", '{"reaction": "dislike"}') == tools.WHICH   # nothing focused
+    assert await _say(ctx, "give_feedback", '{"reaction": "dislike"}') == tools.NO_REF   # nothing focused
     await _say(ctx, "focus_listing", '{"listing_ref": "Markham"}', "fc_2")
     reply = await _say(ctx, "give_feedback", '{"reaction": "dislike", "reason": "too dark", '
                                              '"attribute": "light"}', "fc_3")
@@ -134,6 +176,31 @@ async def test_call_listings_plans_the_top_three_and_reads_them_back(ctx):
     assert reply == f"I'll call {addresses[0]}, {addresses[1]} and {addresses[2]} after you hang up, " \
                     "and text you what they say. Viewings Saturday 1 pm to 5 pm. I may book one."
     assert await _say(ctx, "call_listings", '{"listing_refs": ["Spadina"]}', "fc_2") == tools.WHICH
+
+
+async def test_a_shared_address_asks_with_numbers_then_reads_the_number_back():
+    twins = Catalogue([_listing(1, "30 Carabob Court", 1999, 1, 43.78, -79.30),
+                       _listing(2, "30 Carabob Court", 1950, 1, 43.78, -79.30),
+                       _listing(3, "701 Don Mills Rd", 2100, 1, 43.71, -79.34)], "test")
+    runtime = SessionRuntime(twins)
+    await runtime.start(SessionStarted(session_id=SID, at=T0, idem_key=f"{SID}:started", channel="judge"))
+    ctx = tools.ToolContext(session_id=SID, call_id="c_tools00002", runtime=runtime)
+    try:
+        board = runtime.get(SID).board
+        ranks = {c.listing_id: c.rank for c in board}
+        reply = await _say(ctx, "call_listings", '{"listing_refs": ["30 Carabob Court"]}')
+        assert reply.startswith("Which one? 2 places share 30 Carabob Court: number ")
+        assert "$1,999" in reply and "$1,950" in reply and len(reply.split()) <= 25
+        assert runtime.state(SID).request is None                      # nobody gets phoned on a guess
+        await _say(ctx, "focus_listing", '{"listing_ref": "Carabob, the 1950 one"}', "fc_2")
+        assert runtime.get(SID).focus_listing_id == "t:2"
+        reply = await _say(ctx, "call_listings", '{"listing_refs": ["30 Carabob Court"]}', "fc_3")
+        assert runtime.state(SID).request.listing_ids == ["t:2"]       # the one being talked about
+        assert reply.startswith(f"I'll call 30 Carabob Court, number {ranks['t:2']}, after you hang up")
+        await _say(ctx, "give_feedback", '{"reaction": "like", "listing_ref": "30 Carabob Court"}', "fc_4")
+        assert runtime.state(SID).reactions["t:2"].reaction == "like"
+    finally:
+        await runtime.close()
 
 
 async def test_rank_numbers_sent_as_numbers_count_as_ranks(ctx):

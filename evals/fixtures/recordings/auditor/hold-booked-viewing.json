@@ -1,0 +1,20 @@
+{
+ "model": "higgs-realtime",
+ "user": "Listing: 11 Wellesley St W, listed at $2,400 a month\n\nTranscript:\n[0] AGENT: Hi, I'm an AI assistant calling for a renter about the apartment at 11 Wellesley Street West. Is it still available?\n[1] LANDLORD: Yes, still available.\n[2] AGENT: Could my client view it Sunday morning?\n[3] LANDLORD: Sunday at eleven works for me.\n[4] AGENT: Great, I'll book Sunday at eleven. Thank you.",
+ "response": {
+  "facts": [
+   {
+    "field": "available",
+    "turn": 1,
+    "quote": "Yes, still available.",
+    "value": "yes",
+    "amount": null,
+    "count": null,
+    "each": null,
+    "period": null,
+    "mandatory": null,
+    "name": null
+   }
+  ]
+ }
+}
