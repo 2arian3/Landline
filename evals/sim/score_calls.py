@@ -12,6 +12,8 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import asdict, dataclass, field
+from datetime import UTC, datetime, timedelta
+from difflib import SequenceMatcher
 
 from evals.sim.calls import CallCase
 from evals.sim.score_concierge import Check
@@ -43,6 +45,7 @@ class CallScore:
     ungrounded: int = 0
     noted_by_code: int = 0
     caller_turns: int = 0
+    repeats: int = 0                                               # Caller questions asked again
     tools: dict[str, int] = field(default_factory=dict)
     seconds: float = 0.0                                           # hang-up to the plan's results
 
@@ -69,9 +72,10 @@ def score_call(case: CallCase, run: int, trace: SimTrace, state: SessionState, l
     check("status", status == g.status, f"want {g.status}, got {status}")
     viewing = state.viewings.get(lid)
     if g.booked:   # "saturday 11:00" must be that slot; "saturday" is any time that day in the windows
+        want = _resolve(g.booked)
         got = _slot(viewing.starts_at) if viewing else None
-        ok = got == g.booked if " " in g.booked else bool(got) and got.split()[0] == g.booked
-        check("booked", ok, f"want {g.booked}, got {got}")
+        ok = got == want if " " in want else bool(got) and got.split()[0] == want
+        check("booked", ok, f"want {want}, got {got}")
     else:
         check("booked.none", viewing is None, f"booked {viewing.slot_text if viewing else ''}")
     if viewing is not None:
@@ -83,12 +87,16 @@ def score_call(case: CallCase, run: int, trace: SimTrace, state: SessionState, l
         asked = list(out.open_questions) if out else []
         check("note_question", bool(asked), "no question came back")
     check("end", trace.end_reason in g.end, f"want {g.end}, got {trace.end_reason}")
+    for words in g.results_avoid:
+        check(f"results_avoid.{words}", words.lower() not in (state.results or "").lower(),
+              f"results said {state.results!r}")
     b = brief(listing, plan)
     asked = {f for item in b.items for f in item.fields}
     facts = list(out.facts) if out else []
     for name, words in g.facts.items():
         if name not in asked:
             continue
+        words = [_resolve(w) for w in words]
         group = GROUPS.get(name, {name})
         # The Auditor's value is a fixed form ("laundry in the unit") read from the landlord's quote, so the
         # landlord's own words ("in-suite") count too.
@@ -116,8 +124,35 @@ def score_call(case: CallCase, run: int, trace: SimTrace, state: SessionState, l
                      readbacks=readbacks(trace), recorded_readbacks=recorded_readbacks(trace),
                      ungrounded=trace.ungrounded,
                      noted_by_code=trace.noted_by_code,
-                     caller_turns=len(callers),
+                     caller_turns=len(callers), repeats=repeats(trace),
                      tools=tools)
+
+
+def repeats(trace: SimTrace) -> int:
+    """Caller questions asked again: a question sentence nearly the same as one the Caller already asked.
+    The prompt says never to ask the same thing twice; on production a Caller asked "Are pets allowed?" five
+    times in one call."""
+    asked: list[str] = []
+    n = 0
+    for t in trace.turns:
+        if t.speaker != "caller":
+            continue
+        for q in re.findall(r"[^.!?]*\?", t.text):
+            q = " ".join(q.lower().split())
+            if not q:
+                continue
+            if any(SequenceMatcher(None, q, a).ratio() > 0.85 for a in asked):
+                n += 1
+            asked.append(q)
+    return n
+
+
+def _resolve(words: str) -> str:
+    """`{tomorrow_date}` ("october 25", as the Auditor writes a date) and `{tomorrow_day}` ("sunday") in a
+    gold value: the day after today in Toronto."""
+    tomorrow = datetime.now(UTC).astimezone(slots.TORONTO).date() + timedelta(days=1)
+    return words.replace("{tomorrow_date}", f"{tomorrow:%B} {tomorrow.day}".lower()).replace(
+        "{tomorrow_day}", slots.WEEKDAYS[tomorrow.weekday()])
 
 
 def readbacks(trace: SimTrace) -> list[int]:

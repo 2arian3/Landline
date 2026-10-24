@@ -74,7 +74,7 @@ async def one_call(case: CallCase, n: int, catalogue: Catalogue, settings: Setti
     failed = ", ".join(c.name for c in result.failed())
     mark = "pass" if result.passed else "FAIL"
     print(f"  {case.id:20} run {n}  {mark}  {trace.end_reason:9} {result.status:9} "
-          f"{seconds:5.1f}s  {failed}", flush=True)
+          f"{seconds:5.1f}s  turns {result.caller_turns:2} repeats {result.repeats}  {failed}", flush=True)
     result.seconds = seconds
     return result
 
