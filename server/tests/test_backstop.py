@@ -11,6 +11,7 @@ import pytest
 from landline.agents.concierge import tools
 from landline.agents.concierge.backstop import (
     PLANNED,
+    SAID_BYE,
     Turn,
     asks_for_calls,
     catch_up,
@@ -559,3 +560,80 @@ def test_a_line_in_another_script_is_handed_on_once_whatever_tools_ran():
     assert turn.language_line() == FARSI and turn.language_line() is None
     _answered(turn, "Call the first one.", ("call_listings",))
     assert turn.language_line() is None
+
+
+# ── A goodbye the reply didn't end on ────────────────────────────────────────
+
+GOODBYES = ["감사합니다. 그럼 안녕히 계세요.", "ممنون، فعلاً همین. خداحافظ.", "شكرا، هذا كل شيء. مع السلامة.",
+            "Gracias, eso es todo. Adiós.", "ਧੰਨਵਾਦ, ਬੱਸ ਏਨਾ ਹੀ। ਰੱਬ ਰਾਖਾ।", "谢谢，先这样，再见。",
+            "Thanks, that's all, bye!"]
+PUNJABI_BYE = GOODBYES[4]
+
+
+def test_a_goodbye_is_heard_in_the_renters_language():
+    from landline.agents.concierge.backstop import says_goodbye
+    for line in GOODBYES:
+        assert says_goodbye(line), line
+    for line in ["I'll call you back.", "Is that all?", "Maybe Tuesday works.", "Two bedrooms, please.", ""]:
+        assert not says_goodbye(line), line
+
+
+def test_a_goodbye_with_no_end_session_is_given_once():
+    turn = Turn()
+    turn.speech_started()
+    turn.transcript(PUNJABI_BYE)
+    turn.response_created()
+    turn.response_done(_done("message"))
+    assert turn.bye_line() == PUNJABI_BYE and turn.bye_line() is None
+    turn.speech_started()
+    turn.transcript(PUNJABI_BYE)
+    turn.response_created()
+    turn.tool_called("end_session")
+    turn.response_done(_done("function_call"))
+    turn.response_created()
+    turn.response_done(_done("message"))
+    assert turn.bye_line() is None   # it ended the call itself
+
+
+class _Recording(_Higgs):
+    def __init__(self, events):
+        super().__init__(events)
+        self.sent = []
+
+    async def send(self, event):
+        self.sent.append(event)
+
+
+def _bye_events(*after):
+    no_tool = {"type": "response.done", "response": {"status": "completed", "output": [{"type": "message"}]}}
+    return [{"type": "input_audio_buffer.speech_started", "item_id": "u1", "audio_start_ms": 0},
+            {"type": "input_audio_buffer.speech_stopped", "item_id": "u1", "audio_end_ms": 900},
+            {"type": "response.created"},
+            {"type": "conversation.item.input_audio_transcription.completed", "item_id": "u1",
+             "transcript": PUNJABI_BYE},
+            {"type": "response.output_audio_transcript.done", "item_id": "a1",
+             "transcript": "ਕੀ ਤੁਸੀਂ ਕਿਤੇ ਨੇੜੇ?"},
+            no_tool, *after]
+
+
+async def test_through_the_bridge_a_goodbye_answered_with_a_question_gets_one_note_then_the_call_ends():
+    ctx = await _ctx()
+    no_tool = {"type": "response.done", "response": {"status": "completed", "output": [{"type": "message"}]}}
+    higgs = _Recording(_bye_events({"type": "response.created"},
+                                   {"type": "response.output_audio_transcript.done", "item_id": "a2",
+                                    "transcript": "ਰੱਬ ਰਾਖਾ!"}, no_tool))
+    ended = await bridge._higgs_to_renter(higgs, _NoAudio(), ctx, bridge.Playback(8000),
+                                          CallRecorder(PCMU_8K))
+    notes = [e["item"]["content"][0]["text"] for e in higgs.sent if e["type"] == "conversation.item.create"]
+    assert notes == [SAID_BYE] and {"type": "response.create"} in higgs.sent
+    assert ended == "end_session"
+
+
+async def test_through_the_bridge_the_renter_speaking_again_after_the_note_keeps_the_call_open():
+    ctx = await _ctx()
+    higgs = _Recording(_bye_events({"type": "response.created"},
+                                   {"type": "input_audio_buffer.speech_started", "item_id": "u2",
+                                    "audio_start_ms": 2000}))
+    ended = await bridge._higgs_to_renter(higgs, _NoAudio(), ctx, bridge.Playback(8000),
+                                          CallRecorder(PCMU_8K))
+    assert ended == "higgs_closed"   # not hung up on them: they had more to say
