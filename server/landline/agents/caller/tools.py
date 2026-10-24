@@ -267,6 +267,9 @@ async def note_question(args: NoteQuestion, ctx: CallerContext, meta: dict) -> s
 async def book_viewing(args: BookViewing, ctx: CallerContext, meta: dict) -> str:
     plan, b = ctx.brief.plan, ctx.brief
     windows = plan.windows
+    now = ctx.clock()
+    if (day := slots.day_only(args.slot, now)) is not None:   # "Yeah, tomorrow you can": no time yet (#189)
+        return _ask_time(day, windows, now)
     if not plan.may_book:
         return await _offered(args.slot, ctx, meta)
     if ctx.booked is not None:
@@ -277,7 +280,6 @@ async def book_viewing(args: BookViewing, ctx: CallerContext, meta: dict) -> str
     state = ctx.runtime.state(ctx.session_id)
     if state.status(ctx.listing_id) in ("dead", "suspect"):
         return "Don't book this one. Thank them and end the call."
-    now = ctx.clock()
     at = slots.parse(args.slot, now, windows, keep_past_today=True)
     if at is None:
         return "I couldn't tell which day and time that is. Ask them for a day and a time."
@@ -310,6 +312,16 @@ async def book_viewing(args: BookViewing, ctx: CallerContext, meta: dict) -> str
             item.done = True
     when = slots.spoken(at)
     return f"Booked for {when}. Start your reply with \"So that's {when},\" to confirm it."
+
+
+def _ask_time(day, windows, now: datetime) -> str:
+    """They said a day but no time: nothing is booked or noted until they give one in the renter's times."""
+    today = now.astimezone(slots.TORONTO).date()
+    said = "today" if day == today else "tomorrow" if (day - today).days == 1 else f"on {day:%A}"
+    left = slots.open_times([w for w in windows if w.start.astimezone(slots.TORONTO).date() == day], now)
+    can = f": the renter can do {left}" if left else ""
+    return (f"They said {said} but no time. Ask what time {said} works for them{can}. "
+            f"Then pass it to book_viewing.")
 
 
 async def _offered(slot: str, ctx: CallerContext, meta: dict) -> str:

@@ -131,14 +131,16 @@ def _plan(may_book=True, windows=(SAT,), questions=(), pets=()) -> CallPlan:
 
 # The checklist follows the renter, not the holes in our data (#140): pets are unknown on every listing.
 @pytest.mark.parametrize(("listing", "plan", "renter_wants", "keys"), [
-    ({}, _plan(may_book=False), [], ["available", "fees"]),
-    ({}, _plan(may_book=False, pets=["dog"]), [], ["available", "pets", "fees"]),
-    ({"pets": "none"}, _plan(may_book=False, pets=["cat"]), [], ["available", "pets", "fees"]),
-    ({}, _plan(may_book=False), ["parking"], ["available", "parking", "fees"]),
-    ({"parking": "extra", "parking_cost": 150}, _plan(may_book=False), ["parking"], ["available", "fees"]),
-    ({}, _plan(may_book=False, questions=["Is there a gym?"]), [], ["available", "fees", "q1"]),
+    ({}, _plan(may_book=False, windows=()), [], ["available", "fees"]),
+    ({}, _plan(may_book=False, windows=(), pets=["dog"]), [], ["available", "pets", "fees"]),
+    ({"pets": "none"}, _plan(may_book=False, windows=(), pets=["cat"]), [], ["available", "pets", "fees"]),
+    ({}, _plan(may_book=False, windows=()), ["parking"], ["available", "parking", "fees"]),
+    ({"parking": "extra", "parking_cost": 150}, _plan(may_book=False, windows=()), ["parking"],
+     ["available", "fees"]),
+    ({}, _plan(may_book=False, windows=(), questions=["Is there a gym?"]), [], ["available", "fees", "q1"]),
     ({}, _plan(), [], ["available", "fees", "viewing"]),
-    ({}, _plan(may_book=False), ["in-suite laundry", "utilities included"],
+    ({}, _plan(may_book=False), [], ["available", "fees", "viewing"]),   # times but no booking: noted (#189)
+    ({}, _plan(may_book=False, windows=()), ["in-suite laundry", "utilities included"],
      ["available", "utilities", "laundry", "fees"]),
 ])
 def test_the_checklist_follows_the_renter(listing, plan, renter_wants, keys):
@@ -147,11 +149,12 @@ def test_the_checklist_follows_the_renter(listing, plan, renter_wants, keys):
 
 
 def test_the_pets_item_says_what_the_renter_has_and_gaps_stay_capped():
-    b = brief(_listing(), _plan(may_book=False, pets=["dog"]), wants(Preferences(priorities=["parking"])))
+    b = brief(_listing(), _plan(may_book=False, windows=(), pets=["dog"]),
+              wants(Preferences(priorities=["parking"])))
     pets = next(i for i in b.items if i.key == "pets")
     assert pets.ask == "whether pets are allowed (the renter has a dog)"
     every = wants(Preferences(must_have=["parking", "laundry", "utilities"]))
-    b = brief(_listing(), _plan(may_book=False, pets=["cat"]), every)
+    b = brief(_listing(), _plan(may_book=False, windows=(), pets=["cat"]), every)
     assert [i.key for i in b.items] == ["available", "pets", "parking", "fees"]   # MAX_GAPS, fees kept
     assert len(b.items) == 1 + MAX_GAPS
 
@@ -166,8 +169,8 @@ def test_an_other_fact_answers_one_thing():
     b = brief(_listing(), _plan(may_book=False, questions=["Is it quiet?", "Any noise?"]))
     b.covered("other", "quiet building")
     assert [i.key for i in b.items if i.done] == ["q1"]
-    b.covered("other", "can show it Thursday at 6")   # a viewing time answers no question of the renter's
-    assert [i.key for i in b.items if i.done] == ["q1"]
+    b.covered("other", "can show it Thursday at 6")   # a viewing time covers the viewing, not a question
+    assert [i.key for i in b.items if i.done] == ["q1", "viewing"]
 
 
 def test_the_instructions_share_only_what_the_renter_allowed():
@@ -288,12 +291,12 @@ async def test_book_viewing_refuses_without_permission_a_clash_or_a_red_flag():
 
 
 async def test_an_offered_time_without_permission_is_noted_never_booked():
-    """Booking not allowed: the landlord's offered time comes back to the renter as a fact (there's no
-    viewing item to cover, #140), and never shows as booked on the card or in the results text."""
+    """Booking not allowed: the landlord's offered time comes back to the renter as a fact, covers the
+    viewing item (#189), and never shows as booked on the card or in the results text."""
     ctx = await _ctx(_plan(may_book=False), said=["I can show it Saturday at 1 pm if that suits."])
     reply = await _say(ctx, "book_viewing", {"slot": "Saturday at 1 pm"})
     assert reply.startswith("Not booked") and "So Saturday at 1 pm could work" in reply
-    assert all(i.key != "viewing" for i in ctx.brief.items) and ctx.booked is None
+    assert next(i for i in ctx.brief.items if i.key == "viewing").done and ctx.booked is None
     state = ctx.runtime.state(ctx.session_id)
     assert state.viewings == {}
     heard = [(f.field, f.value) for f in state.heard["t:1"]]
@@ -604,7 +607,7 @@ async def test_after_a_scam_warning_every_reply_says_to_end_and_code_ends_it_a_t
 
 
 async def test_a_covered_checklist_says_to_end_now_and_a_goodbye_with_no_end_call_ends_it():
-    ctx = await _ctx(_plan(may_book=False))
+    ctx = await _ctx(_plan(may_book=False, windows=()))
     await _say(ctx, "record_fact", {"field": "available", "value": "yes",
                                     "quote": "it's available from November 1st"})
     ctx.said.append("No extra monthly fees.")
@@ -616,7 +619,7 @@ async def test_a_covered_checklist_says_to_end_now_and_a_goodbye_with_no_end_cal
 
 
 async def test_a_covered_checklist_with_no_goodbye_ends_a_turn_later():
-    ctx = await _ctx(_plan(may_book=False))
+    ctx = await _ctx(_plan(may_book=False, windows=()))
     await _say(ctx, "record_fact", {"field": "available", "value": "yes",
                                     "quote": "it's available from November 1st"})
     ctx.said.append("No extra monthly fees.")
@@ -711,3 +714,38 @@ async def test_record_fact_says_an_answer_is_already_recorded_and_moves_on():
     # A different answer is a correction: recorded, and the Auditor keeps the last one.
     changed = await _say(ctx, "record_fact", {"field": "pets", "value": "no", "quote": "No."}, 3)
     assert changed.startswith("Recorded pets: no.") and len(ctx.facts) == 2
+
+
+# ── a day with no time gets a time, booked or noted (#189) ───────────────────
+
+SUN_9_5 = Window(start=_at(25, 9), end=_at(25, 17))   # tomorrow, from NOW (Saturday 11:00 in Toronto)
+
+
+async def test_a_day_without_a_time_asks_for_one_inside_the_renters_times():
+    ctx = await _ctx(_plan(windows=[SUN_9_5]), said=["Yeah, tomorrow you can."])
+    reply = await _say(ctx, "book_viewing", {"slot": "tomorrow"})
+    assert reply == ("They said tomorrow but no time. Ask what time tomorrow works for them: the renter can "
+                     "do Sunday between 9 am and 5 pm. Then pass it to book_viewing.")
+    assert ctx.booked is None and ctx.facts == []
+    ctx.said.append("Tomorrow at 11 works.")
+    booked = await _say(ctx, "book_viewing", {"slot": "tomorrow at 11 am"}, 2)
+    assert booked.startswith("Booked for Sunday at 11 am")
+
+
+async def test_without_booking_a_day_alone_asks_for_a_time_and_a_time_is_noted_never_booked():
+    ctx = await _ctx(_plan(may_book=False, windows=[SUN_9_5]), said=["Yeah, yeah, you can."])
+    viewing = next(i for i in ctx.brief.items if i.key == "viewing")
+    assert "books nothing" in viewing.ask
+    asked = await _say(ctx, "book_viewing", {"slot": "tomorrow"})
+    assert asked.startswith("They said tomorrow but no time.")
+    assert ctx.facts == [] and not viewing.done
+    ctx.said.append("Tomorrow at 11 am works.")
+    reply = await _say(ctx, "book_viewing", {"slot": "Tomorrow at 11 am"}, 2)
+    assert reply.startswith("Not booked") and ctx.booked is None and viewing.done
+    assert [(f.field, f.value) for f in ctx.facts] == [("other", "viewing offered: Tomorrow at 11 am")]
+
+
+def test_the_prompt_asks_for_a_time_when_the_renter_gave_times_but_no_booking():
+    text = instructions(brief(_listing(), _plan(may_book=False, windows=[SUN_9_5])))
+    assert "You may not book. Ask what time inside the renter's times they could show it" in text
+    assert "don't ask about viewings" in instructions(brief(_listing(), _plan(may_book=False, windows=())))
