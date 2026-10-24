@@ -4,6 +4,7 @@ import asyncio
 import base64
 import json
 import re
+import time
 from dataclasses import replace
 from datetime import UTC, datetime
 
@@ -80,6 +81,16 @@ def _client(**overrides) -> TestClient:
 def _start(call_id: str, sid: str = "MZ1") -> dict:
     return {"event": "start", "streamSid": sid,
             "start": {"streamSid": sid, "callSid": "CA1", "customParameters": {"call_id": call_id}}}
+
+
+def _hang_up_and_wait(c: TestClient, ws, session_id: str) -> None:
+    """The judge hangs up, and the server finishes ending the call before the test goes on. Leaving the
+    `with websocket_connect` block alone isn't enough: Starlette's TestClient sends the disconnect and then
+    cancels the server's task at once, so the call could be cut off before it sees the hang-up."""
+    ws.close(1000)
+    deadline = time.monotonic() + 5
+    while session_id in c.app.state.judges.open and time.monotonic() < deadline:   # freed last
+        time.sleep(0.01)
 
 
 def _ring(c: TestClient, params: dict | None = None, token: str = TOKEN):
@@ -232,6 +243,7 @@ def test_browser_call_streams_pcm_both_ways_and_frees_the_judge_line():
             assert ws.receive_bytes() == spoken
             assert ws.receive_json() == {"type": "clear"}
             ws.send_bytes(b"\x03\x00\x04\x00")   # the judge's microphone
+            _hang_up_and_wait(c, ws, start["session_id"])
         session = fake.session["session"]
         pcm = {"type": "audio/pcm", "rate": 24000}
         assert session["audio"]["input"]["format"] == pcm and session["audio"]["output"]["format"] == pcm
