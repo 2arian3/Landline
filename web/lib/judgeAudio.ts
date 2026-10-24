@@ -108,9 +108,15 @@ export function useJudgeLine() {
         node = new AudioWorkletNode(ac, "landline-mic");
         ac.createMediaStreamSource(mic).connect(node);
       } catch {
-        // No audio worklet here: say the line dropped rather than "Connecting…" for ever.
+        // No audio worklet here: say the line dropped rather than "Connecting…" for ever. Unless Done closed
+        // the audio while it was being set up: then the brief has already ended.
         teardown();
-        setState("dropped");
+        if (!ending.current) setState("dropped");
+        return;
+      }
+      // Done pressed while the audio was being set up: the brief is over, so no socket opens after it.
+      if (ending.current) {
+        teardown();
         return;
       }
 
