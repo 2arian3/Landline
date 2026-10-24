@@ -37,7 +37,7 @@ FEE_NAMES = {   # how a fee is said → the name it's compared by
 # A clause that puts a utility on the renter: "hydro is on you", "water and hydro are extra".
 _NOT_INCLUDED = re.compile(r"extra|on you|not included|isn'?t included|aren'?t included|separate|"
                            r"you pay|tenant pays|on top|另付|自己付|不包", re.I)
-_CLAUSE = re.compile(r"[,.;!?，。；]|but|while")
+_CLAUSE = re.compile(r"[,.;!?，。；]|\bbut\b|\bwhile\b")
 _EACH = re.compile(r"\beach\b|\bper (spot|space|car|one|unit|locker)\b|\ba (spot|space|piece)\b|apiece|"
                    r"每个|每位|一个", re.I)
 _COUNTED = re.compile(r"(\w+|\d+)\s+(parking )?(spots|spaces|lockers|cars|个车位|个)", re.I)
@@ -71,10 +71,10 @@ def settle(field: str, value: str, quote: str, *, amount: float | None = None, c
         return _money(field, value, quote, amount, count, each, period, mandatory, name)
     if field in CATEGORIES:
         said = category(field, quote)
-        claimed = _category_word(field, value) or category(field, value)
-        if claimed and said and claimed != said:
-            raise Refused(f"the quote says {said}, not {claimed}")
-        got = said or claimed
+        exact = _category_word(field, value)   # a category named outright ("allowed") is a claim to check
+        if exact and said and exact != said:
+            raise Refused(f"the quote says {said}, not {exact}")
+        got = said or exact or category(field, value)   # the quote decides over a keyword in the value
         if got is None:
             raise Refused(f"can't tell {field} from the words")
         return Value(field, got, _DISPLAY.get((field, got), got.replace("_", " ")))
@@ -220,12 +220,15 @@ _RULES: dict[str, tuple[tuple[str, str], ...]] = {
                     r"(dogs?|cats?) (are |is )?(welcome|allowed|ok|okay|fine)|可以养宠物|允许养"),
     ),
     "laundry": (
-        ("in_unit", r"in[- ]suite|in[- ]unit|ensuite|own (washer|laundry)|washer and dryer in|室内洗衣"),
-        ("in_building", r"shared laundry|laundry room|coin|in the (building|basement)|楼里|公用洗衣"),
+        ("in_unit", r"in[- ]suite|in[- ]unit|ensuite|own (washer|laundry)|washer and dryer in|室内洗衣|"
+                    r"(房间|单元|套)内|家里有洗衣机"),
+        ("in_building", r"shared laundry|laundry room|coin|in the (building|basement)|\bshared\b|basement|"
+                        r"楼里|公用|共用|地下室|洗衣房"),
         ("none", r"no laundry|laundromat|没有洗衣"),
     ),
     "parking": (
-        ("none", r"no parking|there'?s no (spot|space)|street parking only|没有(车位|停车)"),
+        ("none", r"no parking|there'?s no (spot|space)|street parking only|(only|just) street parking|"
+                 r"只有街边|没有(专属|固定)?的?停?车位|没有停车"),
         ("included", r"parking (is )?included|comes with (a )?(parking|spot)|free parking|包(括)?车位"),
         ("available", r"parking|spot|space|车位"),
     ),
