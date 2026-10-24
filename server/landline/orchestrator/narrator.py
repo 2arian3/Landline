@@ -22,6 +22,7 @@ from landline.scoring.weights import feature_key
 TORONTO = ZoneInfo("America/Toronto")
 MAX_WORDS = 25          # a tool reply is spoken; docs/CONTRACTS.md caps it
 MAX_FACTS = 2           # facts read out per place in the results
+UNREACHED = ("no_answer", "busy", "voicemail")   # nobody to hear a fact from, whatever the Auditor kept
 WIDEN = "Nothing fits now. Want to widen the budget or the area?"
 ORDINALS = ("first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth")
 BEDS = {0: "studios are fine", 1: "one bedroom or more", 2: "two bedrooms or more",
@@ -173,9 +174,8 @@ def _place(state: SessionState, lid: str, view: SessionView, catalogue: Catalogu
         said.append(f"I couldn't reach {addr} in time.")
     elif out.end_reason == "blocked":   # never dialled: no caller, or no allowlisted number
         said.append(f"I couldn't place the call to {addr}.")
-    elif status == "no_answer":
-        said.append(f"I left a message for {addr}'s agent." if out.end_reason == "voicemail"
-                    else f"Nobody picked up at {addr}.")
+    elif status == "no_answer" and (not out.facts or out.end_reason in UNREACHED):
+        said.append(_unheard(addr, out.end_reason))
     elif out.facts:
         facts = [_fact(f.field, f.value.rstrip(".")) for f in out.facts if f.field != "available"][:MAX_FACTS]
         said.append(f"At {addr}, {'; '.join(facts)}." if facts else f"{addr} is still available.")
@@ -186,6 +186,20 @@ def _place(state: SessionState, lid: str, view: SessionView, catalogue: Catalogu
     asked = [*state.questions.get(lid, []), *(out.open_questions if out else [])]
     said += [f"Its agent asked, “{q.rstrip('?')}?” I said I'd check with you." for q in dict.fromkeys(asked)]
     return said
+
+
+def _unheard(addr: str, reason: str) -> str:
+    """A call that learned nothing, in words from how it ended: an answered call is never "nobody picked up"
+    (#152). The card stays `no_answer` (CardStatus is a contract)."""
+    return {
+        "voicemail": f"I left a message for {addr}'s agent.",
+        "hangup": f"{addr}'s agent hung up before I could ask anything.",
+        "timeout": f"The call to {addr} dropped before I learned anything.",
+        "failed": f"The call to {addr} dropped before I learned anything.",
+        "refused": f"{addr}'s agent wouldn't answer my questions.",
+        "wrong_number": f"The number I had for {addr} didn't reach its agent.",
+        "done": f"I reached {addr}'s agent, but didn't learn anything new.",
+    }.get(reason, f"Nobody picked up at {addr}.")   # no_answer, busy
 
 
 def _fact(field: str, value: str) -> str:
