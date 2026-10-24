@@ -3,9 +3,21 @@
 import { heardLine } from "@/lib/format";
 import type { Card, SessionView } from "@/lib/types";
 
-export function Brand({ stale, connected, idle = false }: { stale: boolean; connected: boolean; idle?: boolean }) {
-  const label = !connected ? "Connecting…" : stale ? "Reconnecting…" : "Live";
-  const color = connected && !stale ? "var(--color-real)" : "var(--color-ink-3)";
+export function Brand({
+  stale,
+  connected,
+  idle = false,
+  line = null,
+}: {
+  stale: boolean;
+  connected: boolean;
+  idle?: boolean;
+  line?: string | null;
+}) {
+  // Judge mode passes the voice line's state while it isn't live, so the header never says "Live" over a
+  // dropped call. Otherwise it's the board's own connection.
+  const label = line ?? (!connected ? "Connecting…" : stale ? "Reconnecting…" : "Live");
+  const color = !line && connected && !stale ? "var(--color-real)" : "var(--color-ink-3)";
   return (
     <div className="flex items-center justify-between gap-3">
       <div className="min-w-0">
