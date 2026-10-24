@@ -102,9 +102,17 @@ export function useJudgeLine() {
       stream.current = mic;
       const ac = new AudioContext();
       ctx.current = ac;
-      await ac.audioWorklet.addModule(URL.createObjectURL(new Blob([WORKLET], { type: "text/javascript" })));
-      const node = new AudioWorkletNode(ac, "landline-mic");
-      ac.createMediaStreamSource(mic).connect(node);
+      let node: AudioWorkletNode;
+      try {
+        await ac.audioWorklet.addModule(URL.createObjectURL(new Blob([WORKLET], { type: "text/javascript" })));
+        node = new AudioWorkletNode(ac, "landline-mic");
+        ac.createMediaStreamSource(mic).connect(node);
+      } catch {
+        // No audio worklet here: say the line dropped rather than "Connecting…" for ever.
+        teardown();
+        setState("dropped");
+        return;
+      }
 
       const sock = new WebSocket(wsUrl);
       sock.binaryType = "arraybuffer";
