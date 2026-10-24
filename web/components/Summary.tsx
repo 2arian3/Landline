@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { heardLine } from "@/lib/format";
+import { unheardCounts } from "@/lib/outcome";
 import { resultsByPlace } from "@/lib/results";
 import type { Card, SessionView } from "@/lib/types";
 import { splitWelcome } from "@/lib/welcome";
@@ -54,7 +55,7 @@ export function Activity({ view, compact = false }: { view: SessionView | null; 
   if (n.booked) done.push(`${n.booked} viewing booked`);
   if (n.verified) done.push(`${n.verified} checked by phone`);
   if (n.suspect) done.push(`${n.suspect} flagged`);
-  if (n.no_answer) done.push(`${n.no_answer} no answer`);
+  for (const [word, k] of unheardCounts(view.board, view.calls)) done.push(`${k} ${word}`);   // like the badges
   if (n.dead) done.push(`${n.dead} already rented`);
   const queued = view.calls.filter((c) => c.state === "queued").length;
   const rest = compact ? "min-w-0 truncate" : "";
