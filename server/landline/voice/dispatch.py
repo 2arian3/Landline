@@ -20,7 +20,6 @@ and the session doesn't wait in `calling` for calls nobody will place.
 from __future__ import annotations
 
 import asyncio
-import itertools
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -97,7 +96,12 @@ class Dispatcher:
         self.cap = settings.call_concurrency or max(1, settings.higgs_max_sessions - 1)
         self._lines = asyncio.Semaphore(self.cap)
         self.allowlist = frozenset(n for n in (as_e164(p) for p in settings.demo_agent_phones) if n)
-        self._numbers = itertools.cycle(sorted(self.allowlist)) if self.allowlist else None
+        # The allowlisted phones free to ring. A phone call takes one before it dials and gives it back when
+        # it ends, however it ends, so a teammate already on a listing call is never rung again; with more
+        # calls than phones, the rest wait for one to free up.
+        self._phones: asyncio.Queue[str] = asyncio.Queue()
+        for number in sorted(self.allowlist):
+            self._phones.put_nowait(number)
         self._tasks: set[asyncio.Task] = set()
         runtime.on("SessionEnded", self.on_session_ended)
         runtime.on("CallsCompleted", self.on_calls_completed)
@@ -148,11 +152,23 @@ class Dispatcher:
     # One call
 
     async def _call(self, call_id: str, listing_id: str, plan: CallPlan, runner: CallRunner) -> None:
-        to = next(self._numbers) if runner.uses_phone and self._numbers else None
-        if runner.uses_phone and (to is None or to not in self.allowlist):
+        if runner.uses_phone and not self.allowlist:
             await self._state(plan.session_id, call_id, "blocked")
             await self._finish(plan, call_id, listing_id, CallResult("blocked"))
             return
+        to = await self._phones.get() if runner.uses_phone else None   # waits for a free phone
+        try:
+            result = await self._place(call_id, listing_id, plan, runner, to)
+        finally:
+            if to is not None:
+                self._phones.put_nowait(to)   # free again, whether the call was answered, failed or timed out
+        await self._finish(plan, call_id, listing_id, result)
+
+    async def _place(self, call_id: str, listing_id: str, plan: CallPlan, runner: CallRunner,
+                     to: str | None) -> CallResult:
+        if runner.uses_phone and to not in self.allowlist:   # hard rule 6, right before dialling
+            await self._state(plan.session_id, call_id, "blocked")
+            return CallResult("blocked")
         async with self._lines:
             if runner.uses_phone:
                 await self._wait_for_hours()
@@ -165,13 +181,12 @@ class Dispatcher:
 
             try:
                 async with asyncio.timeout(self.settings.listing_call_max_s):
-                    result = await runner.place(dial, report)
+                    return await runner.place(dial, report)
             except TimeoutError:
-                result = CallResult("timeout")
+                return CallResult("timeout")
             except Exception:
                 log.exception("call %s to %s failed", call_id, listing_id)
-                result = CallResult("failed")
-        await self._finish(plan, call_id, listing_id, result)
+                return CallResult("failed")
 
     async def _wait_for_hours(self) -> None:
         """Hold a queued call until Toronto business hours, unless FORCE_BUSINESS_HOURS=1."""
