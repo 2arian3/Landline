@@ -219,8 +219,9 @@ def render(data: dict[str, Any], calls: dict[str, Any] | None = None) -> str:
     for name, title in SETS:
         if name in calls:
             out += _calls(title, calls[name]["current"], calls[name].get("previous"))
+    out += extraction()
     out += ["## Not measured yet", "",
-            "- Extraction (E-02) and ranking (E-03).",
+            "- Ranking (E-03).",
             "- Anything audio: time to first audio, barge-in, speech-to-text errors. Text mode can't see "
             "them; they need the audio sim transport (A-03).",
             "- Claims in languages other than English: the \"said it changed something\" check reads English "
@@ -255,6 +256,65 @@ def _set(title: str, cur: dict, prev: dict | None) -> list[str]:
         failing = "; ".join(f"`{name}` ×{n}" for name, n in c["failing"]) or "—"
         out.append(f"| `{cid}` | {c['passed']}/{c['runs']} | {failing} |")
     out += ["", f"Traces: `{cur['traces']}` (not committed).", ""]
+    return out
+
+
+EXTRACTION = REPORTS / "extraction.json"
+FIELD_NAMES = {"red_flags": "red flags", "viewing": "viewing time", "parking_cost": "parking price",
+               "available_from": "move-in date", "utilities_included": "utilities included",
+               "lease_months": "lease length"}
+
+
+def extraction() -> list[str]:
+    """The Auditor on call transcripts (E-02), from evals/reports/extraction.json."""
+    out = ["## Auditor: facts from call transcripts", "",
+           "The real Auditor (`server/landline/agents/auditor/`) on 20 written call transcripts with gold "
+           "facts (`evals/run_extraction.py`): tricky fees, pets, a landlord who switches to Mandarin, two "
+           "scams, read-backs where the agent's own words must not count, a no-answer and a voicemail. "
+           "**Rules** is the path with no model: the Caller's live `record_fact`s, some of them wrong on "
+           "purpose, checked against the landlord's turns, plus the red-flag rules and the booked viewing. "
+           "**With extractor** adds the text LLM's facts, which go through the same quote check. "
+           "**Ungrounded** is facts shown whose quote no landlord said, re-checked outside the Auditor; the "
+           "bar is 0. Scored in code.", ""]
+    if not EXTRACTION.exists():
+        return out + ["Not run yet: `uv run python -m evals.run_extraction`.", ""]
+    data = json.loads(EXTRACTION.read_text(encoding="utf-8"))
+    for name, title in SETS:
+        if name in data:
+            out += _extraction_set(title, data[name]["current"], data[name].get("previous"))
+    return out
+
+
+def _extraction_set(title: str, cur: dict, prev: dict | None) -> list[str]:
+    modes = [(m, label) for m, label in (("rules", "Rules"), ("extractor", "With extractor")) if cur.get(m)]
+    out = [f"### {title}", "",
+           f"{cur['at']} · `{cur['sha']}` · {cur['rules']['cases']} transcripts · "
+           f"extractor: {cur['mode']}", "",
+           "| | " + " | ".join(label for _, label in modes) + " | Previous (best mode) |",
+           "|---|" + "---|" * (len(modes) + 1)]
+    best = (prev or {}).get("extractor") or (prev or {}).get("rules")
+
+    def row(label: str, fn) -> None:
+        cells = [fn(cur[m]) for m, _ in modes]
+        out.append(f"| {label} | " + " | ".join(cells) + f" | {fn(best) if best else '—'} |")
+
+    row("**Ungrounded facts shown**", lambda s: f"**{s['ungrounded']} of {s['facts_shown']}**")
+    row("Precision", lambda s: _fmt_rate(s["precision"]))
+    row("Recall", lambda s: _fmt_rate(s["recall"]))
+    row("Transcripts fully right", lambda s: f"{s['cases_exact']} / {s['cases']}")
+    row("Claims refused (quote not a landlord's, or the words say otherwise)",
+        lambda s: ", ".join(f"{k} {v}" for k, v in sorted(s["dropped"].items())) or "0")
+    fields = sorted({f for m, _ in modes for f in cur[m]["fields"]})
+    out += ["", "| Field | " + " | ".join(f"{label} P / R" for _, label in modes) + " |",
+            "|---|" + "---|" * len(modes)]
+    for f in fields:
+        cells = []
+        for m, _ in modes:
+            x = cur[m]["fields"].get(f)
+            cells.append("—" if not x else f"{_fmt_rate(x['precision'])} / {_fmt_rate(x['recall'])} "
+                         f"({x['correct']}/{x['gold']})")
+        out.append(f"| {FIELD_NAMES.get(f, f.replace('_', ' '))} | " + " | ".join(cells) + " |")
+    out.append("")
     return out
 
 

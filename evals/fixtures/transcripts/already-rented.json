@@ -1,0 +1,37 @@
+{
+ "id": "already-rented",
+ "note": "Gone: a conflict with a listing shown as available.",
+ "end_reason": "done",
+ "listing": {
+  "listing_id": "livrent:e02-12",
+  "address": "20 Edward St",
+  "rent": 2300,
+  "monthly_cost": 2300
+ },
+ "turns": [
+  {
+   "speaker": "agent",
+   "text": "Hi, I'm an AI assistant calling for a renter about the apartment at 20 Edward Street. Is it still available?"
+  },
+  {
+   "speaker": "landlord",
+   "text": "Oh, sorry, that one's been rented already. Just last weekend."
+  },
+  {
+   "speaker": "agent",
+   "text": "Thanks for letting me know."
+  }
+ ],
+ "tool_facts": [
+  {
+   "field": "available",
+   "value": "no",
+   "quote": "that one's been rented already",
+   "turn_idx": 1
+  }
+ ],
+ "slot_text": null,
+ "gold": {
+  "available": "no"
+ }
+}

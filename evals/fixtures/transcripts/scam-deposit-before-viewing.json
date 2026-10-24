@@ -1,0 +1,49 @@
+{
+ "id": "scam-deposit-before-viewing",
+ "note": "Scam: money by e-transfer before anyone sees the unit.",
+ "end_reason": "done",
+ "listing": {
+  "listing_id": "livrent:e02-9",
+  "address": "45 Charles St E",
+  "rent": 1850,
+  "monthly_cost": 1850
+ },
+ "turns": [
+  {
+   "speaker": "agent",
+   "text": "Hi, I'm an AI assistant calling for a renter about the apartment at 45 Charles Street East. Is it still available?"
+  },
+  {
+   "speaker": "landlord",
+   "text": "Yes it's available, lots of people are asking. It's 1,800 a month."
+  },
+  {
+   "speaker": "agent",
+   "text": "Could my client see it this week?"
+  },
+  {
+   "speaker": "landlord",
+   "text": "To hold it you need to send the deposit by e-transfer first. Once you send it I'll set up a viewing."
+  },
+  {
+   "speaker": "agent",
+   "text": "I'll pass that on to my client."
+  }
+ ],
+ "tool_facts": [
+  {
+   "field": "rent",
+   "value": "1800",
+   "quote": "It's 1,800 a month",
+   "turn_idx": 1
+  }
+ ],
+ "slot_text": null,
+ "gold": {
+  "available": "yes",
+  "rent": "1800",
+  "red_flags": [
+   "deposit_before_viewing"
+  ]
+ }
+}

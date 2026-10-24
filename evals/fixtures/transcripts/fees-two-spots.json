@@ -1,0 +1,65 @@
+{
+ "id": "fees-two-spots",
+ "note": "Two spots at a per-spot price: $180 a spot, never $2 or $360 as the price.",
+ "end_reason": "done",
+ "listing": {
+  "listing_id": "livrent:e02-1",
+  "address": "322 Dupont St",
+  "rent": 3290,
+  "monthly_cost": 3290,
+  "parking_cost": 180,
+  "pets": "allowed"
+ },
+ "turns": [
+  {
+   "speaker": "agent",
+   "text": "Hi, I'm an AI assistant calling for a renter about the apartment at 322 Dupont St. Is it still available?"
+  },
+  {
+   "speaker": "landlord",
+   "text": "Yes, it's still available."
+  },
+  {
+   "speaker": "agent",
+   "text": "Great. Does it come with parking?"
+  },
+  {
+   "speaker": "landlord",
+   "text": "Parking is separate. We have two spots, 180 each, you can take one or both."
+  },
+  {
+   "speaker": "agent",
+   "text": "And pets?"
+  },
+  {
+   "speaker": "landlord",
+   "text": "Cats are fine, no dogs though."
+  }
+ ],
+ "tool_facts": [
+  {
+   "field": "available",
+   "value": "yes",
+   "quote": "Yes, it's still available",
+   "turn_idx": 1
+  },
+  {
+   "field": "parking_cost",
+   "value": "2 spots at $180",
+   "quote": "two spots, 180 each",
+   "turn_idx": 3
+  },
+  {
+   "field": "pets",
+   "value": "cats only",
+   "quote": "Cats are fine, no dogs though",
+   "turn_idx": 5
+  }
+ ],
+ "slot_text": null,
+ "gold": {
+  "available": "yes",
+  "parking_cost": "180",
+  "pets": "cats_only"
+ }
+}

@@ -1,0 +1,44 @@
+{
+ "model": "higgs-realtime",
+ "user": "Listing: 70 Temperance St, listed at $2,600 a month\n\nTranscript:\n[0] AGENT: Hi, I'm an AI assistant calling for a renter about the apartment at 70 Temperance Street. Is it still available?\n[1] LANDLORD: Yes it is. The rent's twenty-six fifty now, not twenty-six hundred.\n[2] AGENT: And parking?\n[3] LANDLORD: Parking's one eighty a month, one spot.",
+ "response": {
+  "facts": [
+   {
+    "field": "available",
+    "turn": 1,
+    "quote": "Yes it is.",
+    "value": "yes",
+    "amount": null,
+    "count": null,
+    "each": null,
+    "period": null,
+    "mandatory": null,
+    "name": null
+   },
+   {
+    "field": "rent",
+    "turn": 1,
+    "quote": "The rent's twenty-six fifty now, not twenty-six hundred.",
+    "value": "2650",
+    "amount": null,
+    "count": null,
+    "each": null,
+    "period": "monthly",
+    "mandatory": null,
+    "name": null
+   },
+   {
+    "field": "parking",
+    "turn": 3,
+    "quote": "Parking's one eighty a month, one spot.",
+    "value": "available",
+    "amount": 180,
+    "count": 1,
+    "each": true,
+    "period": "monthly",
+    "mandatory": null,
+    "name": "parking"
+   }
+  ]
+ }
+}

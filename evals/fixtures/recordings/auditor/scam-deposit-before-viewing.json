@@ -1,0 +1,32 @@
+{
+ "model": "higgs-realtime",
+ "user": "Listing: 45 Charles St E, listed at $1,850 a month\n\nTranscript:\n[0] AGENT: Hi, I'm an AI assistant calling for a renter about the apartment at 45 Charles Street East. Is it still available?\n[1] LANDLORD: Yes it's available, lots of people are asking. It's 1,800 a month.\n[2] AGENT: Could my client see it this week?\n[3] LANDLORD: To hold it you need to send the deposit by e-transfer first. Once you send it I'll set up a viewing.\n[4] AGENT: I'll pass that on to my client.",
+ "response": {
+  "facts": [
+   {
+    "field": "available",
+    "turn": 1,
+    "quote": "Yes it's available, lots of people are asking.",
+    "value": "yes",
+    "amount": null,
+    "count": null,
+    "each": null,
+    "period": null,
+    "mandatory": null,
+    "name": null
+   },
+   {
+    "field": "rent",
+    "turn": 1,
+    "quote": "It's 1,800 a month.",
+    "value": "1800",
+    "amount": null,
+    "count": null,
+    "each": null,
+    "period": "monthly",
+    "mandatory": null,
+    "name": null
+   }
+  ]
+ }
+}

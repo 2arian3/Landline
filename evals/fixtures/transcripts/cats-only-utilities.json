@@ -1,0 +1,52 @@
+{
+ "id": "cats-only-utilities",
+ "note": "The live record wrongly lists hydro; the quote decides. Pets only come from the transcript.",
+ "end_reason": "done",
+ "listing": {
+  "listing_id": "livrent:e02-4",
+  "address": "560 Front St W",
+  "rent": 2380,
+  "monthly_cost": 2380,
+  "pets": "allowed"
+ },
+ "turns": [
+  {
+   "speaker": "agent",
+   "text": "Hi, I'm an AI assistant calling for a renter about the apartment at 560 Front Street West. Is it still available?"
+  },
+  {
+   "speaker": "landlord",
+   "text": "Still available, yeah."
+  },
+  {
+   "speaker": "agent",
+   "text": "Are utilities included?"
+  },
+  {
+   "speaker": "landlord",
+   "text": "Heat and water are included, hydro is on you."
+  },
+  {
+   "speaker": "agent",
+   "text": "And my client has two cats."
+  },
+  {
+   "speaker": "landlord",
+   "text": "Cats only is our policy, so two cats is fine."
+  }
+ ],
+ "tool_facts": [
+  {
+   "field": "utilities_included",
+   "value": "heat, water, hydro",
+   "quote": "Heat and water are included, hydro is on you",
+   "turn_idx": 3
+  }
+ ],
+ "slot_text": null,
+ "gold": {
+  "available": "yes",
+  "utilities_included": "heat,water",
+  "pets": "cats_only"
+ }
+}
