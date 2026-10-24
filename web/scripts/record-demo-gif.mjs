@@ -26,7 +26,7 @@ const CHROME = process.env.CHROME || "/Applications/Google Chrome.app/Contents/M
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const work = mkdtempSync(join(tmpdir(), "landline-gif-"));
-const chrome = spawn(CHROME, ["--headless=new", "--remote-debugging-port=9337", "--no-first-run", "--hide-scrollbars",
+const chrome = spawn(CHROME, ["--headless=new", "--remote-debugging-port=9337", "--no-first-run", "--hide-scrollbars", "--mute-audio",
   `--user-data-dir=${join(work, "profile")}`], { stdio: "ignore" });
 let target;
 for (let i = 0; i < 60 && !target; i++) {
@@ -108,7 +108,7 @@ const list = frames.map((f, i) => {
   return `file '${f.file}'\nduration ${(next - f.at).toFixed(3)}`;
 });
 writeFileSync(join(work, "frames.txt"), `${list.join("\n")}\nfile '${frames[frames.length - 1].file}'\n`);
-const ff = spawnSync(FFMPEG, ["-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", join(work, "frames.txt"),
+const ff = spawnSync(FFMPEG, ["-loglevel", "error", "-threads", "2", "-y", "-f", "concat", "-safe", "0", "-i", join(work, "frames.txt"),
   "-vf", `fps=${FPS},scale=${WIDTH}:-1:flags=lanczos,split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle`,
   "-loop", "0", OUT], { stdio: "inherit" });
 rmSync(work, { recursive: true, force: true });
