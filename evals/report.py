@@ -417,12 +417,6 @@ def _secs(ms: int | None) -> str:
     return "—" if ms is None else f"{ms / 1000:.1f} s"
 
 
-if __name__ == "__main__":
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8")
-    print(write())
-
-
 # ── ranking (E-03) ──────────────────────────────────────────────────────────
 
 RANKING = REPORTS / "ranking.json"
@@ -485,3 +479,9 @@ def _ranking_set(title: str, cur: dict, prev: dict | None) -> list[str]:
 
 def _fails(violations: list[str]) -> str:
     return "pass" if not violations else "**fail**: " + "; ".join(violations)
+
+
+if __name__ == "__main__":
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+    print(write())
