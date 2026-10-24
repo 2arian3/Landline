@@ -69,6 +69,7 @@ class Outbound:
     twilio_sid: str | None = None
     media: asyncio.Future = field(default_factory=lambda: asyncio.get_running_loop().create_future())
     ended: asyncio.Future = field(default_factory=lambda: asyncio.get_running_loop().create_future())
+    answered: asyncio.Event = field(default_factory=asyncio.Event)   # a person: Twilio is opening the stream
     state: CallState = "dialing"
     claimed: bool = False
 
@@ -159,6 +160,7 @@ class TwilioRunner:
     async def place(self, dial: Dial, report: Report) -> CallResult:
         call = Outbound(dial=dial, report=report)
         self.calls.live[dial.call_id] = call
+        warm: asyncio.Task | None = None   # the Higgs session opened once a person answered (#148)
         try:
             try:
                 call.twilio_sid = await self.dial(dial)
@@ -168,14 +170,25 @@ class TwilioRunner:
             except Exception:
                 log.exception("call %s: Twilio would not place it", dial.call_id)
                 self.calls.finalize(dial.call_id, "failed")
+            # A person answered: open Higgs while Twilio connects the stream, when the Caller can. It runs in
+            # this call's line, so it counts against the Dispatcher's limit like the call itself.
+            prepare = getattr(self.converse, "prepare", None)
+            if prepare is not None:
+                answered = asyncio.ensure_future(call.answered.wait())
+                await asyncio.wait({answered, call.media, call.ended}, return_when=asyncio.FIRST_COMPLETED)
+                if answered.done() and not call.done:
+                    warm = asyncio.create_task(prepare(dial))
+                answered.cancel()
             # A person answered and the stream connected, or the call ended first.
             done, _ = await asyncio.wait({call.media, call.ended}, return_when=asyncio.FIRST_COMPLETED)
             if call.media in done and not call.media.cancelled() and not call.done:
-                result = await self._converse(call, call.media.result())
+                higgs, warm = await _ready(warm, dial), None   # the call has it now, and closes it
+                result = await self._converse(call, call.media.result(), higgs)
                 self.calls.finalize(dial.call_id, result.end_reason)
                 return CallResult(await call.ended, result.outcome)
             return CallResult(await call.ended)
         finally:
+            await _discard(warm)   # opened, but no stream came for it: closed, never left open
             # The deadline, a crash or the conversation ending: make sure Twilio's line is down too.
             self.calls.finalize(dial.call_id, "timeout")
             self.calls.live.pop(dial.call_id, None)
@@ -217,8 +230,10 @@ class TwilioRunner:
         await self.client.post(HANG_UP_API.format(sid=s.twilio_account_sid, call_sid=twilio_sid),
                                auth=(s.twilio_account_sid, s.twilio_auth_token), data={"Status": "completed"})
 
-    async def _converse(self, call: Outbound, transport: Any) -> CallResult:
+    async def _converse(self, call: Outbound, transport: Any, higgs: Any = None) -> CallResult:
         try:
+            if higgs is not None:
+                return await self.converse(call.dial, transport, higgs=higgs)
             return await self.converse(call.dial, transport)
         except Exception:
             log.exception("call %s: the conversation failed", call.dial.call_id)
@@ -233,6 +248,7 @@ class TwilioRunner:
             return twilio.twiml_hangup()
         if answered_by in MACHINE:
             return twilio.twiml_say_hangup(self.voicemail(call.dial))
+        call.answered.set()   # place() opens Higgs while Twilio connects the stream (#148)
         return twilio.twiml_stream(ws_url, call_id)
 
     def voicemail(self, dial: Dial) -> str:
@@ -325,6 +341,33 @@ class Turns:
 
 def _tail(number: str | None) -> str:
     return f"…{(number or '')[-4:]}"
+
+
+async def _ready(warm: asyncio.Task | None, dial: Dial) -> Any:
+    """The Higgs session opened for this call once a person answered; None when none was (the call opens
+    its own) or opening it failed (the call tries again, as it would have)."""
+    if warm is None:
+        return None
+    try:
+        return await warm
+    except Exception as exc:
+        log.warning("listing call %s: the early Higgs session didn't open (%r)", dial.call_id, exc)
+        return None
+
+
+async def _discard(warm: asyncio.Task | None) -> None:
+    """Closes an early Higgs session no stream came for (a hang-up between the answer and the stream), or
+    stops it opening, so it never outlives its call or holds a Higgs line."""
+    if warm is None:
+        return
+    if not warm.done():
+        warm.cancel()
+        with contextlib.suppress(BaseException):
+            await warm
+        return
+    if not warm.cancelled() and warm.exception() is None:
+        with contextlib.suppress(Exception):
+            await warm.result().close()
 
 
 def install(state: Any, settings: Settings, extractor: Any = None) -> OutboundCalls:

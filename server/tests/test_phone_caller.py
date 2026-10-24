@@ -99,11 +99,12 @@ def _settings(**kw):
                             force_business_hours=True), **kw)
 
 
-def _runtime():
-    x = Listing(listing_id="t:1", source="t", source_id="1", url="https://example.com/1", first_seen=NOW,
-                last_seen=NOW, address="1 Dial St", lat=43.65, lng=-79.38, rent=2000, monthly_cost=2000,
-                beds=1)
-    return SessionRuntime(Catalogue([x], "test"))
+def _runtime(n=1):
+    return SessionRuntime(Catalogue([
+        Listing(listing_id=f"t:{i}", source="t", source_id=str(i), url=f"https://example.com/{i}",
+                first_seen=NOW, last_seen=NOW, address=f"{i} Dial St", lat=43.65, lng=-79.38, rent=2000,
+                monthly_cost=2000, beds=1)
+        for i in range(1, n + 1)], "test"))
 
 
 def _tool(name, args, fc):
@@ -214,6 +215,115 @@ async def test_speech_over_the_opening_lets_it_play_and_after_it_barges_in(monke
     line = FakeLine()
     _, ended, _, _ = await _call(script, line, higgs=ClockedHiggs(script, clock))
     assert line.cleared == 1 and [e.reason for e in ended] == ["refused"]
+
+
+# The Higgs session opens while Twilio connects the stream (#148)
+
+
+class Sessions:
+    """Higgs sessions, a new one per connect, each playing `script`; counts how many are open at once."""
+
+    def __init__(self, script, log):
+        self.script, self.log, self.all, self.open, self.most = script, log, [], 0, 0
+
+    async def connect(self, key, session):
+        self.log.append("higgs")
+        higgs = FakeHiggs(self.script)
+        higgs.session = session
+        self.all.append(higgs)
+        self.open += 1
+        self.most = max(self.most, self.open)
+        close = higgs.close
+
+        async def closing():
+            if not higgs.closed:
+                self.open -= 1
+            await close()
+        higgs.close = closing
+        return higgs
+
+
+class Answering(FakeTwilio):
+    """A person answers: Twilio fetches the TwiML (answered_twiml marks the call answered), then connects
+    the stream a moment later, or the person hangs up before it does."""
+
+    def __init__(self, calls, line, log, stream=True):
+        super().__init__(calls, line)
+        self.log, self.stream = log, stream
+
+    async def answer(self, cid):
+        await self.calls.set_state(cid, "ringing")
+        self.calls.get(cid).answered.set()
+        await asyncio.sleep(0.05)   # Twilio connects the stream
+        if not self.stream:
+            self.calls.finalize(cid, "hangup")
+            return
+        call = self.calls.claim(cid)
+        await self.calls.set_state(cid, "live")
+        self.log.append("stream")
+        call.media.set_result(self.line)
+
+
+ENDS = [{"type": "response.created"}, {"type": "response.output_audio.delta", "delta": "AAAA"},
+        {"type": "response.done", "response": {"id": "r1", "output": [{"type": "message"}]}},
+        {"type": "response.created"}, _tool("end_call", {"reason": "refused"}, "fc1"),
+        {"type": "response.done", "response": {"id": "r2", "output": [{"type": "function_call"}]}}]
+
+
+async def _answered(stream=True, places=1, **settings):
+    """One brief whose picked places are each answered by a person; returns the CallEnded events, the Higgs
+    sessions and the order things happened in."""
+    rt, calls, log, ended = _runtime(places), OutboundCalls(), [], []
+
+    async def on_ended(event, _view):
+        ended.append(event)
+    rt.on("CallEnded", on_ended)
+    sessions, twilio_api = Sessions(ENDS, log), Answering(calls, FakeLine(), log, stream)
+    runner = TwilioRunner(_settings(**settings), calls, runtime=rt,
+                          converse=PhoneCaller(rt, sessions.connect, "k", clock=lambda: NOW),
+                          client=httpx.AsyncClient(transport=httpx.MockTransport(twilio_api.handle)))
+    d = Dispatcher(rt, _settings(**settings), runner=runner, clock=lambda: NOW)
+    await rt.start(SessionStarted(session_id=SID, at=NOW, idem_key=f"{SID}:start", channel="phone",
+                                  caller_phone="+14165550199"))
+    await rt.emit(CallsRequested(session_id=SID, at=NOW, idem_key=f"{SID}:plan",
+                                 listing_ids=[f"t:{i}" for i in range(1, places + 1)]))
+    await rt.emit(SessionEnded(session_id=SID, at=NOW, idem_key=f"{SID}:end", reason="hangup"))
+    await asyncio.wait_for(d.idle(), 10)
+    return ended, sessions, log
+
+
+async def test_the_higgs_session_opens_while_twilio_connects_the_stream_and_the_call_uses_it(monkeypatch):
+    monkeypatch.setattr(phone_caller, "HANG_UP_GRACE_S", 0)
+    ended, sessions, log = await _answered()
+    assert log == ["higgs", "stream"]   # opened before the stream came, and only once
+    [higgs] = sessions.all
+    assert higgs.sent[:2][-1] == {"type": "response.create"} and higgs.closed and sessions.open == 0
+    assert [e.reason for e in ended] == ["refused"]
+
+
+async def test_an_early_session_no_stream_came_for_is_closed():
+    ended, sessions, log = await _answered(stream=False)   # the person hung up before the stream
+    assert log == ["higgs"] and [h.closed for h in sessions.all] == [True] and sessions.open == 0
+    assert len(ended) == 1
+
+
+async def test_an_early_session_still_opening_when_the_call_ends_is_stopped(monkeypatch):
+    async def slow(self, key, session):   # Higgs takes longer to open than the person stays on the line
+        await asyncio.sleep(5)
+        return await Sessions.connect(self, key, session)
+    monkeypatch.setattr(Sessions, "connect", slow)
+    started = asyncio.get_running_loop().time()
+    ended, sessions, _ = await _answered(stream=False)
+    assert sessions.all == [] and sessions.open == 0 and len(ended) == 1   # stopped, never opened
+    assert asyncio.get_running_loop().time() - started < 2
+
+
+async def test_early_sessions_stay_inside_the_dispatchers_limit(monkeypatch):
+    monkeypatch.setattr(phone_caller, "HANG_UP_GRACE_S", 0)
+    two_phones = (AGENT, "+16475550199")
+    ended, sessions, _ = await _answered(places=2, call_concurrency=1, demo_agent_phones=two_phones)
+    assert len(sessions.all) == 2 and sessions.most == 1 and sessions.open == 0   # one at a time, all closed
+    assert sorted(e.reason for e in ended) == ["refused", "refused"]
 
 
 async def test_the_agent_hanging_up_ends_the_call_with_what_was_heard():
