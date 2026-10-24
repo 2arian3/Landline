@@ -2,6 +2,7 @@
 checklist, each tool's rules, and one whole sim call through the Dispatcher with two scripted sessions."""
 import asyncio
 import json
+import time
 from datetime import UTC, datetime
 
 import pytest
@@ -417,10 +418,28 @@ async def test_two_tool_calls_in_one_response_send_one_response_create():
     for n, (rid, field, value, quote) in enumerate(calls):
         event = {"name": "record_fact", "call_id": f"fc{n}", "response_id": rid,
                  "arguments": json.dumps({"field": field, "value": value, "quote": quote})}
-        await bridge.run_tool(Higgs(), event, ctx, agent=tools)
+        await bridge.run_tool(Higgs(), event, ctx, spoke=False, agent=tools)
     assert [e["type"] for e in sent] == ["conversation.item.create", "response.create",
                                          "conversation.item.create",
                                          "conversation.item.create", "response.create"]
+
+
+async def test_a_repeated_record_fact_in_the_same_turn_records_once():
+    """#219: the same record_fact twice in one turn must not write the fact twice."""
+    ctx = await _ctx(said=["Parking is one spot, $150 a month."])
+    args = {"field": "parking_cost", "value": "$150 a month", "quote": "Parking is one spot, $150 a month"}
+    sent: list[dict] = []
+
+    class Higgs:
+        async def send(self, event):
+            sent.append(event)
+
+    for n, spoke in ((1, False), (2, True)):
+        await bridge.run_tool(Higgs(), {"name": "record_fact", "call_id": f"fc{n}", "response_id": "r1",
+                                        "arguments": json.dumps(args)}, ctx, spoke=spoke, agent=tools)
+    assert [f.field for f in ctx.facts] == ["parking_cost"]
+    assert [f.field for f in ctx.runtime.state(ctx.session_id).heard["t:1"]] == ["parking_cost"]
+    assert [e["type"] for e in sent].count("response.create") == 1
 
 
 async def test_a_promise_to_check_notes_the_landlords_question():
@@ -547,9 +566,92 @@ async def test_a_sim_call_records_books_and_comes_back_with_its_outcome():
     outputs = [e["item"]["output"] for e in caller.sent
                if e.get("item", {}).get("type") == "function_call_output"]
     assert outputs[-1] == tools.SAY_GOODBYE and not any(o.startswith("Not done yet") for o in outputs)
+
+
+class PausingCaller(TurnFake):
+    """Like TurnFake, but a `test.wait` event in a script holds the call that long when it is read."""
+
+    async def events(self):
+        while True:
+            event = await self.queue.get()
+            if event.get("type") == "test.wait":
+                await asyncio.sleep(event["s"])
+                continue
+            yield event
+
+
+def _speech_then_tools(rid: str, text: str, calls: list[tuple[str, dict]]) -> list[dict]:
+    """A response whose tool calls arrive before its words, which is when a follow-up repeats them (#219)."""
+    events: list[dict] = [{"type": "response.created", "response": {"id": rid}}]
+    for i, (name, args) in enumerate(calls):
+        events.append({"type": "response.function_call_arguments.done", "response_id": rid,
+                       "call_id": f"fc_{rid}_{i}", "name": name, "arguments": json.dumps(args)})
+    events += [{"type": "response.output_text.delta", "delta": text},
+               {"type": "response.output_text.done", "text": text},
+               {"type": "response.done", "response": {"id": rid, "output": [
+                   *([{"type": "function_call"}] if calls else []), {"type": "message"}]}}]
+    return events
+
+
+async def test_a_sim_call_asks_about_fees_once_and_says_goodbye_once():
+    """#219, from c_1ZMCZa1Y-0: the fees question and the goodbye each played twice, and record_fact arrived
+    twice. Replaying that exchange, each is said once and the line is down within 3s of the goodbye."""
+    fees = "So parking is $150 per month. Are there any other monthly fees on top of the rent?"
+    bye = "So Sunday at 9 am could work, I'll pass that to my client. Thank you, goodbye."
+    parking = {"field": "parking_cost", "value": "$150 a month", "quote": "Parking is one spot, $150 a month"}
+    fees_fact = {"field": "fees", "value": "none", "quote": "No, that's it."}
+    landlord = TurnFake([
+        _text("l1", "It's available. Parking is one spot, $150 a month."),
+        _text("l2", "No, that's it."),
+        _text("l3", "Sunday at 9 am works.")])
+    caller = PausingCaller([
+        _speech_then_tools("c1", fees, [
+            ("record_fact", {"field": "available", "value": "yes", "quote": "It's available"}),
+            ("record_fact", parking)]),
+        _speech_then_tools("c1b", fees, [("record_fact", parking)]),
+        _speech_then_tools("c2", "No other monthly fees. What time on Sunday works?",
+                           [("record_fact", fees_fact)]),
+        _speech_then_tools("c2b", fees, [("record_fact", fees_fact)]),
+        _speech_then_tools("c3", bye, [
+            ("book_viewing", {"slot": "Sunday at 9 am"}),
+            ("end_call", {"reason": "done"})]),
+        [{"type": "test.wait", "s": 5}, *_text("c3b", "Thank you, goodbye.")]])
+    sessions = iter([caller, landlord])
+
+    async def connect(key, session):
+        return next(sessions)
+
+    runtime = SessionRuntime(Catalogue([_listing(1)], "test"))
+    runner = SimRunner(runtime, connect, "test-key", clock=lambda: NOW,
+                       persona_for=lambda d, x: Persona(id="linda", name="Linda"))
+    settings = Settings(database_url=None, web_url="https://landline.example", transport="sim",
+                        higgs_max_sessions=3, listing_call_max_s=30)
+    Dispatcher(runtime, settings, runner=runner, clock=lambda: NOW)
+    sid = "s_feesonce01"
+    started = time.monotonic()
+    await runtime.start(SessionStarted(session_id=sid, at=NOW, idem_key=f"{sid}:s", channel="judge"))
+    await runtime.emit(CallsRequested(
+        session_id=sid, at=NOW, idem_key=f"{sid}:r", listing_ids=["t:1"], may_book=False,
+        availability=[Availability(day="sunday", **{"from": "08:00"}, to="12:00")]))
+    await runtime.emit(SessionEnded(session_id=sid, at=NOW, idem_key=f"{sid}:e", reason="hangup"))
+    for _ in range(800):
+        if runtime.state(sid).phase == "done":
+            break
+        await asyncio.sleep(0.01)
+    elapsed = time.monotonic() - started
+    state = runtime.state(sid)
+    assert state.phase == "done" and elapsed < 3
+    out = state.outcomes["t:1"]
+    assert out.end_reason == "done"
+    assert [f.field for f in out.facts].count("parking_cost") == 1
+    assert [f.field for f in out.facts].count("fees") == 1
+    trace = next(iter(runner.traces.values()))
+    said = [t.text for t in trace.turns if t.speaker == "caller"]
+    assert sum("Are there any other monthly fees" in line for line in said) == 1
+    assert sum("goodbye" in line.lower() for line in said) == 1
+    await runtime.close()
     assert caller.closed and landlord.closed
     assert "voice" not in {c.listing_id for c in state.calls.values()}   # the plan's one call, ended
-    await runtime.close()
 
 
 class _YeahLoop:
@@ -860,7 +962,8 @@ async def test_a_repeated_record_fact_does_not_ask_the_model_again():
     raw = json.dumps(BARE_YEAH)
     for n in range(2):
         event = {"name": "record_fact", "call_id": f"fc{n}", "response_id": f"r{n}", "arguments": raw}
-        await bridge.run_tool(Higgs(), event, ctx, agent=tools)
+        # The loop was a silent record_fact. A response that already spoke still gets no follow-up (#219).
+        await bridge.run_tool(Higgs(), event, ctx, spoke=False, agent=tools)
     assert [e["type"] for e in sent] == ["conversation.item.create", "response.create",
                                          "conversation.item.create"]
     assert ctx.facts == []

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import logging
 import time
 from collections.abc import Callable
@@ -328,25 +329,37 @@ async def _higgs_to_renter(higgs: Any, transport: Transport, ctx: tools.ToolCont
     wrap = wrap or WrapUp()
     async for event in higgs.events():
         kind = event.get("type")
-        if line is not None:
+        if kind == "response.created":
+            open_response(ctx)   # before the line sees it: a dropped follow-up isn't a new turn
+        if line is not None and not dropping(ctx):
             if ctx.hang_up:
                 line.close()   # saying goodbye: nothing more goes in
             await line.seen(event)
         wrap.seen(event)
         if kind == "response.created":
             spoke = False
-            if bye == "asked":
-                bye = "answering"
-            turn.response_created()
+            if not dropping(ctx):
+                if bye == "asked":
+                    bye = "answering"
+                turn.response_created()
         elif kind == "response.output_audio.delta":
-            spoke = True
-            await transport.send_audio(event["delta"])
-            if not heard_any:
-                heard_any = True
-                log.info("call %s: first audio out", ctx.call_id)
-            playback.sent(event["delta"])
-            recorder.played(event["delta"], event.get("item_id"))
+            if dropping(ctx):
+                pass
+            else:
+                spoke = True
+                note_speech(ctx)
+                await transport.send_audio(event["delta"])
+                if not heard_any:
+                    heard_any = True
+                    log.info("call %s: first audio out", ctx.call_id)
+                playback.sent(event["delta"])
+                recorder.played(event["delta"], event.get("item_id"))
+        elif kind == "response.output_text.delta" and str(event.get("delta") or "").strip():
+            if not dropping(ctx):
+                spoke = True
+                note_speech(ctx)
         elif kind == "input_audio_buffer.speech_started":
+            note_user_turn(ctx)   # their next words start a new turn: a repeated tool call counts again
             bye = ""   # the renter said more: they aren't done yet
             await transport.send_clear()
             playback.clear()
@@ -356,11 +369,17 @@ async def _higgs_to_renter(higgs: Any, transport: Transport, ctx: tools.ToolCont
         elif kind == "input_audio_buffer.speech_stopped":
             recorder.speech_stopped(event.get("item_id"), event.get("audio_end_ms"))
         elif kind == "response.function_call_arguments.done":
-            turn.tool_called(str(event.get("name", "")))
-            output = await run_tool(higgs, event, ctx, spoke=spoke)
-            if event.get("name") == "call_listings":
-                wrap.complete = PLAN_COMPLETE in (output or "")
+            if dropping(ctx):
+                await discard_tool(higgs, event, ctx)
+            else:
+                turn.tool_called(str(event.get("name", "")))
+                output = await run_tool(higgs, event, ctx, spoke=spoke)
+                if event.get("name") == "call_listings":
+                    wrap.complete = PLAN_COMPLETE in (output or "")
         elif kind == "response.done":
+            if dropping(ctx):
+                ctx.dropping = False
+                continue
             if ends_call(event, ctx):
                 await asyncio.sleep(playback.remaining() + HANG_UP_GRACE_S)
                 return "end_session"
@@ -379,6 +398,10 @@ async def _higgs_to_renter(higgs: Any, transport: Transport, ctx: tools.ToolCont
                 ctx.renter_lines.append(str(event["transcript"]))   # its viewing-times guard (#174)
             turn.transcript(str(event.get("transcript") or ""))
         elif kind == "response.output_audio_transcript.done":
+            if dropping(ctx):
+                continue
+            if str(event.get("transcript") or "").strip():
+                note_speech(ctx)
             log.info("call %s concierge: %s", ctx.call_id, event.get("transcript", ""))
             _said(ctx, recorder, "agent", event)
             ctx.agent_said = str(event.get("transcript") or "") or ctx.agent_said
@@ -451,20 +474,117 @@ def _keep(runtime: SessionRuntime, call_id: str, recorder: CallRecorder,
         runtime.calls.placed(call_id, line.idx, line.start_ms, line.end_ms)
 
 
+def note_user_turn(ctx: Any) -> None:
+    """The person started another turn. A tool call repeated after this is a new request; one repeated
+    before it, in the same turn, is not."""
+    ctx.tool_cache = {}
+
+
+def open_response(ctx: Any) -> None:
+    """A response started. The follow-up of a reply that already spoke is ignored until it ends (#219)."""
+    ctx.dropping = bool(getattr(ctx, "drop_follow", False))
+    ctx.drop_follow = False
+    ctx.spoke_this = False
+    ctx.awaiting_follow = False
+
+
+def note_speech(ctx: Any) -> None:
+    """This response has words. A follow-up asked for before they arrived would say them again."""
+    if getattr(ctx, "dropping", False):
+        return
+    ctx.spoke_this = True
+    if hasattr(ctx, "spoke"):
+        ctx.spoke = True
+    if getattr(ctx, "awaiting_follow", False):
+        ctx.drop_follow = True
+        ctx.awaiting_follow = False
+        ctx.bye_response = None   # these words are the goodbye, when the response is ending the call
+        log.info("call %s: the reply already spoke; not asking it to speak again",
+                 getattr(ctx, "call_id", ""))
+
+
+def dropping(ctx: Any) -> bool:
+    """Whether the response under way is the duplicate follow-up and should not be heard or recorded."""
+    return bool(getattr(ctx, "dropping", False))
+
+
+def response_settles(ctx: Any, done: dict[str, Any]) -> bool:
+    """Whether this `response.done` ends what the agent says this turn. A tool response that hasn't spoken
+    yet doesn't: its follow-up is the reply. One that already spoke does, and so does the duplicate that
+    follows it."""
+    if dropping(ctx):
+        return True
+    if ends_call(done, ctx):
+        return True
+    if getattr(ctx, "drop_follow", False):
+        return bool(ctx.hang_up)   # hang up on the words already said; otherwise drop the follow-up first
+    if ctx.hang_up:
+        return False
+    output = (done.get("response") or {}).get("output") or []
+    has_tool = any(o.get("type") == "function_call" for o in output)
+    return not (has_tool and getattr(ctx, "awaiting_follow", False))
+
+
+def _canon(arguments: str) -> str:
+    try:
+        raw = json.loads(arguments or "{}")
+    except ValueError:
+        return arguments or ""
+    if isinstance(raw, dict):
+        return json.dumps(raw, sort_keys=True, separators=(",", ":"))
+    return arguments or ""
+
+
+def cached_tool(ctx: Any, name: str, arguments: str) -> str | None:
+    cache = getattr(ctx, "tool_cache", None)
+    if not cache:
+        return None
+    return cache.get((name, _canon(arguments)))
+
+
+def _remember_tool(ctx: Any, name: str, arguments: str, output: str) -> None:
+    cache = getattr(ctx, "tool_cache", None)
+    if cache is None:
+        ctx.tool_cache = cache = {}
+    cache[(name, _canon(arguments))] = output
+
+
+def _tool_output(tool_call_id: str, output: str) -> dict[str, Any]:
+    return {"type": "conversation.item.create",
+            "item": {"type": "function_call_output", "call_id": tool_call_id, "output": output}}
+
+
+async def discard_tool(higgs: Any, event: dict[str, Any], ctx: Any) -> None:
+    """Answers a tool call on a reply we're ignoring, without running it again."""
+    name, arguments = str(event.get("name", "")), event.get("arguments") or "{}"
+    output = cached_tool(ctx, name, arguments) or "Okay."
+    await higgs.send(_tool_output(str(event.get("call_id", "")), output))
+
+
 async def run_tool(higgs: Any, event: dict[str, Any], ctx: Any, *, spoke: bool = True,
                    agent: Any = tools) -> str:
     """Runs one tool call, answers Higgs, and returns the answer. `spoke` says whether this response said
     anything before the call, which matters only for the tool that hangs up. `agent` is the agent's tools
     module: the
     Concierge's by default, or the Caller's (agents/caller/tools.py), each with handle, BROKEN and
-    SAY_GOODBYE, and a context with session_id, call_id, hang_up and bye_response."""
+    SAY_GOODBYE, and a context with session_id, call_id, hang_up and bye_response.
+
+    A second call with the same arguments in this turn does nothing (#219): the first already recorded it.
+    A response that already spoke is not asked to speak again; that second reply was the repeated question
+    and the second goodbye."""
     # Higgs's own `call_id` here names this tool call, not our phone call.
     tool_call_id = str(event.get("call_id", ""))
     name, arguments = str(event.get("name", "")), event.get("arguments") or "{}"
+    cached = cached_tool(ctx, name, arguments)
+    if cached is not None:
+        log.info("call %s: repeated %s in this turn; ignoring it", ctx.call_id, name)
+        await higgs.send(_tool_output(tool_call_id, cached))
+        return cached
     # One Logfire span per tool call: the arguments as the model sent them, the tool's answer, how long it
     # took, or the exception it raised. Nothing is sent without LOGFIRE_TOKEN (app.py).
+    spoke_now = bool(spoke or getattr(ctx, "spoke_this", False))
     if hasattr(ctx, "spoke"):   # the Caller's end_call: what it said this response may be its goodbye (#175)
-        ctx.spoke = spoke
+        ctx.spoke = spoke_now
     try:
         with logfire.span("tool {name}", name=name, call_id=ctx.call_id, session_id=ctx.session_id,
                           tool_call_id=tool_call_id, arguments=arguments) as span:
@@ -476,19 +596,25 @@ async def run_tool(higgs: Any, event: dict[str, Any], ctx: Any, *, spoke: bool =
     # Hanging up with nothing said yet: one more response for the goodbye, or the other person hears the
     # line drop. Asked once. The request goes in the tool's answer, not in response instructions, which
     # would replace the agent's own (it then greets: "Hello! How can I help you today?").
-    say_bye = ctx.hang_up and not spoke and ctx.bye_response is None
+    say_bye = ctx.hang_up and not spoke_now and ctx.bye_response is None
     if say_bye:
         output, ctx.bye_response = agent.SAY_GOODBYE, str(event.get("response_id") or "")
-    await higgs.send({"type": "conversation.item.create",
-                      "item": {"type": "function_call_output", "call_id": tool_call_id, "output": output}})
+    _remember_tool(ctx, name, arguments, output)
+    await higgs.send(_tool_output(tool_call_id, output))
     # One response.create per response, however many tools it called: the first already answers them all,
-    # and a second has nothing new, so Higgs refuses it ("No user input", #175).
+    # and a second has nothing new, so Higgs refuses it ("No user input", #175). None at all when this
+    # response already spoke (#219): the words in it are the reply, and another response says them again.
     response_id = str(event.get("response_id") or "")
     answered = bool(response_id) and getattr(ctx, "answered_response", None) == response_id
     # hold_tools: an identical record_fact already got its answer this turn (#215). Another response.create
     # only makes the model call it again and say nothing, which is the loop that hung the landlord up.
-    if ((not ctx.hang_up or say_bye) and not answered and not getattr(ctx, "hold_tools", False)):
+    # A response that already spoke is not asked to speak again (#219): those words are the reply.
+    if spoke_now and getattr(ctx, "awaiting_follow", False):
+        note_speech(ctx)
+    elif ((not ctx.hang_up or say_bye) and not answered and not spoke_now
+          and not getattr(ctx, "hold_tools", False)):
         ctx.answered_response = response_id
+        ctx.awaiting_follow = True
         await higgs.send({"type": "response.create"})
     return output
 

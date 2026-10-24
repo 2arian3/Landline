@@ -58,6 +58,7 @@ class Line:
         self.closed = False
         self.told: str | None = None   # the listing the Concierge was last told the renter is looking at
         self.tool_round = False        # a tool was called, and the reply that answers it isn't done yet
+        self.spoke = False             # this response already has words: it is the reply (#219)
         self.board_told: str | None = None   # the last board line the Concierge was given
         self.delivered: list[str] = []
 
@@ -80,14 +81,19 @@ class Line:
         elif kind == "input_audio_buffer.speech_stopped":
             self.renter_speaking, self.waiting_since = False, self.clock()
         elif kind == "response.created":
-            self.responding, self.waiting_since = True, None
+            self.responding, self.waiting_since, self.spoke = True, None, False
+        elif kind in ("response.output_audio.delta", "response.output_text.delta") and event.get("delta"):
+            self.spoke = True
         elif kind == "response.function_call_arguments.done":
             self.tool_round = True
         elif kind == "response.done":
             output = (event.get("response") or {}).get("output") or []
-            # A response that called a tool is followed by another (run_tool asks for it): not a boundary.
-            if not any(o.get("type") == "function_call" for o in output):
-                self.responding = self.tool_round = False
+            has_tool = any(o.get("type") == "function_call" for o in output)
+            has_message = any(o.get("type") == "message" for o in output)
+            # A tool response with no words is followed by another. One that already spoke is the reply,
+            # and asking again said it twice (#219).
+            if self.spoke or has_message or not has_tool:
+                self.responding = self.tool_round = self.spoke = False
                 await self._deliver()
 
     def close(self) -> None:

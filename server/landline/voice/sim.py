@@ -30,7 +30,15 @@ from landline.agents.caller.brief import brief, instructions, wants
 from landline.contracts import Listing, Preferences, Viewing
 from landline.orchestrator import SessionRuntime
 from landline.voice.avatar_clip import Clips
-from landline.voice.bridge import ends_call, run_tool
+from landline.voice.bridge import (
+    discard_tool,
+    dropping,
+    note_speech,
+    note_user_turn,
+    open_response,
+    response_settles,
+    run_tool,
+)
 from landline.voice.dispatch import CallResult, Dial, Report
 from landline.voice.higgs import ConnectHiggs, session_config
 from landline.voice.outbound import Turns
@@ -164,6 +172,7 @@ class SimRunner:
         await report("voicemail" if persona.voicemail else "live")
         for _ in range(self.max_turns):
             ctx.said.append(heard)
+            note_user_turn(ctx)
             await _say(caller, heard)
             said = await self._caller_turn(caller, ctx, trace)
             if ctx.hang_up:
@@ -204,11 +213,24 @@ class SimRunner:
             async for event in side.stream:
                 kind = event.get("type")
                 if kind == "response.created":
+                    open_response(ctx)
                     spoke = False
+                elif dropping(ctx):
+                    if kind == "response.function_call_arguments.done":
+                        await discard_tool(side, event, ctx)
+                    elif kind == "response.done":
+                        ctx.dropping = False
+                        break
                 elif kind == "response.output_text.delta":   # streams before a tool call; .done comes after
-                    spoke = spoke or bool(str(event.get("delta") or "").strip())
+                    if str(event.get("delta") or "").strip():
+                        spoke = True
+                        note_speech(ctx)
                 elif kind == "response.output_text.done":
-                    texts.append(str(event.get("text") or ""))
+                    text = str(event.get("text") or "")
+                    if text.strip():
+                        spoke = True
+                        note_speech(ctx)
+                    texts.append(text)
                 elif kind == "response.function_call_arguments.done":
                     await run_tool(side, event, ctx, spoke=spoke, agent=caller_tools)
                     names.append(str(event.get("name", "")))
@@ -222,11 +244,8 @@ class SimRunner:
                             elif extra.get("type") == "response.done":
                                 break
                         break
-                elif kind == "response.done":
-                    output = (event.get("response") or {}).get("output") or []
-                    if ends_call(event, ctx) or (not ctx.hang_up and
-                                                 not any(o.get("type") == "function_call" for o in output)):
-                        break
+                elif kind == "response.done" and response_settles(ctx, event):
+                    break
         text = " ".join(t.strip() for t in texts if t.strip())
         trace.add(Turn("caller", text, names, round((time.monotonic() - started) * 1000)))
         await caller_tools.kept_promise(ctx, text, names)
