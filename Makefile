@@ -1,6 +1,8 @@
 .PHONY: setup db-up db-down db-migrate data data-report dev web test lint eval contracts-snapshot
 
-export PYTHONPATH := server:.
+# Windows Python splits PYTHONPATH on ";", everything else on ":".
+PATHSEP := $(if $(filter Windows_NT,$(OS)),;,:)
+export PYTHONPATH := server$(PATHSEP).
 LOCAL_DB := postgresql://landline:landline@localhost:54329/landline
 
 # Hooks, Python deps and web deps. Run once after cloning.

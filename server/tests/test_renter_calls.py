@@ -368,6 +368,31 @@ def test_end_session_hangs_up_once_the_goodbye_has_played(monkeypatch):
             "type": "function_call_output", "call_id": "fc_bye", "output": "Goodbye."}}
 
 
+def test_end_session_with_nothing_said_asks_for_a_goodbye_before_hanging_up(monkeypatch):
+    monkeypatch.setattr(bridge, "HANG_UP_GRACE_S", 0.01)
+    goodbye = base64.b64encode(b"\x00\x00" * 2400).decode()
+    fake = FakeHiggs(script=[
+        {"type": "response.created", "response": {"id": "r1"}},
+        {**_tool_call("end_session", {}, "fc_bye"), "response_id": "r1"},
+        {"type": "response.done", "response": {"id": "r1", "output": [{"type": "function_call"}]}},
+        {"type": "response.created", "response": {"id": "r2"}},
+        {"type": "response.output_audio.delta", "delta": goodbye},
+        {"type": "response.done", "response": {"id": "r2", "output": [{"type": "message"}]}},
+    ])
+    with _client(judge_audio_ready=True) as c:
+        c.app.state.connect_higgs = fake.connect
+        start = c.post("/api/judge/start").json()
+        with c.websocket_connect(start["ws_url"]) as ws:
+            assert len(ws.receive_bytes()) == 4800   # the goodbye played before the hang-up
+            with pytest.raises(WebSocketDisconnect):
+                ws.receive_bytes()
+        assert c.app.state.calls.recent[-1].end_reason == "end_session"
+        # The goodbye is asked for in the tool's answer, so the Concierge keeps its own instructions.
+        assert fake.sent[-2:] == [{"type": "conversation.item.create", "item": {
+            "type": "function_call_output", "call_id": "fc_bye", "output": tools.SAY_GOODBYE}},
+            {"type": "response.create"}]
+
+
 def test_playback_clock_counts_audio_sent_and_resets_on_barge_in():
     now = [10.0]
     clock = bridge.Playback(48000, clock=lambda: now[0])

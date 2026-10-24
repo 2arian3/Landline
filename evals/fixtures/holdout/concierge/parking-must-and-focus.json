@@ -29,7 +29,10 @@
           {
             "ref": "rank:2",
             "at": 1,
-            "reaction": "dislike",
+            "reaction": [
+              "dislike",
+              "reject"
+            ],
             "attribute": "size"
           }
         ]
@@ -55,7 +58,10 @@
       {
         "ref": "rank:2",
         "at": 1,
-        "reaction": "dislike",
+        "reaction": [
+          "dislike",
+          "reject"
+        ],
         "attribute": "size"
       }
     ],
