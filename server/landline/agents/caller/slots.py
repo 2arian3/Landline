@@ -54,6 +54,13 @@ def parse(text: str, now: datetime, windows: list[Window] = (),
     return readings[1] if hour == 12 or 1 <= hour <= 7 else readings[0]
 
 
+def day_only(text: str, now: datetime) -> date | None:
+    """The day the words name when they name no time ("Yeah, tomorrow you can"), else None."""
+    words = text.lower().replace("’", "'")
+    day = _day(words, now.astimezone(TORONTO))
+    return day if day is not None and _clock(words) is None else None
+
+
 def within(at: datetime, windows: list[Window]) -> bool:
     return any(w.start <= at < w.end for w in windows)
 
