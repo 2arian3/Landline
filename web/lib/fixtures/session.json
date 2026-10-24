@@ -1,0 +1,324 @@
+{
+  "session_id": "s_fixture001",
+  "version": 42,
+  "phase": "calling",
+  "user_name": "Sam",
+  "returning": true,
+  "preferences": {
+    "max_monthly": 3200,
+    "min_beds": 2.0,
+    "areas": [
+      "King West"
+    ],
+    "anchors": [
+      {
+        "label": "King and Bay",
+        "lat": 43.6487,
+        "lng": -79.3817
+      }
+    ],
+    "pets": [
+      "cat"
+    ],
+    "must_have": [],
+    "priorities": [
+      "light",
+      "location"
+    ],
+    "move_in": "December 1",
+    "occupants": 2,
+    "language": "en"
+  },
+  "focus_listing_id": "livrent:100743",
+  "focus_area": {
+    "label": "King West",
+    "lat": 43.644,
+    "lng": -79.401,
+    "zoom": 13.5
+  },
+  "matches": [
+    "livrent:100219",
+    "livrent:100362",
+    "livrent:100743",
+    "livrent:100744",
+    "livrent:100745",
+    "livrent:100746",
+    "livrent:100747"
+  ],
+  "board": [
+    {
+      "listing_id": "livrent:100219",
+      "address": "15 Mercer Street",
+      "unit_label": null,
+      "neighbourhood": null,
+      "lat": 43.64561,
+      "lng": -79.39025,
+      "rent": 3050,
+      "monthly_cost": 3050,
+      "beds": 2.0,
+      "baths": 2.0,
+      "sqft": 680,
+      "floor": null,
+      "unit_type": "condo",
+      "photo": "https://cdn.liv.rent/800x/filters:quality(70)/static_files/unit/100339/unit_100339_67fdf16146db7",
+      "light_score": 0.82,
+      "source": "livrent",
+      "url": "https://liv.rent/building/36124/apartment-building-15-mercer-street-toronto-on",
+      "rank": 1,
+      "status": "booked",
+      "reasons": [
+        "Under your $3,200 budget",
+        "Bright, high floor",
+        "12 min walk to the subway"
+      ],
+      "watch_out": null,
+      "reaction": null,
+      "facts": [
+        {
+          "field": "available",
+          "value": "yes",
+          "quote": "Yes, it's still available.",
+          "speaker": "Agent heard",
+          "at": "2026-10-24T18:30:00Z"
+        },
+        {
+          "field": "parking_cost",
+          "value": "$150 a month",
+          "quote": "Parking is a hundred fifty a month extra.",
+          "speaker": "Agent heard",
+          "at": "2026-10-24T18:30:00Z"
+        }
+      ],
+      "red_flags": []
+    },
+    {
+      "listing_id": "livrent:100362",
+      "address": "65 Thorncliffe Park Dr",
+      "unit_label": null,
+      "neighbourhood": null,
+      "lat": 43.70348,
+      "lng": -79.34023,
+      "rent": 3495,
+      "monthly_cost": 3495,
+      "beds": 3.0,
+      "baths": 2.5,
+      "sqft": 1227,
+      "floor": null,
+      "unit_type": "condo",
+      "photo": "https://cdn.liv.rent/800x/filters:quality(70)/static_files/unit/100482/unit_100482_68957e85e64d0",
+      "light_score": 0.7,
+      "source": "livrent",
+      "url": "https://liv.rent/building/34487/centennial-towers-apartment-building-65-thorncliffe-park-dr-toronto-on",
+      "rank": 2,
+      "status": "verified",
+      "reasons": [
+        "Two bedrooms",
+        "Near King and Bay"
+      ],
+      "watch_out": "Parking costs extra",
+      "reaction": null,
+      "facts": [
+        {
+          "field": "pets",
+          "value": "cats only",
+          "quote": "Cats are fine, but no dogs.",
+          "speaker": "Agent heard",
+          "at": "2026-10-24T18:30:00Z"
+        }
+      ],
+      "red_flags": []
+    },
+    {
+      "listing_id": "livrent:100743",
+      "address": "88 Bloor St E",
+      "unit_label": null,
+      "neighbourhood": null,
+      "lat": 43.67085,
+      "lng": -79.38497,
+      "rent": 1849,
+      "monthly_cost": 1849,
+      "beds": 0.0,
+      "baths": 1.0,
+      "sqft": 368,
+      "floor": null,
+      "unit_type": "condo",
+      "photo": "https://cdn.liv.rent/800x/filters:quality(70)/static_files/unit/100864/unit_100864_6a9a4aef83193",
+      "light_score": 0.64,
+      "source": "livrent",
+      "url": "https://liv.rent/building/22285/bloor-yonge-residences-apartment-building-88-bloor-st-e-toronto-on",
+      "rank": 3,
+      "status": "calling",
+      "reasons": [
+        "Under your budget",
+        "In-suite laundry"
+      ],
+      "watch_out": null,
+      "reaction": null,
+      "facts": [],
+      "red_flags": []
+    },
+    {
+      "listing_id": "livrent:100744",
+      "address": "88 Bloor St E",
+      "unit_label": null,
+      "neighbourhood": null,
+      "lat": 43.67085,
+      "lng": -79.38497,
+      "rent": 2299,
+      "monthly_cost": 2299,
+      "beds": 1.0,
+      "baths": 1.0,
+      "sqft": 569,
+      "floor": null,
+      "unit_type": "condo",
+      "photo": "https://cdn.liv.rent/800x/filters:quality(70)/static_files/unit/100865/unit_100865_6a9a4af23e9ca",
+      "light_score": 0.55,
+      "source": "livrent",
+      "url": "https://liv.rent/building/22285/bloor-yonge-residences-apartment-building-88-bloor-st-e-toronto-on",
+      "rank": 4,
+      "status": "no_answer",
+      "reasons": [
+        "Quiet street"
+      ],
+      "watch_out": null,
+      "reaction": null,
+      "facts": [],
+      "red_flags": []
+    },
+    {
+      "listing_id": "livrent:100745",
+      "address": "88 Bloor St E",
+      "unit_label": null,
+      "neighbourhood": null,
+      "lat": 43.67085,
+      "lng": -79.38497,
+      "rent": 2949,
+      "monthly_cost": 2949,
+      "beds": 2.0,
+      "baths": 2.0,
+      "sqft": 892,
+      "floor": null,
+      "unit_type": "condo",
+      "photo": "https://cdn.liv.rent/800x/filters:quality(70)/static_files/unit/100866/unit_100866_6a9a4af48b820",
+      "light_score": 0.6,
+      "source": "livrent",
+      "url": "https://liv.rent/building/22285/bloor-yonge-residences-apartment-building-88-bloor-st-e-toronto-on",
+      "rank": 5,
+      "status": "dead",
+      "reasons": [
+        "Under your budget"
+      ],
+      "watch_out": null,
+      "reaction": null,
+      "facts": [
+        {
+          "field": "available",
+          "value": "no",
+          "quote": "Sorry, that one's been rented already.",
+          "speaker": "Agent heard",
+          "at": "2026-10-24T18:30:00Z"
+        }
+      ],
+      "red_flags": []
+    },
+    {
+      "listing_id": "livrent:100746",
+      "address": "40 Gerrard Street East",
+      "unit_label": null,
+      "neighbourhood": null,
+      "lat": 43.65984,
+      "lng": -79.38043,
+      "rent": 1829,
+      "monthly_cost": 1829,
+      "beds": 0.0,
+      "baths": 1.0,
+      "sqft": 454,
+      "floor": null,
+      "unit_type": "condo",
+      "photo": "https://cdn.liv.rent/800x/filters:quality(70)/static_files/unit/100867/unit_100867_6a9a4af6e51b6",
+      "light_score": 0.9,
+      "source": "livrent",
+      "url": "https://liv.rent/building/42891/40-gerrard-street-east-apartment-building-40-gerrard-street-east-toronto-on",
+      "rank": 6,
+      "status": "suspect",
+      "reasons": [
+        "Far under the area's median rent"
+      ],
+      "watch_out": "Asks for a deposit before any viewing",
+      "reaction": null,
+      "facts": [],
+      "red_flags": [
+        "deposit before viewing"
+      ]
+    },
+    {
+      "listing_id": "livrent:100747",
+      "address": "40 Gerrard Street East",
+      "unit_label": null,
+      "neighbourhood": null,
+      "lat": 43.65984,
+      "lng": -79.38043,
+      "rent": 1999,
+      "monthly_cost": 1999,
+      "beds": 1.0,
+      "baths": 1.0,
+      "sqft": 607,
+      "floor": null,
+      "unit_type": "condo",
+      "photo": "https://cdn.liv.rent/800x/filters:quality(70)/static_files/unit/100868/unit_100868_6a9a4af9419cb",
+      "light_score": 0.48,
+      "source": "livrent",
+      "url": "https://liv.rent/building/42891/40-gerrard-street-east-apartment-building-40-gerrard-street-east-toronto-on",
+      "rank": 7,
+      "status": "pending",
+      "reasons": [
+        "Two bedrooms"
+      ],
+      "watch_out": null,
+      "reaction": null,
+      "facts": [],
+      "red_flags": []
+    }
+  ],
+  "agent_says": "I'm calling your five picks now. I'll text you what they say.",
+  "plan": [
+    "livrent:100219",
+    "livrent:100362",
+    "livrent:100743",
+    "livrent:100744",
+    "livrent:100745"
+  ],
+  "calls": [
+    {
+      "call_id": "c_fixture001",
+      "listing_id": "livrent:100219",
+      "state": "ended",
+      "started_at": "2026-10-24T18:31:00Z"
+    },
+    {
+      "call_id": "c_fixture002",
+      "listing_id": "livrent:100362",
+      "state": "ended",
+      "started_at": "2026-10-24T18:32:00Z"
+    },
+    {
+      "call_id": "c_fixture003",
+      "listing_id": "livrent:100743",
+      "state": "live",
+      "started_at": "2026-10-24T18:33:00Z"
+    },
+    {
+      "call_id": "c_fixture004",
+      "listing_id": "livrent:100744",
+      "state": "ended",
+      "started_at": "2026-10-24T18:34:00Z"
+    },
+    {
+      "call_id": "c_fixture005",
+      "listing_id": "livrent:100745",
+      "state": "ended",
+      "started_at": "2026-10-24T18:35:00Z"
+    }
+  ],
+  "results": null
+}

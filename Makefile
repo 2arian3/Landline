@@ -47,5 +47,6 @@ lint:
 eval:
 	@echo "added in E-01: writes evals/reports/latest.md"
 
+# Rewrites server/tests/snapshots/contracts.json after a contract change; commit it with the change.
 contracts-snapshot:
-	@echo "added in X-01: regenerates the contract JSON Schema snapshot"
+	uv run python -m landline.contracts.snapshot
