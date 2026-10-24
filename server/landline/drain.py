@@ -35,7 +35,8 @@ class Drain:
 
     async def run(self) -> None:
         """Waits up to `limit_s` for the live calls to end on their own, ends any still going `failed` (each
-        once: finalize), then ends the page streams. A second run does nothing."""
+        once: the listing call's row is written before it is logged), then ends the page streams. A second
+        run does nothing."""
         if self.draining:
             return
         self.draining = True
@@ -45,10 +46,12 @@ class Drain:
                     self.limit_s)
         while self.live() and loop.time() < until:
             await asyncio.sleep(self.every_s)
+        db = getattr(getattr(self.state, "runtime", None), "db", None)
         for call_id in list(self.state.calls.live):
             self.state.calls.finalize(call_id, "failed")
         for call_id in list(self.state.outbound.live):
-            self.state.outbound.finalize(call_id, "failed")
+            # The row before the log (#217). The in-memory end alone is what a restart used to keep.
+            await self.state.outbound.end(call_id, "failed", db)
         self.closing.set()
         for store in (self.state.runtime, self.state.sessions):   # wake the streams waiting for a change
             async with store.changed:

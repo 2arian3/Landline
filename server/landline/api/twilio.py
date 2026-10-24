@@ -75,7 +75,7 @@ async def outbound_status(call_id: str, request: Request) -> Response:
     if status == "ringing":
         await calls.set_state(call_id, "ringing")
     elif (reason := calls.end_reason(call_id, status)) is not None:
-        calls.finalize(call_id, reason)
+        await calls.end(call_id, reason, request.app.state.db)
     return Response(status_code=204)
 
 

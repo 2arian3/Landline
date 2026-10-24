@@ -133,6 +133,14 @@ class SessionRuntime:
         """Run `fn(event, view)` after every committed event of `event_type`, as a background task."""
         self._subscribers[event_type].append(fn)
 
+    def load(self, state: SessionState, view: SessionView) -> bool:
+        """A session read back from its snapshot after a restart. False if this process already has it.
+        `view.version` is the one the next save must match."""
+        if state.session_id in self._live:
+            return False
+        self._live[state.session_id] = _Live(state, view)
+        return True
+
     async def start(self, event: SessionStarted) -> SessionView:
         """Create the session at version 1. Starting one that exists is a no-op."""
         sid = event.session_id
