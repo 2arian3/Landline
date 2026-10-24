@@ -51,7 +51,10 @@ def find(quote: str, sources: Sequence[str], threshold: float = FUZZY) -> Match 
     """The best source that contains `quote`, or None. Exact matches win over fuzzy ones."""
     q = tokens(quote)
     if len(q) < MIN_TOKENS:
-        return None
+        # One word inside a longer text proves nothing, but a whole turn of one word ("Yes.") is exactly what
+        # was said. What it answers is for the caller to decide (values.settle's question, #139).
+        whole = next((i for i, source in enumerate(sources) if q and tokens(source) == q), None)
+        return Match(whole, 1.0) if whole is not None else None
     best: Match | None = None
     for i, source in enumerate(sources):
         s = tokens(source)
