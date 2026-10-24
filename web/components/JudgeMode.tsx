@@ -59,13 +59,13 @@ export function JudgeMode() {
     await line.start(mic, wsAddress(ws_url));
   }
 
-  // Done ends the brief the way hanging up ends a phone call: the places the judge picked get called,
-  // and the board stays up to watch them. The audio closes either way.
+  // Done ends the brief the way hanging up ends a phone call. The audio closes first, so Landline stops at
+  // once; then the places the judge picked get called, and the board stays up to watch them.
   async function done() {
+    line.end();
     if (sessionId) {
       await fetch(api(`/api/judge/${encodeURIComponent(sessionId)}/done`), { method: "POST" }).catch(() => null);
     }
-    line.end();
   }
 
   function again() {
