@@ -19,6 +19,7 @@ from landline.contracts.tools import Availability
 from landline.db.catalogue import Catalogue
 from landline.orchestrator import SessionRuntime
 from landline.voice.dispatch import TORONTO, CallResult, Dial, Dispatcher, results_text, until_open, window
+from landline.voice.routing import ByChannel
 
 # Saturday 24 Oct 2026, 11:00 in Toronto: inside business hours.
 NOW = datetime(2026, 10, 24, 15, 0, tzinfo=UTC)
@@ -159,7 +160,7 @@ async def test_a_duplicate_hang_up_schedules_nothing_twice():
 
 async def test_the_plan_is_frozen_with_toronto_windows_and_only_shareable_answers():
     rt = _runtime()
-    d = _dispatcher(rt)   # no runner: the plan is frozen and its calls stay queued
+    d = _dispatcher(rt)   # no runner: the plan is still frozen, then its calls end blocked
     await _brief(rt, ["t:2", "t:1"], extra_questions=["Is there a dishwasher?"], may_book=True,
                  availability=[Availability(day="saturday", from_="13:00", to="17:00"),
                                Availability(day="saturday", from_="09:00", to="10:00")])
@@ -173,7 +174,23 @@ async def test_the_plan_is_frozen_with_toronto_windows_and_only_shareable_answer
     starts = [(w.start.astimezone(TORONTO).strftime("%a %d %H:%M")) for w in plan.windows]
     assert starts == ["Sat 24 13:00", "Sat 31 09:00"]
     assert plan.shareable.model_dump() == {"name": None, "move_in": None, "occupants": None, "pets": []}
-    assert [c.state for c in state.calls.values()] == ["queued", "queued"] and rt.get(SID).phase == "calling"
+    assert [c.state for c in state.calls.values()] == ["ended", "ended"]
+
+
+async def test_a_phone_session_with_no_caller_ends_its_calls_and_never_says_they_are_running():
+    # Production with TRANSPORT=stub: a phone renter's session gets no runner (voice/routing.py).
+    rt, texter, sim = _runtime(), FakeTexter(), FakeRunner(uses_phone=False)
+    d = _dispatcher(rt, ByChannel(rt, phone=None, sim=sim), texter)
+    await _brief(rt, ["t:1", "t:2"])
+    await _hang_up(rt)
+    await d.idle()
+    state, view = rt.state(SID), rt.get(SID)
+    assert sim.dials == [] and view.phase == "done"   # not left in `calling`
+    assert {lid: o.end_reason for lid, o in state.outcomes.items()} == {"t:1": "blocked", "t:2": "blocked"}
+    assert view.results == "I couldn't place the call to 1 Dial St. I couldn't place the call to 2 Dial St."
+    assert "now" not in view.agent_says   # not "Calling 2 places now"
+    [(to, _, body)] = texter.sent   # the text the renter was promised says no call was made
+    assert to == PHONE and body.startswith("Landline: I couldn't place the call to 1 Dial St.")
 
 
 async def test_a_number_off_the_allowlist_is_never_dialled():
@@ -183,7 +200,7 @@ async def test_a_number_off_the_allowlist_is_never_dialled():
     await _hang_up(rt)
     await d.idle()
     assert runner.dials == [] and rt.state(SID).outcomes["t:1"].end_reason == "blocked"
-    assert rt.get(SID).phase == "done"
+    assert rt.get(SID).phase == "done" and rt.get(SID).results == "I couldn't place the call to 1 Dial St."
 
 
 async def test_phone_calls_wait_for_business_hours_and_sim_calls_do_not():
