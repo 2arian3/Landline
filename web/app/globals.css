@@ -113,6 +113,7 @@
   height: 44px;
   padding: 0;
   border: 0;
+  border-radius: 999px; /* a round target: no corners reaching into the map or a neighbour */
   background: none;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
