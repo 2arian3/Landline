@@ -11,6 +11,7 @@ dependencies = [
   "psycopg[binary,pool]>=3.2",
   "python-dotenv>=1.0",
   "websockets>=15",
+  "logfire>=5.3.0",
 ]
 
 [dependency-groups]
@@ -22,6 +23,11 @@ dev = [
 
 [tool.uv]
 package = false
+
+[tool.logfire]
+# app.py calls logfire.configure() only when LOGFIRE_TOKEN is set. Without it the tool spans in
+# voice/bridge.py do nothing, and this keeps them from warning that Logfire isn't configured.
+ignore_no_config = true
 
 [tool.pytest.ini_options]
 testpaths = ["server/tests", "pipeline/tests"]
