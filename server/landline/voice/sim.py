@@ -166,6 +166,8 @@ class SimRunner:
                 return ctx.end_reason or "done"
             if hung_up:
                 return "hangup"
+            if caller_tools.over(ctx, said, trace.turns[-1].tools):   # over, with no end_call: code ends it
+                return ctx.end_reason or "done"
             if _stuck(trace):
                 log.info("sim call %s: the Caller is repeating itself; ending it", trace.call_id)
                 return "done"
