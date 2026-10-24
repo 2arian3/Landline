@@ -1,0 +1,125 @@
+"""Places (D-04): a named place becomes a point, cheapest way first, and the board re-ranks around it. The
+network steps run against a fake transport; nothing leaves the machine."""
+import json
+import re
+from datetime import UTC, datetime
+from urllib.parse import parse_qs
+
+import httpx
+import pytest
+
+from landline.contracts import Listing, PreferenceDelta, PreferencesUpdated, SessionStarted
+from landline.contracts.tools import AnchorRef
+from landline.db.catalogue import Catalogue
+from landline.orchestrator import SessionRuntime
+from landline.orchestrator.places import Places, _street
+from landline.scoring.features import FeatureMatrix, Hood
+
+NOW = datetime(2026, 10, 24, tzinfo=UTC)
+HOODS = [Hood(1, "Annex", 43.670, -79.405, ()), Hood(2, "Yonge-Bay Corridor", 43.650, -79.381, ())]
+STATIONS = [{"id": "s1", "name": "Union", "lat": 43.6453, "lng": -79.3806},
+            {"id": "s2", "name": "St. George", "lat": 43.6681, "lng": -79.3997}]
+KING_AND_BAY = (43.6486561, -79.3802633)
+
+
+class Net:
+    """A fake Overpass and Nominatim that records what was asked."""
+
+    def __init__(self, overpass=None, nominatim=None, status=200):
+        self.overpass, self.nominatim, self.status, self.calls = overpass, nominatim, status, []
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        self.calls.append(request)
+        if self.status != 200:
+            return httpx.Response(self.status)
+        if "overpass" in request.url.host:
+            return httpx.Response(200, json={"elements": self.overpass or []})
+        return httpx.Response(200, json=self.nominatim or [])
+
+
+def _places(net: Net | None = None, contact: str | None = "team@example.com") -> Places:
+    client = httpx.AsyncClient(transport=httpx.MockTransport(net or Net()))
+    return Places(FeatureMatrix.build([], HOODS).named, STATIONS, contact=contact, client=client)
+
+
+async def test_a_neighbourhood_or_a_station_needs_no_network():
+    net = Net()
+    places = _places(net)
+    annex = await places.resolve("the Annex")
+    assert (annex.lat, annex.lng, annex.how) == (43.670, -79.405, "neighbourhood")
+    union = await places.resolve("Union station")
+    assert (union.lat, union.how) == (43.6453, "station")
+    assert (await places.resolve("St George")).how == "station"
+    assert net.calls == []
+
+
+async def test_an_intersection_is_where_the_two_streets_meet():
+    net = Net(overpass=[{"lat": KING_AND_BAY[0], "lon": KING_AND_BAY[1]}])
+    places = _places(net)
+    point = await places.resolve("King and Bay")
+    assert (point.lat, point.lng, point.how) == (*KING_AND_BAY, "intersection")
+    query = parse_qs(net.calls[0].content.decode())["data"][0]
+    assert '"name"~"^King( ' in query and '"name"~"^Bay( ' in query and "node(w.a)(w.b)" in query
+    assert "team@example.com" in net.calls[0].headers["user-agent"]
+    assert await places.resolve("king  AND bay") == point and len(net.calls) == 1   # remembered
+
+
+async def test_anything_else_goes_to_the_geocoder_bounded_to_toronto():
+    net = Net(nominatim=[{"lat": "43.6629", "lon": "-79.3957"}])
+    point = await _places(net).resolve("University of Toronto")
+    assert (point.lat, point.lng, point.how) == (43.6629, -79.3957, "geocoder")
+    params = dict(net.calls[0].url.params)
+    assert params["q"] == "University of Toronto, Toronto" and params["bounded"] == "1"
+
+
+async def test_an_intersection_with_no_meeting_point_falls_back_to_the_geocoder():
+    net = Net(overpass=[], nominatim=[{"lat": "43.7", "lon": "-79.4"}])
+    assert (await _places(net).resolve("Yonge & Nowhere")).how == "geocoder"
+    assert [c.url.host for c in net.calls] == ["overpass-api.de", "nominatim.openstreetmap.org"]
+
+
+async def test_without_a_contact_or_when_lookups_fail_the_place_stays_unresolved():
+    offline = Net()
+    assert await _places(offline, contact=None).resolve("King and Bay") is None and offline.calls == []
+    assert await _places(Net(status=503)).resolve("Casa Loma") is None
+    assert await _places(Net()).resolve("Nowhere at all") is None
+
+
+@pytest.mark.parametrize(("said", "matches", "misses"), [
+    ("King", ["King Street West", "King Street East", "King Street"],
+     ["Kingston Road", "King Edward Avenue"]),
+    ("Bay Street", ["Bay Street"], ["Baycrest Avenue"]),
+    ("Queen St W", ["Queen Street West"], ["Queens Quay West"]),
+])
+def test_a_street_as_people_say_it_matches_its_full_name(said, matches, misses):
+    pattern = re.compile(_street(said), re.I)
+    assert all(pattern.search(m) for m in matches) and not any(pattern.search(m) for m in misses)
+
+
+async def test_naming_a_place_re_ranks_the_board_around_it():
+    near, far = KING_AND_BAY, (43.78, -79.42)
+    listings = [Listing(listing_id=f"t:{n}", source="t", source_id=str(n), url="https://example.com",
+                        first_seen=NOW, last_seen=NOW, address=f"{n} Place St", lat=lat, lng=lng, rent=rent,
+                        monthly_cost=rent, beds=1)
+                for n, (lat, lng), rent in ((1, far, 1800), (2, near, 2100))]
+    places = _places(Net(overpass=[{"lat": KING_AND_BAY[0], "lon": KING_AND_BAY[1]}]))
+    rt = SessionRuntime(Catalogue(listings, "test"), places=places)
+    sid = "s_place00001"
+    await rt.start(SessionStarted(session_id=sid, at=NOW, idem_key=f"{sid}:start", channel="judge"))
+    before = await rt.emit(PreferencesUpdated(session_id=sid, at=NOW, idem_key=f"{sid}:p1",
+                                              delta=PreferenceDelta(max_monthly=2400)))
+    assert [c.listing_id for c in before.board] == ["t:1", "t:2"]   # cheaper first, no place yet
+    await rt.emit(PreferencesUpdated(session_id=sid, at=NOW, idem_key=f"{sid}:p2",
+                                     delta=PreferenceDelta(anchors=[AnchorRef(label="King and Bay")])))
+    await rt.idle()   # the lookup runs after the commit, then AnchorResolved
+    after = rt.get(sid)
+    [anchor] = after.preferences.anchors
+    assert (anchor.lat, anchor.lng) == KING_AND_BAY
+    assert [c.listing_id for c in after.board] == ["t:2", "t:1"]
+    assert after.agent_says == "2 Place St moves to the top. 1 Place St drops to second."
+    assert "right by King and Bay" in after.board[0].reasons
+
+
+def test_the_station_file_is_read_by_default():
+    places = Places(FeatureMatrix.build([], HOODS).named)
+    assert places.contact is None and json.dumps(sorted(places._stations)).count("union") == 1
