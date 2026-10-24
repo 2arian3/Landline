@@ -128,7 +128,8 @@ def area(label: str, hoods: Callable[[list[str]], list[Hood]], stations: list[di
     catalogue has listings on, a TTC station, or the listings whose building or neighbourhood holds the
     words. People say places loosely, so "Queens", "Queen's" and "Queen Street West" all try "Queen", and
     "over by Cosburn" tries "Cosburn". A word that says street ("Bathurst Street") tries the street before
-    a neighbourhood of that name (Bathurst Manor). None when nothing holds it: never a guess."""
+    a neighbourhood of that name (Bathurst Manor). Last, a street or station spelled a little off ("Christy
+    Street", #184). None when nothing holds it: never a guess."""
     words, direction, streety, station = _place_words_of(label)
     if not words:
         return None
@@ -144,10 +145,55 @@ def area(label: str, hoods: Callable[[list[str]], list[Hood]], stations: list[di
         order += [by_street, by_hood, by_station] if streety else [by_hood, by_street, by_station]
         if spot := next((s for s in order if s is not None), None):
             return spot
-    for core in tries:   # last, the loosest: listings whose building or neighbourhood holds the words
+    for core in tries:   # the loosest: listings whose building or neighbourhood holds the words
         if point := place(" ".join(core), catalogue):
             return Spot(point[0], point[1], "listings")
-    return None
+    return _misspelled(words, direction[1] if direction else None, station, stations, catalogue)
+
+
+def _misspelled(words: list[str], direction: str | None, station: bool, stations: list[dict],
+                catalogue: Catalogue) -> Spot | None:
+    """A street the catalogue has listings on, or a TTC station, spelled a little off what was said, the way
+    speech comes through as text: "Christy" for Christie, "Osington" for Ossington, "Dufferen". Only the one
+    nearest name, never one of two as near (_nearest). A station first when said as one."""
+    said = " ".join(words)
+    streets = {" ".join(_street_of(x.address)[0]) for x in catalogue.listings
+               if x.lat is not None and x.lng is not None}
+    near_street = _nearest(said, streets)
+    near_station = _nearest(said, {" ".join(_station_words(s["name"])) for s in stations})
+    by_street = _street(near_street.split(), direction, catalogue) if near_street else None
+    by_station = _station(near_station.split(), stations) if near_station else None
+    return (by_station or by_street) if station else (by_street or by_station)
+
+
+def _nearest(said: str, names: set[str]) -> str | None:
+    """The one name that sounds like `said` (_plain), else the one a letter off it: changed, added, dropped,
+    or two swapped. Never for a word under five letters, where a letter off is another word, and None when
+    two names are as near."""
+    plain = _plain(said)
+    found = {n for n in names if n and _plain(n) == plain}
+    if not found and len(plain) >= 5:
+        found = {n for n in names if n and _one_off(_plain(n), plain)}
+    return found.pop() if len(found) == 1 else None
+
+
+def _plain(name: str) -> str:
+    """A name as it sounds, near enough for how speech is spelled: each doubled letter once ("ossington" →
+    osington) and a word's last "ie" or "ey" as "y" ("christie" → christy)."""
+    return re.sub(r"(ie|ey)\b", "y", re.sub(r"(.)\1+", r"\1", name))
+
+
+def _one_off(a: str, b: str) -> bool:
+    """Whether `b` is `a` with one letter changed, added or dropped, or two letters next to each other
+    swapped."""
+    if len(a) > len(b):
+        a, b = b, a
+    if a == b or len(b) - len(a) > 1:
+        return a == b
+    i = next((k for k in range(len(a)) if a[k] != b[k]), len(a))
+    if len(a) < len(b):
+        return a[i:] == b[i + 1:]
+    return a[i + 1:] == b[i + 1:] or (a[i:i + 2] == b[i:i + 2][::-1] and a[i + 2:] == b[i + 2:])
 
 
 def _place_words_of(label: str) -> tuple[list[str], tuple[str, str] | None, bool, bool]:
@@ -204,10 +250,15 @@ def _street_of(address: str) -> tuple[list[str], str | None]:
 def _station(core: list[str], stations: list[dict]) -> Spot | None:
     name = " ".join(core)
     for s in stations:
-        words = re.findall(r"[a-z0-9]+", re.sub(r"['’]s\b", "", s["name"].lower()))
-        if " ".join(w for w in words if w not in STATION_WORDS) == name:
+        if " ".join(_station_words(s["name"])) == name:
             return Spot(s["lat"], s["lng"], "station")
     return None
+
+
+def _station_words(name: str) -> list[str]:
+    """"St. George Station" → ["st", "george"]; "Queen's Park" → ["queen", "park"]."""
+    words = re.findall(r"[a-z0-9]+", re.sub(r"['’]s\b", "", name.lower()))
+    return [w for w in words if w not in STATION_WORDS]
 
 
 def _rank(words: list[str], size: int) -> int | None:

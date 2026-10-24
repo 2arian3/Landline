@@ -101,6 +101,17 @@ async def test_without_a_contact_or_when_lookups_fail_the_place_stays_unresolved
     assert await _places(Net()).resolve("Nowhere at all") is None
 
 
+async def test_a_lookup_that_times_out_is_one_line_that_names_the_timeout(caplog):
+    """#184: a timeout's message is empty, so the log read "lookup failed ()"."""
+    def slow(request):
+        raise httpx.ReadTimeout("", request=request)
+    client = httpx.AsyncClient(transport=httpx.MockTransport(slow))
+    places = Places(FeatureMatrix.build([], HOODS).named, STATIONS, contact="team@example.com", client=client)
+    assert await places.resolve("Christy Street") is None
+    [line] = [r for r in caplog.records if "lookup failed" in r.getMessage()]
+    assert "ReadTimeout(" in line.getMessage() and line.exc_info is None   # no traceback
+
+
 @pytest.mark.parametrize(("said", "matches", "misses"), [
     ("King", ["King Street West", "King Street East", "King Street"],
      ["Kingston Road", "King Edward Avenue"]),
