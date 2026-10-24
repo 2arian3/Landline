@@ -53,6 +53,20 @@ async def test_a_neighbourhood_or_a_station_needs_no_network():
     assert net.calls == []
 
 
+async def test_an_apostrophe_or_its_absence_finds_the_same_station():
+    queens_park = {"id": "s3", "name": "Queen's Park", "lat": 43.6597, "lng": -79.3902}
+    places = Places(FeatureMatrix.build([], HOODS).named, [*STATIONS, queens_park], contact=None)
+    for said in ("Queens Park", "Queen's Park", "Queen’s Park", "Queens Park station"):
+        point = await places.resolve(said)
+        assert point is not None and (point.lat, point.how) == (43.6597, "station"), said
+
+
+def test_an_apostrophe_or_its_absence_finds_the_same_neighbourhood():
+    named = FeatureMatrix.build([], [Hood(3, "Parkwoods-O'Connor Hills", 43.75, -79.31, ())]).named
+    for said in ("OConnor", "O'Connor", "O’Connor Hills"):
+        assert [h.name for h in named([said])] == ["Parkwoods-O'Connor Hills"], said
+
+
 async def test_an_intersection_is_where_the_two_streets_meet():
     net = Net(overpass=[{"lat": KING_AND_BAY[0], "lon": KING_AND_BAY[1]}])
     places = _places(net)
