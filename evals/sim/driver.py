@@ -164,7 +164,8 @@ async def simulate(case_id: str, run: int, opponent: Opponent, *, catalogue: Cat
             await higgs.send({"type": "response.create"})
             said = await _agent_turn(stream, higgs, ctx, trace, len(trace.lines) - 1, turn_timeout_s)
             if reader is not None and not trace.agent[-1].tools and not ctx.hang_up:   # as the bridge does
-                caught = await backstop.catch_up(reader, line, ctx)
+                caught = await backstop.catch_up(reader, line, ctx,
+                                                 claimed=backstop.claims_save(trace.agent[-1].text))
                 if caught is not None:
                     trace.caught.append({"line": len(trace.lines) - 1, "output": caught})
             if "call_listings" not in trace.agent[-1].tools and not ctx.hang_up:   # #127, as the bridge does
