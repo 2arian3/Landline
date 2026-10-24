@@ -252,14 +252,15 @@ async def judge_start(request: Request) -> JudgeStart | JSONResponse:
 @router.post("/api/judge/{session_id}/done", response_model=SessionView)
 async def judge_done(session_id: str, request: Request) -> SessionView | JSONResponse:
     """The judge's Done button ends the brief (SessionEnded), the way hanging up ends a phone call: with a
-    plan the session goes on to its calls, with nothing planned it closes. A stand-in until the browser
-    transport (A-03) ends the brief itself, so it's behind the same JUDGE_AUDIO_READY gate as
-    /api/judge/start. The judge's line is free again for the next judge."""
+    plan the session goes on to its calls, with nothing planned it closes. The audio socket closing ends it
+    too (the bridge, under the same idem key, so the brief ends once); this covers a judge whose audio never
+    connected, and gives the page's line back. Only a judge session: a renter's phone call isn't this
+    endpoint's to end. Behind the same JUDGE_AUDIO_READY gate as /api/judge/start."""
     state = request.app.state
     if not state.settings.judge_audio_ready:
         return _refused(503, "closed", CLOSED)
-    if not _live(request, session_id):
-        raise HTTPException(404, "unknown session")
+    if not _live(request, session_id) or state.runtime.state(session_id).channel != "judge":
+        raise HTTPException(404, "unknown judge session")
     state.judges.release(session_id)   # an open socket's line frees when the socket closes
     return await _emit(request, SessionEnded(**_meta(session_id, "ended"), reason="end_session"))
 
