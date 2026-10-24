@@ -30,7 +30,17 @@ from landline.contracts import CallOutcome, Listing, Preferences, Viewing
 from landline.orchestrator import SessionRuntime
 from landline.voice import bridge
 from landline.voice.avatar_clip import Clips, gender_of_voice
-from landline.voice.bridge import HANG_UP_GRACE_S, KEEP_AUDIO_EVERY_S, Playback
+from landline.voice.bridge import (
+    HANG_UP_GRACE_S,
+    KEEP_AUDIO_EVERY_S,
+    Playback,
+    discard_tool,
+    dropping,
+    note_speech,
+    note_user_turn,
+    open_response,
+    response_settles,
+)
 from landline.voice.dispatch import CallResult, Dial
 from landline.voice.higgs import PCMU, ConnectHiggs, session_config
 from landline.voice.outbound import Turns, opening
@@ -166,10 +176,25 @@ async def _talk(higgs: Any, transport: Any, ctx: Any, turns: Turns, playback: Pl
         async for event in higgs.events():
             kind = event.get("type")
             if kind == "response.created":
+                open_response(ctx)
                 spoke = False
                 busy.add("reply")
+            elif dropping(ctx):
+                if kind == "response.output_audio.delta":
+                    pass
+                elif kind == "response.function_call_arguments.done":
+                    await discard_tool(higgs, event, ctx)
+                elif kind == "response.done":
+                    ctx.dropping = False
+                    busy.discard("reply")
+                    if not ctx.hang_up:
+                        await caller_tools.kept_promise(ctx, said, called)
+                        if caller_tools.over(ctx, said, called):
+                            over.set()
+                        said, called = "", []
             elif kind == "response.output_audio.delta":
                 spoke = True
+                note_speech(ctx)
                 await transport.send_audio(event["delta"])
                 playback.sent(event["delta"])
                 rec(recorder.played, event["delta"], event.get("item_id"))
@@ -178,6 +203,7 @@ async def _talk(higgs: Any, transport: Any, ctx: Any, turns: Turns, playback: Pl
                     log.info("listing call %s: first audio out", ctx.call_id)
             elif kind == "input_audio_buffer.speech_started":
                 # Their line starts here either way; only a barge-in cuts what the Caller was saying.
+                note_user_turn(ctx)
                 busy.add("them")
                 rec(recorder.speech_started, event.get("item_id"), event.get("audio_start_ms"))
                 if opening and (not opened or playback.remaining() > 0):
@@ -196,8 +222,11 @@ async def _talk(higgs: Any, transport: Any, ctx: Any, turns: Turns, playback: Pl
                     ctx.said.append(heard)
                     _said(turns, recorder, "landlord", heard, event, rec)
             elif kind == "response.output_audio_transcript.done":
-                said = " ".join(f"{said} {event.get('transcript') or ''}".split())
-                _said(turns, recorder, "agent", str(event.get("transcript") or ""), event, rec)
+                heard_line = str(event.get("transcript") or "")
+                if heard_line.strip():
+                    note_speech(ctx)
+                said = " ".join(f"{said} {heard_line}".split())
+                _said(turns, recorder, "agent", heard_line, event, rec)
             elif kind == "response.function_call_arguments.done":
                 await bridge.run_tool(higgs, event, ctx, spoke=spoke, agent=caller_tools)
                 called.append(str(event.get("name", "")))
@@ -207,8 +236,7 @@ async def _talk(higgs: Any, transport: Any, ctx: Any, turns: Turns, playback: Pl
                 if bridge.ends_call(event, ctx):
                     await asyncio.sleep(playback.remaining() + HANG_UP_GRACE_S)
                     return ctx.end_reason or "done"
-                output = (event.get("response") or {}).get("output") or []
-                if not ctx.hang_up and not any(o.get("type") == "function_call" for o in output):
+                if not ctx.hang_up and response_settles(ctx, event):
                     await caller_tools.kept_promise(ctx, said, called)   # the Caller's turn is over
                     if caller_tools.over(ctx, said, called):
                         over.set()

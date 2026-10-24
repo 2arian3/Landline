@@ -52,7 +52,7 @@ async def test_a_tool_call_is_a_span_with_its_arguments_and_answer(spans):
 
     higgs = FakeHiggs()
     event = {"name": "end_session", "arguments": '{"reason": "done"}', "call_id": "t_1"}
-    await run_tool(higgs, event, ctx(), agent=agent(handle))
+    await run_tool(higgs, event, ctx(), spoke=False, agent=agent(handle))
 
     a = tool_span(spans)["attributes"]
     assert a["logfire.msg"] == "tool end_session"
@@ -69,7 +69,7 @@ async def test_secrets_in_arguments_are_still_scrubbed(spans):
         return "ok"
 
     await run_tool(FakeHiggs(), {"name": "search", "arguments": '{"api_key": "sk-123"}', "call_id": "t_2"},
-                   ctx(), agent=agent(handle))
+                   ctx(), spoke=False, agent=agent(handle))
     assert "sk-123" not in str(tool_span(spans)["attributes"]["arguments"])
 
 
@@ -78,7 +78,8 @@ async def test_a_failed_tool_is_an_error_span_and_still_answers(spans):
         raise RuntimeError("database down")
 
     higgs = FakeHiggs()
-    await run_tool(higgs, {"name": "search", "arguments": "{}", "call_id": "t_3"}, ctx(), agent=agent(handle))
+    await run_tool(higgs, {"name": "search", "arguments": "{}", "call_id": "t_3"}, ctx(), spoke=False,
+                   agent=agent(handle))
 
     span = tool_span(spans)
     assert span["attributes"]["logfire.level_num"] >= 17   # error
