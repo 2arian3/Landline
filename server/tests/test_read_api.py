@@ -23,10 +23,22 @@ from landline.api.demo import DemoSessions
 from landline.api.routes import JudgeStart, Turn
 from landline.app import create_app
 from landline.config import ROOT, Settings
-from landline.contracts import CataloguePoint, Listing, SessionView
+from landline.contracts import (
+    CallOutcome,
+    CallsCompleted,
+    CallsRequested,
+    CataloguePoint,
+    Listing,
+    OutcomeReady,
+    SessionEnded,
+    SessionStarted,
+    SessionView,
+    Viewing,
+)
 from landline.db.catalogue import Catalogue
 from landline.db.migrations import apply
 from landline.db.rows import TurnRow
+from landline.orchestrator.profiles import Remembered
 
 NOW = datetime(2026, 10, 22, tzinfo=UTC)
 URL = os.environ.get("TEST_DATABASE_URL")
@@ -388,3 +400,63 @@ def test_turns_endpoint_reads_call_turns_from_postgres(db_url):
         assert [t["idx"] for t in c.get("/api/calls/c_turnsapi01/turns?after=0").json()] == [1]
         assert c.get("/api/calls/c_turnsapi02/turns").json() == []
         assert c.get("/api/calls/c_unknown000/turns").status_code == 404
+
+
+# A returning caller (U-08): what the read side carries for the second call from a number
+
+
+class MemoryProfiles:
+    """O-05's Profiles, kept in memory instead of Postgres: enough to check the second call from a number
+    without a database. The runtime and the Narrator are the real ones."""
+
+    def __init__(self, name: str | None):
+        self.name = name
+        self.users: dict[str, int] = {}
+        self.results: dict[int, str | None] = {}
+
+    async def recall(self, phone: str) -> Remembered:
+        if phone not in self.users:
+            self.users[phone] = len(self.users) + 1
+            return Remembered(user_id=self.users[phone], returning=False)
+        user = self.users[phone]
+        return Remembered(user_id=user, returning=True, name=self.name, last_results=self.results.get(user))
+
+    async def remember(self, state, event_type: str, address) -> None:
+        if event_type == "CallsCompleted":
+            self.results[state.user_id] = state.results
+
+
+def _meta(session_id: str, n: int) -> dict:
+    return {"session_id": session_id, "at": NOW, "idem_key": f"{session_id}:{n}"}
+
+
+def test_a_returning_caller_opens_on_welcome_back_with_the_last_results():
+    phone, first, second = "+14165550123", "s_firstcall1", "s_secondcal1"
+    with _client() as c:
+        rt, run = c.app.state.runtime, c.portal.call
+        rt.profiles = MemoryProfiles(name="Sara")
+        rt.on("CallsCompleted", rt._remember)
+        run(rt.start, SessionStarted(**_meta(first, 0), channel="phone", caller_phone=phone))
+        assert not c.get(f"/api/sessions/{first}").json()["returning"]   # a number never heard before
+        run(rt.emit, CallsRequested(**_meta(first, 1), listing_ids=["t:1", "t:2"]))
+        run(rt.emit, SessionEnded(**_meta(first, 2), reason="hangup"))
+        # The Dispatcher (A-06) freezes the plan and queues one call per place; with no caller plugged in,
+        # they stay queued, and the outcomes below stand in for the calls.
+        run(c.app.state.dispatcher.idle)
+        calls = list(rt.state(first).calls)
+        assert [rt.state(first).calls[cid].listing_id for cid in calls] == ["t:1", "t:2"]
+        viewing = Viewing(starts_at=datetime(2026, 10, 24, 18, tzinfo=UTC), slot_text="Saturday at two")
+        run(rt.emit, OutcomeReady(**_meta(first, 4), outcome=CallOutcome(
+            call_id=calls[0], listing_id="t:1", end_reason="done", viewing=viewing)))
+        run(rt.emit, OutcomeReady(**_meta(first, 5), outcome=CallOutcome(
+            call_id=calls[1], listing_id="t:2", end_reason="no_answer")))
+        run(rt.emit, CallsCompleted(**_meta(first, 6), call_ids=calls))
+        run(rt.idle)
+        results = c.get(f"/api/sessions/{first}").json()["results"]
+        assert results.startswith("I booked 1 Test St for Saturday")
+
+        run(rt.start, SessionStarted(**_meta(second, 0), channel="phone", caller_phone=phone))
+        view = c.get(f"/api/sessions/{second}").json()
+        assert view["returning"] and view["user_name"] == "Sara"
+        # The line the panel's welcome reads: the greeting, then the last call's results.
+        assert view["agent_says"] == f"Welcome back, Sara. {results}"

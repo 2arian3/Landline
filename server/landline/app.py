@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from landline.api import browser_audio, twilio
+from landline.api import admin, browser_audio, twilio
 from landline.api.demo import DemoSessions
 from landline.api.judge import JudgeLines, StartLimit
 from landline.api.routes import router
@@ -17,6 +17,7 @@ from landline.db.pool import Database
 from landline.orchestrator import SessionRuntime
 from landline.voice import higgs
 from landline.voice.calls import RenterCalls
+from landline.voice.dispatch import Dispatcher
 from landline.voice.sms import Texter
 
 
@@ -55,7 +56,11 @@ def create_app(settings: Settings | None = None, catalogue: Catalogue | None = N
         app.state.connect_higgs = higgs.connect
         # Texts the phone renter their board link. Tests swap it for a fake.
         app.state.texter = Texter(settings.twilio_account_sid, settings.twilio_auth_token)
+        # The hand-off (A-06): a brief that ends with a plan has its calls queued and run. The Caller (A-05)
+        # sets `runner`; until then the plan is frozen and its calls stay queued.
+        app.state.dispatcher = Dispatcher(app.state.runtime, settings, texter=app.state.texter)
         yield
+        await app.state.dispatcher.close()
         await app.state.texter.close()
         app.state.sessions.close()
         await app.state.runtime.close()
@@ -71,10 +76,11 @@ def create_app(settings: Settings | None = None, catalogue: Catalogue | None = N
         allow_origins=settings.allowed_origins(),
         allow_origin_regex=settings.cors_origin_regex,
         allow_methods=["GET", "POST"],
-        allow_headers=["Content-Type"],
+        allow_headers=["Content-Type", "Authorization"],   # Authorization: the admin panel's token
         max_age=600,
     )
     app.include_router(router)
+    app.include_router(admin.router)
     app.include_router(twilio.router)
     app.include_router(browser_audio.router)
     return app

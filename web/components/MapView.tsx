@@ -29,8 +29,9 @@ const PARK = "#dfe5d4";
 const FOCUS_ZOOM = 13;
 const FOCUS_ZOOM_NARROW = 12;
 const NARROW_PX = 640;
-// Pin faces closer than this on screen get nudged apart, so every number stays readable and tappable.
-const PIN_GAP = 32;
+// Pins closer than this on screen get nudged apart: one round 44 px tap target, so no pin's target covers
+// a neighbour's face, and wide enough for a focused face or a calling ring not to cover its neighbour's.
+const PIN_GAP = 44;
 
 export type Padding = { top: number; right: number; bottom: number; left: number };
 type Pin = { marker: Marker; el: HTMLButtonElement; face: HTMLSpanElement };
@@ -79,6 +80,7 @@ export function MapView({
   const map = useRef<MapLibre | null>(null);
   const pins = useRef(new Map<string, Pin>());
   const pinned = useRef<Card[]>([]); // the board's cards that have a pin, in rank order
+  const spreadFor = useRef(""); // the pins and positions the offsets were last worked out for
   const [ready, setReady] = useState(false);
   const handlers = useRef({ onSelect, onHover });
   handlers.current = { onSelect, onHover };
@@ -127,8 +129,15 @@ export function MapView({
       m.on("mouseleave", "catalogue", () => (m.getCanvas().style.cursor = ""));
       setReady(true);
     });
-    // Pins that touch at one zoom may not at the next.
-    m.on("zoomend", () => spread(m, pins.current, pinned.current));
+    // Pins that touch at one zoom may not at the next: re-spread as the zoom changes, once a frame.
+    let frame = 0;
+    m.on("zoom", () => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        spread(m, pins.current, pinned.current);
+      });
+    });
 
     return () => {
       pins.current.forEach(({ marker }) => marker.remove());
@@ -192,6 +201,8 @@ export function MapView({
         const marker = new Marker({ element: el, anchor: "center" }).setLngLat([card.lng!, card.lat!]).addTo(m);
         pin = { marker, el, face };
         pins.current.set(card.listing_id, pin);
+      } else {
+        pin.marker.setLngLat([card.lng!, card.lat!]); // a geocode can refine where a place is
       }
       pin.face.textContent = String(card.rank);
       pin.el.dataset.status = card.status;
@@ -208,7 +219,12 @@ export function MapView({
       }
     }
     pinned.current = board.filter((c) => keep.has(c.listing_id));
-    spread(m, pins.current, pinned.current);
+    // Re-spread only when the pins or where they stand changed, not on every hover or focus.
+    const where = pinned.current.map((c) => `${c.listing_id}@${c.lat},${c.lng}`).join("|");
+    if (where !== spreadFor.current) {
+      spreadFor.current = where;
+      spread(m, pins.current, pinned.current);
+    }
   }, [ready, board, focusId, hoverId, marks]);
 
   // ── frame the board when its set of listings changes ────────────────────
@@ -276,27 +292,33 @@ function underSheet(m: MapLibre, card: Card, p: Padding): boolean {
 
 /**
  * Nudges pins that would overlap on screen. Cards come in rank order, and a
- * higher rank keeps its true spot; a lower one moves just far enough away from
- * the pin it touches (down and right when they share an address). The offset
- * is in pixels, so it's redone whenever the zoom changes.
+ * higher rank keeps its true spot. A lower one that would touch a placed pin
+ * takes the first free spot on rings around its own true spot (one, two, then
+ * three gaps out, starting down and right), so a crowd of pins at one address
+ * stays gathered around it. The offset is in pixels, so it's redone as the
+ * zoom changes.
  */
 function spread(m: MapLibre, pins: Map<string, Pin>, cards: Card[]) {
   const placed: { x: number; y: number }[] = [];
+  const free = (x: number, y: number) => placed.every((q) => Math.hypot(x - q.x, y - q.y) >= PIN_GAP);
   for (const card of cards) {
     const pin = pins.get(card.listing_id);
     if (!pin) continue;
-    const at = m.project([card.lng!, card.lat!]);
-    let { x, y } = at;
-    for (let pass = 0; pass < 8; pass++) {
-      const near = placed.find((q) => Math.hypot(x - q.x, y - q.y) < PIN_GAP);
-      if (!near) break;
-      const d = Math.hypot(x - near.x, y - near.y);
-      const [ux, uy] = d < 0.5 ? [Math.SQRT1_2, Math.SQRT1_2] : [(x - near.x) / d, (y - near.y) / d];
-      x = near.x + ux * PIN_GAP;
-      y = near.y + uy * PIN_GAP;
+    const at = m.project(pin.marker.getLngLat());
+    let spot = { x: at.x, y: at.y };
+    search: for (let ring = 1; !free(spot.x, spot.y) && ring <= 3; ring++) {
+      for (let k = 0; k < 8 * ring; k++) {
+        const a = Math.PI / 4 + (2 * Math.PI * k) / (8 * ring);
+        const x = at.x + Math.cos(a) * PIN_GAP * ring;
+        const y = at.y + Math.sin(a) * PIN_GAP * ring;
+        if (free(x, y)) {
+          spot = { x, y };
+          break search;
+        }
+      }
     }
-    placed.push({ x, y });
-    pin.marker.setOffset([x - at.x, y - at.y]);
+    placed.push(spot);
+    pin.marker.setOffset([spot.x - at.x, spot.y - at.y]);
   }
 }
 

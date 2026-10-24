@@ -116,8 +116,9 @@ export function ListingDetail({
                 alt={i === 0 ? `Photo of ${detail.address}` : ""}
                 loading={i < 2 ? "eager" : "lazy"}
                 fetchPriority={i === 0 ? "high" : "auto"}
-                // On a short screen (a phone on its side) the photo gives way, so the price still shows.
-                className="aspect-[4/3] max-h-[38vh] w-[82%] shrink-0 snap-start overflow-hidden rounded-[var(--radius-photo)] bg-press object-cover text-[0px] sm:w-[70%]"
+                // On a short screen (a phone on its side) the photo gives way, so the price still shows. Its
+                // width follows the panel, not the window: a tablet's panel is as narrow as a phone.
+                className="aspect-[4/3] max-h-[38svh] w-[82%] shrink-0 snap-start overflow-hidden rounded-[var(--radius-photo)] bg-press object-cover text-[0px]"
               />
             ))}
           </div>
@@ -193,7 +194,8 @@ export function ListingDetail({
               ))}
             </ul>
           ) : (
-            !asked && <p className="mt-1.5 text-support text-ink-2">{noFacts(card?.status, mark)}</p>
+            !asked &&
+            !notes.viewing && <p className="mt-1.5 text-support text-ink-2">{noFacts(card?.status, mark)}</p>
           )}
           {notes.questions.map((q) => (
             <div key={q} className="mt-3">
@@ -272,6 +274,7 @@ function noFacts(status?: Card["status"], mark?: Mark): string {
   if (mark === "ringing") return "Ringing now.";
   if (status === "calling") return "Landline is on the phone with them now. What they say lands here, with their words.";
   if (status === "no_answer") return "Nobody picked up yet.";
+  if (status === "booked") return "A viewing was booked on the call. Nothing else came up.";
   return "Nobody has called about this one yet. Say “call this one” and what the listing agent says lands here, with their words.";
 }
 
