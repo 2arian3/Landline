@@ -4,6 +4,8 @@ fake."""
 import asyncio
 from datetime import UTC, datetime
 
+import pytest
+
 from landline.agents.concierge.prompt import (
     CALL_CONNECTED,
     FIRST_CALL,
@@ -26,7 +28,7 @@ from landline.orchestrator import SessionRuntime
 from landline.voice import bridge
 from landline.voice.dispatch import CallResult, Dispatcher
 from landline.voice.higgs import session_config
-from landline.voice.translate import Translator, numbers
+from landline.voice.translate import SYSTEM, Translator, keeps_numbers, numbers
 
 NOW = datetime(2026, 10, 24, 15, 0, tzinfo=UTC)   # Saturday 11:00 in Toronto: inside business hours
 SID = "s_lang000001"
@@ -84,6 +86,30 @@ async def test_english_no_language_no_model_or_a_failure_sends_the_text_as_it_is
     assert await Translator(FakeChat(error=RuntimeError("429")))(RESULTS, "es") == RESULTS
     assert await Translator(FakeChat(SPANISH, delay_s=1), timeout_s=0.01)(RESULTS, "es") == RESULTS
     assert await Translator(FakeChat(""))(RESULTS, "es") == RESULTS
+
+
+# #188: a Farsi results text with its numbers kept, in Persian digits, separators or 24-hour times, is
+# used; any number dropped or changed sends the English.
+TIMES = "Rent $3,200 a month, parking $180. Viewing Saturday at 6:30 pm. Call back by 10 am."
+
+
+@pytest.mark.parametrize(("translated", "kept"), [
+    ("اجاره ۳۲۰۰ دلار در ماه، پارکینگ ۱۸۰ دلار. بازدید شنبه ساعت ۶:۳۰ بعدازظهر. تا ساعت ۱۰ صبح.", True),
+    ("اجاره ۳٫۲۰۰ دلار، پارکینگ ۱۸۰. بازدید شنبه ساعت ۱۸:۳۰. تا ساعت ۱۰.", True),   # ٫ and 24-hour
+    ("اجاره ۳٬۲۰۰ دلار، پارکینگ ۱۸۰. بازدید شنبه ساعت ۰۶:۳۰. تا ساعت ۱۰.", True),
+    ("اجاره ۳۲۰۰ دلار. بازدید شنبه ساعت ۶:۳۰. تا ساعت ۱۰.", False),                 # parking dropped
+    ("اجاره ۳۲۰۰ دلار، پارکینگ ۱۹۰. بازدید شنبه ساعت ۶:۳۰. تا ساعت ۱۰.", False),    # 180 became 190
+    ("اجاره ۳۲۰۰ دلار، پارکینگ ۱۸۰. بازدید شنبه ساعت ۱۸:۳۰. تا ساعت ۲۲.", False),   # 10 am read as pm
+])
+def test_a_translations_numbers_are_checked_whatever_their_form(translated, kept):
+    assert keeps_numbers(TIMES, translated) is kept
+
+
+async def test_a_farsi_results_text_with_its_numbers_kept_is_texted_in_farsi():
+    farsi = "اجاره ۳٫۲۰۰ دلار، پارکینگ ۱۸۰. بازدید شنبه ساعت ۱۸:۳۰. تا ساعت ۱۰."
+    assert await Translator(FakeChat(farsi))(TIMES, "fa") == farsi
+    assert numbers("۲٫۵ کیلومتر") == numbers("2.5 km")   # the decimal mark is still a decimal point
+    assert "Keep times in the same 12-hour form" in SYSTEM
 
 
 def test_language_codes_read_as_names_whatever_their_form():

@@ -17,7 +17,9 @@ from landline.agents.concierge.backstop import (
     catch_up_calls,
     claims_save,
     foreign,
+    language_of,
     refs_in,
+    save_language,
 )
 from landline.contracts import Listing, ListingFocused, PreferencesUpdated, SessionStarted
 from landline.contracts.tools import PreferenceDelta
@@ -513,3 +515,47 @@ async def test_a_viewing_the_reply_promised_records_its_times_and_asks_before_bo
     _answered(turn, "Yeah, that's true.")
     turn.agent_said("Great, I'll set up the viewing for tomorrow.")
     assert turn.call_line() == "Yeah, that's true."
+
+
+
+# #188: a renter spoke Farsi all call, the Concierge called a tool every turn, the language was never
+# saved, and the results text went out in English. Code saves it from the script.
+@pytest.mark.parametrize(("line", "lang"), [
+    ("آره لطفاً لطفاً آپشن اولم رو بهم بگو.", "fa"),
+    (FARSI, "fa"),
+    ("مرحبا، أبحث عن شقة", "ar"),
+    ("میں ایک اپارٹمنٹ ڈھونڈ رہا ہوں", "ur"),
+    ("我想找一个两居室", "zh"),
+    ("私は猫を飼っています", "ja"),
+    (KOREAN, "ko"),
+    ("ਮੇਰੇ ਕੋਲ ਇੱਕ ਕੁੱਤਾ ਹੈ।", "pa"),
+    ("Hi, I'm looking near Christie Street", None),
+    ("Я ищу квартиру", None),     # Cyrillic names no one language
+    ("Ok 네", None),               # too few letters to tell
+])
+def test_a_lines_script_names_its_language(line, lang):
+    assert language_of(line) == lang
+
+
+async def test_the_renters_language_is_saved_from_their_script_once_and_never_over_the_models():
+    ctx = await _ctx()
+    assert await save_language("آره لطفاً آپشن اولم رو بهم بگو.", ctx) == "fa"
+    assert ctx.runtime.get(SID).preferences.language == "fa"
+    assert await save_language("میشه بهشون زنگ بزنی؟ فردا میتونم بیام ببینمش.", ctx) is None   # once
+    assert await save_language("OK, let's speak English now.", ctx) is None   # the model's own call
+    ctx = await _ctx()
+    await ctx.runtime.emit(PreferencesUpdated(session_id=SID, at=NOW, idem_key=f"{SID}:yue",
+                                              delta=PreferenceDelta(language="yue")))
+    assert await save_language("我想找一个两居室", ctx) is None                  # Cantonese stands
+    ctx = await _ctx()
+    await ctx.runtime.emit(PreferencesUpdated(session_id=SID, at=NOW, idem_key=f"{SID}:en",
+                                              delta=PreferenceDelta(language="en")))
+    assert await save_language(FARSI, ctx) == "fa"                               # a switch from English
+
+
+def test_a_line_in_another_script_is_handed_on_once_whatever_tools_ran():
+    turn = Turn()
+    _answered(turn, FARSI, ("focus_listing",))
+    assert turn.language_line() == FARSI and turn.language_line() is None
+    _answered(turn, "Call the first one.", ("call_listings",))
+    assert turn.language_line() is None
