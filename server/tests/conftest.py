@@ -3,9 +3,14 @@
 `schema` creates a throwaway schema `t_<random>` in TEST_DATABASE_URL, applies the
 migrations into it, and drops it afterwards. Without a reachable TEST_DATABASE_URL
 every test that asks for it skips.
+
+On Windows the tests run on the selector event loop: psycopg's async pool can't use the default
+Proactor loop, and every Postgres test there timed out opening it. CI (Linux) is untouched.
 """
+import asyncio
 import os
 import secrets
+import sys
 
 import psycopg
 import pytest
@@ -13,6 +18,9 @@ from psycopg import sql
 
 from landline.db.migrations import apply
 from landline.db.pool import Database
+
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 URL = os.environ.get("TEST_DATABASE_URL")
 

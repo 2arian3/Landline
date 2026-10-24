@@ -267,6 +267,29 @@ async def test_a_promise_to_check_notes_the_landlords_question():
     assert await tools.kept_promise(ctx, "Great, thanks.", []) is None                      # no promise
 
 
+async def test_a_viewing_booked_in_the_call_closes_the_landlords_question_about_one():
+    """Linda asked "Would you like to schedule a viewing?", the Caller booked one, and the question stayed
+    open in the results. A viewing question waits with the call; the booking closes it."""
+    ctx = await _ctx(said=["Hi, it's available. Would you like to schedule a viewing?"])
+    await _say(ctx, "note_question", {"question": "Would you like to schedule a viewing?"})
+    assert ctx.questions == ["Would you like to schedule a viewing?"]
+    assert ctx.runtime.state(ctx.session_id).questions == {}            # not on the session yet
+    await _say(ctx, "note_question", {"question": "Does your client have a guarantor?"}, 2)
+    assert "Booked for Saturday at 1 pm" in await _say(ctx, "book_viewing", {"slot": "Saturday at 1 pm"}, 3)
+    assert ctx.questions == ["Does your client have a guarantor?"]
+    assert ctx.runtime.state(ctx.session_id).questions["t:1"] == ["Does your client have a guarantor?"]
+    ctx.said.append("Great. When can you come by to see it?")
+    assert await tools.kept_promise(ctx, "I'll check with my client.", []) is None   # already answered
+    assert ctx.questions == ["Does your client have a guarantor?"]
+
+
+async def test_a_viewing_question_with_nothing_booked_still_reaches_the_renter():
+    ctx = await _ctx(_plan(may_book=False), said=["It's available. When can you come by to see it?"])
+    noted = await tools.kept_promise(ctx, "I'll check with my client and get back to you.", [])
+    assert noted == "When can you come by to see it?"
+    assert ctx.questions == ["When can you come by to see it?"]          # in the outcome's open questions
+
+
 # ── a whole sim call through the Dispatcher ─────────────────────────────────
 
 class TurnFake:
