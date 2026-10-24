@@ -23,6 +23,7 @@ class Persona:
     offers: list[str] = field(default_factory=list)        # viewing times, in their words, in this order
     asks: list[str] = field(default_factory=list)          # questions they ask the caller
     voicemail: bool = False                                # never picks up
+    gender: str = "female"                                 # the clip's face: female | male
 
     def instructions(self, listing: Listing) -> str:
         unit = f"{listing.address}, {listing.unit_label}" if listing.unit_label else listing.address
@@ -78,7 +79,7 @@ DEMO = [
         asks=["Does your client have a guarantor?"],
     ),
     Persona(
-        id="raj-upsell", name="Raj", role="property manager",
+        id="raj-upsell", name="Raj", role="property manager", gender="male",
         manner="chatty and pushy about extras; you mention the paid extras whenever you can",
         knows={"availability": "Available right now, you could move in this week.",
                "parking": "Parking is $175 a month per spot, and honestly you'll want two.",
@@ -90,7 +91,7 @@ DEMO = [
         asks=["Would your client want the premium storage locker for $60 a month?"],
     ),
     Persona(
-        id="mark-scam", name="Mark", role="owner",
+        id="mark-scam", name="Mark", role="owner", gender="male",
         manner="smooth and in a hurry; you push the e-transfer",
         knows={"availability": "Yes, it's available, but there are lots of people interested.",
                "deposit": "I'm working overseas right now, so I can't show it in person. If your client "

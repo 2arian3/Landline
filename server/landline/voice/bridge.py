@@ -37,7 +37,7 @@ from landline.config import Settings
 from landline.contracts import SessionEnded, SessionStarted
 from landline.orchestrator import SessionRuntime
 from landline.voice import twilio
-from landline.voice.avatar_clip import Clips
+from landline.voice.avatar_clip import Clips, gender_of_voice
 from landline.voice.calls import RenterCall, RenterCalls
 from landline.voice.higgs import PCMU, ConnectHiggs, session_config
 from landline.voice.line import Item, Line, Lines
@@ -121,7 +121,7 @@ async def converse(transport: Transport, call: RenterCall, *, calls: RenterCalls
         runtime.calls.ended(call.call_id, reason)
         await runtime.calls.flushed(call.call_id)   # the clip reads the agent track once it is stored
         if clips is not None:
-            clips.schedule(call.call_id)
+            clips.schedule(call.call_id, agent_gender=gender_of_voice(settings.higgs_voice_renter))
         await _end_session(runtime, call.session_id, reason)
     return reason
 
