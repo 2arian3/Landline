@@ -105,7 +105,13 @@ export function LiveBoard({
     ? { top: 64, right: 64, bottom: 64, left: 64 }
     : { top: 84, right: 28, bottom: snap === PEEK ? 216 : Math.round(vh * 0.58), left: 28 };
 
-  const map = (
+  // The map's chunk waits for the first board, so on a slow line the places and their photos don't
+  // queue behind a megabyte of map. With no session to wait for (judge mode's intro), or once the API
+  // has gone quiet, it loads anyway; once loaded it stays.
+  const [mapOn, setMapOn] = useState(false);
+  if (!mapOn && (view || !sessionId || stale)) setMapOn(true);
+
+  const map = mapOn ? (
     <MapView
       points={points}
       matches={view?.matches ?? points.map((p) => p.listing_id)}
@@ -117,6 +123,8 @@ export function LiveBoard({
       onSelect={select}
       onHover={setHover}
     />
+  ) : (
+    <div className="absolute inset-0 bg-map-land" aria-hidden />
   );
 
   const list = (
