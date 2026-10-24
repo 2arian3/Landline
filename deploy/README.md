@@ -22,7 +22,7 @@ Landline VM 192.168.104.198            no public address
 | File | What it is |
 |---|---|
 | `compose.yml` | Production Postgres (same image as `db/local`), bound to localhost, volume `landline_pgdata` |
-| `production.env` | Non-secret settings: `WEB_URL`, `CORS_ORIGINS`, `CORS_ORIGIN_REGEX`, `PUBLIC_URL`, `TRANSPORT`. Committed; ships on deploy |
+| `production.env` | Non-secret settings: `WEB_URL`, `CORS_ORIGINS`, `CORS_ORIGIN_REGEX`, `PUBLIC_URL`, `TRANSPORT`, `TWILIO_PHONE_NUMBER` (the prod number). Committed; ships on deploy |
 | `systemd/` | `landline-api.service`, `landline-refresh.service` + `.timer` |
 | `remote.sh` | Runs on the VM on every deploy: `uv sync`, database up, migrations, install units, restart the API, health check, optional re-scrape |
 | `bootstrap.sh` | One-time VM setup: installs uv and writes `~/landline/.env` with a generated database password |
