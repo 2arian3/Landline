@@ -4,7 +4,7 @@
 
 Call it and say what you want, in whatever language you speak. A live map of Toronto listings re-ranks while you talk. Pick the places you like and hang up: it phones those listing agents in parallel to find out what listings never say (is it still available, what does parking really cost, are dogs allowed, how much light does it get), books a viewing when you said it could, and texts you what it learned. Every fact on the map shows who said it. Call again next week and it remembers where you left off.
 
-Built on Boson AI's **Higgs Realtime** (the renter's call and every listing call) and **Higgs TTS** (voicemail), with Higgs Avatar as a stretch goal, by Team AAMEL for the Boson AI Higgs Audio Hackathon, 23–24 October 2026.
+Built on Boson AI's **Higgs Realtime** (the renter's call and every listing call, transcribed by Higgs speech-to-text), with Higgs Avatar as a stretch goal, by Team AAMEL for the Boson AI Higgs Audio Hackathon, 23–24 October 2026.
 
 ![The ?dev=1 demo: the board re-ranks, four calls go out at once, and a viewing comes back booked](media/landline-demo.gif)
 
@@ -33,6 +33,41 @@ Everything else is plain code that manages the session:
 - The **web app** shows a live map and list that follow the conversation; tapping a listing tells the agent what you're looking at.
 
 Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · [docs/DATA.md](docs/DATA.md) · [docs/SCORING.md](docs/SCORING.md) · [docs/CONTRACTS.md](docs/CONTRACTS.md)
+
+## Numbers
+
+Every figure here comes from a file in this repo, and each row names the run it came from. Eval figures are the **holdout** sets in [evals/reports/latest.md](evals/reports/latest.md). Prompts were tuned on separate tune sets, never on these. Times are UTC, Saturday 24 October.
+
+### Higgs models and what each one does
+
+| Model or API | Role in Landline | Code |
+|---|---|---|
+| **Higgs Realtime** (`higgs-realtime`, speech to speech over WebSocket) | The **Concierge** on the renter's call (μ-law 8 kHz from Twilio, or 24 kHz PCM in the browser), whose six function tools move the live map and record the call plan. After the renter hangs up, one **Caller** per picked listing records facts, notes questions and books viewings through its own tools. In judge mode and the evals, a second Realtime session in text mode plays the landlord | [voice/higgs.py](server/landline/voice/higgs.py) |
+| **Higgs speech-to-text** (`higgs-stt-3.1`, inside each Realtime session) | Transcribes both sides of every call into the captions and stored call turns that the Auditor checks quotes against | [voice/higgs.py](server/landline/voice/higgs.py) |
+| **Higgs text chat** (`higgs-realtime` on `api.boson.ai/v1`, JSON-schema output) | One choice of text model (`LLM_PROVIDER=boson`) for the Auditor's fact extractor, the results-text translation and the reader for renter lines in non-Latin scripts. The extraction eval's recorded answers came from it | [agents/auditor/llm.py](server/landline/agents/auditor/llm.py) |
+| **Higgs TTS** (`higgs-tts-v3`) | Synthesizes the renter's and landlords' lines that the audio eval streams into the real voice paths. The live voicemail is Twilio `<Say>`, not Higgs TTS | [evals/run_audio.py](evals/run_audio.py) |
+
+### Technical execution
+
+| What | Number | Run · source |
+|---|---|---|
+| Concierge vs scripted renters, 8 holdout cases × 3 runs, live Higgs text | 6/8 cases pass every run; 83% of runs pass; preferences recorded 72/72; goodbye, then `end_session`, 24/24; 0 claims of a change with no tool call | 14:32, `e738796` · latest.md, Concierge holdout |
+| Caller vs landlord personas, 2 holdout personas × 5 runs | Checklist coverage 24/25 (96%); facts with the right value 19/20 (95%); 0 ungrounded quotes; said it's an AI assistant first 10/10; card ends with the right status 10/10 | 08:28, `cfb384e` · latest.md, Listing calls holdout |
+| Bookings inside the renter's windows | 14/14 (tune personas; the two holdout personas, a scam and a plan with no booking allowed, book nothing) | 08:28, `cfb384e` · latest.md, Listing calls tune |
+| Auditor on 8 holdout call transcripts | **0 of 17 facts shown without a landlord's quote**; precision 100%, recall 91% (rules alone, with no model: precision 100%, recall 65%) | 15:03, `768699e`, extractor answers replayed from recorded Higgs responses · latest.md, Auditor holdout |
+| Voice on Higgs audio: end of the other side's voice → the agent's first audio, p50 / p90 | Concierge (browser) 1,472 / 1,804 ms (n=12); Caller (phone) 1,516 / 2,344 ms (n=20). From Higgs' `speech_stopped`, p50 922 ms and 960 ms. Greeting, `response.create` → first audio, p50 508 ms (n=2) | 08:56, `674e37d` · latest.md, Voice |
+| Barge-in on Higgs audio | 12/12 recovered (heard, audio cleared, the next reply answers it); heard 292 ms (p50) after the voice starts | 08:56, `674e37d` · latest.md, Voice |
+| Higgs Realtime spike, μ-law | 487 ms from connect to the first audio; 282 ms from `response.create`; 8 sessions opened at once with no 1013 close | Fri 23 Oct, A-01 spike · [higgs-realtime skill](.claude/skills/higgs-realtime/SKILL.md) |
+| Matcher on 3 holdout renter briefs, pure code | hit@3 100%; precision@3 89%; 0 monotonicity violations | 15:03, `e637cdd` · latest.md, Matcher holdout |
+| Ranking time, warm, in memory | p50 1.345 ms, p95 1.628 ms on 4,000 listings; p95 0.235 ms on 400 (target < 5 ms) | 15:03, `e637cdd` · latest.md, Matcher checks |
+| Listings in production | 1,082 active Toronto listings. All 1,082 are at street precision, in one of the City's 158 neighbourhoods, and matched to the nearest of 68 TTC subway stations; 424 (39%) are within a 15-minute walk of one. All 1,082 have a light score, 1,077 of them with photo brightness | Sat 09:45 · [BACKLOG.md](BACKLOG.md) D-04, D-05, D-07 |
+
+What these numbers don't show:
+
+- Speech-to-text on real voices: the audio eval speaks synthesized clips. In the spike, a mixed Farsi and English sentence on 8 kHz phone audio came back garbled.
+- The tune sets score lower. The Concierge passes 62% of runs on its 21 tune cases.
+- Feedback on the top card doesn't always move it: "too small" and "too far" left the top card first in 2 of 3 holdout briefs, and the "too dark" check fails.
+- The Concierge, Caller and voice runs are older than some changes on `main`, such as the place-lookup fallback and the board-link text. Extraction and ranking were rerun on current `main`.
 
 ## Example: one call, start to finish
 
