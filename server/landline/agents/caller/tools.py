@@ -70,6 +70,7 @@ class CallerContext:
     questions: list[str] = field(default_factory=list)
     booked: datetime | None = None
     slot_text: str | None = None
+    refused: list[datetime] = field(default_factory=list)   # times book_viewing turned down this call
     ungrounded: int = 0                               # record_fact calls refused for a quote not said
     noted_by_code: int = 0                            # questions kept_promise noted for the Caller
     end_reason: EndReason | None = None
@@ -189,12 +190,24 @@ async def book_viewing(args: BookViewing, ctx: CallerContext, meta: dict) -> str
     state = ctx.runtime.state(ctx.session_id)
     if state.status(ctx.listing_id) in ("dead", "suspect"):
         return "Don't book this one. Thank them and end the call."
-    at = slots.parse(args.slot, ctx.clock(), windows)
+    now = ctx.clock()
+    at = slots.parse(args.slot, now, windows, keep_past_today=True)
     if at is None:
         return "I couldn't tell which day and time that is. Ask them for a day and a time."
-    if not slots.within(at, windows):
-        return (f"{slots.spoken(at)} is outside the renter's times. Ask for a time "
-                f"{_windows(windows)}.")
+    if at <= now or not slots.within(at, windows):
+        if at in ctx.refused:   # they keep offering the same time: pass it on instead of going round again
+            await _note_offer(args.slot, ctx, meta)
+            left = ctx.brief.missing()
+            nxt = f"then ask {left[0].ask}." if left else "then thank them and end the call."
+            return (f"Not booked: they keep offering {slots.spoken(at)}, which the renter can't make, so I "
+                    f"noted it for them. Don't offer times again. Say you'll pass it to your client, {nxt}")
+        ctx.refused.append(at)
+        why = ("That time has already passed." if at <= now
+               else f"{slots.spoken(at)} is outside the renter's times.")
+        if (left := slots.open_times(windows, now)) is None:
+            return (f"{why} The renter's viewing times have all passed, so don't book. Say your client will "
+                    f"be in touch about a viewing, and carry on.")
+        return f"{why} Offer them a time {left}. Don't repeat your last question."
     clash = [v for lid, v in state.viewings.items()
              if lid != ctx.listing_id and abs(v.starts_at - at) < CLASH]
     if clash:
@@ -216,9 +229,20 @@ async def _offered(slot: str, ctx: CallerContext, meta: dict) -> str:
     """Booking isn't allowed: the time they offered still goes back to the renter. Recorded as an `other`
     fact when the landlord said it (the slot's words are in their turns), so the viewing item is covered
     even when the Caller reaches for book_viewing instead of record_fact."""
+    if not await _note_offer(slot, ctx, meta):
+        return "The renter didn't allow booking. Ask which times they could offer and record them as other."
+    left = ctx.brief.missing()
+    nxt = f"then ask {left[0].ask}." if left else "then thank them and end the call."
+    return (f"Not booked: the renter books viewings themselves, so I noted {slot} for them. Start your reply "
+            f"with \"So {slot} could work, I'll pass that to my client,\" {nxt}")
+
+
+async def _note_offer(slot: str, ctx: CallerContext, meta: dict) -> bool:
+    """The time they offered goes back to the renter as an `other` fact, when the landlord said it (the slot's
+    words are in their turns), and covers the viewing item. False when they didn't say it."""
     match = grounding.find(slot, ctx.said)
     if match is None:
-        return "The renter didn't allow booking. Ask which times they could offer and record them as other."
+        return False
     value = f"viewing offered: {slot}"
     if not any(f.field == "other" and f.value == value for f in ctx.facts):
         await ctx.runtime.emit(FactRecorded(**meta, call_id=ctx.call_id, field="other", value=value,
@@ -227,10 +251,7 @@ async def _offered(slot: str, ctx: CallerContext, meta: dict) -> str:
     for item in ctx.brief.items:
         if item.key == "viewing":
             item.done = True
-    left = ctx.brief.missing()
-    nxt = f"then ask {left[0].ask}." if left else "then thank them and end the call."
-    return (f"Not booked: the renter books viewings themselves, so I noted {slot} for them. Start your reply "
-            f"with \"So {slot} could work, I'll pass that to my client,\" {nxt}")
+    return True
 
 
 async def end_call(args: EndCall, ctx: CallerContext, meta: dict) -> str:

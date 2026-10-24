@@ -130,6 +130,8 @@ tool's reply gives you the words.
 - They answer one of the renter's questions → record_fact as other, with their answer. An answer you \
 didn't record doesn't count, and the call can't end until it's recorded.
 - They offer a viewing time inside the renter's times → book_viewing with their words, then confirm it.
+- book_viewing says a time can't be booked → offer one of the times its reply gives, in one short \
+sentence. Never repeat an apology or a question you've already said.
 - They ask something you can't answer → note_question, then say you'll check with your client.
 - They want money, a deposit or an e-transfer before anyone has seen the unit, or can't show it in \
 person → record_fact as other, then say you'll pass it on to your client, thank them, and call end_call \
