@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Any
 
@@ -41,6 +42,8 @@ END_AFTER_S = 3.0       # once a call is over (caller_tools.over), how long its 
 
 
 class PhoneCaller:
+    takes_hang_up = True   # the runner hands `hang_up`, to put the line down as soon as the talk is over
+
     def __init__(self, runtime: SessionRuntime, connect_higgs: ConnectHiggs, api_key: str,
                  voice: str = "default", clock=lambda: datetime.now(UTC), extractor: Complete | None = None,
                  record_audio: bool = True):
@@ -68,9 +71,11 @@ class PhoneCaller:
         closes it if no stream comes."""
         return await self.connect(self.api_key, self._setup(dial)[2])
 
-    async def __call__(self, dial: Dial, transport: Any, higgs: Any = None) -> CallResult:
+    async def __call__(self, dial: Dial, transport: Any, higgs: Any = None,
+                       hang_up: Callable[[str], Awaitable[None]] | None = None) -> CallResult:
         """Talks the call through; `higgs` is a session `prepare` opened for it, else one opens now. The
-        call closes it either way."""
+        call closes it either way. `hang_up` ends the call and puts the line down as soon as the talk is
+        over, so the listing agent never waits on the Auditor, which needs only what was said."""
         listing, b, config, start = self._setup(dial)
         ctx = caller_tools.CallerContext(session_id=dial.session_id, call_id=dial.call_id,
                                          listing_id=dial.listing_id, brief=b, runtime=self.runtime,
@@ -82,23 +87,26 @@ class PhoneCaller:
         # stream while Higgs connects, so both tracks start together.
         recorder = CallRecorder(format_of(PCMU), caller="landlord")
         try:
-            if higgs is None:
-                higgs = await self.connect(self.api_key, config)
-            for event in start:
-                await higgs.send(event)
-            # With "answered by" and "stream started" (api/twilio.py) and "first audio out" below, the log's
-            # timestamps split the silence after a pickup into its steps (#148).
-            log.info("listing call %s: Higgs ready, opening sent", dial.call_id)
-            keeper = asyncio.create_task(_keep_every(turns, recorder, self.record_audio))
-            left = (dial.deadline - self.clock()).total_seconds() - DEADLINE_MARGIN_S
             try:
-                async with asyncio.timeout(max(1.0, left)):
-                    reason = await _talk(higgs, transport, ctx, turns, Playback(8000), recorder)
-            except TimeoutError:
-                reason = ctx.end_reason or "timeout"
-        except Exception:
-            log.exception("phone call %s failed", dial.call_id)
-            reason = ctx.end_reason or "failed"
+                if higgs is None:
+                    higgs = await self.connect(self.api_key, config)
+                for event in start:
+                    await higgs.send(event)
+                # With "answered by" and "stream started" (api/twilio.py) and "first audio out" below, the
+                # log's timestamps split the silence after a pickup into its steps (#148).
+                log.info("listing call %s: Higgs ready, opening sent", dial.call_id)
+                keeper = asyncio.create_task(_keep_every(turns, recorder, self.record_audio))
+                left = (dial.deadline - self.clock()).total_seconds() - DEADLINE_MARGIN_S
+                try:
+                    async with asyncio.timeout(max(1.0, left)):
+                        reason = await _talk(higgs, transport, ctx, turns, Playback(8000), recorder)
+                except TimeoutError:
+                    reason = ctx.end_reason or "timeout"
+            except Exception:
+                log.exception("phone call %s failed", dial.call_id)
+                reason = ctx.end_reason or "failed"
+            if hang_up is not None:   # not when cancelled: the runner ends a call cut at its deadline
+                await hang_up(reason)
         finally:
             if keeper is not None:
                 keeper.cancel()
