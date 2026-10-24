@@ -142,11 +142,14 @@ def _known(value: str) -> str | None:
     return None if value == "unknown" else value
 
 
-_APOSTROPHE = re.compile(r"['’]")   # "O'Connor", "O’Connor" and "OConnor" are one word
+_APOSTROPHE = re.compile(r"['’]")
 
 
 def _words(text: str) -> set[str]:
-    return set(re.findall(r"[a-z0-9]+", _APOSTROPHE.sub("", text.lower()).replace("st.", "st")))
+    """An apostrophe counts both as a break and as nothing, so "O'Connor", "OConnor" and "O Connor" all find
+    "O'Connor-Parkview", whichever way the caller split the name first (refs.area passes "o connor")."""
+    text = text.lower().replace("st.", "st")
+    return set(re.findall(r"[a-z0-9]+", text)) | set(re.findall(r"[a-z0-9]+", _APOSTROPHE.sub("", text)))
 
 
 _FILLER = {"the", "area", "neighbourhood", "neighborhood", "around", "near", "in", "toronto", "city", "core"}

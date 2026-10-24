@@ -63,7 +63,8 @@ async def test_an_apostrophe_or_its_absence_finds_the_same_station():
 
 def test_an_apostrophe_or_its_absence_finds_the_same_neighbourhood():
     named = FeatureMatrix.build([], [Hood(3, "Parkwoods-O'Connor Hills", 43.75, -79.31, ())]).named
-    for said in ("OConnor", "O'Connor", "O’Connor Hills"):
+    # "o connor" is how refs.area passes "O'Connor" on, and "O Connor" how a transcript may write it.
+    for said in ("OConnor", "O'Connor", "O’Connor Hills", "O Connor", "o connor"):
         assert [h.name for h in named([said])] == ["Parkwoods-O'Connor Hills"], said
 
 
@@ -104,6 +105,9 @@ async def test_without_a_contact_or_when_lookups_fail_the_place_stays_unresolved
      ["Kingston Road", "King Edward Avenue"]),
     ("Bay Street", ["Bay Street"], ["Baycrest Avenue"]),
     ("Queen St W", ["Queen Street West"], ["Queens Quay West"]),
+    ("Queen's Quay", ["Queens Quay West", "Queen's Quay East"], ["Queen Street West"]),
+    ("Queens Park Crescent", ["Queen's Park Crescent East", "Queen's Park"], ["Queens Quay West"]),
+    ("O’Connor Drive", ["O'Connor Drive", "OConnor Drive"], ["Connor Street"]),
 ])
 def test_a_street_as_people_say_it_matches_its_full_name(said, matches, misses):
     pattern = re.compile(_street(said), re.I)
