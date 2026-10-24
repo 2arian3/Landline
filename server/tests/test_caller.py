@@ -424,3 +424,17 @@ def test_a_day_and_a_time_recorded_as_other_covers_the_viewing():
     assert not next(i for i in b.items if i.key == "viewing").done
     b.covered("other", "Thursday at 6:30 pm")
     assert next(i for i in b.items if i.key == "viewing").done
+
+
+async def test_record_fact_says_an_answer_is_already_recorded_and_moves_on():
+    ctx = await _ctx(said=("Yes.", "Yes.", "No."))
+    pets = next(i for i in ctx.brief.items if "pets" in i.fields)
+    first = await _say(ctx, "record_fact", {"field": "pets", "value": "yes", "quote": "Yes."})
+    assert first.startswith("Recorded pets: yes.") and pets.done
+    again = await _say(ctx, "record_fact", {"field": "pets", "value": "yes", "quote": "Yes."}, 2)
+    assert again.startswith("Already recorded pets: yes. Don't ask about it again.")
+    assert pets.ask not in again   # the next item, not pets again (#139)
+    assert len(ctx.facts) == 1 and len(ctx.runtime.state(ctx.session_id).heard["t:1"]) == 1
+    # A different answer is a correction: recorded, and the Auditor keeps the last one.
+    changed = await _say(ctx, "record_fact", {"field": "pets", "value": "no", "quote": "No."}, 3)
+    assert changed.startswith("Recorded pets: no.") and len(ctx.facts) == 2
