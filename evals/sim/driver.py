@@ -161,7 +161,7 @@ async def simulate(case_id: str, run: int, opponent: Opponent, *, catalogue: Cat
             trace.lines.append(line)
             ctx.renter_said = line   # as the bridge does from the transcript (#154, #183)
             if not line.startswith(LOOKING):   # a spoken line: call_listings' viewing-times guard (#174)
-                ctx.agent_said = said
+                ctx.agent_before = ctx.agent_said = said   # what a plain "Yes" answers (#174)
                 ctx.renter_lines.append(line)
             await higgs.send({"type": "conversation.item.create", "item": {
                 "type": "message", "role": "user", "content": [{"type": "input_text", "text": line}]}})

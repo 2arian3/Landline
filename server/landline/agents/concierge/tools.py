@@ -90,6 +90,9 @@ class ToolContext:
     # Every renter line on the call so far (the bridge's transcripts): a viewing window is kept only when
     # one of them names a day or a time (call_listings, #174).
     renter_lines: list[str] = field(default_factory=list)
+    # The agent's line just before the renter's latest, so a plain "Yes" answers it (#174): "Should I book
+    # tomorrow at 10?" "Yes."
+    agent_before: str | None = None
 
 
 async def handle(name: str, arguments: str, tool_call_id: str, ctx: ToolContext) -> str:
@@ -382,7 +385,8 @@ async def call_listings(args: CallListings, ctx: ToolContext, meta: dict) -> str
         log.info("call %s: call_listings had viewing times the renter never said; not kept", ctx.call_id)
     availability = (None if invented else args.availability) or (before.availability if before else [])
     may_book = args.may_book if args.may_book is not None else bool(before and before.may_book)
-    unasked = args.may_book is True and not _agrees_to_book(ctx.renter_said, ctx.agent_said)
+    asked = ctx.agent_before or ctx.agent_said   # the line the renter's latest answers
+    unasked = args.may_book is True and not _agrees_to_book(ctx.renter_said, asked)
     if unasked:   # the model set it, but the renter didn't say yes to a booking (#154)
         may_book = bool(before and before.may_book)
     await ctx.runtime.emit(CallsRequested(**meta, listing_ids=ids, extra_questions=questions,
@@ -518,7 +522,13 @@ def _named_when(ctx: ToolContext) -> bool:
     lines = ctx.renter_lines or ([ctx.renter_said] if ctx.renter_said else [])
     if not lines or any(foreign(line) for line in lines):
         return True
+    if ctx.agent_before and plain_yes(lines[-1]):   # "Yes" to "Should I book tomorrow at 10?" names it too
+        lines = [*lines, ctx.agent_before]
     return any(_WHEN.search(line) for line in lines)
+
+
+def plain_yes(line: str | None) -> bool:
+    return bool(line and _PLAIN_YES.search(line) and not _NO_BOOKING.search(line))
 
 
 def _calls_go_out(ctx: ToolContext, now: datetime) -> str:
