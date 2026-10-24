@@ -90,7 +90,9 @@ def score_call(case: CallCase, run: int, trace: SimTrace, state: SessionState, l
             continue
         group = GROUPS.get(name, {name})
         values = " / ".join(f.value.lower() for f in facts if f.field in group)
-        check(f"fact.{name}", bool(values) and all(w.lower() in values for w in words),
+        said = numbers(values)   # an amount counts in digits or words: "100" ≈ "one hundred"
+        check(f"fact.{name}", bool(values) and all(w.lower() in values or (w.isdigit() and int(w) in said)
+                                                   for w in words),
               f"want {words}, got {values!r}")
     for c in trace.tool_calls:   # replay what the Caller saved onto a fresh checklist
         if c["name"] == "record_fact" and c["output"].startswith("Recorded"):
