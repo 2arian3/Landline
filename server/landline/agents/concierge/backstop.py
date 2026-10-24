@@ -170,7 +170,8 @@ class Turn:
     def call_line(self) -> str | None:
         """The renter's line when it asked for calls or a viewing and the reply ran no call_listings, once."""
         if (self.heard and self.answered and "call_listings" not in self.tools and not self.call_taken
-                and (asks_for_calls(self.heard) or tools.windows_in(self.heard))):   # or a time (#174)
+                and (asks_for_calls(self.heard) or tools.windows_in(self.heard) or tools.plain_yes(self.heard)
+                     or (self.said and PROMISE.search(self.said)))):   # or a time, a yes, a promise (#174)
             self.call_taken = True
             return self.heard
         return None
@@ -291,7 +292,8 @@ async def catch_up_calls(line: str, ctx: tools.ToolContext) -> str | None:
     call_listings recorded nothing ("Which one?"), so "[calls recorded]" only ever comes with a plan. The
     whole ask counts (#174): "set up a visit tomorrow" also gives the viewing window and leave to book."""
     if not asks_for_calls(line):
-        return await _times_answer(line, ctx)
+        return (await _times_answer(line, ctx) or await _yes_to_a_time(line, ctx)
+                or await _promised_viewing(ctx))
     refs = refs_in(line, ctx)
     if not refs:
         log.info("call %s: the renter asked for calls, but not for listings code can tell", ctx.call_id)
@@ -321,9 +323,39 @@ async def _times_answer(line: str, ctx: tools.ToolContext) -> str | None:
     return await _plan({"availability": [w.model_dump(by_alias=True) for w in when]}, ctx)
 
 
+async def _yes_to_a_time(line: str, ctx: tools.ToolContext) -> str | None:
+    """"Yes" to "Should I book tomorrow at 10?" (#174): that time, and leave to book."""
+    agent = ctx.agent_before or ""
+    when = tools.windows_in(agent)
+    if ctx.runtime.state(ctx.session_id).request is None or not tools.plain_yes(line) or "?" not in agent \
+            or not re.search(r"\bbook", agent, re.I) or not when:
+        return None
+    log.info("call %s: catch-up for a yes to a viewing time after a turn without call_listings", ctx.call_id)
+    return await _plan({"availability": [w.model_dump(by_alias=True) for w in when], "may_book": True}, ctx)
+
+
+# The Concierge promising a viewing it never recorded (#174): "Great, I'll set up the viewing for tomorrow."
+PROMISE = re.compile(r"\bi(?:'ll|’ll|\s+will)\s+(?:set\s+up|book|schedule|arrange)\s+(?:the|a|your)\s+"
+                     r"(?:viewing|visit|showing|tour)\b", re.I)
+
+
+async def _promised_viewing(ctx: tools.ToolContext) -> str | None:
+    """Records the times the promise names. Leave to book is only asked for: call_listings' own guard keeps
+    it unless the renter said yes to a booking, and its reply then says to ask."""
+    agent = ctx.agent_said or ""
+    when = tools.windows_in(agent)
+    if ctx.runtime.state(ctx.session_id).request is None or not PROMISE.search(agent) or not when:
+        return None
+    log.info("call %s: catch-up for a viewing the reply promised without call_listings", ctx.call_id)
+    return await _plan({"availability": [w.model_dump(by_alias=True) for w in when], "may_book": True}, ctx)
+
+
 async def _plan(args: dict[str, Any], ctx: tools.ToolContext) -> str | None:
     before = ctx.runtime.state(ctx.session_id).request
     arguments = json.dumps(args)
     reply = await tools.handle("call_listings", arguments, f"call_catch_up_{next(_ids)}", ctx)
     after = ctx.runtime.state(ctx.session_id).request
-    return reply if after is not None and after != before else None
+    # A plan unchanged still gets its reply when it asks for leave to book: the promise in the agent's reply
+    # needs a yes it never got (#174).
+    asks = bool(args.get("may_book")) and "Ask whether you may book" in reply
+    return reply if after is not None and (after != before or asks) else None
