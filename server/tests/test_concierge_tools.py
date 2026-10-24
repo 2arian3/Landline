@@ -173,6 +173,38 @@ def test_area_finds_places_said_loosely():
         assert find(nonsense) is None, nonsense
 
 
+SPELT = Catalogue([
+    _listing(1, "55 Christie St", 2400, 1, 43.664, -79.418),
+    _listing(2, "120 Ossington Ave", 2600, 1, 43.651, -79.420),
+    _listing(3, "900 Dufferin St", 2300, 1, 43.660, -79.435),
+    _listing(4, "500 Bathurst St", 2500, 1, 43.657, -79.404),
+    _listing(5, "30 College St", 2700, 1, 43.661, -79.385),
+    _listing(6, "8 Cottage St", 2200, 1, 43.700, -79.390),
+    _listing(7, "12 King St W", 2900, 1, 43.648, -79.384),
+    _listing(8, "2 Lake Shore Blvd W", 3000, 1, 43.636, -79.410),
+], "test")
+SPELT_STATIONS = [{"name": "Ossington", "lat": 43.662, "lng": -79.426},
+                  {"name": "Spadina", "lat": 43.667, "lng": -79.404}]
+
+
+@pytest.mark.parametrize(("said", "how", "lat"), [
+    ("Christy Street", "street", 43.664),        # #184: how speech spelled Christie
+    ("christie st.", "street", 43.664),          # case and punctuation
+    ("Osington Avenue", "street", 43.651),       # a doubled letter heard once
+    ("Dufferen", "street", 43.660),              # one letter changed
+    ("Bathurts Street", "street", 43.657),       # two letters swapped
+    ("Lakeshore", "street", 43.636),             # one word for two
+    ("Osington station", "station", 43.662),     # said as a station: the station
+    ("Spadena", "station", 43.667),              # a station only
+    ("Collage Street", None, None),              # College and Cottage are as near: never a guess
+    ("Kong Street", None, None),                 # under five letters, a letter off is another word
+    ("Narnia Street", None, None),               # nothing near
+])
+def test_a_street_or_station_spelled_a_little_off_is_still_found(said, how, lat):
+    spot = refs.area(said, lambda _: [], SPELT_STATIONS, SPELT)
+    assert (spot.how, spot.lat) == (how, pytest.approx(lat)) if how else spot is None, said
+
+
 async def test_update_preferences_places_an_area_or_says_it_cannot(ctx):
     """An area the search can't use doesn't get a bare "got it": a street becomes a point the board moves
     to; a place nothing here holds stays for the geocoder, and the agent hears the list doesn't use it."""
