@@ -166,7 +166,7 @@ async def test_every_kind_of_outcome_has_its_sentence_and_bookings_come_first():
     facts = [_heard("parking_cost", "$180 a month."), _heard("pets", "dogs ok"), _heard("laundry", "shared")]
     conflict = Conflict(field="parking", listed="included", heard="$180 a month", quote="It's one eighty.")
     heard = await _outcome(rt, c1, "t:1", facts=facts, conflicts=[conflict])
-    assert heard.agent_says == ("At 1 Main St, parking: $180 a month; pets: dogs ok. "
+    assert heard.agent_says == ("At 1 Main St, parking: $180 a month; pets: dogs ok; laundry: shared. "
                                 "The listing says parking included, but the agent said $180 a month.")
     await _outcome(rt, c2, "t:2", facts=[_heard("fees", "deposit first")],
                    red_flags=["Wants a deposit by e-transfer before anyone sees the unit."])
@@ -182,7 +182,7 @@ async def test_every_kind_of_outcome_has_its_sentence_and_bookings_come_first():
         "I booked 5 Main St for Saturday at 2 pm. It moves up to first. "
         "Its agent asked, “Would they sign a 12-month lease?” I said I'd check with you. "
         # facts, a conflict with the listing, and where it moved
-        "At 1 Main St, parking: $180 a month; pets: dogs ok. "
+        "At 1 Main St, parking: $180 a month; pets: dogs ok; laundry: shared. "
         "The listing says parking included, but the agent said $180 a month. It drops to second. "
         # a red flag, a rented place, no answer
         "2 Main St: wants a deposit by e-transfer before anyone sees the unit, so I'd skip it. "

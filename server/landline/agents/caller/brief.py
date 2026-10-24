@@ -37,6 +37,14 @@ class Brief:
     def missing(self) -> list[Item]:
         return [i for i in self.items if not i.done]
 
+    def answers(self, value: str) -> str | None:
+        """The renter's question an `other` answer covers, the one `covered` marks next; None when none is
+        open."""
+        if _about_viewing(value):
+            return None
+        item = next((i for i in self.items if not i.done and i.key.startswith("q")), None)
+        return self.plan.questions[int(item.key[1:]) - 1] if item else None
+
     def covered(self, fact_field: str, value: str = "") -> None:
         """Mark the items a recorded fact answers. An `other` fact answers one thing: the viewing when it
         is about viewing times, else the first of the renter's questions still open."""
