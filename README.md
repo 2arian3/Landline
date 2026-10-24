@@ -140,7 +140,7 @@ Base URL `https://landline.134.87.8.230.sslip.io`. Payload shapes are in [docs/C
 - **Snapshot data.** Listings are scraped from liv.rent and refreshed every 6 hours, so a place can be rented before the next refresh notices.
 - **Demo phones only.** Listing calls go only to the team's allowlisted phones (`DEMO_AGENT_PHONES`), never to real listing agents.
 - **Business hours.** Listing calls go out only between 09:00 and 20:00 Toronto time. A plan made outside those hours waits for 9:00.
-- **One conversation at a time.** Landline holds one live conversation, on the phone or on `/try` (`HIGGS_MAX_SESSIONS=1`). Anyone else is told the lines are busy and to try again in a minute. Up to three listing calls run at once.
+- **Two conversations at once.** Landline holds up to two live conversations, by phone and on `/try` together: a judge and a phone renter, two judges, or two phone renters (`HIGGS_MAX_SESSIONS=2`). A third is told the lines are busy. Listing calls run three at a time across all sessions (`CALL_CONCURRENCY=3`), and more wait their turn.
 - **Pets, parking and laundry aren't read from descriptions yet** (D-06). Parking and laundry come only from a listing's amenity tags, and whether pets are allowed is known only once a call asks.
 - **No City building records.** The RentSafeTO join isn't done. Each neighbourhood's median rent by bedrooms is computed, but it doesn't feed the ranking or the page yet.
 - **Some languages get English replies.** In a phone-audio probe, the agent saved Farsi, Arabic and Punjabi renters' preferences but replied in English; Chinese and Spanish renters got replies in their language.
