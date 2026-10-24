@@ -8,6 +8,9 @@ line is quiet goes in at once; one during a turn waits for that turn's last `res
 
 Items coalesce by kind: three taps in one turn deliver only the last, and a newer board line replaces an
 older one. An item older than STALE_S, or a tap on the place the Concierge was last told about, is dropped.
+So is a board line that comes during a tool round (from a tool call to the reply that answers it): the
+tool's own commit made it, and its reply already says it (#164: answered again, it was two replies to one
+line). And a board line the Concierge was already given.
 
 `Lines` lives on app.state (hard rule 4): it subscribes to the runtime once and hands each event to the
 live call of that session, if there is one. A `Line` lives for one call.
@@ -53,12 +56,17 @@ class Line:
         self.waiting_since: float | None = None   # the renter stopped; a response is about to start
         self.closed = False
         self.told: str | None = None   # the listing the Concierge was last told the renter is looking at
+        self.tool_round = False        # a tool was called, and the reply that answers it isn't done yet
+        self.board_told: str | None = None   # the last board line the Concierge was given
         self.delivered: list[str] = []
 
     async def push(self, item: Item) -> None:
         if self.closed:
             return
         if item.kind == "focus" and item.key == self.told and "focus" not in self.items:
+            return
+        if item.kind == "board" and (self.tool_round or item.text == self.board_told):
+            log.info("line: dropped a board line the Concierge has%s", " in its reply" * self.tool_round)
             return
         self.items[item.kind] = item
         await self._deliver()
@@ -72,11 +80,13 @@ class Line:
             self.renter_speaking, self.waiting_since = False, self.clock()
         elif kind == "response.created":
             self.responding, self.waiting_since = True, None
+        elif kind == "response.function_call_arguments.done":
+            self.tool_round = True
         elif kind == "response.done":
             output = (event.get("response") or {}).get("output") or []
             # A response that called a tool is followed by another (run_tool asks for it): not a boundary.
             if not any(o.get("type") == "function_call" for o in output):
-                self.responding = False
+                self.responding = self.tool_round = False
                 await self._deliver()
 
     def close(self) -> None:
@@ -102,6 +112,8 @@ class Line:
         for i in items:
             if i.kind == "focus":
                 self.told = i.key
+            elif i.kind == "board":
+                self.board_told = i.text
         self.delivered.append(text)
         await self.send({"type": "conversation.item.create", "item": {
             "type": "message", "role": "user", "content": [{"type": "input_text", "text": text}]}})
