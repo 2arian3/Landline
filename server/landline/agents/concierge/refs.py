@@ -86,8 +86,8 @@ def top(board: list[Card], n: int) -> list[Card]:
 
 def place(label: str, catalogue: Catalogue) -> tuple[float, float] | None:
     """Where `label` is on the map: the centre of the catalogue listings whose neighbourhood, building or
-    street name holds every word of it ("Bloor", "Thorncliffe Park"). None when nothing matches; the
-    geocoder (D-04) will place intersections and landmarks."""
+    street name holds every word of it ("Bloor", "Thorncliffe Park"). None when nothing matches; focus_area
+    then asks Places (D-04) for neighbourhoods, stations, intersections and landmarks."""
     wanted = {w for w in _words(label) if w not in FILLER and not w.isdigit()}
     if not wanted:
         return None
