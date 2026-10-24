@@ -16,6 +16,9 @@ A listing is out if any of these hold. The renter can relax any of them by voice
 | Must-haves | each `must_have` (e.g. `parking`, `laundry_in_suite`, `step_free`) is false *with evidence* |
 | Dead | `verified = dead` (already leased) |
 | Rejected | the renter rejected it before, unless they ask to see it again |
+| Rooms | `unit_type = room`, unless `must_have` includes `room` |
+
+"With evidence" means the value's provenance is a call or the City record, or a call found it (an override). The listing's own words only rank it. The pets rule covers any pet the place refuses: a dog at `none`, `cats_only` or `small_only`, a cat at `none` or `dogs_only`.
 
 ## 2. Utilities (each 0–1)
 
@@ -34,10 +37,22 @@ A listing is out if any of these hold. The renter can relax any of them by voice
 | Value | `clamp(1.3 − price_vs_median)` |
 | Move-in fit | 1 if available within 14 days of `move_in`, falling to 0 at 60 days |
 
+How v1 (`server/landline/scoring/`) fills the gaps:
+
+- **Unknown is 0.5.** A value the listing doesn't state scores 0.5 and is never a reason or a watch-out. A column that is 0.5 for every listing (no data yet, as for light and transit before D-05 and D-07) adds a constant and moves nothing.
+- **Size without a desired size:** `clamp(0.5 + sqft / typical − 1)`, with typical 450 / 650 / 900 / 1,200 / 1,500 ft² for studio / 1 / 2 / 3 / 4+ beds. A unit of typical size scores 0.5, one 1.5× as big scores 1. A stated size under 150 ft² is a data error and counts as unknown.
+- **Location** is the mean of the known parts: each resolved anchor's `exp(-d_km / 2.5)`, and 1 inside a named area. Until neighbourhoods and adjacency arrive (D-05), a listing outside the named areas is unknown, not 0.
+- **Amenities are evidence of presence only.** "Insuite Laundry" sets laundry to in-suite, "Parking" sets parking to extra (included isn't known), "Air Conditioning", "Elevator", "Balcony" / "Patio / Deck / Terrace" and "Wheelchair Accessible" set theirs. A missing amenity proves nothing.
+- **Floor** has two modes. "High floor" uses `clamp(floor / 15)`. "Ground floor", "step free" or "no stairs" gives 1 on floor 1 or below, or with an elevator or step-free access, and 0 above that.
+- **Laundry:** in-suite 1, shared 0.5, none 0. **Move-in fit** counts days either way: a place free six weeks early fits as badly as one free six weeks late.
+- Building quality and value stay unknown until the City join (D-05) adds their fields.
+
 ## 3. Weights from priorities
 
 - Default weights: cost 3, location 3, size 1.5, transit 1, light 1, building quality 0.5, value 0.5, move-in fit 1. Everything else is 0 until mentioned.
-- When the renter ranks priorities ("parking matters most, then light"), the stated order gets 4, 3, 2, 1.5, 1. Later statements override earlier ones (most recent first).
+- When the renter ranks priorities ("parking matters most, then light"), the stated order gets 4, 3, 2, 1.5, 1. Later statements override earlier ones (most recent first). Features the renter didn't rank keep their default weight.
+- **No signal, no weight.** No budget means no cost term, no resolved anchor or named area means no location term, and no move-in date means no move-in term. Parking, pets, laundry, AC, dishwasher, outdoor space and floor weigh 0 until mentioned. A must-have also ranks, at weight 2 or more, and pets weigh 2 once the renter has one.
+- **Priority words.** The Matcher maps what the renter says to a feature: `cost` (price, budget, rent), `location` (area, commute, near), `size` (space, bigger), `transit` (subway, TTC), `light` (bright, sunny), `floor` (high floor, view), `ground_floor` (step free, no stairs), `parking`, `pets`, `laundry`, `ac`, `dishwasher`, `outdoor_space` (balcony, patio), `building_quality`, `value`, `move_in`. The full list is `SYNONYMS` in `scoring/weights.py`. A word it doesn't know is ignored, so the Concierge should send these keys.
 - **Feedback moves weights.** Rejecting a listing with a reason maps to its attribute and adds +1 to that weight (cap 5):
 
 | Said | Attribute | Effect |
@@ -64,6 +79,8 @@ A listing is out if any of these hold. The renter can relax any of them by voice
 
 The UI shows these reasons, never the number. Percentages and match bars read as made-up precision.
 
+A feature's pull is `wᵢ·(uᵢ − 0.5)`, over known values only. A reason needs `uᵢ ≥ 0.6` and a watch-out `uᵢ ≤ 0.4`, so a middling value is neither. The phrases are in `scoring/reasons.py`: "$310 under budget", "0.9 km from King and Bay" ("right by" under 100 m), "1,050 sq ft" / "only 450 sq ft", "in-suite laundry", "parking available", "bright (estimated)". In the demo, a call that adds a mandatory fee changes the card's price and reasons but not its rank. Re-ranking from calls and feedback is O-04.
+
 ## 6. Light score
 
 `light = 0.35·floor_term + 0.35·text_term + 0.30·photo_term`, and capped at 0.25 for basement units.
@@ -76,6 +93,8 @@ The UI shows these reasons, never the number. Percentages and match bars read as
 ## 7. Performance
 
 The feature matrix (≈2k rows × ~25 features) lives in memory. Ranking all of it takes under 5 ms in plain Python with precomputed columns; numpy is optional. Distances to anchors are computed once when an anchor is resolved, not on every re-rank.
+
+v1 keeps each utility column on the matrix, keyed by the preference values it depends on (the budget, the anchors, the desired size, the renter's pets, the move-in date). A re-rank reads cached columns, recomputes only rows that calls overrode, and sorts once. Measured on 2,000 listings: 1.3–1.8 ms (best of 20) for a budget with an anchor, 2.2 ms with twelve weighted features, 3.3 ms with call statuses and overrides on top (`server/tests/test_scoring.py` asserts < 5 ms).
 
 ## 8. How Danial evaluates it
 
