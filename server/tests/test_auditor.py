@@ -278,3 +278,13 @@ def test_a_rented_listing_ends_dead_on_the_card():
     live = call([("landlord", "Yes, it's still available.")],
                 tool_facts=[ToolFact("available", "yes", "it's still available", 0)])
     assert outcome_status(build(live, []).outcome) == "verified"
+
+
+def test_mandarin_laundry_and_street_parking():
+    assert settle("laundry", "basement, shared", "洗衣房在地下室，是共用的。").value == "in_building"
+    assert settle("parking", "street only", "没有专属停车位，只有街边停车位。").value == "none"
+    assert settle("parking", "", "Only street parking, sorry.").value == "none"
+
+
+def test_utilities_split_on_but():
+    assert settle("utilities_included", "", "Heat is included but hydro is extra.").value == "heat"
