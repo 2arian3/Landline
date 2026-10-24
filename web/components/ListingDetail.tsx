@@ -80,7 +80,8 @@ export function ListingDetail({
   const address = detail?.address ?? card?.address;
   const place = [detail?.building_name, card?.neighbourhood].find((p) => p && p !== address) ?? null;
   const flags = card?.red_flags ?? [];
-  const notes = callNotes(card, results);
+  // A finished call carries what it settled (CallView.outcome); the results text is the fallback.
+  const notes = callNotes(card, results, call ? [call] : []);
   const asked = notes.questions.length > 0;
 
   return (

@@ -23,6 +23,7 @@ from landline.contracts import (
     Preferences,
     Provenance,
     SessionView,
+    Turn,
     caller_tools,
     concierge_tools,
 )
@@ -30,7 +31,7 @@ from landline.contracts import (
 SNAPSHOT = ROOT / "server" / "tests" / "snapshots" / "contracts.json"
 MODELS = [
     Anchor, Area, CallOutcome, CallPlan, CallView, Card, CataloguePoint, Fact, Fee, Listing, Preferences,
-    Provenance, SessionView,
+    Provenance, SessionView, Turn,
 ]
 
 

@@ -2,9 +2,12 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, Field
+
+if TYPE_CHECKING:   # plan.py imports this module; it resolves CallView.outcome once CallOutcome exists
+    from landline.contracts.plan import CallOutcome
 
 CardStatus = Literal["pending", "calling", "verified", "suspect", "dead", "no_answer", "booked"]
 # sessions.status: open (the brief is live) → calling → done, or closed when the brief ends with no plan.
@@ -93,6 +96,16 @@ class CallView(BaseModel):
     listing_id: str
     state: CallState
     started_at: datetime | None = None
+    outcome: CallOutcome | None = None   # what this call settled (OutcomeReady), once it has ended
+
+
+class Turn(BaseModel):
+    """One caption line of a call (a call_turns row): who said what, in order. GET /api/calls/{id}/turns."""
+    idx: int
+    speaker: Literal["agent", "landlord", "renter"]
+    text: str
+    lang: str | None = None
+    t_ms: int | None = None   # milliseconds into the call, when known
 
 
 class SessionView(BaseModel):

@@ -193,6 +193,15 @@ async def test_hanging_up_queues_the_plan_then_walks_it_to_results():
     assert "s1" not in s.dialing and all(c.started_at for c in done.calls)
     cards = {c.listing_id: c for c in done.board}
     assert [cards[lid].status for lid in plan] == ["verified", "suspect", "booked", "no_answer"]
+    # Each ended call carries what it settled (CallView.outcome), for its own call.
+    assert all(c.outcome is None for c in queued.calls)
+    outcome = {c.listing_id: c.outcome for c in done.calls}
+    assert all(c.outcome.call_id == c.call_id for c in done.calls)
+    assert [outcome[lid].end_reason for lid in plan] == ["done", "done", "done", "no_answer"]
+    assert outcome[plan[0]].open_questions == ["Would they sign a 12-month lease?"]
+    assert outcome[plan[1]].red_flags == ["Wants a deposit by e-transfer before anyone sees the unit"]
+    assert outcome[plan[2]].viewing.slot_text == "Saturday at two works."
+    assert outcome[plan[2]].viewing.starts_at == s.runs["s1"].outcomes[plan[2]].viewing
     assert (cards[plan[0]].rent, cards[plan[0]].monthly_cost) == (2000, 2180)   # parking through monthly_cost
     # The viewing falls inside the renter's Saturday afternoon, and the results lead with it.
     viewing = s.runs["s1"].outcomes[plan[2]].viewing

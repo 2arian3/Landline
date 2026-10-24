@@ -5,7 +5,7 @@ never lag the state it came from.
 """
 from __future__ import annotations
 
-from landline.contracts import Card, Listing, SessionView
+from landline.contracts import CallView, Card, Listing, SessionView
 from landline.db.catalogue import Catalogue
 from landline.orchestrator import feedback
 from landline.orchestrator.state import SessionState
@@ -36,8 +36,18 @@ def build(state: SessionState, version: int, catalogue: Catalogue, matrix: Featu
     return SessionView(
         session_id=state.session_id, version=version, phase=state.phase, preferences=state.preferences,
         focus_listing_id=state.focus_listing_id, focus_area=state.focus_area, matches=matches, board=board,
-        agent_says=says, plan=list(plan), calls=list(state.calls.values()), results=state.results,
+        agent_says=says, plan=list(plan), calls=[_with_outcome(state, c) for c in state.calls.values()],
+        results=state.results,
     )
+
+
+def _with_outcome(state: SessionState, call: CallView) -> CallView:
+    """The call with the Auditor's outcome for it, matched on the call, not just the listing, so a listing
+    called again never shows the earlier call's outcome."""
+    out = state.outcomes.get(call.listing_id)
+    if out is None or out.call_id != call.call_id:
+        return call
+    return call.model_copy(update={"outcome": out})
 
 
 def _card(state: SessionState, x: Listing, n: int, why: Ranked) -> Card:

@@ -1786,6 +1786,181 @@
       "type": "object"
     },
     "CallView": {
+      "$defs": {
+        "CallOutcome": {
+          "description": "One per listing call, from the Auditor.",
+          "properties": {
+            "call_id": {
+              "title": "Call Id",
+              "type": "string"
+            },
+            "conflicts": {
+              "items": {
+                "$ref": "#/$defs/Conflict"
+              },
+              "title": "Conflicts",
+              "type": "array"
+            },
+            "end_reason": {
+              "enum": [
+                "done",
+                "refused",
+                "wrong_number",
+                "voicemail",
+                "hangup",
+                "no_answer",
+                "busy",
+                "failed",
+                "blocked",
+                "timeout"
+              ],
+              "title": "End Reason",
+              "type": "string"
+            },
+            "facts": {
+              "items": {
+                "$ref": "#/$defs/Fact"
+              },
+              "title": "Facts",
+              "type": "array"
+            },
+            "listing_id": {
+              "title": "Listing Id",
+              "type": "string"
+            },
+            "open_questions": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Open Questions",
+              "type": "array"
+            },
+            "red_flags": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Red Flags",
+              "type": "array"
+            },
+            "viewing": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Viewing"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [
+            "call_id",
+            "listing_id",
+            "end_reason"
+          ],
+          "title": "CallOutcome",
+          "type": "object"
+        },
+        "Conflict": {
+          "description": "A call said something different from the listing or the City record.",
+          "properties": {
+            "against": {
+              "default": "listing",
+              "enum": [
+                "listing",
+                "city"
+              ],
+              "title": "Against",
+              "type": "string"
+            },
+            "field": {
+              "title": "Field",
+              "type": "string"
+            },
+            "heard": {
+              "title": "Heard",
+              "type": "string"
+            },
+            "listed": {
+              "title": "Listed",
+              "type": "string"
+            },
+            "quote": {
+              "title": "Quote",
+              "type": "string"
+            }
+          },
+          "required": [
+            "field",
+            "listed",
+            "heard",
+            "quote"
+          ],
+          "title": "Conflict",
+          "type": "object"
+        },
+        "Fact": {
+          "properties": {
+            "at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "At"
+            },
+            "field": {
+              "title": "Field",
+              "type": "string"
+            },
+            "quote": {
+              "title": "Quote",
+              "type": "string"
+            },
+            "speaker": {
+              "title": "Speaker",
+              "type": "string"
+            },
+            "value": {
+              "title": "Value",
+              "type": "string"
+            }
+          },
+          "required": [
+            "field",
+            "value",
+            "quote",
+            "speaker"
+          ],
+          "title": "Fact",
+          "type": "object"
+        },
+        "Viewing": {
+          "properties": {
+            "slot_text": {
+              "title": "Slot Text",
+              "type": "string"
+            },
+            "starts_at": {
+              "format": "date-time",
+              "title": "Starts At",
+              "type": "string"
+            }
+          },
+          "required": [
+            "starts_at",
+            "slot_text"
+          ],
+          "title": "Viewing",
+          "type": "object"
+        }
+      },
       "properties": {
         "call_id": {
           "title": "Call Id",
@@ -1794,6 +1969,17 @@
         "listing_id": {
           "title": "Listing Id",
           "type": "string"
+        },
+        "outcome": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CallOutcome"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "started_at": {
           "anyOf": [
@@ -2994,6 +3180,81 @@
           "title": "Area",
           "type": "object"
         },
+        "CallOutcome": {
+          "description": "One per listing call, from the Auditor.",
+          "properties": {
+            "call_id": {
+              "title": "Call Id",
+              "type": "string"
+            },
+            "conflicts": {
+              "items": {
+                "$ref": "#/$defs/Conflict"
+              },
+              "title": "Conflicts",
+              "type": "array"
+            },
+            "end_reason": {
+              "enum": [
+                "done",
+                "refused",
+                "wrong_number",
+                "voicemail",
+                "hangup",
+                "no_answer",
+                "busy",
+                "failed",
+                "blocked",
+                "timeout"
+              ],
+              "title": "End Reason",
+              "type": "string"
+            },
+            "facts": {
+              "items": {
+                "$ref": "#/$defs/Fact"
+              },
+              "title": "Facts",
+              "type": "array"
+            },
+            "listing_id": {
+              "title": "Listing Id",
+              "type": "string"
+            },
+            "open_questions": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Open Questions",
+              "type": "array"
+            },
+            "red_flags": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Red Flags",
+              "type": "array"
+            },
+            "viewing": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Viewing"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [
+            "call_id",
+            "listing_id",
+            "end_reason"
+          ],
+          "title": "CallOutcome",
+          "type": "object"
+        },
         "CallView": {
           "properties": {
             "call_id": {
@@ -3003,6 +3264,17 @@
             "listing_id": {
               "title": "Listing Id",
               "type": "string"
+            },
+            "outcome": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/CallOutcome"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
             },
             "started_at": {
               "anyOf": [
@@ -3266,6 +3538,44 @@
           "title": "Card",
           "type": "object"
         },
+        "Conflict": {
+          "description": "A call said something different from the listing or the City record.",
+          "properties": {
+            "against": {
+              "default": "listing",
+              "enum": [
+                "listing",
+                "city"
+              ],
+              "title": "Against",
+              "type": "string"
+            },
+            "field": {
+              "title": "Field",
+              "type": "string"
+            },
+            "heard": {
+              "title": "Heard",
+              "type": "string"
+            },
+            "listed": {
+              "title": "Listed",
+              "type": "string"
+            },
+            "quote": {
+              "title": "Quote",
+              "type": "string"
+            }
+          },
+          "required": [
+            "field",
+            "listed",
+            "heard",
+            "quote"
+          ],
+          "title": "Conflict",
+          "type": "object"
+        },
         "Fact": {
           "properties": {
             "at": {
@@ -3407,6 +3717,25 @@
           },
           "title": "Preferences",
           "type": "object"
+        },
+        "Viewing": {
+          "properties": {
+            "slot_text": {
+              "title": "Slot Text",
+              "type": "string"
+            },
+            "starts_at": {
+              "format": "date-time",
+              "title": "Starts At",
+              "type": "string"
+            }
+          },
+          "required": [
+            "starts_at",
+            "slot_text"
+          ],
+          "title": "Viewing",
+          "type": "object"
         }
       },
       "properties": {
@@ -3523,6 +3852,59 @@
         "version"
       ],
       "title": "SessionView",
+      "type": "object"
+    },
+    "Turn": {
+      "description": "One caption line of a call (a call_turns row): who said what, in order. GET /api/calls/{id}/turns.",
+      "properties": {
+        "idx": {
+          "title": "Idx",
+          "type": "integer"
+        },
+        "lang": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Lang"
+        },
+        "speaker": {
+          "enum": [
+            "agent",
+            "landlord",
+            "renter"
+          ],
+          "title": "Speaker",
+          "type": "string"
+        },
+        "t_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "T Ms"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "idx",
+        "speaker",
+        "text"
+      ],
+      "title": "Turn",
       "type": "object"
     }
   },
