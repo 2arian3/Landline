@@ -131,10 +131,12 @@ class PhoneCaller:
 async def _talk(higgs: Any, transport: Any, ctx: Any, turns: Turns, playback: Playback,
                 recorder: CallRecorder) -> str:
     """Audio both ways until the Caller's goodbye has played (end_call) or the agent hangs up. The recorder
-    hears both sides, as the bridge's does."""
+    hears both sides, as the bridge's does, through a guard: a recorder error never ends the call."""
+    rec = _Guard(ctx.call_id)
+
     async def listen() -> str:
         while (audio := await transport.receive_audio()) is not None:
-            recorder.heard(audio)
+            rec(recorder.heard, audio)
             await higgs.send({"type": "input_audio_buffer.append", "audio": audio})
         return "hangup"
 
@@ -151,30 +153,30 @@ async def _talk(higgs: Any, transport: Any, ctx: Any, turns: Turns, playback: Pl
                 spoke = True
                 await transport.send_audio(event["delta"])
                 playback.sent(event["delta"])
-                recorder.played(event["delta"], event.get("item_id"))
+                rec(recorder.played, event["delta"], event.get("item_id"))
                 if not sent_any:
                     sent_any = True
                     log.info("listing call %s: first audio out", ctx.call_id)
             elif kind == "input_audio_buffer.speech_started":
                 # Their line starts here either way; only a barge-in cuts what the Caller was saying.
-                recorder.speech_started(event.get("item_id"), event.get("audio_start_ms"))
+                rec(recorder.speech_started, event.get("item_id"), event.get("audio_start_ms"))
                 if opening and (not opened or playback.remaining() > 0):
                     log.info("listing call %s: speech over the opening; it plays on", ctx.call_id)
                     continue
                 opening = False
                 await transport.send_clear()
                 playback.clear()
-                recorder.cut()
+                rec(recorder.cut)
             elif kind == "input_audio_buffer.speech_stopped":
-                recorder.speech_stopped(event.get("item_id"), event.get("audio_end_ms"))
+                rec(recorder.speech_stopped, event.get("item_id"), event.get("audio_end_ms"))
             elif kind == "conversation.item.input_audio_transcription.completed":
                 heard = str(event.get("transcript") or "").strip()
                 if heard:
                     ctx.said.append(heard)
-                    _said(turns, recorder, "landlord", heard, event)
+                    _said(turns, recorder, "landlord", heard, event, rec)
             elif kind == "response.output_audio_transcript.done":
                 said = " ".join(f"{said} {event.get('transcript') or ''}".split())
-                _said(turns, recorder, "agent", str(event.get("transcript") or ""), event)
+                _said(turns, recorder, "agent", str(event.get("transcript") or ""), event, rec)
             elif kind == "response.function_call_arguments.done":
                 await bridge.run_tool(higgs, event, ctx, spoke=spoke, agent=caller_tools)
                 called.append(str(event.get("name", "")))
@@ -201,11 +203,31 @@ async def _talk(higgs: Any, transport: Any, ctx: Any, turns: Turns, playback: Pl
         await asyncio.gather(*pumps, return_exceptions=True)
 
 
-def _said(turns: Turns, recorder: CallRecorder, speaker: str, text: str, event: dict[str, Any]) -> None:
-    """Stores a transcript line at its place in the call's audio."""
+class _Guard:
+    """Runs the recorder's calls inside a live call's audio loop. The first one that fails is logged and the
+    recorder stays off for the rest of the call: the recording is a record (A-10), the call is the job."""
+
+    def __init__(self, call_id: str) -> None:
+        self.call_id, self.off = call_id, False
+
+    def __call__(self, fn: Any, *args: Any) -> Any:
+        if self.off:
+            return None
+        try:
+            return fn(*args)
+        except Exception:
+            self.off = True
+            log.exception("listing call %s: the recorder failed; the call goes on without it", self.call_id)
+            return None
+
+
+def _said(turns: Turns, recorder: CallRecorder, speaker: str, text: str, event: dict[str, Any],
+          rec: _Guard) -> None:
+    """Stores a transcript line at its place in the call's audio; with the recorder off, without its place,
+    so the line itself (which the Auditor reads) is never lost."""
     item_id = event.get("item_id")
-    start_ms, end_ms = recorder.span(item_id)
-    recorder.stored(item_id, turns.said(speaker, text, start_ms=start_ms, end_ms=end_ms))
+    start_ms, end_ms = rec(recorder.span, item_id) or (None, None)
+    rec(recorder.stored, item_id, turns.said(speaker, text, start_ms=start_ms, end_ms=end_ms))
 
 
 async def _keep_every(turns: Turns, recorder: CallRecorder, record: bool) -> None:
