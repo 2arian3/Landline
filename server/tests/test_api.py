@@ -30,8 +30,8 @@ def _client(cat: Catalogue | None = None) -> TestClient:
 
 
 def _one_bedrooms() -> Catalogue:
-    """Four places that all fit the default $2,800 budget, so the top three are all on the board."""
-    return Catalogue([_listing(i, rent, 1) for i, rent in enumerate((2000, 2100, 2200, 2300), start=1)],
+    """Five places that all fit the default $2,800 budget: four to call and one left pending."""
+    return Catalogue([_listing(i, rent, 1) for i, rent in enumerate((2000, 2100, 2200, 2300, 2400), start=1)],
                      "test")
 
 
@@ -121,31 +121,44 @@ def test_feedback_shows_on_the_card():
                       json={"listing_id": "t:1", "reaction": "love"}).status_code == 422
 
 
-async def test_demo_calls_walk_the_top_three_to_scripted_outcomes():
+async def test_demo_calls_walk_the_top_four_to_scripted_outcomes():
     s = DemoSessions(_one_bedrooms(), call_s=0)
-    top = [c.listing_id for c in s.get("s1").board[:3]]
+    top = [c.listing_id for c in s.get("s1").board[:4]]
 
     calling = await s.call_top("s1")
     assert calling.version == 2
-    assert [c.status for c in calling.board] == ["calling", "calling", "calling", "pending"]
+    assert [c.status for c in calling.board] == ["calling"] * 4 + ["pending"]
 
     await s.dialing["s1"]
     done = s.get("s1")
     assert done.version == 3 and "s1" not in s.dialing
     # Called places keep their rank: re-ranking from what calls found is O-04's job, and a renter who
-    # asked about the top three must still see all three.
-    assert [c.listing_id for c in done.board[:3]] == top
+    # asked about the top places must still see all of them.
+    assert [c.listing_id for c in done.board[:4]] == top
     cards = {c.listing_id: c for c in done.board}
-    assert [cards[i].status for i in top] == ["verified", "suspect", "verified"]
-    for i in top:
+    assert [cards[i].status for i in top] == ["verified", "suspect", "verified", "no_answer"]
+    for i in top[:3]:
         [fact] = cards[i].facts
         assert fact.speaker == "Agent heard" and fact.quote and fact.at is not None
+    # Nobody picked up at the fourth, so nothing was heard there.
+    assert cards[top[3]].facts == [] and cards[top[3]].red_flags == []
     # The first agent's mandatory $180 parking goes through monthly_cost; the listed rent stays
     # for the struck price, and the reasons count from the real cost.
     first = cards[top[0]]
     assert (first.rent, first.monthly_cost) == (2000, 2180)
     assert "$620 under budget" in first.reasons
     assert cards[top[1]].red_flags and not cards[top[0]].red_flags and not cards[top[2]].red_flags
+
+
+async def test_demo_calls_skip_places_without_a_pin():
+    flipped = _listing(9, 1900, 1).model_copy(update={"lng": 79.38})   # a flipped longitude: no pin
+    s = DemoSessions(Catalogue([flipped, *_one_bedrooms().listings], "test"), call_s=0)
+    calling = await s.call_top("s1")
+    statuses = {c.listing_id: c.status for c in calling.board}
+    assert statuses["t:9"] == "pending"   # still on the board, just not rung
+    assert list(statuses.values()).count("calling") == 4
+    s.close()
+    await asyncio.sleep(0)
 
 
 async def test_calling_again_restarts_the_walk():
@@ -155,7 +168,7 @@ async def test_calling_again_restarts_the_walk():
     again = await s.call_top("s1")
     await asyncio.sleep(0)
     assert first.cancelled() and not s.dialing["s1"].done()
-    assert [c.status for c in again.board[:3]] == ["calling"] * 3
+    assert [c.status for c in again.board[:4]] == ["calling"] * 4
     s.close()
     await asyncio.sleep(0)
 
@@ -165,14 +178,14 @@ def test_call_endpoint_shows_calling_then_the_outcomes():
         c.app.state.sessions.call_s = 0.05
         r = c.post("/api/sessions/s_call/calls")
         assert r.status_code == 200
-        assert [b["status"] for b in r.json()["board"]] == ["calling"] * 3 + ["pending"]
+        assert [b["status"] for b in r.json()["board"]] == ["calling"] * 4 + ["pending"]
         deadline = time.monotonic() + 3
         while time.monotonic() < deadline:
             board = c.get("/api/sessions/s_call").json()["board"]
             if not any(b["status"] == "calling" for b in board):
                 break
             time.sleep(0.02)
-        assert sorted(b["status"] for b in board) == ["pending", "suspect", "verified", "verified"]
+        assert [b["status"] for b in board] == ["verified", "suspect", "verified", "no_answer", "pending"]
 
 
 def _judge_client(cap: int) -> TestClient:
