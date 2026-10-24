@@ -174,7 +174,8 @@ async def test_hanging_up_queues_the_plan_then_walks_it_to_results():
     assert done.results == (
         f"I booked {addr[plan[2]]} for Saturday at 2 pm, inside your Saturday afternoon. "
         f"{addr[plan[0]]} is really $2,180 a month with parking. "
-        "Its agent asked, \u201cWould they sign a 12-month lease?\u201d I said I'd check with you. "
+        f"The agent at {addr[plan[0]]} asked, \u201cWould they sign a 12-month lease?\u201d "
+        "I said I'd check with you. "
         f"{addr[plan[1]]} wants a deposit by e-transfer before anyone sees the unit, so I'd skip it. "
         f"Nobody picked up at {addr[plan[3]]}."
     )
