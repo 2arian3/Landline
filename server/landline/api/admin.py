@@ -147,10 +147,18 @@ async def users(db: AdminDb) -> list[UserRow]:
 
 @router.get("/users/{user_id}", response_model=UserDetail)
 async def user(user_id: int, request: Request, db: AdminDb) -> UserDetail:
+    detail = await load_user(user_id, request, db)
+    if detail is None:
+        raise HTTPException(404, "unknown user")
+    return detail
+
+
+async def load_user(user_id: int, request: Request, db: Database) -> UserDetail | None:
+    """One renter's saved search, places, sessions and calls. None when that id isn't stored."""
     row = await db.admin.user(user_id)
     counts = await db.admin.users(user_id)
     if row is None or not counts:
-        raise HTTPException(404, "unknown user")
+        return None
     sessions = await db.admin.sessions(user_id)
     calls = await db.admin.calls([s["session_id"] for s in sessions]) if sessions else []
     interactions = await db.admin.interactions(user_id)

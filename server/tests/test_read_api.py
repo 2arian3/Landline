@@ -120,6 +120,12 @@ def test_read_endpoints_answer_in_their_contract_shapes():
         assert all(set(line) == TURN_KEYS for body in bodies for line in body)
 
 
+def test_a_number_needs_a_database_and_must_be_a_phone():
+    with _client() as c:
+        assert c.post("/api/me", json={"phone": "call me maybe"}).status_code == 422
+        assert c.post("/api/me", json={"phone": "(416) 555-0123"}).json()["detail"] == "history is off"
+
+
 def test_judge_start_answers_in_its_contract_shape():
     with _client(judge_audio_ready=True) as c:
         body = c.post("/api/judge/start").json()

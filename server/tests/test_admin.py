@@ -152,6 +152,16 @@ def test_a_renter_shows_their_history_calls_and_chosen_places(url):
         assert c.get("/api/admin/users/999999", headers=AUTH).status_code == 404
 
 
+def test_a_phone_number_opens_that_renters_history(url):
+    with _client(url) as c:
+        u = c.post("/api/me", json={"phone": "(416) 555-0123"}).json()
+        assert u["phone"] == PHONE
+        assert u["history"][0]["phase"] == "done"
+        assert u["history"][0]["results"].startswith("I booked 1 Admin St")
+        assert c.post("/api/me", json={"phone": "+14165550999"}).json()["detail"] == "unknown number"
+        assert c.post("/api/me", json={"phone": "not a number"}).status_code == 422
+
+
 def test_a_call_shows_its_transcript_in_order(url):
     with _client(url) as c:
         call = c.get(f"/api/admin/calls/{RENTER_CALL}", headers=AUTH).json()
