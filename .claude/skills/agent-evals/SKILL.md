@@ -82,4 +82,5 @@ See `docs/EVAL_FINDINGS.md` for evidence and status. Known weak spots to write c
 - Language switches that stop tool calls (Farsi).
 - Addresses two cards share.
 - "Looks great" taken as a focus instead of a like.
-- A returning caller's greeting that invents memories.
+- A returning caller's welcome that ignores or invents memories. A case with `returning` (the opening text and the restored search) and `greeting_says` / `greeting_avoids` checks covers it.
+- Misread amounts ("thirty thousand" for $3,000).

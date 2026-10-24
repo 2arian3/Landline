@@ -66,7 +66,11 @@ Nothing is said after `end_session`: `run_tool` sends no `response.create` once 
 
 ## Don't put instructions on response.create mid-call
 
-`response.create` with `"response": {"instructions": ...}` **replaces** the session's instructions for that response, and the model answers as if the conversation weren't there. Every goodbye asked for that way came out as "Hello! How can I help you today?" (21 of 21). The returning-caller greeting sends `WELCOME_BACK` that way today, and in a probe it ignored the remembered facts and made a memory up in 3 of 3 runs. That's open, see `docs/EVAL_FINDINGS.md`. Use response instructions only for a self-contained line with nothing to remember, like the first `GREETING`. To steer one response mid-call, put the request in a tool's output or in injected user text, and keep the session instructions in force.
+`response.create` with `"response": {"instructions": ...}` **replaces** the session's instructions for that response, and the model answers as if the conversation weren't there:
+- Every goodbye asked for that way came out as "Hello! How can I help you today?" (21 of 21).
+- The returning-caller welcome, sent that way, never used the remembered facts and made a memory up (5 of 5).
+
+Use response instructions only for a self-contained line with nothing to remember, like the first `GREETING`. To steer one response, put the request in a tool's output, or in the session instructions plus a quoted user note. That's how `bridge.opening()` welcomes a returning caller: `WELCOME_BACK` sits in the session instructions next to the memory, and the call starts with "[The call just connected.]" and a plain `response.create`. That used the memory in 5 of 5 runs, with no tool calls before speaking.
 
 ## Injecting text between turns
 
@@ -85,6 +89,8 @@ The Concierge, as of `6f99149`. Read these before changing its prompt; the detai
 - Runs past two sentences in about a quarter of turns, mostly by reading the whole board line back.
 - Says "I've noted…" without a tool call, less often now. The eval only catches this in English.
 - Once made up viewing times ("today 10 am to 6 pm") before the renter gave any.
+- Misreads money: "$3,000" became "thirty thousand" in most returning-caller welcomes until the prompt said to say amounts as written.
+- A returning caller whose calls are still running isn't told so. About 1 in 4 welcomes skips the booking.
 
 ## Barge-in
 

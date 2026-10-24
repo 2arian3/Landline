@@ -13,6 +13,9 @@
                            "to": "14:00"}], "may_book": true, "questions": ["parking"]},
                "ended": true}}
 
+A returning caller (O-05) adds `"returning": {"opening": "<what Profiles would say>", "prefs": {...}}`, and
+`final` can then check the welcome with `"greeting_says": ["Erskine"]` and `"greeting_avoids": [...]`.
+
 `expect` is checked on the state right after its line (did the agent act on time). `final` is checked on
 the state at the end and decides whether the case passes. Listing refs are symbolic so the case tests the
 Concierge, not the ranker: `rank:N` and `top:N` resolve against the board the renter saw before line `at`
