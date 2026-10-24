@@ -23,6 +23,7 @@ from landline.voice.line import Lines
 from landline.voice.routing import ByChannel
 from landline.voice.sim import SimRunner
 from landline.voice.sms import Texter
+from landline.voice.translate import Translator
 
 
 def _log_landline_info() -> None:
@@ -76,7 +77,8 @@ def create_app(settings: Settings | None = None, catalogue: Catalogue | None = N
                         settings.boson_api_key or "", extractor=extractor)
         runner = ByChannel(app.state.runtime, phone=app.state.outbound.runner, sim=sim,
                            sim_for_phone=settings.transport == "sim")
-        app.state.dispatcher = Dispatcher(app.state.runtime, settings, runner=runner, texter=app.state.texter)
+        app.state.dispatcher = Dispatcher(app.state.runtime, settings, runner=runner, texter=app.state.texter,
+                                          translate=Translator(chat))
         yield
         await app.state.dispatcher.close()
         await outbound.uninstall(app.state.outbound)

@@ -27,17 +27,25 @@ class HiggsError(RuntimeError):
 
 
 def session_config(*, instructions: str, tools: list[dict[str, Any]], voice: str = "default",
-                   audio_format: dict[str, Any] = PCMU, modality: str = "audio") -> dict[str, Any]:
+                   audio_format: dict[str, Any] = PCMU, modality: str = "audio",
+                   language: str | None = None) -> dict[str, Any]:
     """The `session.update` that opens every session: the same audio format in and out (pcmu for a
     phone, 24 kHz PCM for a browser), server VAD, and tools when there are any. `modality="text"` is for
-    the eval simulator: the same agent answers in `response.output_text.*` events instead of audio."""
+    the eval simulator: the same agent answers in `response.output_text.*` events instead of audio.
+
+    Higgs detects the spoken language by itself. `language` (an ISO-639-1 code, from code, e.g. a
+    returning caller's stored language) only hints the transcription of the first turns; after the first
+    reply the transcription follows the conversation on its own (docs.boson.ai, sessions guide)."""
+    transcription: dict[str, Any] = {"model": "higgs-stt-3.1"}
+    if language:
+        transcription["language"] = language
     return {"type": "session.update", "session": {
         "model": "higgs-realtime",
         "instructions": instructions,
         "output_modalities": [modality],
         "audio": {
             "input": {"format": dict(audio_format),
-                      "transcription": {"model": "higgs-stt-3.1"},
+                      "transcription": transcription,
                       "turn_detection": {"type": "server_vad"}},
             "output": {"format": dict(audio_format), "voice": voice},
         },

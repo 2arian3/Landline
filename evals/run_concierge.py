@@ -27,6 +27,7 @@ from evals.sim import replay
 from evals.sim.cases import FIXTURES, SETS, Case, load_set
 from evals.sim.driver import ScriptedRenter, simulate
 from evals.sim.score_concierge import Result, score
+from landline.agents.auditor import llm as auditor_llm
 from landline.config import ROOT, Settings
 from landline.db.catalogue import Catalogue, _from_fixture
 from landline.voice import higgs
@@ -46,6 +47,7 @@ async def run(sets: list[str], runs: int, concurrency: int, only: set[str], use_
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     out = RUNS_DIR / f"{stamp}{'-replay' if use_replay else ''}"
     gate = asyncio.Semaphore(concurrency)
+    reader = None if use_replay else auditor_llm.from_env()   # the bridge's catch-up; replays stay offline
 
     async def one(name: str, case: Case, n: int) -> Result:
         if use_replay:
@@ -60,7 +62,8 @@ async def run(sets: list[str], runs: int, concurrency: int, only: set[str], use_
                                    remembered=back.opening if back else None,
                                    prefs=back.prefs if back else None,
                                    taps={i: int(line.tap.split(":")[1]) for i, line in enumerate(case.lines)
-                                         if line.tap})
+                                         if line.tap},
+                                   reader=reader)
         result = score(case, trace, catalogue)
         folder = out / name
         folder.mkdir(parents=True, exist_ok=True)

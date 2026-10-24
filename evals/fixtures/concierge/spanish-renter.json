@@ -1,0 +1,40 @@
+{
+  "id": "spanish-renter",
+  "about": "Speaks Spanish from the first line (a Latin-script language the code can't tell from the script); budget, beds, a dog, language es",
+  "lines": [
+    {
+      "say": "Hola, busco un apartamento de una habitación, máximo 2200 dólares al mes.",
+      "expect": {
+        "prefs": {
+          "max_monthly": 2200,
+          "min_beds": 1
+        }
+      }
+    },
+    {
+      "say": "Tengo un perro.",
+      "expect": {
+        "prefs": {
+          "pets": [
+            "dog"
+          ]
+        }
+      }
+    },
+    {
+      "say": "Gracias, eso es todo. Adiós."
+    }
+  ],
+  "final": {
+    "prefs": {
+      "max_monthly": 2200,
+      "min_beds": 1,
+      "pets": [
+        "dog"
+      ],
+      "language": "es"
+    },
+    "replies_in": "es",
+    "ended": true
+  }
+}
