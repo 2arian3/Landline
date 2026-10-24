@@ -22,6 +22,7 @@ from zoneinfo import ZoneInfo
 
 from landline.api.judge import ID_CHARS
 from landline.contracts import (
+    Area,
     CallView,
     Card,
     Fact,
@@ -43,6 +44,15 @@ TORONTO = ZoneInfo("America/Toronto")
 # "I'm free Saturday afternoon, book one if you can": the renter's window, and the slot an agent offers.
 WINDOW_DAY, WINDOW_FROM, WINDOW_TO, SLOT = 5, 13, 17, 14   # Saturday (Monday is 0), 13:00–17:00, at 14:00
 ON_THE_LINE = ("dialing", "ringing", "live")
+# Places a renter might name ("show me Christie Pits"), and where the map goes for each. Demo only: the
+# Concierge's focus_area tool resolves real places once it exists.
+AREAS = {
+    "christie pits": Area(label="Christie Pits", lat=43.6646, lng=-79.4206, zoom=15),
+    "king and bay": Area(label="King and Bay", lat=43.6485, lng=-79.3802, zoom=15.5),
+    "liberty village": Area(label="Liberty Village", lat=43.6377, lng=-79.4210, zoom=15),
+    "the annex": Area(label="The Annex", lat=43.6703, lng=-79.4072, zoom=14.5),
+    "yorkville": Area(label="Yorkville", lat=43.6710, lng=-79.3933, zoom=15),
+}
 
 
 @dataclass(frozen=True)
@@ -81,6 +91,8 @@ class DemoSessions:
         self.tick_s = tick_s
         # Sessions marked as a returning renter, with the name to greet (None: no name on file).
         self.returning: dict[str, str | None] = {}
+        # The area the renter last asked to see, per session.
+        self.areas: dict[str, Area] = {}
         self.changed = asyncio.Condition()
 
     def get(self, session_id: str) -> SessionView:
@@ -178,6 +190,15 @@ class DemoSessions:
             self.returning.pop(session_id, None)
         return await self.update(session_id)
 
+    async def focus_area(self, session_id: str, place: str) -> SessionView | None:
+        """Demo hook for AreaFocused ("show me Christie Pits"): the map flies there. None for a place the
+        demo doesn't know."""
+        area = AREAS.get(" ".join(place.lower().split()))
+        if area is None:
+            return None
+        self.areas[session_id] = area
+        return await self.update(session_id)
+
     async def update(self, session_id: str, prefs: Preferences | None = None,
                      focus: str | None = None) -> SessionView:
         cur = self.get(session_id)
@@ -209,7 +230,8 @@ class DemoSessions:
                 else "Nothing fits yet. Want to widen the budget or the area?")
         return SessionView(session_id=session_id, version=version, phase=run.phase, preferences=prefs,
                            user_name=self.returning.get(session_id), returning=session_id in self.returning,
-                           focus_listing_id=focus, matches=matches, board=board, agent_says=says,
+                           focus_listing_id=focus, focus_area=self.areas.get(session_id),
+                           matches=matches, board=board, agent_says=says,
                            plan=list(run.plan), calls=list(run.calls.values()), results=run.results)
 
 
