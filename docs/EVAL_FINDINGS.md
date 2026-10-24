@@ -128,8 +128,8 @@ What the first runs found, in order:
 5. **About a quarter of turns run past two sentences**, mostly by reading the whole board line back.
 6. **Viewing times made up once**: "today 10 am to 6 pm", before the renter gave any.
 7. **The "claims with no tool call" check reads English only.** The Farsi "I added your cat", with no tool called, wasn't counted.
-8. **The Caller reads back only about half the numbers it hears** (13/34 tune, 10/16 holdout), against the prompt's "read every number back".
-9. **The Caller leans on the code backstop for `note_question`** (11 of 21 calls). An upsell question ("would your client want a locker?") gets recorded as a fact instead of brought back as a question.
+8. **Read-backs (mostly fixed, Sat 04:25).** The old count (13/34 tune, 10/16 holdout) also counted numbers in the landlord's own questions ("want a locker for $60?") and goodbyes. The real misses: a landlord turn with an answer and a question, where the last tool reply ("tell them you'll check") won over the read-back, and two numbers in one turn with only one read back. Tool replies now carry every read-back owed for the turn. On `cfb384e`: saved numbers read back 23/24 tune, 12/14 holdout; landlord turns with a number read back 25/47 tune, 14/20 holdout.
+9. **The Caller leans on the code backstop for `note_question`** (11 of 21 calls; on `cfb384e` 20 notes by code in 35 calls, now also when the landlord repeats a question the Caller ignored). An upsell question ("would your client want a locker?") gets recorded as a fact instead of brought back as a question.
 10. **Calls are text only.** Time to first audio, barge-in and speech-to-text on the listing leg need the audio sim, and the phone runner (A-02) is being built in another session.
 
 ## Lessons for the next eval

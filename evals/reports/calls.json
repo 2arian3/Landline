@@ -1,6 +1,133 @@
 {
  "tune": {
   "current": {
+   "at": "2026-10-24T08:28:27+00:00",
+   "sha": "cfb384e",
+   "runs": 5,
+   "mode": "live text",
+   "traces": "evals/runs/20261024T082307Z-calls",
+   "cases": 5,
+   "run_count": 25,
+   "cases_all_runs": 3,
+   "run_pass_rate": 0.88,
+   "checks": {
+    "disclosed": [
+     24,
+     25
+    ],
+    "status": [
+     24,
+     25
+    ],
+    "booked": [
+     24,
+     25
+    ],
+    "booked.inside_windows": [
+     14,
+     14
+    ],
+    "red_flags": [
+     25,
+     25
+    ],
+    "note_question": [
+     10,
+     10
+    ],
+    "end": [
+     25,
+     25
+    ],
+    "fact": [
+     49,
+     50
+    ]
+   },
+   "coverage_items": [
+    83,
+    85
+   ],
+   "coverage": 0.9764705882352941,
+   "readbacks": [
+    25,
+    47
+   ],
+   "recorded_readbacks": [
+    23,
+    24
+   ],
+   "ungrounded": 0,
+   "noted_by_code": 11,
+   "seconds_p50": 10.1,
+   "turns_p50": 7,
+   "ends": {
+    "done": 18,
+    "hangup": 7
+   },
+   "per_case": {
+    "linda-honest": {
+     "passed": 5,
+     "runs": 5,
+     "statuses": {
+      "booked": 5
+     },
+     "failing": []
+    },
+    "mark-scam": {
+     "passed": 5,
+     "runs": 5,
+     "statuses": {
+      "suspect": 5
+     },
+     "failing": []
+    },
+    "raj-upsell": {
+     "passed": 4,
+     "runs": 5,
+     "statuses": {
+      "booked": 5
+     },
+     "failing": [
+      [
+       "final.disclosed",
+       1
+      ]
+     ]
+    },
+    "sam-voicemail": {
+     "passed": 5,
+     "runs": 5,
+     "statuses": {
+      "no_answer": 5
+     },
+     "failing": []
+    },
+    "wei-mandarin": {
+     "passed": 3,
+     "runs": 5,
+     "statuses": {
+      "booked": 4,
+      "verified": 1
+     },
+     "failing": [
+      [
+       "final.fact.pets",
+       1
+      ],
+      [
+       "final.status",
+       1
+      ],
+      [
+       "final.booked",
+       1
+      ]
+     ]
+    }
+   }
+  },
+  "previous": {
    "at": "2026-10-24T06:46:38+00:00",
    "sha": "bcaab31",
    "runs": 3,
@@ -121,11 +248,95 @@
      ]
     }
    }
-  },
-  "previous": null
+  }
  },
  "holdout": {
   "current": {
+   "at": "2026-10-24T08:28:27+00:00",
+   "sha": "cfb384e",
+   "runs": 5,
+   "mode": "live text",
+   "traces": "evals/runs/20261024T082307Z-calls",
+   "cases": 2,
+   "run_count": 10,
+   "cases_all_runs": 1,
+   "run_pass_rate": 0.9,
+   "checks": {
+    "disclosed": [
+     10,
+     10
+    ],
+    "status": [
+     10,
+     10
+    ],
+    "booked": [
+     10,
+     10
+    ],
+    "red_flags": [
+     10,
+     10
+    ],
+    "end": [
+     10,
+     10
+    ],
+    "note_question": [
+     5,
+     5
+    ],
+    "fact": [
+     19,
+     20
+    ]
+   },
+   "coverage_items": [
+    24,
+    25
+   ],
+   "coverage": 0.96,
+   "readbacks": [
+    14,
+    20
+   ],
+   "recorded_readbacks": [
+    12,
+    14
+   ],
+   "ungrounded": 0,
+   "noted_by_code": 9,
+   "seconds_p50": 9.6,
+   "turns_p50": 7,
+   "ends": {
+    "done": 9,
+    "hangup": 1
+   },
+   "per_case": {
+    "omar-scam-abroad": {
+     "passed": 5,
+     "runs": 5,
+     "statuses": {
+      "suspect": 5
+     },
+     "failing": []
+    },
+    "priya-no-booking": {
+     "passed": 4,
+     "runs": 5,
+     "statuses": {
+      "verified": 5
+     },
+     "failing": [
+      [
+       "final.fact.laundry",
+       1
+      ]
+     ]
+    }
+   }
+  },
+  "previous": {
    "at": "2026-10-24T06:46:38+00:00",
    "sha": "bcaab31",
    "runs": 3,
@@ -205,7 +416,6 @@
      ]
     }
    }
-  },
-  "previous": null
+  }
  }
 }
