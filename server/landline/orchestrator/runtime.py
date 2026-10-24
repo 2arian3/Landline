@@ -32,11 +32,12 @@ from datetime import UTC, datetime
 
 from psycopg import AsyncConnection
 
-from landline.contracts import Event, SessionStarted, SessionView
+from landline.contracts import AnchorResolved, Event, SessionStarted, SessionView
 from landline.db.catalogue import Catalogue
 from landline.db.pool import Database
 from landline.orchestrator import board, handlers, narrator
 from landline.orchestrator.calllog import CallLog
+from landline.orchestrator.places import Places
 from landline.orchestrator.profiles import Profiles, Remembered, opening
 from landline.orchestrator.state import SessionState
 from landline.scoring import FeatureMatrix, rank
@@ -45,6 +46,7 @@ log = logging.getLogger(__name__)
 
 Subscriber = Callable[[Event, SessionView], Awaitable[None]]
 RECALL_TIMEOUT_S = 2.0   # a slow lookup never holds up the greeting: the caller is treated as new
+PLACE_TIMEOUT_S = 20.0   # a place lookup off the hot path; past this the place stays unresolved
 
 
 class UnknownSession(KeyError):
@@ -90,7 +92,8 @@ class Tx:
 
 class SessionRuntime:
     def __init__(self, catalogue: Catalogue, db: Database | None = None, *,
-                 matrix: FeatureMatrix | None = None):
+                 matrix: FeatureMatrix | None = None, places: Places | None = None,
+                 contact: str | None = None):
         self.catalogue = catalogue
         self.matrix = matrix or FeatureMatrix.build(catalogue.listings, catalogue.hoods)   # once, at boot
         self.db = db
@@ -104,6 +107,10 @@ class SessionRuntime:
         if self.profiles is not None:
             self.on("SessionEnded", self._remember)
             self.on("CallsCompleted", self._remember)
+        # Places the renter names become points in the background, then AnchorResolved re-ranks (D-04).
+        self.places = places or Places(self.matrix.named, contact=contact)
+        self.on("PreferencesUpdated", self._resolve_places)
+        self.on("SessionStarted", self._resolve_places)   # a returning caller's saved places
 
     def __len__(self) -> int:
         return len(self._live)
@@ -236,6 +243,22 @@ class SessionRuntime:
             fits, by_id = rank(self.matrix, r.preferences).order, self.catalogue.by_id
             new = sum(by_id[lid].first_seen > r.last_seen_at for lid in fits)
         state.opening = opening(r, new, datetime.now(UTC))
+
+    async def _resolve_places(self, event: Event, view: SessionView) -> None:
+        for anchor in view.preferences.anchors:
+            if anchor.lat is not None:
+                continue
+            try:
+                point = await asyncio.wait_for(self.places.resolve(anchor.label), PLACE_TIMEOUT_S)
+            except TimeoutError:
+                point = None
+            if point is None:
+                log.info("place %r stays unresolved for %s", anchor.label, event.session_id)
+                continue
+            key = " ".join(anchor.label.lower().split())
+            await self.emit(AnchorResolved(session_id=event.session_id, at=datetime.now(UTC),
+                                           idem_key=f"{event.session_id}:place:{key}", label=anchor.label,
+                                           lat=point.lat, lng=point.lng))
 
     async def _remember(self, event: Event, view: SessionView) -> None:
         if self.profiles is not None and self.has(event.session_id):
