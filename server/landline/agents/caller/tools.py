@@ -194,6 +194,8 @@ def readback(field: str, value: str) -> str | None:
     value has none (a yes or no needs no read-back)."""
     if not (any(ch.isdigit() for ch in value) or WHEN.search(value)):
         return None
+    if field == "available_from" and value.strip().lower() == "now":   # code's word for today (#157)
+        return "So it's available now."
     lead = READBACK.get(field, f"for {field.replace('_', ' ')},")
     return f"So {lead + ' ' if lead else ''}{value.strip().rstrip('.')}."
 
