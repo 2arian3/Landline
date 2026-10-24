@@ -1,0 +1,58 @@
+{
+ "id": "hold-pets-case-by-case",
+ "note": "An answer that isn't yes or no; and no parking against a listed parking price.",
+ "end_reason": "done",
+ "listing": {
+  "listing_id": "livrent:e02-18",
+  "address": "5 St Joseph St",
+  "rent": 2350,
+  "monthly_cost": 2350,
+  "parking_cost": 150
+ },
+ "turns": [
+  {
+   "speaker": "agent",
+   "text": "Hi, I'm an AI assistant calling for a renter about the apartment at 5 St Joseph Street. Is it still available?"
+  },
+  {
+   "speaker": "landlord",
+   "text": "It is available."
+  },
+  {
+   "speaker": "agent",
+   "text": "My client has a dog. Would that be okay?"
+  },
+  {
+   "speaker": "landlord",
+   "text": "Pets are case by case, I'd have to ask the owner."
+  },
+  {
+   "speaker": "agent",
+   "text": "And is there parking?"
+  },
+  {
+   "speaker": "landlord",
+   "text": "No parking, sorry, street parking only."
+  }
+ ],
+ "tool_facts": [
+  {
+   "field": "pets",
+   "value": "case by case",
+   "quote": "Pets are case by case",
+   "turn_idx": 3
+  },
+  {
+   "field": "parking",
+   "value": "none",
+   "quote": "No parking, sorry",
+   "turn_idx": 5
+  }
+ ],
+ "slot_text": null,
+ "gold": {
+  "available": "yes",
+  "pets": "case_by_case",
+  "parking": "none"
+ }
+}

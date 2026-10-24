@@ -1,0 +1,44 @@
+{
+ "model": "higgs-realtime",
+ "user": "Listing: 15 Maitland Pl, listed at $2,100 a month\n\nTranscript:\n[0] AGENT: Hi, I'm an AI assistant calling for a renter about the apartment at 15 Maitland Place. Is it still available?\n[1] LANDLORD: Yes it is, from December first.\n[2] AGENT: My client has a small dog. Is that okay?\n[3] LANDLORD: Sorry, no pets allowed in the building, it's the condo rules.\n[4] AGENT: Got it. Is there laundry in the unit?\n[5] LANDLORD: No, there's a laundry room on the ground floor.",
+ "response": {
+  "facts": [
+   {
+    "field": "available",
+    "turn": 1,
+    "quote": "Yes it is, from December first.",
+    "value": "yes",
+    "amount": null,
+    "count": null,
+    "each": null,
+    "period": null,
+    "mandatory": null,
+    "name": null
+   },
+   {
+    "field": "pets",
+    "turn": 3,
+    "quote": "Sorry, no pets allowed in the building, it's the condo rules.",
+    "value": "no_pets",
+    "amount": null,
+    "count": null,
+    "each": null,
+    "period": null,
+    "mandatory": null,
+    "name": null
+   },
+   {
+    "field": "laundry",
+    "turn": 5,
+    "quote": "No, there's a laundry room on the ground floor.",
+    "value": "in_building",
+    "amount": null,
+    "count": null,
+    "each": null,
+    "period": null,
+    "mandatory": null,
+    "name": null
+   }
+  ]
+ }
+}

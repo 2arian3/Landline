@@ -1,0 +1,60 @@
+{
+ "id": "hold-lease-and-fee",
+ "note": "A required monthly fee: monthly cost goes up by $50, computed in code.",
+ "end_reason": "done",
+ "listing": {
+  "listing_id": "livrent:e02-14",
+  "address": "155 Yorkville Ave",
+  "rent": 3100,
+  "monthly_cost": 3100
+ },
+ "turns": [
+  {
+   "speaker": "agent",
+   "text": "Hi, I'm an AI assistant calling for a renter about the apartment at 155 Yorkville Avenue. Is it still available?"
+  },
+  {
+   "speaker": "landlord",
+   "text": "It's available from January first. One year lease minimum."
+  },
+  {
+   "speaker": "agent",
+   "text": "Are there any other monthly costs?"
+  },
+  {
+   "speaker": "landlord",
+   "text": "There's a mandatory amenity fee of 50 a month, everyone pays it."
+  },
+  {
+   "speaker": "agent",
+   "text": "Got it, thank you."
+  }
+ ],
+ "tool_facts": [
+  {
+   "field": "available_from",
+   "value": "January 1",
+   "quote": "It's available from January first",
+   "turn_idx": 1
+  },
+  {
+   "field": "fees",
+   "value": "amenity fee $50/month",
+   "quote": "a mandatory amenity fee of 50 a month",
+   "turn_idx": 3
+  }
+ ],
+ "slot_text": null,
+ "gold": {
+  "available": "yes",
+  "available_from": "01-01",
+  "lease_months": "12",
+  "fees": [
+   {
+    "name": "amenity",
+    "amount": 50,
+    "period": "monthly"
+   }
+  ]
+ }
+}

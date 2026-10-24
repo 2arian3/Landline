@@ -156,8 +156,64 @@ Traces: `evals/runs/20261024T064504Z-calls` (not committed).
 
 Traces: `evals/runs/20261024T064504Z-calls` (not committed).
 
+## Auditor: facts from call transcripts
+
+The real Auditor (`server/landline/agents/auditor/`) on 20 written call transcripts with gold facts (`evals/run_extraction.py`): tricky fees, pets, a landlord who switches to Mandarin, two scams, read-backs where the agent's own words must not count, a no-answer and a voicemail. **Rules** is the path with no model: the Caller's live `record_fact`s, some of them wrong on purpose, checked against the landlord's turns, plus the red-flag rules and the booked viewing. **With extractor** adds the text LLM's facts, which go through the same quote check. **Ungrounded** is facts shown whose quote no landlord said, re-checked outside the Auditor; the bar is 0. Scored in code.
+
+### Holdout (quote these)
+
+2026-10-24T07:56:31+00:00 · `f905e7f` · 8 transcripts · extractor: replayed recordings
+
+| | Rules | With extractor | Previous (best mode) |
+|---|---|---|---|
+| **Ungrounded facts shown** | **0 of 11** | **0 of 17** | **0 of 17** |
+| Precision | 100% | 100% | 100% |
+| Recall | 65% | 91% | 91% |
+| Transcripts fully right | 3 / 8 | 6 / 8 | 6 / 8 |
+| Claims refused (quote not a landlord's, or the words say otherwise) | 0 | ungrounded 1 | ungrounded 1 |
+
+| Field | Rules P / R | With extractor P / R |
+|---|---|---|
+| ac | — / 0% (0/1) | 100% / 100% (1/1) |
+| available | 100% / 17% (1/6) | 100% / 83% (5/6) |
+| move-in date | 100% / 100% (2/2) | 100% / 100% (2/2) |
+| fees | 100% / 100% (2/2) | 100% / 100% (2/2) |
+| lease length | — / 0% (0/1) | — / 0% (0/1) |
+| parking | 100% / 100% (1/1) | 100% / 100% (1/1) |
+| parking price | 100% / 50% (1/2) | 100% / 100% (2/2) |
+| pets | 100% / 100% (1/1) | 100% / 100% (1/1) |
+| red flags | 100% / 100% (3/3) | 100% / 100% (3/3) |
+| rent | 100% / 100% (2/2) | 100% / 100% (2/2) |
+| utilities included | 100% / 100% (1/1) | 100% / 100% (1/1) |
+| viewing time | 100% / 100% (1/1) | 100% / 100% (1/1) |
+
+### Tune (prompts change against these)
+
+2026-10-24T07:56:31+00:00 · `f905e7f` · 12 transcripts · extractor: replayed recordings
+
+| | Rules | With extractor | Previous (best mode) |
+|---|---|---|---|
+| **Ungrounded facts shown** | **0 of 21** | **0 of 29** | **0 of 29** |
+| Precision | 96% | 100% | 100% |
+| Recall | 69% | 94% | 94% |
+| Transcripts fully right | 5 / 12 | 10 / 12 | 10 / 12 |
+| Claims refused (quote not a landlord's, or the words say otherwise) | agent_words 3 | agent_words 3, unreadable 1 | agent_words 3, unreadable 1 |
+
+| Field | Rules P / R | With extractor P / R |
+|---|---|---|
+| available | 100% / 46% (5/11) | 100% / 91% (10/11) |
+| move-in date | 100% / 67% (2/3) | 100% / 67% (2/3) |
+| fees | 100% / 100% (2/2) | 100% / 100% (2/2) |
+| laundry | 100% / 100% (2/2) | 100% / 100% (2/2) |
+| lease length | 100% / 100% (1/1) | 100% / 100% (1/1) |
+| parking price | 100% / 67% (2/3) | 100% / 100% (3/3) |
+| pets | 100% / 50% (2/4) | 100% / 100% (4/4) |
+| red flags | 100% / 100% (5/5) | 100% / 100% (5/5) |
+| rent | 67% / 67% (2/3) | 100% / 100% (3/3) |
+| utilities included | 100% / 100% (1/1) | 100% / 100% (1/1) |
+
 ## Not measured yet
 
-- Extraction (E-02) and ranking (E-03).
+- Ranking (E-03).
 - Anything audio: time to first audio, barge-in, speech-to-text errors. Text mode can't see them; they need the audio sim transport (A-03).
 - Claims in languages other than English: the "said it changed something" check reads English only.

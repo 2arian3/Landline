@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from landline.agents.auditor import llm as auditor_llm
 from landline.api import admin, browser_audio, twilio
 from landline.api.demo import DemoSessions
 from landline.api.judge import JudgeLines, StartLimit
@@ -61,8 +62,10 @@ def create_app(settings: Settings | None = None, catalogue: Catalogue | None = N
         # The hand-off (A-06): a brief that ends with a plan has its calls queued and run. With TRANSPORT=sim
         # the Caller (A-05) talks to landlord personas in text (A-03), with no phone; otherwise the plan is
         # frozen and its calls stay queued until a phone runner exists.
+        chat = auditor_llm.from_env()   # the Auditor's text LLM (A-07); None runs it on rules alone
         runner = SimRunner(app.state.runtime, lambda key, cfg: app.state.connect_higgs(key, cfg),
-                           settings.boson_api_key or "") if settings.transport == "sim" else None
+                           settings.boson_api_key or "", extractor=chat.json if chat else None,
+                           ) if settings.transport == "sim" else None
         app.state.dispatcher = Dispatcher(app.state.runtime, settings, runner=runner, texter=app.state.texter)
         yield
         await app.state.dispatcher.close()

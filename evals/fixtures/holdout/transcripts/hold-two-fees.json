@@ -1,0 +1,59 @@
+{
+ "id": "hold-two-fees",
+ "note": "First and last at signing is legal, not a scam; a key deposit is one-time.",
+ "end_reason": "done",
+ "listing": {
+  "listing_id": "livrent:e02-19",
+  "address": "12 York St",
+  "rent": 2950,
+  "monthly_cost": 2950
+ },
+ "turns": [
+  {
+   "speaker": "agent",
+   "text": "Hi, I'm an AI assistant calling for a renter about the apartment at 12 York Street. Is it still available?"
+  },
+  {
+   "speaker": "landlord",
+   "text": "Yes. First and last month's rent up front when you sign, and a 100 dollar key deposit."
+  },
+  {
+   "speaker": "agent",
+   "text": "Is parking available?"
+  },
+  {
+   "speaker": "landlord",
+   "text": "One spot, 200 a month, optional."
+  },
+  {
+   "speaker": "agent",
+   "text": "Thank you."
+  }
+ ],
+ "tool_facts": [
+  {
+   "field": "fees",
+   "value": "key deposit 100",
+   "quote": "a 100 dollar key deposit",
+   "turn_idx": 1
+  },
+  {
+   "field": "parking_cost",
+   "value": "200",
+   "quote": "One spot, 200 a month, optional",
+   "turn_idx": 3
+  }
+ ],
+ "slot_text": null,
+ "gold": {
+  "available": "yes",
+  "parking_cost": "200",
+  "fees": [
+   {
+    "name": "key_deposit",
+    "amount": 100,
+    "period": "one_time"
+   }
+  ]
+ }
+}

@@ -1,0 +1,20 @@
+{
+ "model": "higgs-realtime",
+ "user": "Listing: 100 Harbour St, listed at $1,600 a month\n\nTranscript:\n[0] AGENT: Hi, I'm an AI assistant calling for a renter about the apartment at 100 Harbour Street. Is it still available?\n[1] LANDLORD: Hello. Yes, the unit is available. I am out of the country for work right now.\n[2] AGENT: Would someone be able to show it?\n[3] LANDLORD: No, I can't show you the unit. Pay the first month by Western Union and I will courier the keys.\n[4] AGENT: Thank you, I'll let my client know.",
+ "response": {
+  "facts": [
+   {
+    "field": "available",
+    "turn": 1,
+    "quote": "Yes, the unit is available.",
+    "value": "yes",
+    "amount": null,
+    "count": null,
+    "each": null,
+    "period": null,
+    "mandatory": null,
+    "name": null
+   }
+  ]
+ }
+}

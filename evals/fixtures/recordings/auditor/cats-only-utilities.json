@@ -1,0 +1,44 @@
+{
+ "model": "higgs-realtime",
+ "user": "Listing: 560 Front St W, listed at $2,380 a month\n\nTranscript:\n[0] AGENT: Hi, I'm an AI assistant calling for a renter about the apartment at 560 Front Street West. Is it still available?\n[1] LANDLORD: Still available, yeah.\n[2] AGENT: Are utilities included?\n[3] LANDLORD: Heat and water are included, hydro is on you.\n[4] AGENT: And my client has two cats.\n[5] LANDLORD: Cats only is our policy, so two cats is fine.",
+ "response": {
+  "facts": [
+   {
+    "field": "available",
+    "turn": 1,
+    "quote": "Still available, yeah.",
+    "value": "yes",
+    "amount": null,
+    "count": null,
+    "each": null,
+    "period": null,
+    "mandatory": null,
+    "name": null
+   },
+   {
+    "field": "utilities_included",
+    "turn": 3,
+    "quote": "Heat and water are included, hydro is on you.",
+    "value": "partial",
+    "amount": null,
+    "count": null,
+    "each": null,
+    "period": null,
+    "mandatory": null,
+    "name": null
+   },
+   {
+    "field": "pets",
+    "turn": 5,
+    "quote": "Cats only is our policy, so two cats is fine.",
+    "value": "cats_only",
+    "amount": null,
+    "count": null,
+    "each": null,
+    "period": null,
+    "mandatory": null,
+    "name": null
+   }
+  ]
+ }
+}

@@ -1,0 +1,20 @@
+{
+ "id": "hold-voicemail",
+ "note": "A voicemail greeting is not a fact about the unit.",
+ "end_reason": "voicemail",
+ "listing": {
+  "listing_id": "livrent:e02-17",
+  "address": "300 Front St W",
+  "rent": 2800,
+  "monthly_cost": 2800
+ },
+ "turns": [
+  {
+   "speaker": "landlord",
+   "text": "Hi, you've reached Mark. Leave a message and I'll call you back."
+  }
+ ],
+ "tool_facts": [],
+ "slot_text": null,
+ "gold": {}
+}

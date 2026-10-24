@@ -1,0 +1,48 @@
+{
+ "id": "hold-scam-mandarin",
+ "note": "A scam in Mandarin: owner abroad, no viewing, deposit before viewing.",
+ "end_reason": "done",
+ "listing": {
+  "listing_id": "livrent:e02-20",
+  "address": "8 Park Rd",
+  "rent": 1700,
+  "monthly_cost": 1700
+ },
+ "turns": [
+  {
+   "speaker": "agent",
+   "text": "Hi, I'm an AI assistant calling for a renter about the apartment at 8 Park Road. Is it still available?"
+  },
+  {
+   "speaker": "landlord",
+   "text": "我现在在国外，不能带你看房。",
+   "lang": "zh"
+  },
+  {
+   "speaker": "agent",
+   "text": "请问租金是多少？"
+  },
+  {
+   "speaker": "landlord",
+   "text": "一千七。看房之前要先转账押金，然后我快递钥匙给你。",
+   "lang": "zh"
+  }
+ ],
+ "tool_facts": [
+  {
+   "field": "rent",
+   "value": "1700",
+   "quote": "一千七",
+   "turn_idx": 3
+  }
+ ],
+ "slot_text": null,
+ "gold": {
+  "rent": "1700",
+  "red_flags": [
+   "deposit_before_viewing",
+   "owner_away",
+   "no_viewing"
+  ]
+ }
+}

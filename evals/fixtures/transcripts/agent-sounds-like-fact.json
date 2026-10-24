@@ -1,0 +1,70 @@
+{
+ "id": "agent-sounds-like-fact",
+ "note": "The agent's own sentence sounds like a fact; a 'mm-hm' is not the landlord saying it.",
+ "end_reason": "done",
+ "listing": {
+  "listing_id": "livrent:e02-6",
+  "address": "1 Bloor St E",
+  "rent": 2690,
+  "monthly_cost": 2690,
+  "parking_cost": 0
+ },
+ "turns": [
+  {
+   "speaker": "agent",
+   "text": "Hi, I'm an AI assistant calling for a renter about the apartment at 1 Bloor Street East. Is it still available?"
+  },
+  {
+   "speaker": "landlord",
+   "text": "Mm-hm."
+  },
+  {
+   "speaker": "agent",
+   "text": "It's listed at $2,690 with parking included, right?"
+  },
+  {
+   "speaker": "landlord",
+   "text": "Mm-hm. It's available December first."
+  },
+  {
+   "speaker": "agent",
+   "text": "And is there in-suite laundry?"
+  },
+  {
+   "speaker": "landlord",
+   "text": "Yeah, washer and dryer in the unit."
+  }
+ ],
+ "tool_facts": [
+  {
+   "field": "rent",
+   "value": "2690",
+   "quote": "listed at $2,690 with parking included",
+   "turn_idx": 2
+  },
+  {
+   "field": "parking",
+   "value": "included",
+   "quote": "with parking included",
+   "turn_idx": 2
+  },
+  {
+   "field": "available_from",
+   "value": "December 1",
+   "quote": "It's available December first",
+   "turn_idx": 3
+  },
+  {
+   "field": "laundry",
+   "value": "in suite",
+   "quote": "washer and dryer in the unit",
+   "turn_idx": 5
+  }
+ ],
+ "slot_text": null,
+ "gold": {
+  "available": "yes",
+  "available_from": "12-01",
+  "laundry": "in_unit"
+ }
+}

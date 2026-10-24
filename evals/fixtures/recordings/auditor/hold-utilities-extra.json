@@ -1,0 +1,44 @@
+{
+ "model": "higgs-realtime",
+ "user": "Listing: 9 Mabelle Ave, listed at $2,250 a month\n\nTranscript:\n[0] AGENT: Hi, I'm an AI assistant calling for a renter about the apartment at 9 Mabelle Avenue. Is it still available?\n[1] LANDLORD: Yes, available now.\n[2] AGENT: What utilities are included?\n[3] LANDLORD: Heat is included. Water and hydro are extra, around 90 a month.\n[4] AGENT: Thanks. Is there air conditioning?\n[5] LANDLORD: There's central air, yes.",
+ "response": {
+  "facts": [
+   {
+    "field": "available",
+    "turn": 1,
+    "quote": "Yes, available now.",
+    "value": "yes",
+    "amount": null,
+    "count": null,
+    "each": null,
+    "period": null,
+    "mandatory": null,
+    "name": null
+   },
+   {
+    "field": "utilities_included",
+    "turn": 3,
+    "quote": "Heat is included. Water and hydro are extra, around 90 a month.",
+    "value": "heat",
+    "amount": 90,
+    "count": null,
+    "each": null,
+    "period": "monthly",
+    "mandatory": null,
+    "name": "water_hydro"
+   },
+   {
+    "field": "ac",
+    "turn": 5,
+    "quote": "There's central air, yes.",
+    "value": "yes",
+    "amount": null,
+    "count": null,
+    "each": null,
+    "period": null,
+    "mandatory": null,
+    "name": null
+   }
+  ]
+ }
+}

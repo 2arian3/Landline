@@ -23,7 +23,8 @@ from datetime import UTC, datetime
 from difflib import SequenceMatcher
 from typing import Any
 
-from landline.agents.caller import outcome
+from landline.agents import auditor
+from landline.agents.auditor.extract import Complete
 from landline.agents.caller import tools as caller_tools
 from landline.agents.caller.brief import brief, instructions
 from landline.contracts import Listing, Viewing
@@ -77,8 +78,10 @@ class SimRunner:
     def __init__(self, runtime: SessionRuntime, connect_higgs: ConnectHiggs, api_key: str, *,
                  persona_for: Callable[[Dial, Listing], Persona] = demo_persona,
                  clock: Callable[[], datetime] = lambda: datetime.now(UTC),
-                 max_turns: int = MAX_TURNS, turn_timeout_s: float = TURN_TIMEOUT_S):
+                 max_turns: int = MAX_TURNS, turn_timeout_s: float = TURN_TIMEOUT_S,
+                 extractor: Complete | None = None):
         self.runtime, self.connect, self.api_key = runtime, connect_higgs, api_key
+        self.extractor = extractor   # the Auditor's text LLM (A-07); None: rules and the live record only
         self.persona_for, self.clock = persona_for, clock
         self.max_turns, self.turn_timeout_s = max_turns, turn_timeout_s
         self.traces: OrderedDict[str, SimTrace] = OrderedDict()
@@ -120,8 +123,22 @@ class SimRunner:
                     await side.higgs.close()
         trace.end_reason, trace.ungrounded, trace.noted_by_code = reason, ctx.ungrounded, ctx.noted_by_code
         viewing = Viewing(starts_at=ctx.booked, slot_text=ctx.slot_text or "") if ctx.booked else None
-        return CallResult(reason, outcome.outcome(dial.call_id, dial.listing_id, reason, ctx.facts, ctx.said,
-                                                  ctx.questions, viewing))
+        return CallResult(reason, await self._audit(dial, listing, reason, ctx, trace, viewing))
+
+    async def _audit(self, dial: Dial, listing: Listing, reason: str, ctx: caller_tools.CallerContext,
+                     trace: SimTrace, viewing: Viewing | None):
+        """The Auditor (A-07) on the transcript, inside what's left of the call's deadline: with no time
+        left, or no extractor, it runs on the Caller's grounded record and the rules alone."""
+        left = (dial.deadline - self.clock()).total_seconds() - 1
+        extractor = self.extractor if left > 2 else None
+        record = auditor.CallRecord(
+            call_id=dial.call_id, listing_id=dial.listing_id, end_reason=reason,  # type: ignore[arg-type]
+            turns=[auditor.Turn(i, "landlord" if t.speaker == "landlord" else "agent", t.text)
+                   for i, t in enumerate(trace.turns)],
+            listing=auditor.ListingContext.of(listing), ended_at=self.clock(),
+            tool_facts=[auditor.ToolFact(f.field, f.value, f.quote) for f in ctx.facts],
+            questions=ctx.questions, viewing=viewing)
+        return await auditor.outcome(record, complete=extractor, timeout_s=max(1.0, left))
 
     async def _talk(self, caller: _Side, landlord: _Side, ctx: caller_tools.CallerContext, trace: SimTrace,
                     persona: Persona, report: Report) -> str:

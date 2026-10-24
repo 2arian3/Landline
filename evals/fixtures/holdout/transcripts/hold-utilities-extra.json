@@ -1,0 +1,58 @@
+{
+ "id": "hold-utilities-extra",
+ "note": "Some utilities in, some out.",
+ "end_reason": "done",
+ "listing": {
+  "listing_id": "livrent:e02-13",
+  "address": "9 Mabelle Ave",
+  "rent": 2250,
+  "monthly_cost": 2250
+ },
+ "turns": [
+  {
+   "speaker": "agent",
+   "text": "Hi, I'm an AI assistant calling for a renter about the apartment at 9 Mabelle Avenue. Is it still available?"
+  },
+  {
+   "speaker": "landlord",
+   "text": "Yes, available now."
+  },
+  {
+   "speaker": "agent",
+   "text": "What utilities are included?"
+  },
+  {
+   "speaker": "landlord",
+   "text": "Heat is included. Water and hydro are extra, around 90 a month."
+  },
+  {
+   "speaker": "agent",
+   "text": "Thanks. Is there air conditioning?"
+  },
+  {
+   "speaker": "landlord",
+   "text": "There's central air, yes."
+  }
+ ],
+ "tool_facts": [
+  {
+   "field": "available_from",
+   "value": "now",
+   "quote": "Yes, available now",
+   "turn_idx": 1
+  },
+  {
+   "field": "utilities_included",
+   "value": "heat",
+   "quote": "Heat is included",
+   "turn_idx": 3
+  }
+ ],
+ "slot_text": null,
+ "gold": {
+  "available": "yes",
+  "available_from": "now",
+  "utilities_included": "heat",
+  "ac": "yes"
+ }
+}
