@@ -24,7 +24,9 @@ evals/
   fixtures/recordings/*.jsonl       # recorded Higgs events for the replay test
   reports/concierge.json calls.json latest.md   # committed; latest.md is rebuilt from the JSON
   runs/<stamp>/                     # traces, not committed
-  # still to come: fixtures/transcripts (E-02), fixtures/renters (E-03)
+  fixtures/{,holdout/}transcripts/*.json   # E-02: call transcripts with gold facts (run_extraction.py)
+  fixtures/recordings/auditor/*.json       # the extractor's recorded answers, replayed with no key
+  # still to come: fixtures/renters (E-03)
 ```
 
 ## Concierge sim (E-01)

@@ -1,0 +1,44 @@
+{
+ "model": "higgs-realtime",
+ "user": "Listing: 12 York St, listed at $2,950 a month\n\nTranscript:\n[0] AGENT: Hi, I'm an AI assistant calling for a renter about the apartment at 12 York Street. Is it still available?\n[1] LANDLORD: Yes. First and last month's rent up front when you sign, and a 100 dollar key deposit.\n[2] AGENT: Is parking available?\n[3] LANDLORD: One spot, 200 a month, optional.\n[4] AGENT: Thank you.",
+ "response": {
+  "facts": [
+   {
+    "field": "available",
+    "turn": 1,
+    "quote": "Yes.",
+    "value": "yes",
+    "amount": null,
+    "count": null,
+    "each": null,
+    "period": null,
+    "mandatory": null,
+    "name": null
+   },
+   {
+    "field": "fees",
+    "turn": 1,
+    "quote": "First and last month's rent up front when you sign, and a 100 dollar key deposit.",
+    "value": "yes",
+    "amount": 100,
+    "count": null,
+    "each": null,
+    "period": "one_time",
+    "mandatory": true,
+    "name": "key_deposit"
+   },
+   {
+    "field": "parking",
+    "turn": 3,
+    "quote": "One spot, 200 a month, optional.",
+    "value": "available",
+    "amount": 200,
+    "count": 1,
+    "each": true,
+    "period": "monthly",
+    "mandatory": false,
+    "name": "parking"
+   }
+  ]
+ }
+}

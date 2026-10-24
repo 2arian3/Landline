@@ -303,7 +303,7 @@ async def test_a_sim_call_records_books_and_comes_back_with_its_outcome():
     out = state.outcomes["t:1"]
     assert out.end_reason == "done" and out.red_flags == []
     assert [(f.field, f.value) for f in out.facts] == [("available_from", "November 1st"),
-                                                       ("parking_cost", "$150 a month")]
+                                                       ("parking_cost", "$150 a month per spot")]
     assert out.viewing.starts_at == _at(24, 13)
     trace = next(iter(runner.traces.values()))
     assert [t.speaker for t in trace.turns][:3] == ["landlord", "caller", "landlord"]

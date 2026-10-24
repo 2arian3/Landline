@@ -1,0 +1,44 @@
+{
+ "model": "higgs-realtime",
+ "user": "Listing: 33 Isabella St, listed at $2,690 a month\n\nTranscript:\n[0] AGENT: Hi, I'm an AI assistant calling for a renter about the apartment at 33 Isabella Street. Is it still available?\n[1] LANDLORD: Yes. Rent is 2,690 a month.\n[2] AGENT: Just to confirm, that's $2,690 a month, utilities extra?\n[3] LANDLORD: Oh sorry, I misspoke, it went up last week. It's 2,750 now. Utilities extra, yes.\n[4] AGENT: Thank you. Is the lease a year?\n[5] LANDLORD: One year lease, then month to month.",
+ "response": {
+  "facts": [
+   {
+    "field": "rent",
+    "turn": 3,
+    "quote": "It's 2,750 now.",
+    "value": "$2,750/month",
+    "amount": 2750,
+    "count": null,
+    "each": null,
+    "period": "monthly",
+    "mandatory": null,
+    "name": "rent"
+   },
+   {
+    "field": "utilities_included",
+    "turn": 3,
+    "quote": "Utilities extra, yes.",
+    "value": "no",
+    "amount": null,
+    "count": null,
+    "each": null,
+    "period": null,
+    "mandatory": null,
+    "name": "utilities"
+   },
+   {
+    "field": "lease_months",
+    "turn": 5,
+    "quote": "One year lease, then month to month.",
+    "value": "12",
+    "amount": null,
+    "count": null,
+    "each": null,
+    "period": null,
+    "mandatory": null,
+    "name": "lease"
+   }
+  ]
+ }
+}

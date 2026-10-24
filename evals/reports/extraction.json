@@ -1,0 +1,930 @@
+{
+ "tune": {
+  "current": {
+   "at": "2026-10-24T07:56:31+00:00",
+   "sha": "f905e7f",
+   "mode": "replayed recordings",
+   "rules": {
+    "cases": 12,
+    "precision": 0.96,
+    "recall": 0.686,
+    "correct": 24,
+    "predicted": 25,
+    "gold": 35,
+    "facts_shown": 21,
+    "ungrounded": 0,
+    "ungrounded_rate": 0.0,
+    "dropped": {
+     "agent_words": 3
+    },
+    "fields": {
+     "available": {
+      "precision": 1.0,
+      "recall": 0.455,
+      "correct": 5,
+      "predicted": 5,
+      "gold": 11
+     },
+     "available_from": {
+      "precision": 1.0,
+      "recall": 0.667,
+      "correct": 2,
+      "predicted": 2,
+      "gold": 3
+     },
+     "fees": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 2,
+      "predicted": 2,
+      "gold": 2
+     },
+     "laundry": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 2,
+      "predicted": 2,
+      "gold": 2
+     },
+     "lease_months": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 1,
+      "predicted": 1,
+      "gold": 1
+     },
+     "parking_cost": {
+      "precision": 1.0,
+      "recall": 0.667,
+      "correct": 2,
+      "predicted": 2,
+      "gold": 3
+     },
+     "pets": {
+      "precision": 1.0,
+      "recall": 0.5,
+      "correct": 2,
+      "predicted": 2,
+      "gold": 4
+     },
+     "red_flags": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 5,
+      "predicted": 5,
+      "gold": 5
+     },
+     "rent": {
+      "precision": 0.667,
+      "recall": 0.667,
+      "correct": 2,
+      "predicted": 3,
+      "gold": 3
+     },
+     "utilities_included": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 1,
+      "predicted": 1,
+      "gold": 1
+     }
+    },
+    "cases_exact": 5,
+    "extractor": [
+     "none"
+    ],
+    "misses": {
+     "agent-sounds-like-fact": [
+      "-available=yes"
+     ],
+     "cats-only-utilities": [
+      "-available=yes",
+      "-pets=cats_only"
+     ],
+     "deposit-and-locker": [
+      "-available=yes"
+     ],
+     "mandarin-switch": [
+      "-available=yes",
+      "-parking_cost=150",
+      "-pets=no_pets"
+     ],
+     "no-pets": [
+      "-available_from=12-01"
+     ],
+     "readback-corrected": [
+      "+rent=2690",
+      "-available=yes",
+      "-rent=2750"
+     ],
+     "scam-deposit-before-viewing": [
+      "-available=yes"
+     ]
+    }
+   },
+   "extractor": {
+    "cases": 12,
+    "precision": 1.0,
+    "recall": 0.943,
+    "correct": 33,
+    "predicted": 33,
+    "gold": 35,
+    "facts_shown": 29,
+    "ungrounded": 0,
+    "ungrounded_rate": 0.0,
+    "dropped": {
+     "agent_words": 3,
+     "unreadable": 1
+    },
+    "fields": {
+     "available": {
+      "precision": 1.0,
+      "recall": 0.909,
+      "correct": 10,
+      "predicted": 10,
+      "gold": 11
+     },
+     "available_from": {
+      "precision": 1.0,
+      "recall": 0.667,
+      "correct": 2,
+      "predicted": 2,
+      "gold": 3
+     },
+     "fees": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 2,
+      "predicted": 2,
+      "gold": 2
+     },
+     "laundry": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 2,
+      "predicted": 2,
+      "gold": 2
+     },
+     "lease_months": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 1,
+      "predicted": 1,
+      "gold": 1
+     },
+     "parking_cost": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 3,
+      "predicted": 3,
+      "gold": 3
+     },
+     "pets": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 4,
+      "predicted": 4,
+      "gold": 4
+     },
+     "red_flags": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 5,
+      "predicted": 5,
+      "gold": 5
+     },
+     "rent": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 3,
+      "predicted": 3,
+      "gold": 3
+     },
+     "utilities_included": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 1,
+      "predicted": 1,
+      "gold": 1
+     }
+    },
+    "cases_exact": 10,
+    "extractor": [
+     "none",
+     "ok"
+    ],
+    "misses": {
+     "no-pets": [
+      "-available_from=12-01"
+     ],
+     "readback-corrected": [
+      "-available=yes"
+     ]
+    }
+   }
+  },
+  "previous": {
+   "at": "2026-10-24T07:54:04+00:00",
+   "sha": "034e811+dirty",
+   "mode": "replayed recordings",
+   "rules": {
+    "cases": 12,
+    "precision": 0.96,
+    "recall": 0.686,
+    "correct": 24,
+    "predicted": 25,
+    "gold": 35,
+    "facts_shown": 21,
+    "ungrounded": 0,
+    "ungrounded_rate": 0.0,
+    "dropped": {
+     "agent_words": 3
+    },
+    "fields": {
+     "available": {
+      "precision": 1.0,
+      "recall": 0.455,
+      "correct": 5,
+      "predicted": 5,
+      "gold": 11
+     },
+     "available_from": {
+      "precision": 1.0,
+      "recall": 0.667,
+      "correct": 2,
+      "predicted": 2,
+      "gold": 3
+     },
+     "fees": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 2,
+      "predicted": 2,
+      "gold": 2
+     },
+     "laundry": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 2,
+      "predicted": 2,
+      "gold": 2
+     },
+     "lease_months": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 1,
+      "predicted": 1,
+      "gold": 1
+     },
+     "parking_cost": {
+      "precision": 1.0,
+      "recall": 0.667,
+      "correct": 2,
+      "predicted": 2,
+      "gold": 3
+     },
+     "pets": {
+      "precision": 1.0,
+      "recall": 0.5,
+      "correct": 2,
+      "predicted": 2,
+      "gold": 4
+     },
+     "red_flags": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 5,
+      "predicted": 5,
+      "gold": 5
+     },
+     "rent": {
+      "precision": 0.667,
+      "recall": 0.667,
+      "correct": 2,
+      "predicted": 3,
+      "gold": 3
+     },
+     "utilities_included": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 1,
+      "predicted": 1,
+      "gold": 1
+     }
+    },
+    "cases_exact": 5,
+    "extractor": [
+     "none"
+    ],
+    "misses": {
+     "agent-sounds-like-fact": [
+      "-available=yes"
+     ],
+     "cats-only-utilities": [
+      "-available=yes",
+      "-pets=cats_only"
+     ],
+     "deposit-and-locker": [
+      "-available=yes"
+     ],
+     "mandarin-switch": [
+      "-available=yes",
+      "-parking_cost=150",
+      "-pets=no_pets"
+     ],
+     "no-pets": [
+      "-available_from=12-01"
+     ],
+     "readback-corrected": [
+      "+rent=2690",
+      "-available=yes",
+      "-rent=2750"
+     ],
+     "scam-deposit-before-viewing": [
+      "-available=yes"
+     ]
+    }
+   },
+   "extractor": {
+    "cases": 12,
+    "precision": 1.0,
+    "recall": 0.943,
+    "correct": 33,
+    "predicted": 33,
+    "gold": 35,
+    "facts_shown": 29,
+    "ungrounded": 0,
+    "ungrounded_rate": 0.0,
+    "dropped": {
+     "agent_words": 3,
+     "unreadable": 1
+    },
+    "fields": {
+     "available": {
+      "precision": 1.0,
+      "recall": 0.909,
+      "correct": 10,
+      "predicted": 10,
+      "gold": 11
+     },
+     "available_from": {
+      "precision": 1.0,
+      "recall": 0.667,
+      "correct": 2,
+      "predicted": 2,
+      "gold": 3
+     },
+     "fees": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 2,
+      "predicted": 2,
+      "gold": 2
+     },
+     "laundry": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 2,
+      "predicted": 2,
+      "gold": 2
+     },
+     "lease_months": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 1,
+      "predicted": 1,
+      "gold": 1
+     },
+     "parking_cost": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 3,
+      "predicted": 3,
+      "gold": 3
+     },
+     "pets": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 4,
+      "predicted": 4,
+      "gold": 4
+     },
+     "red_flags": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 5,
+      "predicted": 5,
+      "gold": 5
+     },
+     "rent": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 3,
+      "predicted": 3,
+      "gold": 3
+     },
+     "utilities_included": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 1,
+      "predicted": 1,
+      "gold": 1
+     }
+    },
+    "cases_exact": 10,
+    "extractor": [
+     "none",
+     "ok"
+    ],
+    "misses": {
+     "no-pets": [
+      "-available_from=12-01"
+     ],
+     "readback-corrected": [
+      "-available=yes"
+     ]
+    }
+   }
+  }
+ },
+ "holdout": {
+  "current": {
+   "at": "2026-10-24T07:56:31+00:00",
+   "sha": "f905e7f",
+   "mode": "replayed recordings",
+   "rules": {
+    "cases": 8,
+    "precision": 1.0,
+    "recall": 0.652,
+    "correct": 15,
+    "predicted": 15,
+    "gold": 23,
+    "facts_shown": 11,
+    "ungrounded": 0,
+    "ungrounded_rate": 0.0,
+    "dropped": {},
+    "fields": {
+     "ac": {
+      "precision": null,
+      "recall": 0.0,
+      "correct": 0,
+      "predicted": 0,
+      "gold": 1
+     },
+     "available": {
+      "precision": 1.0,
+      "recall": 0.167,
+      "correct": 1,
+      "predicted": 1,
+      "gold": 6
+     },
+     "available_from": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 2,
+      "predicted": 2,
+      "gold": 2
+     },
+     "fees": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 2,
+      "predicted": 2,
+      "gold": 2
+     },
+     "lease_months": {
+      "precision": null,
+      "recall": 0.0,
+      "correct": 0,
+      "predicted": 0,
+      "gold": 1
+     },
+     "parking": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 1,
+      "predicted": 1,
+      "gold": 1
+     },
+     "parking_cost": {
+      "precision": 1.0,
+      "recall": 0.5,
+      "correct": 1,
+      "predicted": 1,
+      "gold": 2
+     },
+     "pets": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 1,
+      "predicted": 1,
+      "gold": 1
+     },
+     "red_flags": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 3,
+      "predicted": 3,
+      "gold": 3
+     },
+     "rent": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 2,
+      "predicted": 2,
+      "gold": 2
+     },
+     "utilities_included": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 1,
+      "predicted": 1,
+      "gold": 1
+     },
+     "viewing": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 1,
+      "predicted": 1,
+      "gold": 1
+     }
+    },
+    "cases_exact": 3,
+    "extractor": [
+     "none"
+    ],
+    "misses": {
+     "hold-lease-and-fee": [
+      "-available=yes",
+      "-lease_months=12"
+     ],
+     "hold-pets-case-by-case": [
+      "-available=yes"
+     ],
+     "hold-spoken-numbers": [
+      "-available=yes",
+      "-parking_cost=180"
+     ],
+     "hold-two-fees": [
+      "-available=yes"
+     ],
+     "hold-utilities-extra": [
+      "-ac=yes",
+      "-available=yes"
+     ]
+    }
+   },
+   "extractor": {
+    "cases": 8,
+    "precision": 1.0,
+    "recall": 0.913,
+    "correct": 21,
+    "predicted": 21,
+    "gold": 23,
+    "facts_shown": 17,
+    "ungrounded": 0,
+    "ungrounded_rate": 0.0,
+    "dropped": {
+     "ungrounded": 1
+    },
+    "fields": {
+     "ac": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 1,
+      "predicted": 1,
+      "gold": 1
+     },
+     "available": {
+      "precision": 1.0,
+      "recall": 0.833,
+      "correct": 5,
+      "predicted": 5,
+      "gold": 6
+     },
+     "available_from": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 2,
+      "predicted": 2,
+      "gold": 2
+     },
+     "fees": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 2,
+      "predicted": 2,
+      "gold": 2
+     },
+     "lease_months": {
+      "precision": null,
+      "recall": 0.0,
+      "correct": 0,
+      "predicted": 0,
+      "gold": 1
+     },
+     "parking": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 1,
+      "predicted": 1,
+      "gold": 1
+     },
+     "parking_cost": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 2,
+      "predicted": 2,
+      "gold": 2
+     },
+     "pets": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 1,
+      "predicted": 1,
+      "gold": 1
+     },
+     "red_flags": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 3,
+      "predicted": 3,
+      "gold": 3
+     },
+     "rent": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 2,
+      "predicted": 2,
+      "gold": 2
+     },
+     "utilities_included": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 1,
+      "predicted": 1,
+      "gold": 1
+     },
+     "viewing": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 1,
+      "predicted": 1,
+      "gold": 1
+     }
+    },
+    "cases_exact": 6,
+    "extractor": [
+     "ok"
+    ],
+    "misses": {
+     "hold-lease-and-fee": [
+      "-lease_months=12"
+     ],
+     "hold-two-fees": [
+      "-available=yes"
+     ]
+    }
+   }
+  },
+  "previous": {
+   "at": "2026-10-24T07:54:04+00:00",
+   "sha": "034e811+dirty",
+   "mode": "replayed recordings",
+   "rules": {
+    "cases": 8,
+    "precision": 1.0,
+    "recall": 0.652,
+    "correct": 15,
+    "predicted": 15,
+    "gold": 23,
+    "facts_shown": 11,
+    "ungrounded": 0,
+    "ungrounded_rate": 0.0,
+    "dropped": {},
+    "fields": {
+     "ac": {
+      "precision": null,
+      "recall": 0.0,
+      "correct": 0,
+      "predicted": 0,
+      "gold": 1
+     },
+     "available": {
+      "precision": 1.0,
+      "recall": 0.167,
+      "correct": 1,
+      "predicted": 1,
+      "gold": 6
+     },
+     "available_from": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 2,
+      "predicted": 2,
+      "gold": 2
+     },
+     "fees": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 2,
+      "predicted": 2,
+      "gold": 2
+     },
+     "lease_months": {
+      "precision": null,
+      "recall": 0.0,
+      "correct": 0,
+      "predicted": 0,
+      "gold": 1
+     },
+     "parking": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 1,
+      "predicted": 1,
+      "gold": 1
+     },
+     "parking_cost": {
+      "precision": 1.0,
+      "recall": 0.5,
+      "correct": 1,
+      "predicted": 1,
+      "gold": 2
+     },
+     "pets": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 1,
+      "predicted": 1,
+      "gold": 1
+     },
+     "red_flags": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 3,
+      "predicted": 3,
+      "gold": 3
+     },
+     "rent": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 2,
+      "predicted": 2,
+      "gold": 2
+     },
+     "utilities_included": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 1,
+      "predicted": 1,
+      "gold": 1
+     },
+     "viewing": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 1,
+      "predicted": 1,
+      "gold": 1
+     }
+    },
+    "cases_exact": 3,
+    "extractor": [
+     "none"
+    ],
+    "misses": {
+     "hold-lease-and-fee": [
+      "-available=yes",
+      "-lease_months=12"
+     ],
+     "hold-pets-case-by-case": [
+      "-available=yes"
+     ],
+     "hold-spoken-numbers": [
+      "-available=yes",
+      "-parking_cost=180"
+     ],
+     "hold-two-fees": [
+      "-available=yes"
+     ],
+     "hold-utilities-extra": [
+      "-ac=yes",
+      "-available=yes"
+     ]
+    }
+   },
+   "extractor": {
+    "cases": 8,
+    "precision": 1.0,
+    "recall": 0.913,
+    "correct": 21,
+    "predicted": 21,
+    "gold": 23,
+    "facts_shown": 17,
+    "ungrounded": 0,
+    "ungrounded_rate": 0.0,
+    "dropped": {
+     "ungrounded": 1
+    },
+    "fields": {
+     "ac": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 1,
+      "predicted": 1,
+      "gold": 1
+     },
+     "available": {
+      "precision": 1.0,
+      "recall": 0.833,
+      "correct": 5,
+      "predicted": 5,
+      "gold": 6
+     },
+     "available_from": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 2,
+      "predicted": 2,
+      "gold": 2
+     },
+     "fees": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 2,
+      "predicted": 2,
+      "gold": 2
+     },
+     "lease_months": {
+      "precision": null,
+      "recall": 0.0,
+      "correct": 0,
+      "predicted": 0,
+      "gold": 1
+     },
+     "parking": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 1,
+      "predicted": 1,
+      "gold": 1
+     },
+     "parking_cost": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 2,
+      "predicted": 2,
+      "gold": 2
+     },
+     "pets": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 1,
+      "predicted": 1,
+      "gold": 1
+     },
+     "red_flags": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 3,
+      "predicted": 3,
+      "gold": 3
+     },
+     "rent": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 2,
+      "predicted": 2,
+      "gold": 2
+     },
+     "utilities_included": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 1,
+      "predicted": 1,
+      "gold": 1
+     },
+     "viewing": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "correct": 1,
+      "predicted": 1,
+      "gold": 1
+     }
+    },
+    "cases_exact": 6,
+    "extractor": [
+     "ok"
+    ],
+    "misses": {
+     "hold-lease-and-fee": [
+      "-lease_months=12"
+     ],
+     "hold-two-fees": [
+      "-available=yes"
+     ]
+    }
+   }
+  }
+ }
+}
