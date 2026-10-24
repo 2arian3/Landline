@@ -30,11 +30,11 @@ def transit(walk_min: float | None) -> float | None:
 
 
 def size(sqft: int | None, beds: float, desired: int | None = None) -> float | None:
+    """0.5 at the typical size for the bed count, 1 at 1.5× it. After "too small" (O-04) `desired` takes the
+    typical size's place on the same curve, so a bigger unit never falls behind a smaller one."""
     if sqft is None:
         return None
-    if desired:
-        return clamp(sqft / desired)
-    typical = TYPICAL_SQFT[min(int(beds), 4)]
+    typical = desired or TYPICAL_SQFT[min(int(beds), 4)]
     return clamp(0.5 + (sqft / typical - 1))
 
 

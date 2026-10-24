@@ -1,9 +1,7 @@
-"""The ranking eval (E-03, evals/run_ranking.py) runs with no key and no network. The ranking problems it
-found are kept as strict xfails: each turns into a failure, to be un-marked, once the ranking is fixed."""
+"""The ranking eval (E-03, evals/run_ranking.py) runs with no key and no network. The three ranking problems
+it found (too small, too expensive, too dark) were kept here as strict xfails until feedback fixed them."""
 
 import json
-
-import pytest
 
 from evals import run_ranking as R
 from landline.contracts import FeedbackGiven
@@ -56,11 +54,6 @@ async def _after(case: dict, reason: str, attribute: str, cat=None) -> tuple[lis
     return before, [c.listing_id for c in rt.get(sid).board]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="SCORING.md §3: 'too small' switches the size curve to sqft/desired, "
-    "capped at 1, so small units gain more than big ones (for Arian)",
-)
 async def test_too_small_keeps_a_bigger_unit_above_smaller_ones():
     before, after = await _after(_case("union-commuter"), "too small", "size")
     assert before[:2] == ["livrent:134584", "livrent:139609"]  # 504 sq ft, then 700 sq ft
@@ -69,11 +62,6 @@ async def test_too_small_keeps_a_bigger_unit_above_smaller_ones():
     assert all(big < s for s in smaller)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="the cost utility is flat at 1 under 85% of the budget, so 'too expensive' "
-    "(cost +1, budget kept) can't move cheaper places up (for Arian)",
-)
 async def test_too_expensive_brings_a_cheaper_place_into_the_top_three():
     # family-space: $3,800 budget; the goal is 2+ beds at <= $2,500 with >= 900 sq ft. Five turns of "too
     # expensive" never get one into the top 3, which stays at $2,596-$2,980 (all under 85% of the budget).
@@ -81,11 +69,6 @@ async def test_too_expensive_brings_a_cheaper_place_into_the_top_three():
     assert result["turns"] is not None
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="a dislike with a reason only boosts a weight; the card it was said about "
-    "keeps its own score, so a strong lead survives (for Arian, demo shot 0:55)",
-)
 async def test_too_dark_takes_the_card_it_was_said_about_off_the_top():
     from landline.contracts import Listing
     from landline.db.catalogue import Catalogue

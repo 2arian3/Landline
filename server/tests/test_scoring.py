@@ -86,7 +86,9 @@ def test_cost_utility_breakpoints():
 def test_other_utilities():
     assert u.transit(3) == 1.0 and u.transit(20) == 0.0 and u.transit(None) is None
     assert u.size(650, 1) == pytest.approx(0.5) and u.size(975, 1) == 1.0 and u.size(None, 1) is None
-    assert u.size(500, 1, desired=1000) == 0.5
+    # After "too small" the wanted size takes the typical size's place on the same curve.
+    assert u.size(1000, 1, desired=1000) == 0.5 and u.size(1500, 1, desired=1000) == 1.0
+    assert u.size(500, 1, desired=1000) == 0.0
     assert u.high_floor(15) == 1.0 and u.high_floor(3) == pytest.approx(0.2)
     assert u.ground_floor(0, None, None) == 1.0 and u.ground_floor(8, True, None) == 1.0
     assert u.ground_floor(8, None, None) == 0.0 and u.ground_floor(None, None, None) is None

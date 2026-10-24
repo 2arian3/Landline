@@ -295,7 +295,8 @@ def test_the_api_sends_a_judge_session_through_the_runtime():
         fb = c.post(f"/api/sessions/{sid}/feedback", json={"listing_id": "t:2", "reaction": "dislike",
                                                            "reason": "too dark"}).json()
         assert _card_json(fb, "t:2")["reaction"] == "too dark" and fb["version"] == 4
-        assert c.post(f"/api/sessions/{sid}/calls").json()["plan"] == ["t:1", "t:2", "t:3"]
+        # The top three, with the place called too dark now below t:3.
+        assert c.post(f"/api/sessions/{sid}/calls").json()["plan"] == ["t:1", "t:3", "t:2"]
         assert c.post(f"/api/sessions/{sid}/hang-up").json()["phase"] == "calling"
         assert c.post(f"/api/sessions/{sid}/calls").status_code == 409       # the brief is over
         assert c.post(f"/api/sessions/{sid}/reset").status_code == 409       # demo sessions only

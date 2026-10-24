@@ -18,6 +18,8 @@ def _cost(good: bool, r: dict[str, Any]) -> str | None:
     budget, cost = r["budget"], r["monthly_cost"]
     if budget is None:
         return None
+    if cost < budget and not good:   # under budget but dear after "too expensive": no honest watch-out
+        return None
     if cost <= budget:
         return f"${budget - cost:,} under budget" if budget > cost else "right at your budget"
     return f"${cost - budget:,} over budget"
@@ -49,10 +51,10 @@ def _floor(good: bool, r: dict[str, Any]) -> str:
     return "ground floor" if floor == 0 else "basement" if floor < 0 else f"floor {floor}"
 
 
-def _ground_floor(good: bool, r: dict[str, Any]) -> str:
+def _ground_floor(good: bool, r: dict[str, Any]) -> str | None:
     if good:
         return "elevator" if r["elevator"] and (r["floor"] or 0) > 1 else "no stairs"
-    return f"floor {r['floor']}, no elevator listed"
+    return f"floor {r['floor']}, no elevator listed" if r["floor"] is not None else None
 
 
 def _parking(good: bool, r: dict[str, Any]) -> str:
