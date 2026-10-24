@@ -19,6 +19,7 @@ from landline.orchestrator import SessionRuntime
 from landline.voice import higgs, outbound
 from landline.voice.calls import RenterCalls
 from landline.voice.dispatch import Dispatcher
+from landline.voice.line import Lines
 from landline.voice.sim import SimRunner
 from landline.voice.sms import Texter
 
@@ -50,6 +51,8 @@ def create_app(settings: Settings | None = None, catalogue: Catalogue | None = N
         # DATABASE_URL is set, else keeps them in memory. Demo sessions stay in `sessions` until A-06.
         # Its own matrix (with neighbourhoods), and the contact the place lookup identifies itself with.
         app.state.runtime = SessionRuntime(app.state.catalogue, db, contact=settings.contact_email)
+        # Map taps and background re-ranks, to the live Concierge between turns (A-02, voice/line.py).
+        app.state.lines = Lines(app.state.runtime)
         app.state.judges = JudgeLines(settings.higgs_max_sessions)
         app.state.judge_limit = StartLimit(settings.judge_starts_per_ip, settings.judge_start_window_s)
         # For /health. The renter's call bridge sets "ok" or "error: …" each time it opens a Higgs session.

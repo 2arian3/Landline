@@ -31,6 +31,7 @@ from landline.orchestrator import SessionRuntime
 from landline.voice import twilio
 from landline.voice.calls import RenterCall, RenterCalls
 from landline.voice.higgs import PCMU, ConnectHiggs, session_config
+from landline.voice.line import Line, Lines
 from landline.voice.recorder import CallRecorder, Chunk, Placed, format_of
 from landline.voice.sms import Texter
 
@@ -80,10 +81,12 @@ class Playback:
 
 async def converse(transport: Transport, call: RenterCall, *, calls: RenterCalls, runtime: SessionRuntime,
                    connect_higgs: ConnectHiggs, settings: Settings,
-                   set_status: Callable[[str], None] = lambda _: None, texter: Texter | None = None) -> str:
+                   set_status: Callable[[str], None] = lambda _: None, texter: Texter | None = None,
+                   lines: Lines | None = None) -> str:
     """Runs one claimed call to its end, finalizes it and ends its session. Returns why it ended. The
     caller owns the socket and closes it afterwards. With a `texter`, a phone caller is texted the link
-    to their board the first time their preferences change."""
+    to their board the first time their preferences change. With `lines`, map taps reach the Concierge
+    between turns (voice/line.py)."""
     reason = "error"
     # The call, its transcript and its audio are stored for the admin panel (orchestrator/calllog.py).
     kind = "voice" if transport.audio_format == PCMU else "browser"
@@ -92,7 +95,7 @@ async def converse(transport: Transport, call: RenterCall, *, calls: RenterCalls
                           deadline_at=datetime.now(UTC) + timedelta(seconds=settings.renter_call_max_s))
     try:
         reason = await _talk(transport, call, runtime, connect_higgs, settings, set_status,
-                             _link_texter(texter, call, settings), recorder)
+                             _link_texter(texter, call, settings), recorder, lines)
     finally:
         calls.finalize(call.call_id, reason)
         try:   # before it ends, and never in the way of ending it
@@ -134,7 +137,8 @@ def opening(remembered: str | None) -> tuple[str, list[dict[str, Any]]]:
 
 async def _talk(transport: Transport, call: RenterCall, runtime: SessionRuntime, connect_higgs: ConnectHiggs,
                 settings: Settings, set_status: Callable[[str], None],
-                text_link: Callable[[], bool] | None, recorder: CallRecorder) -> str:
+                text_link: Callable[[], bool] | None, recorder: CallRecorder,
+                lines: Lines | None = None) -> str:
     instructions, start = opening(runtime.opening(call.session_id))
     try:
         higgs = await connect_higgs(settings.boson_api_key or "", session_config(
@@ -151,11 +155,12 @@ async def _talk(transport: Transport, call: RenterCall, runtime: SessionRuntime,
     playback = Playback(transport.bytes_per_second)
     pumps: set[asyncio.Task[str]] = set()
     keeper = asyncio.create_task(_keep_every(runtime, call.call_id, recorder, settings.record_audio))
+    line = lines.open(call.session_id, higgs.send) if lines is not None else None
     try:
         for event in start:
             await higgs.send(event)
         pumps = {asyncio.create_task(_renter_to_higgs(transport, higgs, recorder)),
-                 asyncio.create_task(_higgs_to_renter(higgs, transport, ctx, playback, recorder))}
+                 asyncio.create_task(_higgs_to_renter(higgs, transport, ctx, playback, recorder, line))}
         done, _ = await asyncio.wait(pumps, timeout=settings.renter_call_max_s,
                                      return_when=asyncio.FIRST_COMPLETED)
         return _why(done)
@@ -163,6 +168,8 @@ async def _talk(transport: Transport, call: RenterCall, runtime: SessionRuntime,
         for task in (*pumps, keeper):
             task.cancel()
         await asyncio.gather(*pumps, keeper, return_exceptions=True)
+        if line is not None:
+            lines.close(call.session_id, line)
         with contextlib.suppress(Exception):
             await higgs.close()
 
@@ -208,10 +215,10 @@ class TwilioTransport:
 async def run_bridge(ws: WebSocket, *, calls: RenterCalls, runtime: SessionRuntime,
                      connect_higgs: ConnectHiggs, settings: Settings,
                      set_status: Callable[[str], None] = lambda _: None,
-                     texter: Texter | None = None) -> None:
+                     texter: Texter | None = None, lines: Lines | None = None) -> None:
     """A Twilio media stream for a call that /twiml/renter minted; its id comes back in `start`. The call
     starts its session in the runtime, the way /api/judge/start does for the browser. With a `texter`,
-    the caller gets their board link by text."""
+    the caller gets their board link by text; with `lines`, map taps reach the Concierge."""
     await ws.accept()
     start = await _wait_for_start(ws)
     call_id = str(((start or {}).get("customParameters") or {}).get("call_id", ""))
@@ -232,7 +239,7 @@ async def run_bridge(ws: WebSocket, *, calls: RenterCalls, runtime: SessionRunti
     try:
         transport = TwilioTransport(ws, str(start.get("streamSid", "")))
         await converse(transport, call, calls=calls, runtime=runtime, connect_higgs=connect_higgs,
-                       settings=settings, set_status=set_status, texter=texter)
+                       settings=settings, set_status=set_status, texter=texter, lines=lines)
     finally:
         await close_socket(ws)
 
@@ -263,12 +270,16 @@ async def _renter_to_higgs(transport: Transport, higgs: Any, recorder: CallRecor
 
 
 async def _higgs_to_renter(higgs: Any, transport: Transport, ctx: tools.ToolContext,
-                           playback: Playback, recorder: CallRecorder) -> str:
+                           playback: Playback, recorder: CallRecorder, line: Line | None = None) -> str:
     """The Concierge's audio back to the renter, barge-in and tool calls. Ends when Higgs closes, or once
-    the goodbye has played after end_session."""
+    the goodbye has played after end_session. `line` sees every event, to deliver map taps between turns."""
     spoke = False   # whether the response under way has sent any audio yet
     async for event in higgs.events():
         kind = event.get("type")
+        if line is not None:
+            if ctx.hang_up:
+                line.close()   # saying goodbye: nothing more goes in
+            await line.seen(event)
         if kind == "response.created":
             spoke = False
         elif kind == "response.output_audio.delta":
