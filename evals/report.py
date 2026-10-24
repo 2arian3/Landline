@@ -32,6 +32,8 @@ CHECKS = [   # check family → what the report calls it
     ("may_book", "No booking allowed before the renter said so"),
     ("no_request", "No calls when none were asked for"),
     ("replies_in", "Replies in the renter's language"),
+    ("greeting.says", "Welcome back named what was remembered"),
+    ("greeting.avoids", "Welcome back said nothing it didn't know"),
     ("ended", "Ended with end_session after the goodbye"),
     ("ended.goodbye", "Said goodbye before hanging up"),
     ("case", "Case errors (the fixture is wrong)"),
@@ -54,7 +56,7 @@ def family(check_name: str) -> str:
     parts = check_name.split(".")[1:]   # drop "final" or "lineN"
     if not parts:
         return "?"
-    if parts[0] in ("request", "ended") and len(parts) > 1:
+    if parts[0] in ("request", "ended", "greeting") and len(parts) > 1:
         return f"{parts[0]}.{parts[1]}"
     return parts[0]
 

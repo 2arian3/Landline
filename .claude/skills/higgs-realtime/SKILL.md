@@ -51,13 +51,46 @@ Never emitted: `conversation.item.done`, `rate_limits.updated`. Don't gate logic
 
 ## Tools
 
-1. On `response.function_call_arguments.done`, run the tool in-process with the session and listing taken from the **Call**, never from the arguments.
+1. On `response.function_call_arguments.done`, run the tool in-process with the session and listing taken from the **Call**, never from the arguments. In the Concierge, that's `voice/bridge.py` `run_tool`, which the eval simulator also uses.
 2. Send `conversation.item.create` with `{"type": "function_call_output", "call_id": ..., "output": "<≤25 spoken words>"}`.
 3. Send `response.create`.
 
+What the model really sends (eval, 24 Oct; `docs/EVAL_FINDINGS.md`):
+- **Numbers where the schema says string.** `"listing_refs": [1, 2]` against `list[str]` failed validation, so "call the top two" saved nothing. `tools.handle` turns numeric refs into words. Expect the same for any field a person says as a number.
+- **Arguments for another tool.** `availability` and `may_book` went into `update_preferences`. Pydantic drops unknown keys without a word, and a "success" reply makes the agent believe it saved them. `tools.handle` answers "Not saved: …; call call_listings with them." Never ignore extra keys quietly.
+- **Answers one at a time.** After a reply that says what's missing, the agent sends only the new field, so a second `call_listings` updates the plan rather than replacing it.
+
+## end_session: say goodbye first
+
+Nothing is said after `end_session`: `run_tool` sends no `response.create` once `ctx.hang_up` is set, and the bridge hangs up at that response's `response.done`. So the goodbye has to come **before** the tool call, in the same response. When the model calls it first anyway, `run_tool` swaps the answer for `tools.SAY_GOODBYE` and sends one plain `response.create`. `ends_call` then waits for the response after it (`ctx.bye_response` holds the silent one's id). Whether the model spoke is read from **deltas** (`response.output_audio.delta`, or `response.output_text.delta` in text): in a response with text and then a tool call, `function_call_arguments.done` arrives before that text's `.done`.
+
+## Don't put instructions on response.create mid-call
+
+`response.create` with `"response": {"instructions": ...}` **replaces** the session's instructions for that response, and the model answers as if the conversation weren't there:
+- Every goodbye asked for that way came out as "Hello! How can I help you today?" (21 of 21).
+- The returning-caller welcome, sent that way, never used the remembered facts and made a memory up (5 of 5).
+
+Use response instructions only for a self-contained line with nothing to remember, like the first `GREETING`. To steer one response, put the request in a tool's output, or in the session instructions plus a quoted user note. That's how `bridge.opening()` welcomes a returning caller: `WELCOME_BACK` sits in the session instructions next to the memory, and the call starts with "[The call just connected.]" and a plain `response.create`. That used the memory in 5 of 5 runs, with no tool calls before speaking.
+
 ## Injecting text between turns
 
-`conversation.item.create` takes **text only**, and the `system` role is rejected. Inject as `{"type": "message", "role": "user", "content": [{"type": "input_text", "text": "[renter is looking at] 412 Markham"}]}`. Send it only when no response is in flight and the human isn't speaking, then `response.create`. Wrap everything as quoted data. The `Line` class in `voice/line.py` owns this logic. Only the Concierge gets injected text (focus taps and the reconnect summary); a Caller gets everything it needs in its instructions at dial time.
+`conversation.item.create` takes **text only**, and the `system` role is rejected. Inject as `{"type": "message", "role": "user", "content": [{"type": "input_text", "text": "[renter is looking at] 412 Markham"}]}`. Send it only when no response is in flight and the human isn't speaking, then `response.create`. Wrap everything as quoted data. The `Line` class in `voice/line.py` owns this logic (planned in A-02; not written yet). Only the Concierge gets injected text (focus taps and the reconnect summary); a Caller gets everything it needs in its instructions at dial time.
+
+## Text mode (the eval simulator)
+
+Verified 24 Oct. `output_modalities: ["text"]` is accepted with or without the `audio` block (`session_config(..., modality="text")`). Typed input goes in as user `input_text`. Output is `response.output_text.delta` and `.done` (the full text in `text`), and tool events are unchanged. An agent turn ends at the first `response.done` whose `response.output` has no `function_call`. `function_call_arguments.done` carries `response_id`, and `response.done` carries `response.id`. A typed turn with a tool call takes about 0.9 s.
+
+## Agent problems seen in the eval
+
+The Concierge, as of `6f99149`. Read these before changing its prompt; the details and numbers are in `docs/EVAL_FINDINGS.md`.
+- Treats "the first one looks great" as a focus, not a like.
+- Repeats an address that two cards share ("30 Carabob Court"), so the ref never resolves.
+- After a switch to Farsi, may narrate in English ("I've updated your search…") and call no tool. Three prompt changes didn't fix it; a Spanish example made it worse.
+- Runs past two sentences in about a quarter of turns, mostly by reading the whole board line back.
+- Says "I've noted…" without a tool call, less often now. The eval only catches this in English.
+- Once made up viewing times ("today 10 am to 6 pm") before the renter gave any.
+- Misreads money: "$3,000" became "thirty thousand" in most returning-caller welcomes until the prompt said to say amounts as written.
+- A returning caller whose calls are still running isn't told so. About 1 in 4 welcomes skips the booking.
 
 ## Barge-in
 

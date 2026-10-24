@@ -53,9 +53,12 @@ async def run(sets: list[str], runs: int, concurrency: int, only: set[str], use_
             connect, key = fake.connect, ""
         else:
             connect, key = higgs.connect, settings.boson_api_key or ""
+        back = case.returning
         async with gate:
             trace = await simulate(case.id, n, ScriptedRenter([line.say for line in case.lines]),
-                                   catalogue=catalogue, connect_higgs=connect, api_key=key)
+                                   catalogue=catalogue, connect_higgs=connect, api_key=key,
+                                   remembered=back.opening if back else None,
+                                   prefs=back.prefs if back else None)
         result = score(case, trace, catalogue)
         folder = out / name
         folder.mkdir(parents=True, exist_ok=True)
