@@ -52,7 +52,7 @@ async def twilio_media(ws: WebSocket) -> None:
 
 @router.post("/twiml/outbound/{call_id}")
 async def twiml_outbound(call_id: str, request: Request) -> Response:
-    """Twilio asks what to do once a listing call is answered and machine detection has decided."""
+    """Twilio asks what to do the moment a listing call is answered; machine detection reports on /amd."""
     params = await _signed_params(request)
     calls = request.app.state.outbound
     if calls.runner is None or calls.get(call_id) is None:
@@ -74,6 +74,19 @@ async def outbound_status(call_id: str, request: Request) -> Response:
         await calls.set_state(call_id, "ringing")
     elif (reason := calls.end_reason(call_id, status)) is not None:
         calls.finalize(call_id, reason)
+    return Response(status_code=204)
+
+
+@router.post("/twilio/outbound/amd/{call_id}", status_code=204)
+async def outbound_amd(call_id: str, request: Request) -> Response:
+    """Twilio's machine detection for a listing call, decided while the Caller talks (AsyncAmd)."""
+    params = await _signed_params(request)
+    calls = request.app.state.outbound
+    answered_by = params.get("AnsweredBy", "")
+    log.info("listing call %s detected as %s after %s ms", call_id, answered_by or "?",
+             params.get("MachineDetectionDuration", "?"))
+    if calls.runner is not None:
+        await calls.runner.detected(call_id, answered_by)
     return Response(status_code=204)
 
 
