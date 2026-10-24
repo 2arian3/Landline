@@ -30,7 +30,7 @@ from landline.agents.auditor import grounding
 from landline.agents.auditor.flags import red_flags
 from landline.agents.caller import slots
 from landline.agents.caller.brief import Brief
-from landline.contracts import EndReason, Fact, FactRecorded, QuestionNoted, ViewingBooked
+from landline.contracts import EndReason, Fact, FactRecorded, QuestionNoted, Shareable, ViewingBooked
 from landline.contracts.tools import (
     CALLER_TOOLS,
     BookViewing,
@@ -266,9 +266,11 @@ async def end_call(args: EndCall, ctx: CallerContext, meta: dict) -> str:
 
 async def kept_promise(ctx: CallerContext, caller_said: str, called: list[str]) -> str | None:
     """Note a landlord's question the Caller left behind, in their own words, so it still comes back in the
-    results: when the Caller promised to check with its client but noted nothing that turn, or when the
-    landlord asks the same question a second time and it was never noted. Code, not the model, decides
-    this, like the goodbye guard. Returns the question noted, if any."""
+    results: when the Caller promised to check with its client but noted nothing that turn, when the
+    landlord asks the same question a second time and it was never noted, or when they asked about the
+    renter and what the renter shares doesn't answer it (raj-upsell: the Caller talked past "Would your
+    client want the premium storage locker?" and promised nothing). Code, not the model, decides this, like
+    the goodbye guard. Returns the last question noted, if any."""
     if "note_question" in called or not ctx.said:
         return None
     asked = _questions(ctx.said[-1])
@@ -276,17 +278,45 @@ async def kept_promise(ctx: CallerContext, caller_said: str, called: list[str]) 
         return None
     earlier = {grounding.normalize(q) for turn in ctx.said[:-1] for q in _questions(turn)}
     repeated = [q for q in asked if grounding.normalize(q) in earlier]
-    if PROMISE.search(caller_said):
-        question = asked[-1]
-    elif repeated:
-        question = repeated[-1]
-    else:
-        return None
-    if _noted(question, ctx.questions) or (about_viewing(question) and ctx.booked is not None):
-        return None
-    await _note(ctx, question, f"{ctx.call_id}:promised:{len(ctx.said)}", ctx.clock())
-    ctx.noted_by_code += 1
-    return question
+    left = {asked[-1]} if PROMISE.search(caller_said) else {repeated[-1]} if repeated else set()
+    left |= {q for q in asked if about_renter(q, ctx.brief.plan.shareable)}
+    noted = None
+    for n, question in enumerate(asked):
+        if question not in left or _noted(question, ctx.questions) or \
+                (about_viewing(question) and ctx.booked is not None):
+            continue
+        await _note(ctx, question, f"{ctx.call_id}:promised:{len(ctx.said)}:{n}", ctx.clock())
+        ctx.noted_by_code += 1
+        noted = question
+    return noted
+
+
+# A landlord's question about the renter: who they are, what they'd pay for, what they'd agree to.
+SENSITIVE = re.compile(
+    r"\b(income|guarantor|co-?signer|credit|employ\w*|jobs?|salary|earn\w*|for work|for a living|references?|"
+    r"pay\w*|stubs?|students?|smok\w*|deposit|background|documents?|application|fees?|cost\w*|price|"
+    r"dollars|locker|storage|sign)\b|\$\d", re.I)
+ABOUT_RENTER = re.compile(
+    r"\b(your|the|my) (client|renter)s?\b|\b(your|the) (client|renter)'s\b|"
+    r"\b(would|do|does|will) (you|they|he|she)( \w+)? (want|like|need|take)\b", re.I)
+WRAP_UP = re.compile(r"\b(anything else|other questions?|any questions?)\b", re.I)
+# What the renter's shareable answers cover, by the Shareable field the Caller needs for it.
+SHAREABLE = {"move_in": re.compile(r"\bmov(e|es|ing)\b|\bstart\b", re.I),
+             "occupants": re.compile(r"\bhow many\b|\bpeople\b|\boccupants?\b|\balone\b|\broommates?\b|"
+                                     r"\bliv(e|es|ing) (there|with|in)\b", re.I),
+             "pets": re.compile(r"\bpets?\b|\bdogs?\b|\bcats?\b|\banimals?\b", re.I)}
+
+
+def about_renter(question: str, share: Shareable) -> bool:
+    """A question about the renter that the Caller may not answer from what the renter shares, so it has to
+    go back to the renter. A viewing question is left to book_viewing."""
+    if about_viewing(question) or WRAP_UP.search(question):
+        return False
+    if SENSITIVE.search(question):
+        return True
+    if not ABOUT_RENTER.search(question):
+        return False
+    return not any(rx.search(question) and getattr(share, key) for key, rx in SHAREABLE.items())
 
 
 # A landlord asking to set up a viewing ("Would you like to schedule a viewing?", "When can you come by?").
@@ -318,9 +348,15 @@ def _questions(turn: str) -> list[str]:
     return [s.strip() for s in re.split(r"(?<=[.!?？])\s*", turn) if s.strip().endswith(("?", "？"))]
 
 
+# Words every question to the renter shares, so "Does your client have a car?" isn't taken for a noted
+# "Does your client have a guarantor?".
+QUESTION_WORDS = {"your", "the", "a", "an", "to", "for", "client", "renter", "my", "do", "does", "did", "is",
+                  "are", "have", "has", "would", "will", "can", "could", "you", "they", "what", "how", "want"}
+
+
 def _noted(question: str, noted: list[str]) -> bool:
     """Already noted, word for word or in the Caller's own words (most of its words are in a noted one)."""
-    words = set(grounding.tokens(question)) - {"your", "the", "a", "to", "for", "client", "renter", "my"}
+    words = set(grounding.tokens(question)) - QUESTION_WORDS
     for n in noted:
         if n == question or (words and len(words & set(grounding.tokens(n))) >= 0.6 * len(words)):
             return True

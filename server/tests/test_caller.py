@@ -479,16 +479,60 @@ async def test_every_read_back_of_a_turn_rides_on_its_last_tool_reply():
 
 
 async def test_a_question_asked_twice_is_noted_even_without_a_promise():
-    ctx = await _ctx(said=["Would your client want a locker for $60 a month?"])
+    ctx = await _ctx(said=["Did you see the photos online?"])
     assert await tools.kept_promise(ctx, "Is the building quiet at night?", []) is None   # asked once
-    ctx.said.append("It's quiet. Would your client want a locker for $60 a month?")
+    ctx.said.append("It's quiet. Did you see the photos online?")
     noted = await tools.kept_promise(ctx, "Great, and when can we view it?", [])
-    assert noted == "Would your client want a locker for $60 a month?" and ctx.noted_by_code == 1
-    ctx.said.append("So, would your client want a locker for $60 a month?")
+    assert noted == "Did you see the photos online?" and ctx.noted_by_code == 1
+    ctx.said.append("So, did you see the photos online?")
     assert await tools.kept_promise(ctx, "What about Saturday?", []) is None               # noted already
     ctx = await _ctx(said=["Do you want a locker for $60?", "Do you want a locker for $60?"])
     ctx.questions.append("Does the renter want the $60 locker?")                         # in its own words
     assert await tools.kept_promise(ctx, "Okay.", []) is None
+
+
+# A landlord's question about the renter is never skipped: the Caller answers it from what the renter shares
+# (here: moving in December 1, a dog) or it goes back to the renter. raj-upsell-4 and priya slipped past.
+@pytest.mark.parametrize(("landlord", "noted"), [
+    ("It's pretty quiet at night. Would your client want the premium storage locker for sixty dollars a "
+     "month?", "Would your client want the premium storage locker for sixty dollars a month?"),
+    ("What does your client do for work?", "What does your client do for work?"),
+    ("Does your client have a guarantor?", "Does your client have a guarantor?"),
+    ("Great. What's the renter's income?", "What's the renter's income?"),
+    ("Can they send pay stubs?", "Can they send pay stubs?"),
+    ("Is your client okay with the $300 pet fee?", "Is your client okay with the $300 pet fee?"),
+    ("Would they sign a twelve month lease?", "Would they sign a twelve month lease?"),
+    ("Does your client have a car?", "Does your client have a car?"),
+    ("When does your client want to move in?", None),          # shareable: December 1
+    ("Does your client have any pets?", None),                 # shareable: a dog
+    ("How many people would be living there?", None),          # not asked of the renter
+    ("Would you like to schedule a viewing?", None),           # left to book_viewing
+    ("Do you have any other questions?", None),
+    ("Parking is $150 a month.", None),                        # not a question
+])
+async def test_a_landlords_question_about_the_renter_is_noted_when_the_caller_skips_it(landlord, noted):
+    ctx = await _ctx(_plan(pets=["dog"]), said=[landlord])
+    got = await tools.kept_promise(ctx, "So the building is quiet. Could your client view it Saturday?", [])
+    assert got == noted
+    assert ctx.noted_by_code == (noted is not None)
+
+
+async def test_two_renter_questions_in_one_turn_are_both_noted_and_not_again():
+    ctx = await _ctx(said=["Does your client have a guarantor? And would they want the storage locker?"])
+    assert await tools.kept_promise(ctx, "Okay.", []) == "And would they want the storage locker?"
+    assert ctx.runtime.state(ctx.session_id).questions["t:1"] == [
+        "Does your client have a guarantor?", "And would they want the storage locker?"]
+    ctx.said.append("Does your client have a car?")             # shares "does your client have"
+    assert await tools.kept_promise(ctx, "Okay.", []) == "Does your client have a car?"
+    assert await tools.kept_promise(ctx, "I'll check with my client.", []) is None   # noted already
+    ctx.said.append("Does your client have a guarantor?")
+    assert await tools.kept_promise(ctx, "Okay.", ["note_question"]) is None      # the Caller noted it
+
+
+def test_the_caller_never_skips_a_question_about_the_renter_or_claims_a_booking_early():
+    text = instructions(brief(_listing(), _plan()))
+    assert "They ask about the renter → never skip it" in text
+    assert "only after book_viewing's reply says it's booked" in text
 
 
 def test_a_time_alone_answers_the_renters_question_but_a_day_and_a_time_doesnt():
