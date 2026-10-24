@@ -1,0 +1,190 @@
+"""Repositories for the session runtime: sessions, events, calls, turns, facts and boards.
+
+Ids come from the caller (code mints them, never a model), and times default to
+now() in SQL. Two rules live here because they must hold whoever calls:
+a duplicate `idem_key` appends nothing, and a call ends exactly once.
+
+`board_messages` from 0001_init.sql has no repository: nothing writes it since the
+two-flow contracts (docs/CONTRACTS.md, "Where it is stored").
+"""
+from __future__ import annotations
+
+from collections.abc import Iterable
+from datetime import datetime
+from typing import Any
+
+from psycopg.types.json import Jsonb
+
+from landline.contracts import EventBase
+from landline.db.base import Conn, Repo
+from landline.db.rows import BoardEntry, BoardRow, CallRow, EventRow, FactRow, SessionRow, TurnRow
+
+
+class StaleVersion(Exception):
+    """Someone saved the session since it was read: reload and apply again."""
+
+
+class Sessions(Repo):
+    async def create(self, session_id: str, channel: str, user_id: int | None = None,
+                     conn: Conn = None) -> SessionRow:
+        row = await self._one(SessionRow, "insert into sessions (session_id, channel, user_id) "
+                              "values (%s, %s, %s) returning *", (session_id, channel, user_id), conn)
+        assert row is not None
+        return row
+
+    async def get(self, session_id: str, conn: Conn = None) -> SessionRow | None:
+        return await self._one(SessionRow, "select * from sessions where session_id = %s",
+                               (session_id,), conn)
+
+    async def list_active(self, conn: Conn = None) -> list[SessionRow]:
+        """Open and calling sessions, oldest first: what a restart reloads."""
+        return await self._all(SessionRow, "select * from sessions where status in ('open', 'calling') "
+                               "order by started_at, session_id", None, conn)
+
+    async def save(self, session_id: str, *, expected_version: int, status: str, snapshot: dict[str, Any],
+                   conn: Conn = None) -> SessionRow:
+        """Write the phase and snapshot and bump the version, if nobody saved since `expected_version`."""
+        row = await self._one(
+            SessionRow,
+            "update sessions set status = %s, snapshot = %s, version = version + 1 "
+            "where session_id = %s and version = %s returning *",
+            (status, Jsonb(snapshot), session_id, expected_version), conn,
+        )
+        if row is None:
+            raise StaleVersion(f"{session_id} is no longer at version {expected_version}")
+        return row
+
+    async def end(self, session_id: str, status: str, conn: Conn = None) -> bool:
+        """Set the final phase (done or closed) once. False if it had already ended."""
+        n = await self._count("update sessions set status = %s, ended_at = now() "
+                              "where session_id = %s and ended_at is null", (status, session_id), conn)
+        return n == 1
+
+
+class Events(Repo):
+    async def append(self, event: EventBase, conn: Conn = None) -> EventRow | None:
+        """Store a contract event. None when its idem_key is already stored: the retry is a no-op."""
+        payload = event.model_dump(mode="json", by_alias=True)
+        outcome = getattr(event, "outcome", None)   # OutcomeReady carries its call inside the outcome
+        call_id = getattr(event, "call_id", None) or (outcome.call_id if outcome else None)
+        return await self._one(
+            EventRow,
+            "insert into events (session_id, call_id, type, idem_key, payload, at) "
+            "values (%s, %s, %s, %s, %s, %s) on conflict (idem_key) do nothing returning *",
+            (event.session_id, call_id, payload["type"], event.idem_key, Jsonb(payload), event.at), conn,
+        )
+
+    async def seen(self, idem_key: str, conn: Conn = None) -> bool:
+        async with self._use(conn) as c:
+            cur = await c.execute("select 1 from events where idem_key = %s", (idem_key,))
+            return await cur.fetchone() is not None
+
+    async def list(self, session_id: str, after_seq: int = 0, conn: Conn = None) -> list[EventRow]:
+        return await self._all(EventRow, "select * from events where session_id = %s and seq > %s "
+                               "order by seq", (session_id, after_seq), conn)
+
+
+class Calls(Repo):
+    async def create(self, call_id: str, *, session_id: str | None, role: str, transport: str,
+                     state: str, listing_id: str | None = None, deadline_at: datetime | None = None,
+                     attempt: int = 1, conn: Conn = None) -> CallRow:
+        row = await self._one(
+            CallRow,
+            "insert into calls (call_id, session_id, listing_id, role, transport, state, deadline_at, "
+            "attempt) values (%s, %s, %s, %s, %s, %s, %s, %s) returning *",
+            (call_id, session_id, listing_id, role, transport, state, deadline_at, attempt), conn,
+        )
+        assert row is not None
+        return row
+
+    async def get(self, call_id: str, conn: Conn = None) -> CallRow | None:
+        return await self._one(CallRow, "select * from calls where call_id = %s", (call_id,), conn)
+
+    async def set_state(self, call_id: str, state: str, *, twilio_sid: str | None = None,
+                        answered: bool = False, conn: Conn = None) -> CallRow | None:
+        """Move a call that hasn't ended. None if it has: an ended call never changes again."""
+        return await self._one(
+            CallRow,
+            "update calls set state = %s, twilio_sid = coalesce(%s, twilio_sid), "
+            "answered_at = case when %s then coalesce(answered_at, now()) else answered_at end "
+            "where call_id = %s and ended_at is null returning *",
+            (state, twilio_sid, answered, call_id), conn,
+        )
+
+    async def finalize(self, call_id: str, reason: str, conn: Conn = None) -> bool:
+        """End the call with `reason`, the first time only. True if this was the call that ended it."""
+        n = await self._count("update calls set state = 'ended', end_reason = %s, ended_at = now() "
+                              "where call_id = %s and ended_at is null", (reason, call_id), conn)
+        return n == 1
+
+    async def for_session(self, session_id: str, conn: Conn = None) -> list[CallRow]:
+        return await self._all(CallRow, "select * from calls where session_id = %s "
+                               "order by created_at, call_id", (session_id,), conn)
+
+    async def in_state(self, states: Iterable[str], conn: Conn = None) -> list[CallRow]:
+        """Calls in any of `states` that haven't ended, oldest first (e.g. queued ones to re-queue)."""
+        return await self._all(CallRow, "select * from calls where state = any(%s) and ended_at is null "
+                               "order by created_at, call_id", (list(states),), conn)
+
+    async def past_deadline(self, now: datetime | None = None, conn: Conn = None) -> list[CallRow]:
+        """Calls still open after their deadline: a restart finalizes them as timeout."""
+        return await self._all(CallRow, "select * from calls where ended_at is null and deadline_at < "
+                               "coalesce(%s, now()) order by deadline_at", (now,), conn)
+
+
+class Turns(Repo):
+    async def append(self, call_id: str, idx: int, speaker: str, text: str, lang: str | None = None,
+                     t_ms: int | None = None, conn: Conn = None) -> TurnRow | None:
+        """Store one turn. None if that idx is already stored (a retried write)."""
+        return await self._one(
+            TurnRow,
+            "insert into call_turns (call_id, idx, speaker, text, lang, t_ms) "
+            "values (%s, %s, %s, %s, %s, %s) on conflict (call_id, idx) do nothing returning *",
+            (call_id, idx, speaker, text, lang, t_ms), conn,
+        )
+
+    async def list(self, call_id: str, after_idx: int = -1, conn: Conn = None) -> list[TurnRow]:
+        """The call's turns after `after_idx`, in order: live captions poll with the last idx they have."""
+        return await self._all(TurnRow, "select * from call_turns where call_id = %s and idx > %s "
+                               "order by idx", (call_id, after_idx), conn)
+
+
+class Facts(Repo):
+    async def add(self, *, listing_id: str, field: str, value: Any, quote: str, source: str,
+                  call_id: str | None = None, turn_idx: int | None = None, confirmed: bool = False,
+                  conn: Conn = None) -> FactRow:
+        row = await self._one(
+            FactRow,
+            "insert into facts (call_id, listing_id, field, value, quote, turn_idx, confirmed, source) "
+            "values (%s, %s, %s, %s, %s, %s, %s, %s) returning *",
+            (call_id, listing_id, field, Jsonb(value), quote, turn_idx, confirmed, source), conn,
+        )
+        assert row is not None
+        return row
+
+    async def for_call(self, call_id: str, conn: Conn = None) -> list[FactRow]:
+        return await self._all(FactRow, "select * from facts where call_id = %s order by fact_id",
+                               (call_id,), conn)
+
+    async def for_listing(self, listing_id: str, conn: Conn = None) -> list[FactRow]:
+        return await self._all(FactRow, "select * from facts where listing_id = %s order by fact_id",
+                               (listing_id,), conn)
+
+
+class Boards(Repo):
+    """session_listings: each session's ranked board, replaced whole on every re-rank."""
+
+    async def replace(self, session_id: str, entries: list[BoardEntry], conn: Conn = None) -> None:
+        async with self._use(conn) as c, c.transaction(), c.cursor() as cur:
+            await cur.execute("delete from session_listings where session_id = %s", (session_id,))
+            await cur.executemany(
+                "insert into session_listings (session_id, listing_id, rank, score, contributions, status, "
+                "reaction, reaction_reason) values (%s, %s, %s, %s, %s, %s, %s, %s)",
+                [(session_id, e.listing_id, e.rank, e.score,
+                  Jsonb(e.contributions) if e.contributions is not None else None, e.status, e.reaction,
+                  e.reaction_reason) for e in entries],
+            )
+
+    async def list(self, session_id: str, conn: Conn = None) -> list[BoardRow]:
+        return await self._all(BoardRow, "select * from session_listings where session_id = %s "
+                               "order by rank nulls last, listing_id", (session_id,), conn)
