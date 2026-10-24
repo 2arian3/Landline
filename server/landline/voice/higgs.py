@@ -27,13 +27,14 @@ class HiggsError(RuntimeError):
 
 
 def session_config(*, instructions: str, tools: list[dict[str, Any]], voice: str = "default",
-                   audio_format: dict[str, Any] = PCMU) -> dict[str, Any]:
+                   audio_format: dict[str, Any] = PCMU, modality: str = "audio") -> dict[str, Any]:
     """The `session.update` that opens every session: the same audio format in and out (pcmu for a
-    phone, 24 kHz PCM for a browser), server VAD, and tools when there are any."""
+    phone, 24 kHz PCM for a browser), server VAD, and tools when there are any. `modality="text"` is for
+    the eval simulator: the same agent answers in `response.output_text.*` events instead of audio."""
     return {"type": "session.update", "session": {
         "model": "higgs-realtime",
         "instructions": instructions,
-        "output_modalities": ["audio"],
+        "output_modalities": [modality],
         "audio": {
             "input": {"format": dict(audio_format),
                       "transcription": {"model": "higgs-stt-3.1"},
