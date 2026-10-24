@@ -478,3 +478,38 @@ async def test_a_complete_plan_tells_the_agent_to_say_goodbye_and_end_the_call()
     sunday = [{"day": "sunday", "from": "12:00", "to": "16:00"}]
     reply = await _call(ctx, listing_refs=["1"], availability=sunday)
     assert reply.endswith(done)                                                     # booking turned down
+
+
+async def test_a_plain_yes_to_the_agents_booking_question_books_that_time():
+    """#174's row: "Should I book tomorrow at 10?" "Yes." with no call_listings in the reply."""
+    ctx = await _ctx()
+    await catch_up_calls("Call the first one.", ctx)
+    ctx.renter_lines = ["Call the first one.", "Yes."]
+    ctx.renter_said, ctx.agent_before, ctx.agent_said = "Yes.", "Should I book tomorrow at 10?", "Great!"
+    assert await catch_up_calls("Yes.", ctx) is not None
+    plan = ctx.runtime.state(SID).request
+    assert [(a.day, a.from_, a.to) for a in plan.availability] == [("tomorrow", "10:00", "11:00")]
+    assert plan.may_book is True
+    turn = Turn()
+    _answered(turn, "Yes.")
+    assert turn.call_line() == "Yes."
+
+
+async def test_a_viewing_the_reply_promised_records_its_times_and_asks_before_booking():
+    """#174's row: "Yeah, that's true." got "Great, I'll set up the viewing for tomorrow." and no tool.
+    The times are kept (the renter said tomorrow); leave to book is asked for, never assumed."""
+    ctx = await _ctx()
+    first = "Can you call the first one? I could see it tomorrow."
+    ctx.renter_lines, ctx.renter_said = [first], first
+    await catch_up_calls(first, ctx)
+    ctx.renter_lines.append("Yeah, that's true.")
+    ctx.renter_said, ctx.agent_before = "Yeah, that's true.", "What time works best for you to view it?"
+    ctx.agent_said = "Great, I'll set up the viewing for tomorrow."
+    reply = await catch_up_calls("Yeah, that's true.", ctx)
+    plan = ctx.runtime.state(SID).request
+    assert reply is not None and "Ask whether you may book a viewing." in reply and not plan.may_book
+    assert [(a.day, a.from_, a.to) for a in plan.availability] == [("tomorrow", "09:00", "18:00")]
+    turn = Turn()
+    _answered(turn, "Yeah, that's true.")
+    turn.agent_said("Great, I'll set up the viewing for tomorrow.")
+    assert turn.call_line() == "Yeah, that's true."
