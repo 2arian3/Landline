@@ -749,3 +749,27 @@ def test_the_prompt_asks_for_a_time_when_the_renter_gave_times_but_no_booking():
     text = instructions(brief(_listing(), _plan(may_book=False, windows=[SUN_9_5])))
     assert "You may not book. Ask what time inside the renter's times they could show it" in text
     assert "don't ask about viewings" in instructions(brief(_listing(), _plan(may_book=False, windows=())))
+
+
+async def test_a_time_offered_in_other_words_is_noted_when_booking_isnt_allowed():
+    """priya-no-booking-1: "6:30 pm on Thursday works perfectly" for book_viewing("Thursday at 6:30 pm")
+    wasn't found word for word, and the Caller asked for a time three times."""
+    said = "6:30 pm on Thursday works perfectly. What does your client do for work?"
+    ctx = await _ctx(_plan(may_book=False), said=[said])
+    reply = await _say(ctx, "book_viewing", {"slot": "Thursday at 6:30 pm"})
+    assert reply.startswith("Not booked: the renter books viewings themselves, so I noted Thursday at "
+                            "6:30 pm")
+    fact = next(f for f in ctx.facts if f.field == "other")
+    assert fact.value == "viewing offered: Thursday at 6:30 pm" and fact.quote == said
+    # priya-no-booking-1: the Caller named the renter's day, the landlord answered with a time alone.
+    ctx = await _ctx(_plan(may_book=False), said=["1:30 pm works perfectly. I'll see you then."])
+    reply = await _say(ctx, "book_viewing", {"slot": "Saturday at 1:30 pm"})   # SAT is the renter's window
+    assert "so I noted Saturday at 1:30 pm" in reply
+    ctx = await _ctx(_plan(may_book=False), said=["3 pm works."])   # a time alone, not the slot's: no
+    assert (await _say(ctx, "book_viewing", {"slot": "Saturday at 1:30 pm"})).startswith("The renter didn't")
+    ctx = await _ctx(_plan(may_book=False), said=["Sunday at 3 works."])   # another time: never noted
+    reply = await _say(ctx, "book_viewing", {"slot": "Thursday at 6:30 pm"})
+    assert reply.startswith("The renter didn't allow booking") and not ctx.facts
+    reply = await _say(ctx, "book_viewing", {"slot": "Thursday at 6:30 pm"}, 2)   # refused again: move on
+    assert reply.startswith("Don't ask about times again.")
+    assert "then ask whether it's still available" in reply   # the next item, not the viewing again
