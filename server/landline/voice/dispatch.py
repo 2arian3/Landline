@@ -113,7 +113,8 @@ class Dispatcher:
         now = self.clock()
         plan = freeze(state, now)
         call_ids = [mint("c_") for _ in plan.listing_ids]
-        transport = self.runner.transport if self.runner else "stub"
+        runner = self.runner_for(sid)
+        transport = runner.transport if runner else "stub"
         async with self.runtime.session_tx(sid) as tx:
             scheduled = await tx.apply(CallsScheduled(session_id=sid, at=now, idem_key=f"{sid}:scheduled",
                                                       plan=plan, call_ids=call_ids))
@@ -124,17 +125,21 @@ class Dispatcher:
                                           state="queued", listing_id=lid, conn=tx.conn)
         if not scheduled:
             return
-        if self.runner is None:
+        if runner is None:
             log.warning("session %s: %d calls queued, but no caller is configured", sid, len(call_ids))
             return
         for cid, lid in zip(call_ids, plan.listing_ids, strict=True):
-            self._spawn(self._call(cid, lid, plan))
+            self._spawn(self._call(cid, lid, plan, runner))
+
+    def runner_for(self, session_id: str) -> CallRunner | None:
+        """The runner for one session's calls. A routing runner (voice/routing.py) picks by the session, so a
+        judge's calls never reach the phone network; any other runner takes every session's calls."""
+        pick = getattr(self.runner, "for_session", None)
+        return pick(session_id) if pick is not None else self.runner
 
     # One call
 
-    async def _call(self, call_id: str, listing_id: str, plan: CallPlan) -> None:
-        runner = self.runner
-        assert runner is not None
+    async def _call(self, call_id: str, listing_id: str, plan: CallPlan, runner: CallRunner) -> None:
         to = next(self._numbers) if runner.uses_phone and self._numbers else None
         if runner.uses_phone and (to is None or to not in self.allowlist):
             await self._state(plan.session_id, call_id, "blocked")
