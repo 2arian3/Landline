@@ -36,11 +36,11 @@ Cover at least these cases: two parking spots at a per-spot price, a one-time de
 | Extraction | precision and recall per field; **ungrounded values shown** | ungrounded = 0; precision ≥ 0.9 |
 | Ranking | hit@3 on renter briefs; monotonicity; stability; feedback turns to converge | hit@3 ≥ 0.8 |
 | Calls (sim) | checklist coverage; read-back rate on numbers; call length; time to first audio; recovery after barge-in | coverage ≥ 0.9 |
-| Board | ask → answer round-trip time; expiries | — |
+| Dispatcher | hang-up → first dial time; plan completion time; bookings outside the renter's windows | bookings outside windows = 0 |
 
 ## Landlord personas (sim)
 
-Each persona has a voice, a language, a manner and hidden facts: honest; upsells parking; a Mandarin speaker who switches mid-call; a scammer who wants an e-transfer before viewing; one who never answers (tests AMD and voicemail). Personas speak first when the call connects, like a real person picking up.
+Each persona has a voice, a language, a manner and hidden facts: honest; upsells parking; a Mandarin speaker who switches mid-call; a scammer who wants an e-transfer before viewing; one who never answers (tests AMD and voicemail). At least one asks something the `CallPlan` can't answer (tests `note_question`), and at least one offers a viewing time outside the renter's windows (tests that `book_viewing` refuses it). Personas speak first when the call connects, like a real person picking up.
 
 ## Rules
 

@@ -7,16 +7,17 @@ These are the shapes all three lanes code against. At kickoff they become Pydant
 | Id | Format | Minted by |
 |---|---|---|
 | `session_id` | `s_` + 10 url-safe chars | `/twiml/renter`, `/api/judge/start` |
-| `call_id` | `c_` + 10 url-safe chars | `CallManager.create()` before dialing |
+| `call_id` | `c_` + 10 url-safe chars | `CallManager.create()`, for the renter's call when it connects and for each listing call when the Dispatcher queues it |
 | `listing_id` | `<source>:<source_id>[:<unit>]` | pipeline `parse` |
-| `msg_id` | `m_` + 10 url-safe chars | board |
 | `user_id` | bigserial | `users` insert on first call |
 
-No model ever produces an id. Tool handlers take `session_id` and `listing_id` from the `Call` they run under.
+No model ever produces an id. Tool handlers take `session_id` and `listing_id` from the `Call` they run under. A `CallPlan` has no id of its own: there is at most one per session, keyed by `session_id`.
 
 ## Events (orchestrator input)
 
 Every event has `type`, `session_id`, `at`, `idem_key` and a payload. Handlers are idempotent on `idem_key`.
+
+**Flow 1: the brief**
 
 | Event | Payload | Emitted by |
 |---|---|---|
@@ -25,17 +26,27 @@ Every event has `type`, `session_id`, `at`, `idem_key` and a payload. Handlers a
 | `FeedbackGiven` | `listing_id`, `reaction` (like / dislike / reject), `reason?`, `attribute?` | Concierge tool, UI tap |
 | `ListingFocused` | `listing_id`, `origin` (ui / voice) | UI tap, Concierge tool |
 | `AreaFocused` | `label`, `lat`, `lng`, `zoom` | Concierge tool |
-| `AnchorResolved` | `label`, `lat`, `lng` | Profiler (async) |
-| `CallsRequested` | `listing_ids[]`, `extra_questions[]`, `availability?` | Concierge tool |
-| `CallStateChanged` | `call_id`, `state`, `twilio_status?` | voice layer |
-| `FactRecorded` | `call_id`, `field`, `value`, `quote`, `turn_idx`, `confirmed` | Caller tool |
+| `AnchorResolved` | `label`, `lat`, `lng` | Profiles, via the geocoder (background) |
+| `CallsRequested` | `listing_ids[]`, `extra_questions[]`, `availability[]` (`{day, from, to}` as the Concierge passed them), `may_book` | Concierge `call_listings`. Records the plan; dials nothing |
+| `SessionEnded` | `reason` (hangup / end_session / closed / timeout) | voice / timeout |
+
+**Hand-off**
+
+| Event | Payload | Emitted by |
+|---|---|---|
+| `CallsScheduled` | `plan` (`CallPlan`), `call_ids[]` | Dispatcher, on `SessionEnded` when the session has a plan |
+
+**Flow 2: the calls**
+
+| Event | Payload | Emitted by |
+|---|---|---|
+| `CallStateChanged` | `call_id`, `state`, `twilio_status?` | voice layer, Dispatcher |
+| `FactRecorded` | `call_id`, `field`, `value`, `quote`, `turn_idx`, `confirmed` | Caller `record_fact` |
+| `QuestionNoted` | `call_id`, `question` | Caller `note_question` |
+| `ViewingBooked` | `call_id`, `listing_id`, `starts_at`, `slot_text` | Caller `book_viewing`, once code accepts the slot |
 | `CallEnded` | `call_id`, `reason` | `finalize()` |
-| `OutcomeReady` | `call_id`, `facts[]`, `conflicts[]`, `red_flags[]` | Auditor (async) |
-| `RenterAsked` | `msg_id`, `call_id`, `listing_id`, `question` | Caller `ask_renter` |
-| `RenterAnswered` | `msg_id`, `answer` | Concierge `answer_landlord` |
-| `QuestionForAll` | `question` | Concierge `ask_listing_agents` |
-| `BookingRequested` | `listing_id`, `slot_text`, `decision` (confirm / reject) | Concierge tool |
-| `SessionEnded` | `reason` | voice / timeout |
+| `OutcomeReady` | `CallOutcome` | Auditor (async) |
+| `CallsCompleted` | `call_ids[]` | Dispatcher, when every call in the plan has an outcome or timed out |
 
 ## Concierge tools (Higgs Realtime function tools)
 
@@ -44,29 +55,49 @@ Return values are spoken aloud: at most 25 words, written as speech, no ids.
 | Tool | Arguments | Notes |
 |---|---|---|
 | `update_preferences` | `max_monthly?`, `min_beds?`, `areas?[]`, `anchors?[{label}]`, `pets?[]`, `must_have?[]`, `priorities?[]`, `move_in?`, `occupants?`, `language?` | Call it every time something changes; deltas only |
-| `give_feedback` | `listing_ref?` (defaults to the focused listing), `reaction`, `reason?` | |
+| `give_feedback` | `listing_ref?` (defaults to the focused listing), `reaction`, `reason?`, `attribute?` (light / location / size / cost / parking) | The Concierge maps the reason to its attribute ("too dark" → light); code applies the weight change from `docs/SCORING.md` |
 | `focus_listing` | `listing_ref` (address words or rank number) | Resolved by code against the current board |
 | `focus_area` | `place` | Map flies there |
-| `call_listings` | `listing_refs?[]` (default: top 3), `extra_questions?[]`, `availability?` | Returns immediately; results arrive between turns |
-| `ask_listing_agents` | `question` | Reaches every live call |
-| `answer_landlord` | `answer` | Answers the oldest open `need_answer` |
-| `book_viewing` | `listing_ref`, `slot?`, `decision` | Refuses dead or suspect listings |
+| `call_listings` | `listing_refs?[]` (default: top 3), `extra_questions?[]`, `availability?[]` (`{day, from, to}`, e.g. `saturday`, `13:00`, `17:00`), `may_book?` | Records the plan; nothing dials until the session ends. Code resolves the refs against the board, and the reply reads the addresses back. At most 5 listings. Refused while an earlier plan is still calling |
 | `remember_me` / `forget_me` | — | Sets consent / deletes the profile |
+| `end_session` | — | Code hangs up once the goodbye has played |
 
 ## Caller tools
+
+The Caller gets the renter's shareable answers and viewing windows in its instructions at dial time. No tool reaches the renter.
 
 | Tool | Arguments | Notes |
 |---|---|---|
 | `record_fact` | `field` (from the feature dictionary), `value`, `quote` | Use as soon as something is said; quote = landlord's exact words |
-| `ask_renter` | `question` | Answered from shareable profile fields first; otherwise goes to the board |
+| `note_question` | `question` | The landlord asked something the brief can't answer. The Caller says it will check with its client; the question comes back in the results |
+| `book_viewing` | `slot` (spoken words, e.g. "Saturday at two") | Code converts it to a Toronto datetime and accepts it only if booking is allowed, it falls inside a window, it doesn't overlap another booking in the plan, the listing isn't dead or suspect, and no red-flag rule matched this call. The reply says it's booked, or what to say instead |
 | `end_call` | `reason` (done / refused / wrong_number / voicemail) | Code accepts `done` only when the checklist is complete |
 
-## Board message
+## CallPlan (the hand-off)
 
-`msg_id`, `kind` (ask_all / need_answer / reply / fact), `from_role` (renter / listing), `call_id?`, `listing_id?`, `text`, `reply_to?`, `status` (open / answered / expired), `created_at`, `ttl_s`.
+The only thing the calls read from the brief. Built by code on `SessionEnded`, stored in the session snapshot, never edited afterwards.
 
-Delivered into a live Higgs session as one `user` `input_text` item, wrapped as quoted data:
-`[renter asks] "…"` · `[landlord at 322 Dupont asks] "…"` · `[client says] "…"` · `[call result] 322 Dupont: parking is $180/month extra.` · `[renter is looking at] 412 Markham`.
+`session_id`, `user_id?`, `listing_ids[]` (1–5, in the renter's order), `questions[]` (the renter's extras), `windows[]` (`{start, end}`, Toronto datetimes that code computes from `availability` when it freezes the plan), `may_book`, `shareable` (`{name?, move_in?, occupants?, pets?}`, only the fields listed in `user_profiles.shareable`), `language` (for the results), `created_at`.
+
+## CallOutcome
+
+One per listing call, from the Auditor.
+
+`call_id`, `listing_id`, `end_reason`, `facts[]`, `conflicts[]`, `red_flags[]`, `open_questions[]`, `viewing?` (`{starts_at, slot_text}`).
+
+## Where it is stored
+
+No new tables.
+
+- The session phase is `sessions.status`: `open` (the brief is live) → `calling` → `done`, or `closed` when the brief ends with no plan.
+- The `CallPlan` and the results text are in `sessions.snapshot`.
+- Queued calls are `calls` rows with `state = 'queued'`.
+- Noted questions and bookings are in `events` and the snapshot. A booking also writes `listing_interactions` (`booked`).
+- `board_messages` from `0001_init.sql` is no longer written. Dropping it needs its own migration and an ask.
+
+## Text injected into a live voice
+
+Only into the Concierge, only between turns, as one `user` `input_text` item, quoted as data: `[renter is looking at] 412 Markham`, and the session summary after a reconnect. Nothing is injected into a Caller: everything it needs is in its instructions when it dials.
 
 ## Web API
 
@@ -82,7 +113,7 @@ Delivered into a live Higgs session as one `user` `input_text` item, wrapped as 
 | POST | `/api/judge/start` | `{session_id, ws_url}` for browser audio |
 | GET | `/health` | `{status, listings, sessions, transport, higgs}` |
 
-`SessionView` = `{session_id, version, user: {name?, returning}, preferences, focus: {listing_id?, area?}, matches: [listing_id], board: [Card], agent_says, calls: [{call_id, listing_id, state, started_at}]}`.
+`SessionView` = `{session_id, version, phase, user: {name?, returning}, preferences, focus: {listing_id?, area?}, matches: [listing_id], board: [Card], agent_says, plan: [listing_id], calls: [{call_id, listing_id, state, started_at}], results?}`. `phase` is `open` / `calling` / `done` / `closed`; call `state` includes `queued`.
 
 `Card` = listing summary (`listing_id, address, unit_label, lat, lng, monthly_cost, rent, beds, baths, sqft, floor, photo, light_score`) + `rank`, `status`, `reasons[]`, `watch_out?`, `reaction?`, `facts[]` (`field, value, quote, speaker, at`), `red_flags[]`.
 
