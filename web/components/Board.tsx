@@ -3,6 +3,7 @@
 import { AnimatePresence, LayoutGroup, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { ListingCard, type Mark, type Move } from "./ListingCard";
+import type { Unheard } from "@/lib/outcome";
 import type { Card } from "@/lib/types";
 
 const MOVE_MS = 4000;
@@ -20,6 +21,7 @@ export function Board({
   focusId,
   hoverId,
   marks = {},
+  ended = {},
   onSelect,
   onHover,
 }: {
@@ -28,6 +30,7 @@ export function Board({
   focusId: string | null;
   hoverId: string | null;
   marks?: Record<string, Mark>;
+  ended?: Record<string, Unheard>;
   onSelect: (id: string) => void;
   onHover: (id: string | null) => void;
 }) {
@@ -69,6 +72,7 @@ export function Board({
                 hovered={card.listing_id === hoverId}
                 moved={moves[card.listing_id] ?? null}
                 mark={marks[card.listing_id]}
+                ended={ended[card.listing_id]}
                 onSelect={onSelect}
                 onHover={onHover}
               />
