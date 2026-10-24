@@ -107,9 +107,9 @@ export function DemoControls({
         className="mt-2 w-full rounded-[var(--radius-control)] bg-surface py-2 text-support font-label text-ink hover:bg-press disabled:opacity-60"
         style={{ boxShadow: "0 0 0 1px var(--color-line)" }}
       >
-        Call the top 3
+        Call the top 4
       </button>
-      <p className="mt-1.5 text-meta text-ink-3">Three scripted agents answer. No phone rings.</p>
+      <p className="mt-1.5 text-meta text-ink-3">Scripted agents answer, and the fourth doesn&rsquo;t pick up. No phone rings.</p>
       <div className="mt-3 flex items-center gap-3">
         <label className="flex shrink-0 items-center gap-2 text-meta text-ink-2" htmlFor="demo-returning">
           <input
