@@ -94,7 +94,8 @@ async def stream(session_id: str, request: Request) -> StreamingResponse:
 
     async def events():
         sent = 0
-        while not await request.is_disconnected():
+        closing = request.app.state.drain.closing   # a restart ends the stream; the page reconnects (#167)
+        while not closing.is_set() and not await request.is_disconnected():
             version = stored.version if stored is not None else sessions.get(session_id).version
             if version != sent:
                 sent = version
@@ -247,6 +248,8 @@ async def judge_start(request: Request) -> JudgeStart | JSONResponse:
     state = request.app.state
     if not state.settings.judge_audio_ready:
         return _refused(503, "closed", CLOSED)
+    if state.drain.draining:   # restarting (#167): a line opened now would be cut
+        return _refused(503, "busy", BUSY, 60)
     ip = client_ip(request.headers, request.client.host if request.client else None)
     if wait := state.judge_limit.wait_s(ip):
         minutes = math.ceil(wait / 60)
