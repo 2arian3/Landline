@@ -174,6 +174,7 @@ class DemoSessions:
         if task := self.dialing.pop(session_id, None):
             task.cancel()
         self.runs.pop(session_id, None)
+        self.areas.pop(session_id, None)
         self.moved_on.discard(session_id)   # the renter calls again: a returning one hears the welcome
         return await self.update(session_id)
 
@@ -267,7 +268,10 @@ class DemoSessions:
         return await self.update(session_id)
 
     async def focus_area(self, session_id: str, area: Area) -> SessionView:
-        """Demo hook for AreaFocused ("show me Christie Pits"): the map flies there."""
+        """Demo hook for AreaFocused ("show me Christie Pits"): the map flies there. The same area again
+        changes nothing, as in the runtime (area_focused)."""
+        if self.areas.get(session_id) == area:
+            return self.get(session_id)
         self.areas[session_id] = area
         return await self.update(session_id)
 

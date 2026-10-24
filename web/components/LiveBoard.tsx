@@ -11,6 +11,7 @@ import { ListingDetail, type Reaction } from "./ListingDetail";
 import type { Padding } from "./MapView";
 import { PANEL_STYLE, PANEL_WIDTH, PEEK, PanelHeader, SHORT, SPLIT, Shell } from "./Shell";
 import { Activity, Brand, Heard, Results, Welcome } from "./Summary";
+import { type Opened, follows } from "@/lib/follow";
 import { postJSON, useCatalogue, useLiveSession } from "@/lib/live";
 import { useMedia } from "@/lib/useMedia";
 
@@ -61,9 +62,9 @@ export function LiveBoard({
   const [vh, setVh] = useState(800);
   // What the renter tapped, shown at once; the server's card.reaction wins once it arrives.
   const [mine, setMine] = useState<Record<string, string>>({});
-  // The server's focus and area when the page opened (below): followed only when they change after that.
-  const openingFocus = useRef<string | null | undefined>(undefined);
-  const openingArea = useRef<string | null | undefined>(undefined);
+  // The server's focus and area when the page opened (below): followed once they change after that.
+  const openingFocus = useRef<Opened<string | null>["current"]>(undefined);
+  const openingArea = useRef<Opened<string | null>["current"]>(undefined);
   // Another session (judge mode's "Start again") opens with nothing selected or tapped, and frames its own
   // board. Reset while rendering, so not even one frame shows the last session's selection.
   const [shownSession, setShownSession] = useState(sessionId);
@@ -107,17 +108,14 @@ export function LiveBoard({
     return m;
   }, [view]);
 
-  // Follow the server's focus (the voice agent saying "the Yorkville one") only
-  // when it changes after the page opened; on open, frame the whole board.
-  if (view && openingFocus.current === undefined) openingFocus.current = view.focus_listing_id ?? null;
-  const serverFocus =
-    view?.focus_listing_id && view.focus_listing_id !== openingFocus.current ? view.focus_listing_id : null;
-  const focusId = selected ?? serverFocus;
+  // Follow the server's focus (the voice agent saying "the Yorkville one") once
+  // it changes after the page opened; on open, frame the whole board.
+  const serverFocus = view && follows(openingFocus, view.focus_listing_id ?? null) ? view.focus_listing_id : null;
+  const focusId = selected ?? serverFocus ?? null;
   // The same for an area the renter names ("show me Christie Pits"): the map flies there when it changes.
   const area = view?.focus_area ?? null;
   const areaKey = area ? `${area.lat},${area.lng},${area.zoom}` : null;
-  if (view && openingArea.current === undefined) openingArea.current = areaKey;
-  const focusArea = area && areaKey !== openingArea.current ? area : null;
+  const focusArea = view && follows(openingArea, areaKey) ? area : null;
   const selectedCard = board.find((c) => c.listing_id === selected);
 
   // The panel's scroll: a detail opens at its top, and "← All places" puts the list back where it was.
