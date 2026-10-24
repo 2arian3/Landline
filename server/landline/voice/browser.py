@@ -57,7 +57,9 @@ async def run_browser(ws: WebSocket, session_id: str, *, calls: RenterCalls, jud
     """The judge's audio socket for `session_id`, a session /api/judge/start already started in the
     runtime. Ends the call and frees the judge line when it closes."""
     await ws.accept()
-    if judges.open.get(session_id, 0) <= judges.clock():
+    # Holds the line to its deadline. False when it isn't held: never started, already freed, or the
+    # socket came after the connect window, when another judge may hold that line.
+    if not judges.connected(session_id):
         log.warning("browser audio refused: %r holds no judge line", session_id)
         await close_socket(ws, POLICY_VIOLATION)
         return

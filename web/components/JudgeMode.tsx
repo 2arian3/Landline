@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { LiveBoard } from "./LiveBoard";
 import { askForMic, useJudgeLine } from "@/lib/judgeAudio";
 import { api } from "@/lib/live";
@@ -59,18 +59,45 @@ export function JudgeMode() {
     await line.start(mic, wsAddress(ws_url));
   }
 
+  // Done ends the brief the way hanging up ends a phone call. The audio closes first, so Landline stops at
+  // once; then the places the judge picked get called, and the board stays up to watch them.
+  async function done() {
+    line.end();
+    if (sessionId) {
+      await fetch(api(`/api/judge/${encodeURIComponent(sessionId)}/done`), { method: "POST" }).catch(() => null);
+    }
+  }
+
+  // Starting over ends the old session first, so its line is free for the next start.
   function again() {
+    if (sessionId) hangUp(sessionId);
     setSessionId(null);
     setPhase("intro");
   }
+
+  // So does leaving the page, instead of holding the line until the server's timeout.
+  useEffect(() => {
+    if (!sessionId) return;
+    const leave = () => hangUp(sessionId, true);
+    window.addEventListener("pagehide", leave);
+    return () => window.removeEventListener("pagehide", leave);
+  }, [sessionId]);
 
   return (
     <LiveBoard
       sessionId={sessionId}
       intro={<Intro phase={phase} waitMin={waitMin} onStart={begin} />}
-      dock={<VoiceBar line={line} onAgain={again} />}
+      dock={<VoiceBar line={line} onDone={done} onAgain={again} />}
+      line={line.state === "connecting" ? "Connecting…" : line.state === "dropped" ? "Line dropped" : null}
     />
   );
+}
+
+/** Frees the judge's line now. Fire and forget; `beacon` for a page that's going away. */
+function hangUp(sessionId: string, beacon = false) {
+  const url = api(`/api/judge/${encodeURIComponent(sessionId)}/hang-up`);
+  if (beacon && navigator.sendBeacon?.(url)) return;
+  void fetch(url, { method: "POST", keepalive: true }).catch(() => null);
 }
 
 function Intro({ phase, waitMin, onStart }: { phase: Phase; waitMin: number; onStart: () => void }) {
@@ -167,13 +194,21 @@ function Notice({ children }: { children: React.ReactNode }) {
   );
 }
 
-function VoiceBar({ line, onAgain }: { line: ReturnType<typeof useJudgeLine>; onAgain: () => void }) {
+function VoiceBar({
+  line,
+  onDone,
+  onAgain,
+}: {
+  line: ReturnType<typeof useJudgeLine>;
+  onDone: () => void;
+  onAgain: () => void;
+}) {
   const over = line.state === "ended" || line.state === "dropped";
   const label =
     line.state === "connecting"
       ? "Connecting…"
       : line.state === "ended"
-        ? "Session ended"
+        ? "Brief done"
         : line.state === "dropped"
           ? "The line dropped"
           : line.talking
@@ -189,36 +224,57 @@ function VoiceBar({ line, onAgain }: { line: ReturnType<typeof useJudgeLine>; on
         <p className="truncate text-support font-label text-ink">{label}</p>
       </div>
       {over ? (
-        <button
-          type="button"
-          onClick={onAgain}
-          className="h-10 shrink-0 rounded-[var(--radius-control)] bg-ink px-4 text-support font-label text-white"
-        >
-          Start again
-        </button>
+        <>
+          {/* A dropped line can still end the brief, so what the judge picked gets called. */}
+          {line.state === "dropped" && <Secondary onClick={onDone}>Done</Secondary>}
+          <button
+            type="button"
+            onClick={onAgain}
+            className="h-10 shrink-0 rounded-[var(--radius-control)] bg-ink px-4 text-support font-label text-white"
+          >
+            Start again
+          </button>
+        </>
       ) : (
         <>
-          <button
-            type="button"
-            onClick={line.toggleMute}
-            aria-pressed={line.muted}
-            disabled={line.state !== "live"}
-            className="h-10 shrink-0 rounded-[var(--radius-control)] bg-surface px-3 text-support font-label text-ink hover:bg-press disabled:opacity-60"
-            style={{ boxShadow: "0 0 0 1px var(--color-line)" }}
-          >
+          <Secondary onClick={line.toggleMute} pressed={line.muted} disabled={line.state !== "live"}>
             {line.muted ? "Unmute" : "Mute"}
-          </button>
+          </Secondary>
           <button
             type="button"
-            onClick={line.end}
-            className="h-10 shrink-0 rounded-[var(--radius-control)] bg-surface px-3 text-support font-label text-ink hover:bg-press"
-            style={{ boxShadow: "0 0 0 1px var(--color-line)" }}
+            onClick={onDone}
+            className="h-10 shrink-0 rounded-[var(--radius-control)] bg-ink px-4 text-support font-label text-white"
           >
-            End
+            Done
           </button>
         </>
       )}
     </div>
+  );
+}
+
+function Secondary({
+  children,
+  onClick,
+  pressed,
+  disabled,
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  pressed?: boolean;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={pressed}
+      disabled={disabled}
+      className="h-10 shrink-0 rounded-[var(--radius-control)] bg-surface px-3 text-support font-label text-ink hover:bg-press disabled:opacity-60"
+      style={{ boxShadow: "0 0 0 1px var(--color-line)" }}
+    >
+      {children}
+    </button>
   );
 }
 

@@ -57,3 +57,5 @@ Gradients and glows, glass on content, coloured left stripes on cards, tinted pi
 2. Lighthouse mobile performance ≥ 85; map pan stays smooth on a mid-range phone.
 3. Keyboard: every pin and card is reachable and focus is visible; the map has a list equivalent.
 4. Read the banned list against your diff.
+
+Merging doesn't put it on Vercel. Arian ships `release`, and Vercel deploys only a `release` tip that he authored (`deploy/README.md`, **Commit author**), so ask him to ship rather than re-running `deploy-web.yml` on a tip that isn't his.
