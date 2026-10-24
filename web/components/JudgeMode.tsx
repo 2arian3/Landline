@@ -174,7 +174,7 @@ function Intro({ phase, waitMin, onStart }: { phase: Phase; waitMin: number; onS
             </p>
           </>
         )}
-        <a href="/?dev=1" className="inline-block text-support text-ink-2 underline underline-offset-2">
+        <a href="/?dev=1" className="inline-flex min-h-11 items-center text-support text-ink-2 underline underline-offset-2">
           Look around without talking
         </a>
       </div>
@@ -230,7 +230,7 @@ function VoiceBar({
           <button
             type="button"
             onClick={onAgain}
-            className="h-10 shrink-0 rounded-[var(--radius-control)] bg-ink px-4 text-support font-label text-white"
+            className="h-11 shrink-0 rounded-[var(--radius-control)] bg-ink px-4 text-support font-label text-white"
           >
             Start again
           </button>
@@ -243,7 +243,7 @@ function VoiceBar({
           <button
             type="button"
             onClick={onDone}
-            className="h-10 shrink-0 rounded-[var(--radius-control)] bg-ink px-4 text-support font-label text-white"
+            className="h-11 shrink-0 rounded-[var(--radius-control)] bg-ink px-4 text-support font-label text-white"
           >
             Done
           </button>
@@ -270,7 +270,7 @@ function Secondary({
       onClick={onClick}
       aria-pressed={pressed}
       disabled={disabled}
-      className="h-10 shrink-0 rounded-[var(--radius-control)] bg-surface px-3 text-support font-label text-ink hover:bg-press disabled:opacity-60"
+      className="h-11 shrink-0 rounded-[var(--radius-control)] bg-surface px-3 text-support font-label text-ink hover:bg-press disabled:opacity-60"
       style={{ boxShadow: "0 0 0 1px var(--color-line)" }}
     >
       {children}
