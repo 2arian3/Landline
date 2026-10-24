@@ -1,14 +1,19 @@
 """The Concierge's tools against a real session runtime (in memory): each tool's event changes the session,
 and its spoken reply comes from the board that event produced."""
+import asyncio
 import json
 from datetime import UTC, datetime
+from urllib.parse import parse_qs
 
+import httpx
 import pytest
 
 from landline.agents.concierge import refs, tools
 from landline.contracts import Card, Listing, SessionEnded, SessionStarted
 from landline.db.catalogue import Catalogue
-from landline.orchestrator import SessionRuntime
+from landline.orchestrator import SessionRuntime, places
+from landline.orchestrator.places import Places, Point
+from landline.scoring.features import FeatureMatrix, Hood
 
 T0 = datetime(2026, 10, 23, 23, 0, tzinfo=UTC)
 SID = "s_tools00001"
@@ -163,6 +168,71 @@ async def test_focus_area_flies_to_a_known_street_or_says_it_cannot(ctx):
     assert await _say(ctx, "focus_area", '{"place": "King and Bay"}', "fc_2") == \
         "I can't place that on the map yet."
     assert _view(ctx).version == before
+
+
+KING_AND_BAY = (43.6486561, -79.3802633)
+CHRISTIE_PITS = (43.6645, -79.4207)
+
+
+def _net(request: httpx.Request) -> httpx.Response:
+    """A fake Overpass (King and Bay meet) and Nominatim (knows Christie Pits); nothing leaves the machine."""
+    if "overpass" in request.url.host:
+        query = parse_qs(request.content.decode())["data"][0]
+        meets = "King" in query and "Bay" in query
+        meet = [{"lat": KING_AND_BAY[0], "lon": KING_AND_BAY[1]}] if meets else []
+        return httpx.Response(200, json={"elements": meet})
+    known = parse_qs(request.url.query.decode())["q"][0].startswith("Christie Pits")
+    found = [{"lat": str(CHRISTIE_PITS[0]), "lon": str(CHRISTIE_PITS[1])}] if known else []
+    return httpx.Response(200, json=found)
+
+
+@pytest.fixture
+async def placed(monkeypatch):
+    """A session whose runtime places names through Places (D-04), with the Annex, a Christie station and the
+    fake network."""
+    monkeypatch.setattr(places, "MIN_GAP_S", 0)
+    hoods = [Hood(1, "Annex", 43.670, -79.405, ())]
+    stations = [{"id": "s1", "name": "Christie", "lat": 43.6640, "lng": -79.4183}]
+    client = httpx.AsyncClient(transport=httpx.MockTransport(_net))
+    runtime = SessionRuntime(CATALOGUE, places=Places(FeatureMatrix.build([], hoods).named, stations,
+                                                      contact="team@example.com", client=client))
+    await runtime.start(SessionStarted(session_id=SID, at=T0, idem_key=f"{SID}:started", channel="judge"))
+    yield tools.ToolContext(session_id=SID, call_id="c_tools00003", runtime=runtime)
+    await runtime.close()
+    await client.aclose()
+
+
+@pytest.mark.parametrize(("place", "point"), [
+    ("the Annex", (43.670, -79.405)),        # a City neighbourhood, no network
+    ("King and Bay", KING_AND_BAY),          # an intersection, through Overpass
+    ("Christie Pits", CHRISTIE_PITS),        # a landmark, through the geocoder, not the Christie station
+])
+async def test_focus_area_asks_places_for_what_no_listing_names(placed, place, point):
+    assert await _say(placed, "focus_area", json.dumps({"place": place})) == f"Showing {place}."
+    area = _view(placed).focus_area
+    assert (area.label, area.lat, area.lng, area.zoom) == (place, *point, tools.AREA_ZOOM)
+
+
+async def test_focus_area_says_it_cannot_when_places_finds_nothing_either(placed):
+    before = _view(placed).version
+    assert await _say(placed, "focus_area", '{"place": "Narnia"}') == "I can't place that on the map yet."
+    assert _view(placed).version == before
+
+
+async def test_a_slow_lookup_answers_at_once_and_moves_the_map_when_it_lands(placed, monkeypatch):
+    class Slow:
+        async def resolve(self, label: str) -> Point:
+            await asyncio.sleep(0.05)
+            return Point(*CHRISTIE_PITS, "geocoder")
+
+    monkeypatch.setattr(tools, "PLACE_WAIT_S", 0.01)
+    placed.runtime.places = Slow()
+    assert await _say(placed, "focus_area", '{"place": "Christie Pits"}') == \
+        "Finding Christie Pits on the map. It'll show in a moment."
+    assert _view(placed).focus_area is None
+    await asyncio.gather(*placed.lookups)
+    area = _view(placed).focus_area
+    assert (area.label, area.lat, area.lng) == ("Christie Pits", *CHRISTIE_PITS)
 
 
 async def test_call_listings_plans_the_top_three_and_reads_them_back(ctx):

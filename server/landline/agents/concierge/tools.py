@@ -8,10 +8,11 @@ from the arguments (hard rule 2). The event's idem_key is the Higgs tool-call id
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
@@ -45,6 +46,7 @@ DEFERRED = {"remember_me", "forget_me"}
 TOOLS: list[dict[str, Any]] = [t for t in concierge_tools() if t["name"] not in DEFERRED]
 
 AREA_ZOOM = 14
+PLACE_WAIT_S = 2.5   # how long a turn waits on a place lookup; a slower one moves the map when it lands
 TO_CALL = 3   # call_listings without refs: the top three
 UNKNOWN = "Sorry, I can't do that yet."
 NOT_CAUGHT = "Sorry, I didn't catch that. Could you say it again?"
@@ -72,6 +74,8 @@ class ToolContext:
     # first update_preferences of the call uses it, so the renter can watch the listings as they talk.
     text_link: Callable[[], bool] | None = None
     preferences_seen: bool = False
+    # Place lookups that outlasted their turn (focus_area): each moves the map when it lands.
+    lookups: set[asyncio.Task] = field(default_factory=set)
 
 
 async def handle(name: str, arguments: str, tool_call_id: str, ctx: ToolContext) -> str:
@@ -185,11 +189,36 @@ async def focus_listing(args: FocusListing, ctx: ToolContext, meta: dict) -> str
 
 
 async def focus_area(args: FocusArea, ctx: ToolContext, meta: dict) -> str:
-    point = refs.place(args.place, ctx.runtime.catalogue)
+    """A word on the listings places it at once. Anything else goes to Places (D-04): a City neighbourhood,
+    a subway station, then an intersection or the geocoder over the network. The turn waits PLACE_WAIT_S at
+    most; a slower lookup carries on and moves the map when it lands."""
+    if (near := refs.place(args.place, ctx.runtime.catalogue)) is not None:
+        await _show_area(ctx, meta, args.place, *near)
+        return f"Showing {args.place}."
+    lookup = asyncio.ensure_future(ctx.runtime.places.resolve(args.place))
+    try:
+        point = await asyncio.wait_for(asyncio.shield(lookup), PLACE_WAIT_S)
+    except TimeoutError:
+        late = asyncio.create_task(_show_when_found(ctx, meta, args.place, lookup))
+        ctx.lookups.add(late)
+        late.add_done_callback(ctx.lookups.discard)
+        return f"Finding {args.place} on the map. It'll show in a moment."
     if point is None:
         return "I can't place that on the map yet."
-    await ctx.runtime.emit(AreaFocused(**meta, label=args.place, lat=point[0], lng=point[1], zoom=AREA_ZOOM))
+    await _show_area(ctx, meta, args.place, point.lat, point.lng)
     return f"Showing {args.place}."
+
+
+async def _show_when_found(ctx: ToolContext, meta: dict, place: str, lookup: asyncio.Future) -> None:
+    try:
+        if (point := await lookup) is not None:
+            await _show_area(ctx, meta, place, point.lat, point.lng)
+    except (Refused, UnknownSession) as exc:   # the session ended while the lookup ran
+        log.info("call %s: %r was found too late (%s)", ctx.call_id, place, exc)
+
+
+async def _show_area(ctx: ToolContext, meta: dict, place: str, lat: float, lng: float) -> None:
+    await ctx.runtime.emit(AreaFocused(**meta, label=place, lat=lat, lng=lng, zoom=AREA_ZOOM))
 
 
 async def call_listings(args: CallListings, ctx: ToolContext, meta: dict) -> str:
