@@ -2,7 +2,7 @@
 
 **Every voice agent in real estate works for the brokerage. Landline works for the renter.**
 
-Call it and say what you want, in whatever language you speak. A live map of Toronto listings re-ranks while you talk. Pick the places you like and hang up: it phones those listing agents in parallel to find out what listings never say (is it still available, what does parking really cost, are dogs allowed, how much light does it get), books a viewing when you said it could, and texts you what it learned. Every fact on the map shows who said it. Call again next week and it remembers where you left off.
+Call it and say what you want, in whatever language you speak. A live map of Toronto listings re-ranks while you talk. Pick the places you like and hang up: it phones those listing agents in parallel to find out what listings never say (is it still available, what does parking really cost, are dogs allowed, how much light does it get), books a viewing when you said it could, and texts you what it learned. Every fact on the map shows who said it.
 
 Built on Boson AI's **Higgs Realtime** (the renter's call and every listing call, transcribed by Higgs speech-to-text), with Higgs Avatar as a stretch goal, by Team AAMEL for the Boson AI Higgs Audio Hackathon, 23–24 October 2026.
 
@@ -29,7 +29,7 @@ Everything else is plain code that manages the session:
 
 - A deterministic **orchestrator** routes every event, keeps one writer per session, and ends every call exactly once.
 - The **Matcher** ranks listings from typed features: location (PostGIS, with the City of Toronto's 158 neighbourhoods), real monthly cost, size, floor, natural light, parking, pets, laundry, and the walk to the nearest TTC subway station. Facts heard on a call update a listing's features and re-rank it. It explains each rank in plain words.
-- The **Dispatcher** dials one call per picked listing after the renter hangs up; **Profiles** remember renters by phone number; the **Narrator** fills the templates for what the agent says and texts.
+- The **Dispatcher** dials one call per picked listing after the renter hangs up; **Profiles** keep each renter's last brief for the team (the next call starts fresh); the **Narrator** fills the templates for what the agent says and texts.
 - The **web app** shows a live map and list that follow the conversation; tapping a listing tells the agent what you're looking at.
 
 Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · [docs/DATA.md](docs/DATA.md) · [docs/SCORING.md](docs/SCORING.md) · [docs/CONTRACTS.md](docs/CONTRACTS.md)
