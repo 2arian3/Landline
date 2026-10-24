@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Request, Response
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from landline.api.demo import PLANNED, _pinned, area_named
@@ -37,6 +37,12 @@ router = APIRouter()
 HEARTBEAT_S = 5   # well inside the page's 6.5 s "Reconnecting…" threshold
 BUSY = "All lines are busy. Try again in a minute."
 CLOSED = "Judge mode opens soon."
+
+
+@router.get("/", include_in_schema=False)
+def root(request: Request) -> RedirectResponse:
+    """Someone opening the bare API domain (a judge, say) lands on the web app, not a 404."""
+    return RedirectResponse(request.app.state.settings.web_url, status_code=307)
 
 
 @router.get("/health")
