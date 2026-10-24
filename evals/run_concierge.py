@@ -6,8 +6,9 @@
 
 Live runs need BOSON_API_KEY and are skipped without it. Every run's trace goes to evals/runs/<stamp>/ (not
 committed). A full run of a set (no --case) also replaces that set's numbers in evals/reports/concierge.json,
-keeping the run before as "previous", and rebuilds evals/reports/latest.md. Tune prompts on `tune`; the
-write-up quotes `holdout`.
+keeping the run before as "previous", and rebuilds evals/reports/latest.md. Tune prompts on `tune` with
+--no-report, so the report compares a change against the run before it, not against the last attempt;
+the write-up quotes `holdout`.
 
 Sessions run a few at a time (--concurrency, default 3). If this key is the one judge mode uses, they
 share its concurrency limit, so don't run it while someone is on /try.
@@ -34,7 +35,8 @@ RUNS_DIR = ROOT / "evals" / "runs"
 CATALOGUE_PATH = FIXTURES / "listings.json"   # frozen, so a new scrape can't move the boards
 
 
-async def run(sets: list[str], runs: int, concurrency: int, only: set[str], use_replay: bool) -> int:
+async def run(sets: list[str], runs: int, concurrency: int, only: set[str], use_replay: bool,
+              keep_report: bool = False) -> int:
     settings = Settings.load()
     if not use_replay and not settings.boson_api_key:
         print("BOSON_API_KEY is not set: skipping the live Concierge runs.")
@@ -86,9 +88,9 @@ async def run(sets: list[str], runs: int, concurrency: int, only: set[str], use_
         summary = report.summarize(list(res), meta)
         print(f"\n{name}: {summary['cases_all_runs']}/{summary['cases']} cases pass every run, "
               f"{summary['run_pass_rate']:.0%} of runs pass")
-        if not only and not use_replay:
+        if not only and not use_replay and not keep_report:
             report.record(name, summary)
-    if not use_replay:
+    if not use_replay and not keep_report:
         report.write()
         print(f"\nReport: {report.LATEST.relative_to(ROOT).as_posix()}")
     return 0
@@ -114,9 +116,10 @@ def main() -> int:
     parser.add_argument("--runs", type=int, default=3, help="runs per case (default 3)")
     parser.add_argument("--concurrency", type=int, default=3, help="Higgs sessions at once (default 3)")
     parser.add_argument("--replay", action="store_true", help="replay evals/fixtures/recordings instead")
+    parser.add_argument("--no-report", action="store_true", help="leave evals/reports alone (for tuning)")
     args = parser.parse_args()
     return asyncio.run(run(args.sets or ["tune", "holdout"], args.runs, args.concurrency, set(args.case),
-                           args.replay))
+                           args.replay, args.no_report))
 
 
 if __name__ == "__main__":
