@@ -29,6 +29,7 @@ from landline.contracts import Listing
 from landline.db.catalogue import Catalogue
 from landline.voice import bridge, twilio
 from landline.voice.calls import CLAIM_WITHIN_S, RenterCalls
+from landline.voice.dispatch import CallResult
 
 PUBLIC = "https://landline.test"
 TOKEN = "test-token"
@@ -196,6 +197,34 @@ def test_a_tool_call_changes_the_session_and_speaks_its_board():
              "item": {"type": "function_call_output", "call_id": "fc_1", "output": view.agent_says}},
             {"type": "response.create"},
         ]
+
+
+class SimLandlords:
+    """Stands in for the sim runner, so a phone renter's calls on TRANSPORT=sim need no Higgs."""
+    transport, uses_phone = "sim", False
+
+    async def place(self, dial, report):
+        return CallResult("done")
+
+
+@pytest.mark.parametrize(("transport", "said"), [("stub", "I've queued "), ("sim", "I'll call ")])
+def test_call_listings_on_the_phone_says_whether_anything_will_place_the_calls(transport, said):
+    """#95: with TRANSPORT=stub nothing places a phone renter's calls, so the Concierge hears they're only
+    queued, with no call or text to promise; with TRANSPORT=sim they go out after the hang-up."""
+    fake = FakeHiggs(script=[
+        _tool_call("call_listings", {"listing_refs": ["1"]}),
+        {"type": "response.output_audio.delta", "delta": "AAAA"},   # handled after the tool, in order
+    ])
+    with _client(transport=transport) as c:
+        c.app.state.connect_higgs = fake.connect
+        c.app.state.dispatcher.runner.sim = SimLandlords()
+        call = c.app.state.calls.open(caller="+14165550100")
+        with c.websocket_connect("/twilio/media") as ws:
+            ws.send_json(_start(call.call_id))
+            assert ws.receive_json()["event"] == "media"
+            ws.send_json({"event": "stop", "streamSid": "MZ1"})
+    [reply] = _outputs(fake)
+    assert reply.startswith(said) and ("after you hang up" in reply) == (transport == "sim")
 
 
 def test_a_line_in_another_script_answered_with_no_tool_is_read_and_saved(monkeypatch):

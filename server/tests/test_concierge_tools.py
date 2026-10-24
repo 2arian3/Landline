@@ -2,8 +2,9 @@
 and its spoken reply comes from the board that event produced."""
 import asyncio
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, time, timedelta
 from urllib.parse import parse_qs
+from zoneinfo import ZoneInfo
 
 import httpx
 import pytest
@@ -267,6 +268,33 @@ async def test_call_listings_plans_the_top_three_and_reads_them_back(ctx):
     assert reply == f"I'll call {addresses[0]}, {addresses[1]} and {addresses[2]} after you hang up, " \
                     "and text you what they say. Viewings Saturday 1 pm to 5 pm. I may book one."
     assert await _say(ctx, "call_listings", '{"listing_refs": ["Spadina"]}', "fc_2") == tools.WHICH
+
+
+async def test_with_nothing_to_place_the_calls_they_are_queued_and_nothing_is_promised(ctx):
+    """#95: a phone renter while TRANSPORT=stub. The plan is saved, but the reply never says the calls are
+    being made, after the hang-up or now, nor that a text will come: the agent's goodbye is built from it."""
+    ctx.calls_start = lambda at: None   # the Dispatcher has no runner for this session
+    reply = await _say(ctx, "call_listings", '{"listing_refs": ["1"], "may_book": true}')
+    first = _view(ctx).board[0]
+    assert ctx.runtime.state(SID).request.listing_ids == [first.listing_id]   # still recorded
+    assert reply == (f"I've queued {first.address}, but calls can't go out right now, so I can't say when "
+                     "they'll be made. Promise no call or text. No viewing times yet. I may book one.")
+    for promise in ("I'll call", "after you hang up", "calling", "now and", "text you"):
+        assert promise not in reply, promise
+
+
+async def test_outside_business_hours_the_calls_are_promised_for_when_they_open(ctx):
+    toronto = ZoneInfo("America/Toronto")
+
+    def tomorrow_at_nine(at):   # what Dispatcher.calls_start says for a phone call at night
+        return datetime.combine(at.astimezone(toronto).date() + timedelta(days=1), time(9), toronto)
+
+    ctx.calls_start = tomorrow_at_nine
+    reply = await _say(ctx, "call_listings", '{"listing_refs": ["1"]}')
+    address = _view(ctx).board[0].address
+    assert reply.startswith(f"I'll call {address} tomorrow at 9 am, once business hours start, and text you "
+                            "what they say.")
+    assert "after you hang up" not in reply
 
 
 async def test_a_shared_address_asks_with_numbers_then_reads_the_number_back():
