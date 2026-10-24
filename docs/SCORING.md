@@ -27,7 +27,7 @@ A listing is out if any of these hold. The renter can relax any of them by voice
 | Cost | 1 if `monthly_cost ≤ 0.85·budget`; linear to 0.4 at budget; linear to 0 at budget × 1.10 |
 | Location | per anchor: `exp(-d_km / 2.5)`; if neighbourhoods were named: 1 inside, 0.6 adjacent, else `exp(-d_km_to_area / 2)` |
 | Transit | `clamp(1 − (walk_min − 3) / 17)` |
-| Size | `clamp(sqft / desired_sqft)` if a size was given, else rises gently with sqft by beds |
+| Size | rises gently with sqft by beds; after "too small", the same curve centred on `desired_sqft` |
 | Light | `light_score` |
 | Floor | if they said "high floor": `clamp(floor / 15)`; "ground floor / no stairs": `1` for floor ≤ 1 or an elevator |
 | Parking | needed: included 1, extra 0.6, none 0; not needed: 0.5 for everyone (neutral) |
@@ -59,10 +59,12 @@ How v1 (`server/landline/scoring/`) fills the gaps:
 |---|---|---|
 | "too dark", "basement vibes" | light | light +1; basement units sink |
 | "too far", "long commute" | location | location +1; tighter decay (2.5 → 1.8 km) |
-| "too small", "cramped" | size | size +1; `desired_sqft` = this unit's sqft × 1.15 |
-| "too expensive" | cost | cost +1; budget kept |
+| "too small", "cramped" | size | size +1; `desired_sqft` = this unit's sqft × 1.15, and the size curve uses it in place of the typical size, so bigger units keep their lead |
+| "too expensive" | cost | cost +1; the cost curve centres on this unit's monthly cost (the cheapest one called too expensive) instead of the budget; the budget filter keeps the budget as said |
 | "I need parking" | parking | becomes a must-have |
 | "love this one" | — | its neighbourhood and top attributes get +0.5 |
+
+The card a dislike was said about also moves (`orchestrator/feedback.py`, `rank(disliked=…)`). It never stays first. With a reason, the feature it was faulted on counts as 0 for that card: the renter's verdict replaces our estimate, so only cards that are better on that feature pass it. When there is nothing to replace (no reason, as in "just not for me", or a feature that is unweighted or unknown for that card), it loses 10 points instead. It stays on the board, below the top six if it sinks that far, so its reaction shows. A brief with no feedback ranks exactly as before.
 
 ## 4. Adjustments after calls
 

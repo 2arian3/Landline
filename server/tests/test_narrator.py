@@ -197,7 +197,8 @@ async def test_the_brief_speaks_short_lines_that_follow_the_board():
                                 "1 Main St stays on top.")
     disliked = await rt.emit(FeedbackGiven(**_meta("f1", 2), listing_id="t:1", reaction="dislike",
                                            reason="too dark", attribute="light"))
-    assert disliked.agent_says == "The list stays the same."   # weights move with O-04
+    # Light is unknown here, so only the dislike itself moves the board: the card leaves the top.
+    assert disliked.agent_says == "2 Main St moves to the top. 1 Main St drops to second."
     planned = await rt.emit(CallsRequested(**_meta("plan", 3), listing_ids=["t:1", "t:2", "t:3"]))
     assert planned.agent_says == "I'll call 1 Main St, 2 Main St and 3 Main St after you hang up."
     calling = await rt.emit(SessionEnded(**_meta("end", 4), reason="hangup"))
