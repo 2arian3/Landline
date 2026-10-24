@@ -485,7 +485,9 @@ async def run_tool(higgs: Any, event: dict[str, Any], ctx: Any, *, spoke: bool =
     # and a second has nothing new, so Higgs refuses it ("No user input", #175).
     response_id = str(event.get("response_id") or "")
     answered = bool(response_id) and getattr(ctx, "answered_response", None) == response_id
-    if (not ctx.hang_up or say_bye) and not answered:   # else the goodbye is out, and nothing more is said
+    # hold_tools: an identical record_fact already got its answer this turn (#215). Another response.create
+    # only makes the model call it again and say nothing, which is the loop that hung the landlord up.
+    if ((not ctx.hang_up or say_bye) and not answered and not getattr(ctx, "hold_tools", False)):
         ctx.answered_response = response_id
         await higgs.send({"type": "response.create"})
     return output

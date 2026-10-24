@@ -215,6 +215,13 @@ class SimRunner:
                     trace.tool_calls.append({"turn": len(trace.turns), "name": names[-1],
                                              "arguments": str(event.get("arguments") or "{}"),
                                              "output": side.last_output()})
+                    if ctx.hold_tools:   # the same record_fact again: stop, or this turn never ends (#215)
+                        async for extra in side.stream:
+                            if extra.get("type") == "response.output_text.done":
+                                texts.append(str(extra.get("text") or ""))
+                            elif extra.get("type") == "response.done":
+                                break
+                        break
                 elif kind == "response.done":
                     output = (event.get("response") or {}).get("output") or []
                     if ends_call(event, ctx) or (not ctx.hang_up and
