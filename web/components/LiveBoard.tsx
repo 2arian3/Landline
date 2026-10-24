@@ -12,6 +12,7 @@ import type { Padding } from "./MapView";
 import { PANEL_STYLE, PANEL_WIDTH, PEEK, PanelHeader, SHORT, SPLIT, Shell } from "./Shell";
 import { Activity, Brand, Heard, Results, Welcome } from "./Summary";
 import { type Opened, follows } from "@/lib/follow";
+import { nothingHeard } from "@/lib/format";
 import { type Unheard, unheard } from "@/lib/outcome";
 import { postJSON, useCatalogue, useLiveSession } from "@/lib/live";
 import { useMedia } from "@/lib/useMedia";
@@ -91,9 +92,14 @@ export function LiveBoard({
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
+  // Until the renter says something, no shortlist: the map's dots and Landline's opening sentence only.
+  const blank = view !== null && nothingHeard(view);
   const board = useMemo(
-    () => (view?.board ?? []).map((c) => (!c.reaction && mine[c.listing_id] ? { ...c, reaction: mine[c.listing_id] } : c)),
-    [view, mine],
+    () =>
+      blank
+        ? []
+        : (view?.board ?? []).map((c) => (!c.reaction && mine[c.listing_id] ? { ...c, reaction: mine[c.listing_id] } : c)),
+    [view, mine, blank],
   );
 
   // Where each planned place stands until its call has a result: picked during the brief, queued
@@ -210,18 +216,24 @@ export function LiveBoard({
     <div className={desktop ? "space-y-4" : "space-y-3"}>
       <Welcome view={view} compact={compact} />
       <Results view={view} compact={compact} />
-      <Activity view={view} compact={compact} />
-      <Heard view={view} compact={compact} wrap={!desktop && snap !== PEEK} />
-      <Board
-        board={board}
-        loading={!view}
-        focusId={focusId}
-        hoverId={hover}
-        marks={marks}
-        ended={ended}
-        onSelect={select}
-        onHover={setHover}
-      />
+      {blank ? (
+        <p className="text-support text-ink">{view?.agent_says || "Tell Landline what you\u2019re looking for."}</p>
+      ) : (
+        <>
+          <Activity view={view} compact={compact} />
+          <Heard view={view} compact={compact} wrap={!desktop && snap !== PEEK} />
+          <Board
+            board={board}
+            loading={!view}
+            focusId={focusId}
+            hoverId={hover}
+            marks={marks}
+            ended={ended}
+            onSelect={select}
+            onHover={setHover}
+          />
+        </>
+      )}
       {dev && view && sessionId && (
         <DemoControls
           sessionId={sessionId}
