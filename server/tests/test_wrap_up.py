@@ -9,6 +9,7 @@ from landline.contracts import Listing, SessionStarted
 from landline.db.catalogue import Catalogue
 from landline.orchestrator import SessionRuntime
 from landline.voice import bridge
+from landline.voice.line import LOOKING, Item, Line
 from landline.voice.recorder import PCMU_8K, CallRecorder
 
 NOW = datetime(2026, 10, 24, 17, 0, tzinfo=UTC)
@@ -34,31 +35,51 @@ GOODBYE = [   # what a Concierge told to wrap up says, here with no end_session
 ]
 
 
-class Higgs:
-    """Plays `script` ({"type": "test.wait", "s": …} waits, {"type": "test.mark"} notes the time line),
-    then answers the wrap-up note with GOODBYE."""
+TAP_REPLY = [
+    {"type": "response.created"},
+    {"type": "response.output_audio_transcript.done", "transcript": "That one's on Main Street."},
+    {"type": "response.done", "response": {"id": "r5", "output": [{"type": "message"}]}},
+]
 
-    def __init__(self, script):
-        self.script, self.sent, self.timeline, self.told = script, [], [], asyncio.Event()
+
+class Higgs:
+    """Plays `script` ({"type": "test.wait", "s": …} waits, {"type": "test.mark"} notes the time line,
+    {"type": "test.tap"} taps a pin on `line`), then answers each response.create: the wrap-up note with
+    GOODBYE, a tap's note with TAP_REPLY, which starts `latency` s later, as Higgs's do."""
+
+    def __init__(self, script, latency=0.0):
+        self.script, self.sent, self.timeline, self.latency = script, [], [], latency
+        self.replies: asyncio.Queue = asyncio.Queue()
+        self.note: str | None = None
+        self.line = None
 
     async def send(self, event):
         self.sent.append(event)
-        if _text(event) == bridge.WRAP_UP:
-            self.timeline.append("wrap up")
-            self.told.set()
+        if _text(event):
+            self.note = _text(event)
+            if self.note == bridge.WRAP_UP:
+                self.timeline.append("wrap up")
+        elif event["type"] == "response.create":
+            self.timeline.append("response.create")
+            self.replies.put_nowait(GOODBYE if self.note == bridge.WRAP_UP else TAP_REPLY)
 
     async def events(self):
         for event in self.script:
             await asyncio.sleep(event["s"] if event["type"] == "test.wait" else 0)
             if event["type"] == "test.mark":
                 self.timeline.append(event["what"])
+            elif event["type"] == "test.tap":
+                await self.line.push(Item("focus", f"{LOOKING} 1 Main St", self.line.clock(), key="t:1"))
             elif event["type"] != "test.wait":
                 yield event
-        await self.told.wait()
-        for event in GOODBYE:
-            await asyncio.sleep(0)
-            yield event
-        await asyncio.sleep(60)
+        while True:
+            reply = await self.replies.get()
+            await asyncio.sleep(0 if reply is GOODBYE else self.latency)
+            for event in reply:
+                await asyncio.sleep(0)
+                if event["type"] == "response.created":
+                    self.timeline.append("response.created")
+                yield event
 
 
 class Quiet:
@@ -73,9 +94,9 @@ def _text(event):
     return ((event.get("item") or {}).get("content") or [{}])[0].get("text")
 
 
-async def _call(monkeypatch, script, output=COMPLETE, timeout=2.0):
-    """The renter call's pumps on `script`, with call_listings answering `output`. Returns fake Higgs and
-    why the call ended."""
+async def _call(monkeypatch, script, output=COMPLETE, timeout=2.0, higgs=None):
+    """The renter call's pumps on `script` (or `higgs`), with call_listings answering `output` and a Line for
+    map taps. Returns fake Higgs and why the call ended."""
     monkeypatch.setattr(bridge, "WRAP_UP_S", 0.1)
     monkeypatch.setattr(bridge, "QUIET_EVERY_S", 0.02)
 
@@ -88,10 +109,11 @@ async def _call(monkeypatch, script, output=COMPLETE, timeout=2.0):
     runtime = SessionRuntime(Catalogue([listing], "test"))
     await runtime.start(SessionStarted(session_id=SID, at=NOW, idem_key=f"{SID}:start", channel="browser"))
     ctx = tools.ToolContext(session_id=SID, call_id="c_wrap000001", runtime=runtime)
-    higgs, playback, wrap = Higgs(script), bridge.Playback(8000), bridge.WrapUp()
+    higgs, playback, wrap = higgs or Higgs(script), bridge.Playback(8000), bridge.WrapUp()
+    higgs.line = line = Line(higgs.send)
     pumps = {asyncio.create_task(bridge._higgs_to_renter(higgs, Quiet(), ctx, playback, CallRecorder(PCMU_8K),
-                                                         wrap=wrap)),
-             asyncio.create_task(bridge._wraps_up(higgs, ctx, playback, wrap))}
+                                                         line, wrap=wrap)),
+             asyncio.create_task(bridge._wraps_up(higgs, ctx, playback, wrap, line))}
     done, pending = await asyncio.wait(pumps, timeout=timeout, return_when=asyncio.FIRST_COMPLETED)
     for task in pending:
         task.cancel()
@@ -113,7 +135,19 @@ async def test_the_renter_talking_holds_the_wrap_up_until_the_line_is_quiet(monk
                                            {"type": "test.wait", "s": 0.3},   # longer than WRAP_UP_S
                                            {"type": "test.mark", "what": "they stop"},
                                            {"type": "input_audio_buffer.speech_stopped"}])
-    assert higgs.timeline == ["they stop", "wrap up"] and why == "end_session"
+    assert [e for e in higgs.timeline if e in ("they stop", "wrap up")] == ["they stop", "wrap up"]
+    assert why == "end_session"
+
+
+async def test_a_map_tap_and_the_wrap_up_never_both_ask_for_a_response(monkeypatch):
+    """A tap that lands just before the quiet runs out: its note goes in, and the wrap-up waits for that
+    reply instead of asking for a second response while the first hasn't started (one response a turn)."""
+    higgs = Higgs([*PLAN, {"type": "test.wait", "s": 0.08}, {"type": "test.tap"}], latency=0.15)
+    higgs, why = await _call(monkeypatch, [], higgs=higgs)
+    asks = [e for e in higgs.timeline if e in ("response.create", "response.created")]
+    assert asks == ["response.create", "response.created"] * 2   # the tap's, then the wrap-up's
+    assert higgs.timeline.index("wrap up") > higgs.timeline.index("response.created")
+    assert why == "end_session"
 
 
 async def test_a_plan_with_something_left_to_ask_never_wraps_up(monkeypatch):
