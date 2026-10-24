@@ -288,7 +288,48 @@ Violations:
 - "Too dark" on a dark top card (a small catalogue where light varies): **fail**: too-dark: 'too dark' on the top card left it first
 - Ranking time, warm: p50 0.103 ms, p95 0.153 ms on 400 listings (cold 1.1 ms); p50 1.632 ms, p95 2.847 ms on 4000. Target < 5 ms.
 
+## Voice: real audio on Higgs Realtime
+
+The real voice paths, unchanged (`evals/run_audio.py`): the Concierge through the bridge on 24 kHz PCM (the browser), the Caller through the phone runner on μ-law (Twilio's format). The other side streams speech in real time with silence between lines, as a phone line does. Its lines are clips synthesized with Higgs TTS (`higgs-tts-v3`), not recordings of people. Time to first audio runs from the end of the other side's voice to the agent's first audio chunk (what a caller waits through, including the VAD's end-of-speech wait), and from Higgs' `speech_stopped` to it. A barge-in talks over a reply 1.2 s in. It counts when Higgs hears it within 2 s, the audio is cleared, and the next reply picks up what was said (its words or its tool arguments).
+
+2026-10-24T08:56:30+00:00 · `674e37d` · 8 sessions · clips synthesized with Higgs TTS (higgs-tts-v3, voice default)
+
+| | p50 / p90 | Previous p50 / p90 |
+|---|---|---|
+| Concierge greeting: `response.create` → first audio | 508 / 515 ms (n=2) | — |
+| **Concierge (browser): end of the renter's voice → first audio** | 1,472 / 1,804 ms (n=12) | — |
+| Concierge: `speech_stopped` → first audio | 922 / 1,141 ms (n=12) | — |
+| **Caller (phone): end of the landlord's voice → first audio** | 1,516 / 2,344 ms (n=20) | — |
+| Caller: `speech_stopped` → first audio | 960 / 1,687 ms (n=20) | — |
+
+| Barge-in | This run |
+|---|---|
+| **Recovered** (heard, cleared, next reply answers it) | **12 / 12** |
+| Voice onset → `speech_started` | 292 / 342 ms (n=12) |
+| Voice onset → audio cleared at the caller | 292 / 342 ms (n=12) |
+| Next reply picked up the interruption | 12 / 12 |
+| Interrupted reply's response cancelled by the server | 0 / 12 |
+| `conversation.item.truncate` sent by our code | 0 / 12 |
+| Agent audio played before the cut | 1,594 / 1,656 ms (n=12) |
+
+With `conversation.item.truncate` sent on `speech_started` (tried in the harness only; the bridge doesn't send it yet):
+
+| | This run |
+|---|---|
+| Recovered | 6 / 6 |
+| Truncates sent / acknowledged by Higgs (`conversation.item.truncated`) | 6 / 6 |
+| Higgs' `audio_end_ms` equal to what had played | 6 / 6 |
+| Errors | none |
+
+| Caller call on audio | Length | Caller turns | Ended | Facts | Booked | Red flags |
+|---|---|---|---|---|---|---|
+| `linda-honest` | 94 s | 9 | hangup | 6 | yes | 0 |
+| `raj-upsell` | 100 s | 8 | hangup | 3 | yes | 0 |
+| `mark-scam` | 70 s | 5 | refused | 1 | no | 3 |
+
+Timelines: `evals/runs/20261024T084935Z-audio` (not committed).
+
 ## Not measured yet
 
-- Anything audio: time to first audio, barge-in, speech-to-text errors. Text mode can't see them; they need the audio sim transport (A-03).
+- Speech-to-text errors on real voices: the audio sim speaks synthesized clips.
 - Claims in languages other than English: the "said it changed something" check reads English only.
