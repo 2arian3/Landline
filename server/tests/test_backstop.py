@@ -436,3 +436,19 @@ async def test_call_listings_keeps_only_viewing_times_the_renter_said():
     ctx = await _ctx()   # off the phone, no lines to go by: the model's word stands
     await _call(ctx, listing_refs=["1"], availability=window)
     assert len(ctx.runtime.state(SID).request.availability) == 1
+
+
+async def test_new_viewing_times_with_nothing_said_about_booking_ask_whether_to_book():
+    """#189: the renter gave tomorrow, nothing was said about booking, and the Concierge never asked."""
+    tomorrow = [{"day": "tomorrow", "from": "09:00", "to": "17:00"}]
+    ctx = await _ctx()
+    ctx.renter_lines = ["Call the first one, I can come see it tomorrow."]
+    ctx.renter_said = ctx.renter_lines[-1]
+    reply = await _call(ctx, listing_refs=["1"], availability=tomorrow)
+    assert reply.endswith("Ask whether you may book a viewing in that window.")
+    reply = await _call(ctx, availability=tomorrow)   # the same times again: asked once
+    assert reply.endswith("Booking: I won't book.")
+    ctx = await _ctx()
+    ctx.renter_lines = ["Call the first one tomorrow, but don't book anything."]
+    ctx.renter_said = ctx.renter_lines[-1]
+    assert (await _call(ctx, listing_refs=["1"], availability=tomorrow)).endswith("Booking: I won't book.")

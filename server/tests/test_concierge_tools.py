@@ -392,7 +392,9 @@ async def test_calling_again_updates_the_plan_instead_of_replacing_it(ctx):
     request = ctx.runtime.state(SID).request
     assert request.listing_ids == [board[1].listing_id]          # not the top three
     assert request.questions == ["Is parking included?"] and not request.may_book
-    assert reply.endswith("Viewing window: Tuesday 6 pm to 8:30 pm. Booking: I won't book.")
+    # New times, and nothing said about booking (#189): the agent asks.
+    assert reply.endswith("Viewing window: Tuesday 6 pm to 8:30 pm. Booking: not allowed yet. Ask whether "
+                          "you may book a viewing in that window.")
     await _say(ctx, "call_listings", '{"may_book": true, "extra_questions": ["Dogs ok?"]}', "fc_3")
     request = ctx.runtime.state(SID).request
     assert request.may_book and request.availability[0].day == "tuesday"
