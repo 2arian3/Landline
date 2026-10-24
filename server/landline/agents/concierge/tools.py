@@ -55,7 +55,7 @@ NOT_CAUGHT = "Sorry, I didn't catch that. Could you say it again?"
 WHICH = "Which one do you mean? You can say its street or its number on the list."
 BROKEN = "Sorry, something went wrong on my side."
 # A place no data holds: the agent asks for one it can find, instead of saying "got it" to nothing.
-ASK_PLACE = "Nothing changed. Ask the renter for a nearby main street, intersection or subway station."
+ASK_PLACE = "Ask the renter for a nearby main street or subway station."
 # give_feedback with no listing_ref and nothing focused: the renter usually did say which ("the second
 # one"), and the agent left it out. Asking them again would annoy them; the agent can fix it itself.
 NO_REF = "Not saved: no listing_ref. Call give_feedback again now with listing_ref set to the number or " \
@@ -183,14 +183,13 @@ def _places(args: PreferenceDelta, ctx: ToolContext) -> tuple[PreferenceDelta, l
     """Finds each area and anchor the renter named (`refs.area`). A City neighbourhood stays an area, under
     the City's name, which is what the ranker matches. Anything else found (a street, a station, a
     building) becomes an anchor with its point. An area left as said and never matched would do nothing
-    while the agent said "got it" ("around Queens"). A place nothing holds is kept for the geocoder when
-    there is one; without one it's dropped, and the reply asks the renter for a street or station."""
+    while the agent said "got it" ("around Queens"). A place nothing here holds ("King and Bay") is kept
+    as an anchor, so the geocoder can still place it, and the reply says the list doesn't use it yet."""
     if not args.areas and not args.anchors:
         return args, [], []
     runtime = ctx.runtime
     known = runtime.state(ctx.session_id).preferences.anchors
     placed = {a.label.lower() for a in known if a.lat is not None}
-    geocoder = bool(runtime.places.contact)
     areas: list[str] = []
     anchors: list[str] = [] if args.anchors is not None else [a.label for a in known]
     points: list[tuple[str, refs.Spot]] = []
@@ -208,8 +207,7 @@ def _places(args: PreferenceDelta, ctx: ToolContext) -> tuple[PreferenceDelta, l
             points.append((label, spot))
         else:
             lost.append(label)
-            if geocoder:
-                anchors.append(label)
+            anchors.append(label)
     update: dict[str, Any] = {}
     if args.areas is not None:
         update["areas"] = list(dict.fromkeys(areas))
@@ -221,9 +219,9 @@ def _places(args: PreferenceDelta, ctx: ToolContext) -> tuple[PreferenceDelta, l
 def _not_found(lost: list[str], ctx: ToolContext) -> str | None:
     if not lost:
         return None
-    if ctx.runtime.places.contact:
+    if ctx.runtime.places.contact:   # the geocoder tries it in the background (D-04)
         return f"Looking up {_join(lost)} on the map; the list moves if it's found."
-    return f"Couldn't find {_join(lost)} on the map. {ASK_PLACE}"
+    return f"Couldn't find {_join(lost)} on the map, so the list doesn't use it yet. {ASK_PLACE}"
 
 
 @cache
@@ -261,7 +259,7 @@ async def focus_area(args: FocusArea, ctx: ToolContext, meta: dict) -> str:
     runtime = ctx.runtime
     spot = refs.area(args.place, runtime.matrix.named, _stations(), runtime.catalogue)
     if spot is None:
-        return f"Couldn't find {args.place} on the map. {ASK_PLACE}"
+        return f"Couldn't find {args.place} on the map. Nothing changed. {ASK_PLACE}"
     await runtime.emit(AreaFocused(**meta, label=args.place, lat=spot.lat, lng=spot.lng, zoom=AREA_ZOOM))
     return f"Showing {args.place}."
 
