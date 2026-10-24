@@ -20,10 +20,10 @@ Scoring: Use of Higgs Audio 30 · User Experience 25 · Innovation 25 · Technic
 | 0:10 | A renter calls, mixing Farsi and English. The SMS link opens. Hundreds of dots fade to six numbered pins while they talk | Higgs Realtime, language switching, live map |
 | 0:40 | "Natural light matters most." The pins renumber before the sentence ends. They tap a pin, and the agent says "That's the corner unit on the 14th floor" | Voice and screen in sync |
 | 0:55 | "That one's too dark." The card shows *You: too dark*, and darker units sink | Feedback changes ranking |
-| 1:05 | "Call the top three." Three pins pulse while the agent keeps talking. We listen in: one landlord switches to Mandarin, one adds $180 parking, one asks for an e-transfer deposit (flagged) | Parallel Higgs calls, the board, scam check |
-| 1:40 | A landlord asks the move-in date; the agent says "let me check with my client", and the renter answers on their own line | Agents that consult each other |
-| 1:55 | Results land on the pins; the agent sums up in Farsi; the renter books Saturday; SMS confirmation | End to end |
-| 2:10 | Hang up, call again: "Welcome back, Sara. Two new places match since this morning." | Memory by phone number |
+| 1:05 | "Call the top three. I'm free Saturday afternoon, book one if you can." The agent reads the three addresses back: "I'll call them as soon as we hang up and text you." The renter hangs up | The brief becomes a plan |
+| 1:15 | Three pins pulse. We listen in: one landlord switches to Mandarin, one adds $180 parking, one asks for an e-transfer deposit (flagged). The Caller answers the move-in date from the brief, and for a question it can't answer says "I'll check with my client" | Parallel Higgs calls, each on its own; scam check |
+| 1:45 | Results land on the pins. Markham is booked for Saturday at 2, inside the renter's window. An SMS arrives in Farsi with the results | Agents that act on their own |
+| 2:00 | The renter calls again: "Welcome back, Sara. I booked 412 Markham for Saturday at two. Dupont is really $3,470 with parking, and 88 Erskine asked for a deposit before viewing, so I'd skip it." | Results and memory by phone number |
 | 2:20 | Numbers: extraction accuracy, zero ungrounded facts, time to first audio, listings and sources | Technical execution |
 
 Record the phone parts on real phones, with teammates as landlords. Use sim landlords only for the listen-in shot if needed, and say so.

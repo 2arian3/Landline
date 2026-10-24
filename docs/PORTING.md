@@ -32,10 +32,10 @@ Each one maps to the Landline task that makes it impossible.
 | 4 | Business hours use the server's clock (`calls.py:254`) | `ZoneInfo("America/Toronto")` | A-02 |
 | 5 | A preference re-rank can erase a call result (`main.py:381`) | Read-rank-write inside `session_tx` | O-02 |
 | 6 | Duplicate outcomes can apply twice (`main.py:546` vs `562`) | Compare-and-set on the Call, idempotent events | O-02 |
-| 7 | Two minutes of silence while calls run (`main.py:525`) | `call_listings` returns at once; results go out between turns | A-04 |
-| 8 | Session state spread over ten module dicts | Session / Call / Board records in Postgres | O-01 |
+| 7 | Two minutes of silence while calls run (`main.py:525`) | Calls run only after the renter hangs up; `call_listings` just records the plan | A-04, A-06 |
+| 8 | Session state spread over ten module dicts | Session and Call records in Postgres | O-01 |
 | 9 | Missing ids create orphan sessions (`main.py:265`) | Ids come from the Call; unknown ids are rejected | A-02 |
-| 10 | Fallbacks call or book listings nobody picked (`main.py:436, 446, 595`) | Resolve or ask; never guess targets that reach people | A-04 |
+| 10 | Fallbacks call or book listings nobody picked (`main.py:436, 446, 595`) | Resolve or ask; never guess targets that reach people. Only listings in the `CallPlan` are called, and bookings land only inside the renter's windows | A-04, A-05 |
 | 11 | Pet policy by substring: "No pets allowed" scores as pet-friendly | Typed `pets` enum + renter species | O-03, D-06 |
 | 12 | Fees by first-number regex: "2 spots at $180" adds $2 | Structured fees; code computes `monthly_cost` | D-06, A-07 |
 | 13 | The model does rent arithmetic without the listed rent | Model never returns totals | A-07 |

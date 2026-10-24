@@ -57,7 +57,7 @@ Never emitted: `conversation.item.done`, `rate_limits.updated`. Don't gate logic
 
 ## Injecting text between turns
 
-`conversation.item.create` takes **text only**, and the `system` role is rejected. Inject as `{"type": "message", "role": "user", "content": [{"type": "input_text", "text": "[call result] ..."}]}`. Send it only when no response is in flight and the human isn't speaking, then `response.create`. Wrap everything quoted: `[landlord said] "…"`. The `Line` class in `voice/line.py` owns this logic.
+`conversation.item.create` takes **text only**, and the `system` role is rejected. Inject as `{"type": "message", "role": "user", "content": [{"type": "input_text", "text": "[renter is looking at] 412 Markham"}]}`. Send it only when no response is in flight and the human isn't speaking, then `response.create`. Wrap everything as quoted data. The `Line` class in `voice/line.py` owns this logic. Only the Concierge gets injected text (focus taps and the reconnect summary); a Caller gets everything it needs in its instructions at dial time.
 
 ## Barge-in
 
