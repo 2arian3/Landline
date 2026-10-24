@@ -48,6 +48,9 @@ class Settings:
     force_business_hours: bool = False
     call_concurrency: int | None = None
     listing_call_max_s: float = 300
+    # Who to reach about Landline's requests to other sites (the scraper's SCRAPER_CONTACT_EMAIL). The place
+    # lookup (D-04) puts it in its User-Agent; without it, only neighbourhoods and stations resolve places.
+    contact_email: str | None = None
     # The admin panel (/admin) and its API need this token as a bearer header. Unset, they answer 404.
     admin_token: str | None = None
 
@@ -74,6 +77,7 @@ class Settings:
             force_business_hours=_on("FORCE_BUSINESS_HOURS"),
             call_concurrency=int(os.getenv("CALL_CONCURRENCY") or 0) or None,
             admin_token=os.getenv("ADMIN_TOKEN") or None,
+            contact_email=os.getenv("SCRAPER_CONTACT_EMAIL") or None,
         )
 
     def allowed_origins(self) -> list[str]:

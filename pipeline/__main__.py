@@ -4,6 +4,7 @@
   load     upsert an existing JSONL file into Postgres
   report   print coverage for a JSONL file
   light    the light estimate (D-07): floor and light words, photo brightness; --load updates Postgres
+  geo      neighbourhoods, their neighbours and the nearest subway station (D-05); --load updates Postgres
 """
 from __future__ import annotations
 
@@ -46,10 +47,15 @@ def main(argv: list[str] | None = None) -> int:
     lt.add_argument("--limit", type=int, default=0, help="only the first N listings (0: all)")
     lt.add_argument("--load", action="store_true", help="update light_score and floor in $DATABASE_URL")
 
+    gp = sub.add_parser("geo", help="neighbourhood and nearest station for every listing")
+    gp.add_argument("--load", action="store_true", help="load and tag in $DATABASE_URL (otherwise a dry run)")
+
     args = parser.parse_args(argv)
 
     if args.cmd == "light":
         return _light(args)
+    if args.cmd == "geo":
+        return _geo(args)
 
     if args.cmd == "report":
         print(stages.report(stages.read_jsonl(args.path)))
@@ -131,6 +137,34 @@ def _light(args) -> int:
             print("Set DATABASE_URL to load.", file=sys.stderr)
             return 2
         print(f"updated {light.load(out, url)} listings")
+    return 0
+
+
+def _geo(args) -> int:
+    """The City's neighbourhoods (fetched politely, cached), the TTC stations, then every listing tagged."""
+    from pipeline import geo
+
+    contact = os.getenv("SCRAPER_CONTACT_EMAIL")
+    if not contact:
+        print("Set SCRAPER_CONTACT_EMAIL for the City request's User-Agent.", file=sys.stderr)
+        return 2
+    client = PoliteClient(contact=contact, cache_ttl_s=7 * 24 * 3600)   # boundaries change yearly
+    try:
+        hoods = geo.parse_neighbourhoods(client.get(geo.HOODS_URL))
+    finally:
+        client.close()
+    station_rows = geo.stations()
+    print(f"geo: {len(hoods)} neighbourhoods, {len(station_rows)} stations")
+    if not args.load:
+        return 0
+    url = os.getenv("DATABASE_URL")
+    if not url:
+        print("Set DATABASE_URL to load.", file=sys.stderr)
+        return 2
+    import psycopg
+
+    with psycopg.connect(url) as conn:
+        print(geo.report(geo.load(conn, hoods, station_rows)))
     return 0
 
 
