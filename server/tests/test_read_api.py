@@ -36,6 +36,9 @@ TURN_KEYS = {"idx", "speaker", "text", "lang", "t_ms"}
 # The web app's stand-ins for the voice agent (DemoControls, ?dev=1). Not in CONTRACTS.md's table.
 DEMO_HOOKS = ("/api/sessions/{id}/preferences", "/api/sessions/{id}/calls", "/api/sessions/{id}/hang-up",
               "/api/sessions/{id}/reset", "/api/sessions/{id}/returning")
+# Endpoints from open PRs that the table doesn't list yet: the area hook (#15, U-03) and the judge's Done
+# (#18, U-06). The web app may call them whichever PR merges first; they leave here once the table has them.
+IN_FLIGHT = ("/api/sessions/{id}/area", "/api/judge/{session_id}/done")
 WEB_SOURCES = ("web/app", "web/components", "web/lib")
 API_PATH = re.compile(r"""(["'`])(/api/[^"'`]*)\1""")   # a quoted or template-literal /api path
 
@@ -147,7 +150,7 @@ def _web_paths() -> dict[str, set[str]]:
 
 
 def test_the_web_app_calls_only_documented_endpoints():
-    allowed = [_pattern(path) for _, path in _documented()] + [_pattern(path) for path in DEMO_HOOKS]
+    allowed = [_pattern(path) for _, path in _documented()] + [_pattern(p) for p in DEMO_HOOKS + IN_FLIGHT]
     found = _web_paths()
     assert {"/api/sessions/{}", "/api/catalogue"} <= found.keys()   # the scan sees the live board's calls
     undocumented = {path: files for path, files in found.items() if not any(a.match(path) for a in allowed)}
