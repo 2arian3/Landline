@@ -14,7 +14,7 @@ Built on Boson AI's **Higgs Realtime** (the renter's call and every listing call
 - **Or talk in the browser** at **https://landline-mu.vercel.app/try**: press **Start talking**, allow the microphone, and watch the map re-rank as you speak. Try *"natural light matters most"*, *"that one's too dark"* or *"call the top three"*, then press **Done**.
 - **No microphone?** https://landline-mu.vercel.app/?dev=1 runs a scripted demo: **Say it** → **Call the top 4** → **Hang up**.
 
-Status, Sat 24 Oct: the conversation and the live map work on the phone and in the browser (about 1,080 real Toronto listings). The calls to listing agents after you hang up are being built; until they land, the `?dev=1` demo shows them scripted, and no real phone rings. See [BACKLOG.md](BACKLOG.md).
+Status, Sat 24 Oct, on about 1,080 real Toronto listings: call the number and you're texted a link to your live map as the call connects. When you hang up, Landline phones the places you picked over Twilio from the same number, but only to the team's own allowlisted phones (`DEMO_AGENT_PHONES`), with teammates playing the listing agents, and only between 09:00 and 20:00 Toronto time; a call queued outside those hours waits for 9:00. The results come back by text. On `/try` and in the browser, the listing calls go to simulated landlords, each a second Higgs session, and no phone rings. See [BACKLOG.md](BACKLOG.md) and [Known limitations](#known-limitations).
 
 ## How it works
 
@@ -28,7 +28,7 @@ Three agents use a model:
 Everything else is plain code that manages the session:
 
 - A deterministic **orchestrator** routes every event, keeps one writer per session, and ends every call exactly once.
-- The **Matcher** ranks listings from typed features: location (PostGIS), real monthly cost, size, floor, natural light, parking, pets, laundry, transit and City of Toronto building records. It explains each rank in plain words.
+- The **Matcher** ranks listings from typed features: location (PostGIS, with the City of Toronto's 158 neighbourhoods), real monthly cost, size, floor, natural light, parking, pets, laundry, and the walk to the nearest TTC subway station. Facts heard on a call update a listing's features and re-rank it. It explains each rank in plain words.
 - The **Dispatcher** dials one call per picked listing after the renter hangs up; **Profiles** remember renters by phone number; the **Narrator** fills the templates for what the agent says and texts.
 - The **web app** shows a live map and list that follow the conversation; tapping a listing tells the agent what you're looking at.
 
@@ -134,6 +134,17 @@ Base URL `https://landline.134.87.8.230.sslip.io`. Payload shapes are in [docs/C
 | Arian Boukani | [@2arian3](https://github.com/2arian3) | Data pipeline, database, orchestrator, scoring, the VM |
 | Danial Kordmodanlou | [@Danial-Kord](https://github.com/Danial-Kord) | Voice agents, call dispatcher, evals |
 | Mahyar Jaberi | [@mahyar-jbr](https://github.com/mahyar-jbr) | Web app, live map, API read side, Vercel, video |
+
+## Known limitations
+
+- **Snapshot data.** Listings are scraped from liv.rent and refreshed every 6 hours, so a place can be rented before the next refresh notices.
+- **Demo phones only.** Listing calls go only to the team's allowlisted phones (`DEMO_AGENT_PHONES`), never to real listing agents.
+- **Business hours.** Listing calls go out only between 09:00 and 20:00 Toronto time. A plan made outside those hours waits for 9:00.
+- **One conversation at a time.** Landline holds one live conversation, on the phone or on `/try` (`HIGGS_MAX_SESSIONS=1`). Anyone else is told the lines are busy and to try again in a minute. Up to three listing calls run at once.
+- **Pets, parking and laundry aren't read from descriptions yet** (D-06). Parking and laundry come only from a listing's amenity tags, and whether pets are allowed is known only once a call asks.
+- **No City building records.** The RentSafeTO join isn't done. Each neighbourhood's median rent by bedrooms is computed, but it doesn't feed the ranking or the page yet.
+- **Some languages get English replies.** In a phone-audio probe, the agent saved Farsi, Arabic and Punjabi renters' preferences but replied in English; Chinese and Spanish renters got replies in their language.
+- **No Higgs TTS in the product.** A voicemail is read by Twilio's built-in voice. Higgs TTS only makes the audio eval's clips.
 
 ## Getting started
 
