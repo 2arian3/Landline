@@ -42,6 +42,11 @@ PLANNED = 4      # the demo plans the top four places with a pin; the fourth nev
 TORONTO = ZoneInfo("America/Toronto")
 # "I'm free Saturday afternoon, book one if you can": the renter's window, and the slot an agent offers.
 WINDOW_DAY, WINDOW_FROM, WINDOW_TO, SLOT = 5, 13, 17, 14   # Saturday (Monday is 0), 13:00–17:00, at 14:00
+# What the last call found, for a returning renter whose session hasn't run the demo calls yet: the
+# results from docs/DEMO.md's second call. Fixture only, until profiles (O-05) keep the real ones.
+LAST_RESULTS = ("I booked 412 Markham for Saturday at 2 pm. "
+                "322 Dupont is really $3,470 a month with parking, "
+                "and 88 Erskine asked for a deposit before a viewing, so I'd skip it.")
 ON_THE_LINE = ("dialing", "ringing", "live")
 
 
@@ -78,6 +83,8 @@ class DemoSessions:
         # Each session's scripted calls, and the task that walks them.
         self.runs: dict[str, DemoRun] = {}
         self.dialing: dict[str, asyncio.Task] = {}
+        # Each session's last results, kept through "Start over": what a returning renter hears first.
+        self.last_results: dict[str, str] = {}
         self.tick_s = tick_s
         # Sessions marked as a returning renter, with the name to greet (None: no name on file).
         self.returning: dict[str, str | None] = {}
@@ -142,6 +149,7 @@ class DemoSessions:
             run.calls[lid] = run.calls[lid].model_copy(update={"state": "ended"})
             await self.update(session_id)
         run.phase, run.results = "done", self._results(run)
+        self.last_results[session_id] = run.results
         if self.dialing.get(session_id) is asyncio.current_task():
             del self.dialing[session_id]
         await self.update(session_id)
@@ -207,6 +215,11 @@ class DemoSessions:
         top = board[0].address if board else None
         says = (f"{len(matches)} places fit. {top} is on top." if top
                 else "Nothing fits yet. Want to widen the budget or the area?")
+        if session_id in self.returning and run.phase == "open" and not run.plan:
+            # A returning call opens with the welcome and what the last call found (docs/DEMO.md, 2:00).
+            name = self.returning[session_id]
+            last = self.last_results.get(session_id, LAST_RESULTS)
+            says = f"Welcome back{f', {name}' if name else ''}. {last}"
         return SessionView(session_id=session_id, version=version, phase=run.phase, preferences=prefs,
                            user_name=self.returning.get(session_id), returning=session_id in self.returning,
                            focus_listing_id=focus, matches=matches, board=board, agent_says=says,

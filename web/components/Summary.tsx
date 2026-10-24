@@ -99,15 +99,25 @@ export function Activity({ view, compact = false }: { view: SessionView | null; 
 
 /**
  * The first thing in the panel for a renter Landline knows (U-08). Landline
- * usually opens a returning call with the welcome itself; where its last line
- * shows (desktop), don't say it twice.
+ * opens a returning call with the welcome and what the last call's agents found
+ * ("Welcome back, Sara. I booked 412 Markham…"); the panel shows it here, once.
  */
 export function Welcome({ view, compact = false }: { view: SessionView | null; compact?: boolean }) {
   if (!view?.returning) return null;
-  if (!compact && /^welcome back/i.test(view.agent_says ?? "")) return null;
-  const welcome = `Welcome back${view.user_name ? `, ${view.user_name}` : ""}.`;
-  return <p className={`font-label text-ink ${compact ? "truncate text-support" : "text-fact"}`}>{welcome}</p>;
+  const opening = opensWithWelcome(view) ? view.agent_says : "";
+  const greeting =
+    /^Welcome back[^.!?]*[.!?]/i.exec(opening)?.[0] ?? `Welcome back${view.user_name ? `, ${view.user_name}` : ""}.`;
+  const news = opening.slice(greeting.length).trim();
+  return (
+    <div className="space-y-0.5">
+      <p className={`font-label text-ink ${compact ? "text-support" : "text-fact"}`}>{greeting}</p>
+      {news && <p className="text-support text-ink-2">{news}</p>}
+    </div>
+  );
 }
+
+/** Landline's last line is the returning renter's welcome: the panel shows it once, as the welcome. */
+const opensWithWelcome = (view: SessionView) => view.returning && /^welcome back/i.test(view.agent_says ?? "");
 
 /**
  * What Landline heard and what it last said: the renter's half of the call, on
@@ -146,7 +156,7 @@ export function Heard({ view, compact = false }: { view: SessionView | null; com
           <p className="text-support text-ink">{heard}</p>
         </div>
       )}
-      {view.agent_says && (
+      {view.agent_says && !opensWithWelcome(view) && (
         <blockquote className="m-0 border-0 p-0">
           <p className="text-meta text-ink-3">Landline said</p>
           <p className="text-fact">“{view.agent_says}”</p>
