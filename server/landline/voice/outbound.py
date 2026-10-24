@@ -175,10 +175,13 @@ class TwilioRunner:
             prepare = getattr(self.converse, "prepare", None)
             if prepare is not None:
                 answered = asyncio.ensure_future(call.answered.wait())
-                await asyncio.wait({answered, call.media, call.ended}, return_when=asyncio.FIRST_COMPLETED)
-                if answered.done() and not call.done:
-                    warm = asyncio.create_task(prepare(dial))
-                answered.cancel()
+                try:
+                    await asyncio.wait({answered, call.media, call.ended},
+                                       return_when=asyncio.FIRST_COMPLETED)
+                    if answered.done() and not call.done:
+                        warm = asyncio.create_task(prepare(dial))
+                finally:
+                    answered.cancel()   # a deadline mid-wait never leaves it waiting on a call that's gone
             # A person answered and the stream connected, or the call ended first.
             done, _ = await asyncio.wait({call.media, call.ended}, return_when=asyncio.FIRST_COMPLETED)
             if call.media in done and not call.media.cancelled() and not call.done:
