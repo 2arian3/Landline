@@ -65,6 +65,14 @@
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
 }
 
+/* The split layout (map left, panel right): tablets, desktops, and phones held sideways, where a
+   bottom sheet would leave the map a strip. Keep in step with SPLIT in components/Shell.tsx. */
+@custom-variant split {
+  @media (min-width: 768px), (min-width: 640px) and (max-height: 520px) {
+    @slot;
+  }
+}
+
 @layer base {
   /* An app shell: the map and the panel scroll on their own, the page never does. */
   html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }

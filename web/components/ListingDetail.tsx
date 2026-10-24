@@ -116,7 +116,8 @@ export function ListingDetail({
                 alt={i === 0 ? `Photo of ${detail.address}` : ""}
                 loading={i < 2 ? "eager" : "lazy"}
                 fetchPriority={i === 0 ? "high" : "auto"}
-                className="aspect-[4/3] w-[82%] shrink-0 snap-start overflow-hidden rounded-[var(--radius-photo)] bg-press object-cover text-[0px] sm:w-[70%]"
+                // On a short screen (a phone on its side) the photo gives way, so the price still shows.
+                className="aspect-[4/3] max-h-[38vh] w-[82%] shrink-0 snap-start overflow-hidden rounded-[var(--radius-photo)] bg-press object-cover text-[0px] sm:w-[70%]"
               />
             ))}
           </div>
