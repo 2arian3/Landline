@@ -142,6 +142,7 @@ def summarize_calls(results: list[Any], meta: dict[str, Any]) -> dict[str, Any]:
             checks[call_family(c.name)][1] += 1
     cov = [sum(r.coverage[0] for r in results), sum(r.coverage[1] for r in results)]
     reads = [sum(r.readbacks[0] for r in results), sum(r.readbacks[1] for r in results)]
+    saved = [sum(r.recorded_readbacks[0] for r in results), sum(r.recorded_readbacks[1] for r in results)]
     secs = sorted(r.seconds for r in results)
     turns = sorted(r.caller_turns for r in results)
     return {
@@ -149,6 +150,7 @@ def summarize_calls(results: list[Any], meta: dict[str, Any]) -> dict[str, Any]:
         "cases_all_runs": sum(all(r.passed for r in rs) for rs in by_case.values()),
         "run_pass_rate": _rate(sum(r.passed for r in results), len(results)),
         "checks": dict(checks), "coverage_items": cov, "coverage": _rate(*cov) or 0.0, "readbacks": reads,
+        "recorded_readbacks": saved,
         "ungrounded": sum(r.ungrounded for r in results),
         "noted_by_code": sum(r.noted_by_code for r in results),
         "seconds_p50": secs[len(secs) // 2] if secs else None,
@@ -172,7 +174,9 @@ def _calls(title: str, cur: dict, prev: dict | None) -> list[str]:
     row("**Personas passing every run**", lambda s: f"**{s['cases_all_runs']} / {s['cases']}**")
     row("Runs passing", lambda s: _fmt_rate(s["run_pass_rate"]))
     row("Checklist coverage", lambda s: _ratio(*s["coverage_items"]))
-    row("Landlord numbers read back", lambda s: _ratio(*s["readbacks"]))
+    row("Landlord turns with a number, read back next turn", lambda s: _ratio(*s["readbacks"]))
+    row("Numbers the Caller saved, read back in that turn",
+        lambda s: _ratio(*s["recorded_readbacks"]) if "recorded_readbacks" in s else "—")
     row("Quotes refused as not said (ungrounded)", lambda s: str(s["ungrounded"]))
     row("Questions code noted after the Caller promised to check", lambda s: str(s.get("noted_by_code", 0)))
     for key, label in CALL_CHECKS:

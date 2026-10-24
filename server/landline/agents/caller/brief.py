@@ -8,6 +8,7 @@ injected mid-call.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 from landline.agents.caller import slots
@@ -68,7 +69,8 @@ def brief(listing: Listing, plan: CallPlan) -> Brief:
     gaps.append(Item("fees", "any monthly fees on top of the rent", ["fees"]))
     items += gaps[:MAX_GAPS]
     for n, question in enumerate(plan.questions, start=1):
-        items.append(Item(f"q{n}", f"the renter's question: {question}", ["other"]))
+        items.append(Item(f"q{n}", f"the renter's question: {question} (record their answer as other)",
+                          ["other"]))
     if plan.may_book and plan.windows:
         items.append(Item("viewing", "a viewing inside the renter's times, booked with book_viewing", []))
     else:
@@ -106,8 +108,12 @@ digits.
 Your tools are the only way anything is saved. Talking saves nothing: whatever they tell you is lost \
 unless you record it, and a viewing isn't booked until book_viewing says so. In every turn, call your \
 tools first, then speak:
-- They answer something on your checklist → record_fact, then read the number, price or time back once. \
-If they tell you several things at once, call record_fact once for each.
+- They answer something on your checklist → record_fact. If they tell you several things at once, call \
+record_fact once for each. Then start your reply by repeating every number, price, date or time they just \
+gave, as a statement ("So parking is $150 a month."), even when you also answer a question of theirs. The \
+tool's reply gives you the words.
+- They answer one of the renter's questions → record_fact as other, with their answer. An answer you \
+didn't record doesn't count, and the call can't end until it's recorded.
 - They offer a viewing time inside the renter's times → book_viewing with their words, then confirm it.
 - They ask something you can't answer → note_question, then say you'll check with your client.
 - They want money, a deposit or an e-transfer before anyone has seen the unit, or can't show it in \
@@ -182,9 +188,16 @@ def _window(w) -> str:
     return f"{slots.spoken(start)} to {slots.spoken(end).split(' at ')[1]}"
 
 
+_DAY = re.compile(r"\b(mon|tue|wed|thu|fri|sat|sun)[a-z]*\b|\btoday\b|\btomorrow\b|\bweekend\b", re.I)
+_CLOCK = re.compile(r"\b\d{1,2}(:\d{2})?\s*(am|pm|a\.m\.|p\.m\.)|\bnoon\b|\b\d{1,2}:\d{2}\b", re.I)
+
+
 def _about_viewing(value: str) -> bool:
+    """A viewing time: viewing words, or a day and a time ("Thursday at 6:30 pm"). A time alone ("quiet
+    after 10 pm") answers something else."""
     v = value.lower()
-    return any(w in v for w in ("view", "visit", "show", "tour", "see it", "open house"))
+    words = any(w in v for w in ("view", "visit", "show", "tour", "see it", "open house"))
+    return words or bool(_DAY.search(v) and _CLOCK.search(v))
 
 
 def _join(items: list[str]) -> str:
