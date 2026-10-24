@@ -193,12 +193,14 @@ async def test_a_machine_found_mid_call_gets_the_voicemail_and_ends_voicemail_on
         async def receive_audio(self):
             return await stream.get()
 
-    async def converse(dial, transport):
+    async def converse(dial, transport, hang_up):
         while await transport.receive_audio() is not None:
             pass
         stopped.set()   # the Caller stops, and closes its Higgs session, as the stream ends
+        await hang_up("hangup")   # its talk is over, but the voicemail plays on
         return CallResult("hangup", CallOutcome(call_id=dial.call_id, listing_id=dial.listing_id,
                                                 end_reason="hangup"))
+    converse.takes_hang_up = True
 
     async def machine(calls: OutboundCalls, cid: str):
         await calls.set_state(cid, "ringing")
