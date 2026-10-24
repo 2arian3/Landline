@@ -406,3 +406,12 @@ def test_a_place_to_live_near_is_saved_and_focus_area_is_only_for_show_me():
     assert ('Call focus_area only when they ask to see a part of the city ("show me", "look at", '
             '"zoom to").') in text
     assert "When they name a part of the city to look at, call focus_area." not in text
+
+
+def test_a_question_that_brings_up_a_new_place_is_a_search_there_not_a_chat():
+    """In the judge run "What about the Annex?" got a voice answer and no tool, so the board didn't move."""
+    from landline.agents.concierge.prompt import INSTRUCTIONS
+    text = " ".join(INSTRUCTIONS.split())
+    assert ('A question that brings up a new place ("what about the Annex?", "anything in Leslieville?") is '
+            "them asking to look there: put it in areas with update_preferences, as above, and never answer "
+            "it without a tool.") in text
