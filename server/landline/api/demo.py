@@ -218,7 +218,7 @@ class DemoSessions:
                 cost = monthly_cost(x.rent, [*x.fees, *out.fees])
                 lines.append(f"{x.address} is really ${cost:,} a month with parking.")
             for q in out.questions:
-                lines.append(f"Its agent asked, “{q}” I said I'd check with you.")
+                lines.append(f"The agent at {x.address} asked, “{q}” I said I'd check with you.")
         return " ".join(lines)
 
     def close(self) -> None:

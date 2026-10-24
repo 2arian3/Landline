@@ -10,7 +10,7 @@ import type { Mark } from "./ListingCard";
 import { ListingDetail, type Reaction } from "./ListingDetail";
 import type { Padding } from "./MapView";
 import { PEEK, Shell } from "./Shell";
-import { Activity, Brand, Heard, Welcome } from "./Summary";
+import { Activity, Brand, Heard, Results, Welcome } from "./Summary";
 import { postJSON, useCatalogue, useLiveSession } from "@/lib/live";
 import { useMedia } from "@/lib/useMedia";
 
@@ -145,6 +145,7 @@ export function LiveBoard({
   const list = (
     <div className={desktop ? "space-y-4" : "space-y-3"}>
       <Welcome view={view} compact={!desktop} />
+      <Results view={view} compact={!desktop} />
       <Activity view={view} compact={!desktop} />
       <Heard view={view} compact={!desktop} />
       <Board
@@ -186,6 +187,7 @@ export function LiveBoard({
               id={selected}
               card={selectedCard}
               mark={marks[selected]}
+              results={view?.phase === "done" ? view.results : null}
               onBack={() => setSelected(null)}
               onReact={(reaction, reason) => react(selected, reaction, reason)}
             />
