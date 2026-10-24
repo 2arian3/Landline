@@ -137,8 +137,11 @@ def _street(name: str) -> str:
     return rf"^{core}( {_STREET_TYPE})?( {_DIRECTION})?$"
 
 
+_APOSTROPHE = re.compile(r"['’]")   # "Queen's", "Queens" and "Queen’s" are one word
+
+
 def _words(text: str) -> list[str]:
-    return re.findall(r"[a-z0-9]+", text.lower().replace("st.", "st"))
+    return re.findall(r"[a-z0-9]+", _APOSTROPHE.sub("", text.lower()).replace("st.", "st"))
 
 
 def _key(text: str) -> str:
