@@ -186,7 +186,7 @@ The real Auditor (`server/landline/agents/auditor/`) on 20 written call transcri
 
 ### Holdout (quote these)
 
-2026-10-24T07:56:31+00:00 · `f905e7f` · 8 transcripts · extractor: replayed recordings
+2026-10-24T15:03:03+00:00 · `768699e` · 8 transcripts · extractor: replayed recordings
 
 | | Rules | With extractor | Previous (best mode) |
 |---|---|---|---|
@@ -213,7 +213,7 @@ The real Auditor (`server/landline/agents/auditor/`) on 20 written call transcri
 
 ### Tune (prompts change against these)
 
-2026-10-24T07:56:31+00:00 · `f905e7f` · 12 transcripts · extractor: replayed recordings
+2026-10-24T15:03:03+00:00 · `768699e` · 12 transcripts · extractor: replayed recordings
 
 | | Rules | With extractor | Previous (best mode) |
 |---|---|---|---|
