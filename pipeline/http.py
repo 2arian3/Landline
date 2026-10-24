@@ -96,7 +96,24 @@ class PoliteClient:
         path = self._cache_path(url)
         if use_cache and path.exists() and time.time() - path.stat().st_mtime < self.cache_ttl_s:
             return path.read_text(encoding="utf-8")
+        resp = self._fetch(url)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(resp.text, encoding="utf-8")
+        return resp.text
 
+    def get_bytes(self, url: str) -> bytes:
+        """`get` for an image: the same politeness, cached as bytes and kept (photos don't change)."""
+        if not self.allowed(url):
+            raise Disallowed(url)
+        path = self._cache_path(url).with_suffix(".bin")
+        if path.exists():
+            return path.read_bytes()
+        resp = self._fetch(url)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(resp.content)
+        return resp.content
+
+    def _fetch(self, url: str) -> httpx.Response:
         host = urlsplit(url).netloc
         for attempt in range(self.max_retries + 1):
             self._wait(host)
@@ -110,7 +127,5 @@ class PoliteClient:
                 time.sleep(float(retry_after) if retry_after.isdigit() else 2 ** (attempt + 2))
                 continue
             resp.raise_for_status()
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(resp.text, encoding="utf-8")
-            return resp.text
+            return resp
         raise RuntimeError("unreachable")

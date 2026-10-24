@@ -18,11 +18,11 @@ from datetime import UTC, datetime
 from typing import Any, Protocol
 
 from landline.agents.concierge import tools
-from landline.agents.concierge.prompt import GREETING, INSTRUCTIONS
-from landline.contracts import SessionStarted
+from landline.contracts import PreferencesUpdated, SessionStarted
+from landline.contracts.tools import PreferenceDelta
 from landline.db.catalogue import Catalogue
 from landline.orchestrator import SessionRuntime
-from landline.voice.bridge import run_tool
+from landline.voice.bridge import ends_call, opening, run_tool
 from landline.voice.higgs import ConnectHiggs, session_config
 
 TURN_TIMEOUT_S = 30   # one agent turn, tools included
@@ -115,21 +115,28 @@ class Recorded:
 
 async def simulate(case_id: str, run: int, opponent: Opponent, *, catalogue: Catalogue,
                    connect_higgs: ConnectHiggs, api_key: str = "", max_lines: int = MAX_LINES,
-                   turn_timeout_s: float = TURN_TIMEOUT_S) -> Trace:
+                   turn_timeout_s: float = TURN_TIMEOUT_S, remembered: str | None = None,
+                   prefs: dict[str, Any] | None = None) -> Trace:
     """One conversation between the Concierge and `opponent`, to its end. Never raises for what the
-    agent or Higgs did: that goes in the trace."""
+    agent or Higgs did: that goes in the trace. With `remembered` (what Profiles would say about this
+    number) and `prefs` (the search it would restore), the caller is a returning one."""
     sid = f"s_sim_{case_id}_{run}"          # ids come from code, never from the model
     runtime = SessionRuntime(catalogue)
     await runtime.start(SessionStarted(session_id=sid, at=datetime.now(UTC), idem_key=f"{sid}:started",
                                        channel="judge"))
+    if prefs:   # Profiles restores a returning caller's search before the call opens
+        await runtime.emit(PreferencesUpdated(session_id=sid, at=datetime.now(UTC),
+                                              idem_key=f"{sid}:remembered", delta=PreferenceDelta(**prefs)))
     trace = Trace(case_id=case_id, run=run, session_id=sid)
     ctx = tools.ToolContext(session_id=sid, call_id=f"c_sim_{case_id}_{run}", runtime=runtime)
     higgs: Recorded | None = None
     try:
+        instructions, start = opening(remembered)   # the bridge's own: greeting or welcome back
         higgs = Recorded(await connect_higgs(api_key, session_config(
-            instructions=INSTRUCTIONS, tools=tools.TOOLS, modality="text")))
+            instructions=instructions, tools=tools.TOOLS, modality="text")))
         stream = higgs.events().__aiter__()
-        await higgs.send({"type": "response.create", "response": {"instructions": GREETING}})
+        for event in start:
+            await higgs.send(event)
         said = await _agent_turn(stream, higgs, ctx, trace, -1, turn_timeout_s)
         while not ctx.hang_up:
             if len(trace.lines) >= max_lines:
@@ -167,8 +174,9 @@ async def simulate(case_id: str, run: int, opponent: Opponent, *, catalogue: Cat
 async def _agent_turn(stream, higgs: Recorded, ctx: tools.ToolContext, trace: Trace, line: int,
                       timeout_s: float) -> str:
     """Reads Higgs until the agent's turn is over: a `response.done` that asked for no tool, or the one
-    after `end_session`. Runs each tool call on the way, the way the bridge does."""
+    that ends the call after `end_session`. Runs each tool call on the way, the way the bridge does."""
     started, texts, names = time.monotonic(), [], []
+    spoke = False   # whether the response under way has said anything yet
     async with asyncio.timeout(timeout_s):
         while True:
             try:
@@ -176,11 +184,16 @@ async def _agent_turn(stream, higgs: Recorded, ctx: tools.ToolContext, trace: Tr
             except StopAsyncIteration:
                 raise HiggsClosed() from None
             kind = event.get("type")
-            if kind == "response.output_text.done":
+            if kind == "response.created":
+                spoke = False
+            elif kind == "response.output_text.delta":   # streams before a tool call in the same response;
+                spoke = spoke or bool(str(event.get("delta") or "").strip())   # its .done comes after it
+            elif kind == "response.output_text.done":
                 texts.append(str(event.get("text") or ""))
+                spoke = spoke or bool(texts[-1].strip())
             elif kind == "response.function_call_arguments.done":
                 board = _board(ctx.runtime, ctx.session_id)
-                await run_tool(higgs, event, ctx)
+                await run_tool(higgs, event, ctx, spoke=spoke)
                 names.append(str(event.get("name", "")))
                 trace.tools.append(ToolCall(line=line, name=names[-1], board=board,
                                             arguments=str(event.get("arguments") or "{}"),
@@ -189,7 +202,8 @@ async def _agent_turn(stream, higgs: Recorded, ctx: tools.ToolContext, trace: Tr
                 trace.errors.append(str(event.get("error")))
             elif kind == "response.done":
                 output = (event.get("response") or {}).get("output") or []
-                if ctx.hang_up or not any(o.get("type") == "function_call" for o in output):
+                if ends_call(event, ctx) or (not ctx.hang_up
+                                             and not any(o.get("type") == "function_call" for o in output)):
                     break
     text = " ".join(t.strip() for t in texts if t.strip())
     trace.agent.append(AgentTurn(line=line, text=text, tools=names,

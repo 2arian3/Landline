@@ -1,0 +1,37 @@
+{
+  "id": "returning-calls-running",
+  "about": "A returning caller whose calls are still running: the welcome recalls the search and claims no results",
+  "returning": {
+    "opening": "This renter last called earlier today. The calls from their last call are still running. What you know: Wants up to $2,200 a month, 1 bedroom or more and around Bathurst Street. Turned down 701 Don Mills Rd (too far).",
+    "prefs": {
+      "max_monthly": 2200,
+      "min_beds": 1,
+      "areas": [
+        "Bathurst Street"
+      ]
+    }
+  },
+  "lines": [
+    {
+      "say": "Okay, I'll wait for your text then. Bye."
+    }
+  ],
+  "final": {
+    "greeting_says": [
+      "Bathurst"
+    ],
+    "greeting_avoids": [
+      "booked",
+      "rented"
+    ],
+    "prefs": {
+      "max_monthly": 2200,
+      "min_beds": 1,
+      "areas": [
+        "Bathurst"
+      ]
+    },
+    "no_request": true,
+    "ended": true
+  }
+}

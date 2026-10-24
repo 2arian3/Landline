@@ -31,8 +31,11 @@ _START = re.compile(r'\{"__typename":"(?:FullListing|Building)"')
 _BUILDING_KEYS = ("building_id", "street_name", "building_type", "full_street_name", "city", "state", "zip",
                   "building_name", "location", "building_amenities")
 
-# The City of Toronto's extent, padded about 5 km: lat min, lat max, lng min, lng max.
-TORONTO_BOX = (43.53, 43.91, -79.69, -79.06)
+# Greater Toronto, generously: lat min, lat max, lng min, lng max. The same box the map draws pins in
+# (web/components/MapView.tsx `onMap`) and the demo plans from (server/landline/api/demo.py `_pinned`),
+# so a point the parser keeps is one the map can show.
+GTA_BOX = (43.3, 44.4, -80.3, -78.6)
+LNG_FLIP = f"{PARSER_VERSION}+lng-sign"   # the provenance version of a longitude whose sign was flipped
 
 UNIT_TYPES = {
     "CONDO": "condo",
@@ -85,6 +88,44 @@ def raw_listings(html: str) -> Iterator[dict]:
             yield unit
 
 
+_ROW = re.compile(rb"([0-9a-f]+):")
+_TEXT_LEN = re.compile(rb"T([0-9a-f]+),")
+
+
+def _text_rows(data: bytes) -> dict[str, str]:
+    """The stream's text rows. A row is `<id>:<json>\\n`, or `<id>:T<length in bytes, hex>,<text>` with
+    the next row right after the text, so the rows are walked in order rather than searched for."""
+    rows: dict[str, str] = {}
+    pos = 0
+    while pos < len(data):
+        m = _ROW.match(data, pos)
+        t = _TEXT_LEN.match(data, m.end()) if m else None
+        if t:
+            start = t.end()
+            end = start + int(t.group(1), 16)
+            rows[m.group(1).decode()] = data[start:end].decode(errors="replace")
+            pos = end + (data[end:end + 1] == b"\n")
+        else:
+            nl = data.find(b"\n", pos)
+            pos = len(data) if nl < 0 else nl + 1
+    return rows
+
+
+def descriptions(html: str) -> dict[str, str]:
+    """source_id -> the listing's description text. A long text sits in its own row of the page's data, and
+    the listing holds a reference to it (`"$68"`). Used only to find words in (the light estimate); the
+    text itself isn't stored."""
+    rows = _text_rows(_flight_text(html).encode())
+    out = {}
+    for raw in raw_listings(html):
+        text = raw.get("description") or ""
+        if text.startswith("$") and text[1:] in rows:
+            text = rows[text[1:]]
+        if text and not text.startswith("$"):
+            out[str(raw["listing_id"])] = text
+    return out
+
+
 def building_urls(html: str) -> dict[int, str]:
     """building_id -> canonical listing URL, from the page's JSON-LD item list."""
     urls: dict[int, str] = {}
@@ -103,20 +144,30 @@ def building_urls(html: str) -> dict[int, str]:
     return urls
 
 
-def toronto_point(lat: float | None, lng: float | None) -> tuple[float | None, float | None, bool]:
-    """Guard a map pin against a dropped minus sign. Returns (lat, lng, flipped).
+def _in_gta(lat: float, lng: float) -> bool:
+    lat_min, lat_max, lng_min, lng_max = GTA_BOX
+    return lat_min < lat < lat_max and lng_min < lng < lng_max
 
-    Every Toronto longitude is negative. A positive one whose negation lands in
-    the city is the site's typo (three units at 701 Don Mills Rd carry
-    +79.335082), so its sign is flipped. Any other positive longitude is nulled
-    rather than guessed.
+
+def toronto_point(lat: object, lng: object) -> tuple[float | None, float | None, bool]:
+    """Guard a map pin. Returns (lat, lng, flipped).
+
+    Every Greater Toronto longitude is negative. A positive one whose negation
+    lands in the box is the site's typo (three units at 701 Don Mills Rd carried
+    +79.335082), so its sign is flipped. Any other point outside the box (0,0,
+    a wrong latitude, a pair from another city) is nulled rather than guessed,
+    and so is a value that isn't a number.
     """
-    if lat is None or lng is None or lng <= 0:
-        return lat, lng, False
-    lat_min, lat_max, lng_min, lng_max = TORONTO_BOX
-    if lat_min <= lat <= lat_max and lng_min <= -lng <= lng_max:
-        return lat, -lng, True
-    return None, None, False
+    try:
+        lat, lng = float(lat), float(lng)   # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None, None, False
+    flipped = lng > 0 and _in_gta(lat, -lng)
+    if flipped:
+        lng = -lng
+    if not _in_gta(lat, lng):
+        return None, None, False
+    return lat, lng, flipped
 
 
 def to_listing(raw: dict, seen_at: datetime, urls: dict[int, str]) -> Listing | None:
@@ -167,8 +218,9 @@ def to_listing(raw: dict, seen_at: datetime, urls: dict[int, str]) -> Listing | 
         return None
     prov = Provenance(source="scraped", at=seen_at, version=PARSER_VERSION)
     provenance = {k: prov for k, v in fields.items() if v not in (None, [], "")}
-    if flipped:   # computed from the scraped value, not what the site says
-        provenance["lng"] = Provenance(source="derived", at=seen_at, version=PARSER_VERSION)
+    if flipped:   # computed from the scraped value; the quote keeps what the site actually sent
+        provenance["lng"] = Provenance(source="derived", quote=str(loc.get("lon")), at=seen_at,
+                                       version=LNG_FLIP)
 
     return Listing(
         listing_id=f"{SOURCE}:{raw['listing_id']}",
