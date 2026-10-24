@@ -1,4 +1,5 @@
-"""The admin panel's API: every renter, their sessions, calls, transcripts and the listings they chose.
+"""The admin panel's API: every renter, their sessions, calls, transcripts, call recordings and the listings
+they chose.
 
 Off unless ADMIN_TOKEN is set and there is a database: then every route answers 404, as if it weren't
 there. Each request carries the token as `Authorization: Bearer <token>`, never in the URL, and a wrong
@@ -6,11 +7,12 @@ one gets 401. Read only.
 """
 from __future__ import annotations
 
+import asyncio
 import secrets
 from datetime import datetime
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 
 from landline.api.routes import Turn
@@ -18,8 +20,11 @@ from landline.contracts import Preferences
 from landline.db.pool import Database
 from landline.db.rows import ProfileRow
 from landline.orchestrator.profiles import preferences_of
+from landline.voice.recorder import render_wav
 
 router = APIRouter(prefix="/api/admin")
+# call_audio tracks: whoever Landline talked to, and Landline itself.
+CALLER, AGENT = ("renter", "landlord"), ("agent",)
 
 
 def admin_db(request: Request) -> Database:
@@ -121,11 +126,18 @@ class Fact(BaseModel):
     created_at: datetime
 
 
+class Line(Turn):
+    """A transcript line as the panel shows it: the caption, and where it is in the call's recording."""
+    audio_start_ms: int | None = None
+    audio_end_ms: int | None = None
+
+
 class CallDetail(CallRow):
     session_id: str | None = None
     user_id: int | None = None
-    transcript: list[Turn] = Field(default_factory=list)
+    transcript: list[Line] = Field(default_factory=list)
     facts: list[Fact] = Field(default_factory=list)
+    audio: bool = False   # whether /calls/{call_id}/audio has a recording to play
 
 
 @router.get("/users", response_model=list[UserRow])
@@ -170,10 +182,30 @@ async def call(call_id: str, request: Request, db: AdminDb) -> CallDetail:
     return CallDetail(
         **_call_row({**row, "turns": len(turns)}, _places(request)).model_dump(),
         session_id=row["session_id"], user_id=row["user_id"],
-        transcript=[Turn.model_validate(t, from_attributes=True) for t in turns],
+        transcript=[Line.model_validate(t, from_attributes=True) for t in turns],
         facts=[Fact(field=f.field, value=f.value, quote=f.quote, confirmed=f.confirmed,
                     created_at=f.created_at) for f in facts],
+        audio=await db.audio.exists(call_id),
     )
+
+
+CHANNELS = {"both": [CALLER, AGENT], "caller": [CALLER], "agent": [AGENT]}
+
+
+@router.get("/calls/{call_id}/audio", response_class=Response,
+            responses={200: {"content": {"audio/wav": {}}}, 404: {"description": "nothing recorded there"}})
+async def call_audio(call_id: str, db: AdminDb, track: Literal["both", "caller", "agent"] = "both",
+                     from_ms: Annotated[int | None, Query(ge=0)] = None,
+                     to_ms: Annotated[int | None, Query(ge=0)] = None) -> Response:
+    """The call's recording as a PCM16 WAV: both sides in stereo (the caller left, the agent right), or one
+    side. With `from_ms` and `to_ms`, only that stretch: a transcript line's audio_start_ms and
+    audio_end_ms play just that line. 404 when nothing was recorded there."""
+    rows = await db.audio.list(call_id, from_ms, to_ms)
+    if not rows:
+        raise HTTPException(404, "nothing recorded there")
+    # Rendering a long call takes a moment; off the event loop, so live calls don't wait for it.
+    wav = await asyncio.to_thread(render_wav, rows, CHANNELS[track], from_ms, to_ms)
+    return Response(wav, media_type="audio/wav", headers={"Cache-Control": "no-store"})
 
 
 # Shaping
