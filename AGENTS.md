@@ -60,6 +60,7 @@ These targets are added by the tasks that create the code; until then they print
 |---|---|
 | `make setup` | Install git hooks (works now), then Python and web deps once they exist |
 | `make db-migrate` | Apply `db/migrations/*.sql` to `$DATABASE_URL` |
+| `make db-pull` | Copy production's data into the local DB, replacing it (needs `ADMIN_TOKEN` in `.env`; `ARGS=--audio` adds call recordings). Production is only read |
 | `make data` | Scrape liv.rent, check, load into `$DATABASE_URL` (the local DB by default) and refresh the web fixture. Geocode, enrich, extract, light and dedupe come with D-04 to D-07 |
 | `make dev` | API on :8000 with `TRANSPORT=stub` |
 | `make web` | Web app on :3000 |
