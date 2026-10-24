@@ -3,6 +3,7 @@ Twilio runner (fake Twilio), a person answers, and the real Caller tools run on 
 media stream (voice/phone_caller.py)."""
 import asyncio
 import json
+import logging
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
@@ -129,8 +130,9 @@ async def _call(script, line):
     return rt, ended, higgs, twilio_api
 
 
-async def test_a_phone_call_records_what_the_agent_said_and_ends_once_after_the_goodbye(monkeypatch):
+async def test_a_phone_call_records_what_the_agent_said_and_ends_once_after_the_goodbye(monkeypatch, caplog):
     monkeypatch.setattr(phone_caller, "HANG_UP_GRACE_S", 0)
+    caplog.set_level(logging.INFO, logger=phone_caller.__name__)
     script = [
         {"type": "response.created"},
         {"type": "response.output_audio.delta", "delta": "AAAA"},
@@ -162,6 +164,10 @@ async def test_a_phone_call_records_what_the_agent_said_and_ends_once_after_the_
     assert {"type": "input_audio_buffer.append", "audio": "/w=="} in higgs.sent
     assert higgs.closed and twilio_api.hung_up == ["CA1"]                 # Twilio's line is put down too
     assert rt.get(SID).phase == "done"
+    # The steps after a pickup are in the log, in order, the first audio once (#148).
+    said = [r.getMessage().split(": ")[-1] for r in caplog.records]
+    assert [s for s in said if s in ("Higgs ready, opening sent", "first audio out")] == [
+        "Higgs ready, opening sent", "first audio out"]
 
 
 async def test_the_agent_hanging_up_ends_the_call_with_what_was_heard():
