@@ -345,6 +345,93 @@ async def test_a_call_over_after_a_goodbye_still_lets_them_finish_and_answers_be
     assert line.played == ["AAAA", "BBBB", "CCCC"] and [e.reason for e in ended] == ["done"]
 
 
+FIRST_TURN = [
+    {"type": "response.created"},
+    {"type": "response.output_audio.delta", "delta": "AAAA"},
+    {"type": "response.output_audio_transcript.done", "transcript": DISCLOSURE},
+    {"type": "response.done", "response": {"id": "r1", "output": [{"type": "message"}]}},
+]
+GOODBYE = [   # what a Caller told to wrap up says: a goodbye, here with no end_call
+    {"type": "response.created"},
+    {"type": "response.output_audio.delta", "delta": "BBBB"},
+    {"type": "response.output_audio_transcript.done", "transcript": "Thanks so much for your time. Goodbye."},
+    {"type": "response.done", "response": {"id": "r9", "output": [{"type": "message"}]}},
+]
+
+
+class WrappingHiggs(PausingHiggs):
+    """Plays its script, then answers the wrap-up note with GOODBYE. `timeline` holds the script's
+    {"type": "test.mark"} events and the wrap-up, in order."""
+
+    def __init__(self, script):
+        super().__init__(script)
+        self.timeline, self.wrapped = [], asyncio.Event()
+
+    async def send(self, event):
+        await super().send(event)
+        if _text(event) == phone_caller.WRAP_UP:
+            self.timeline.append("wrap up")
+            self.wrapped.set()
+
+    async def events(self):
+        for event in self.script:
+            await asyncio.sleep(event["s"] if event["type"] == "test.wait" else 0)
+            if event["type"] == "test.mark":
+                self.timeline.append(event["what"])
+            elif event["type"] != "test.wait":
+                yield event
+        await self.wrapped.wait()
+        for event in GOODBYE:
+            await asyncio.sleep(0)
+            yield event
+        await asyncio.sleep(60)
+
+
+def _text(event):
+    return ((event.get("item") or {}).get("content") or [{}])[0].get("text")
+
+
+def _quick_wrap_up(monkeypatch, has_it=True):
+    monkeypatch.setattr(phone_caller, "WRAP_UP_S", 0.1)
+    monkeypatch.setattr(phone_caller, "QUIET_EVERY_S", 0.02)
+    monkeypatch.setattr(phone_caller, "END_AFTER_S", 0.05)
+    if has_it:
+        monkeypatch.setattr(phone_caller, "_has_it", lambda ctx: True)   # the checklist is covered
+
+
+async def test_a_caller_with_what_it_came_for_on_a_quiet_line_wraps_up_once_and_ends_done(monkeypatch):
+    """The team's phone test: the listing agent went quiet after the last answer, and the call stayed open
+    until someone said bye."""
+    _quick_wrap_up(monkeypatch)
+    higgs, line = WrappingHiggs(FIRST_TURN), FakeLine()
+    rt, ended, _, twilio_api = await _call([], line, higgs)
+    assert [e for e in higgs.sent if _text(e) == phone_caller.WRAP_UP] == [
+        {"type": "conversation.item.create", "item": {"type": "message", "role": "user", "content": [
+            {"type": "input_text", "text": phone_caller.WRAP_UP}]}}]
+    at = next(i for i, e in enumerate(higgs.sent) if _text(e) == phone_caller.WRAP_UP)
+    assert higgs.sent[at + 1] == {"type": "response.create"}   # a plain one, never a response object
+    assert line.played == ["AAAA", "BBBB"] and [e.reason for e in ended] == ["done"]
+    assert twilio_api.hung_up == ["CA1"]
+
+
+async def test_a_listing_agent_still_talking_holds_the_wrap_up_until_the_line_is_quiet(monkeypatch):
+    _quick_wrap_up(monkeypatch)
+    higgs = WrappingHiggs([*FIRST_TURN, {"type": "input_audio_buffer.speech_started"},
+                           {"type": "test.wait", "s": 0.3},   # longer than WRAP_UP_S
+                           {"type": "test.mark", "what": "they stop"},
+                           {"type": "input_audio_buffer.speech_stopped"}])
+    rt, ended, _, _ = await _call([], FakeLine(), higgs)
+    assert higgs.timeline == ["they stop", "wrap up"] and [e.reason for e in ended] == ["done"]
+
+
+async def test_a_quiet_line_mid_checklist_is_never_told_to_wrap_up(monkeypatch):
+    _quick_wrap_up(monkeypatch, has_it=False)   # the brief still has its checklist open
+    higgs = FakeHiggs(FIRST_TURN)
+    rt, ended, _, _ = await _call([], FakeLine(hang_up_after=0.4), higgs)
+    assert not any(_text(e) == phone_caller.WRAP_UP for e in higgs.sent)
+    assert [e.reason for e in ended] == ["hangup"]
+
+
 async def test_speech_over_the_opening_lets_it_play_and_after_it_barges_in(monkeypatch):
     """A "Hello?" while the disclosure is coming or still playing doesn't clear it (hard rule 6); once it
     has played, speech barges in as before."""

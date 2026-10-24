@@ -39,6 +39,9 @@ log = logging.getLogger(__name__)
 
 DEADLINE_MARGIN_S = 5   # as in the sim: end before the Dispatcher does, with the outcome
 END_AFTER_S = 3.0       # once a call is over (caller_tools.over), how long its last words get for end_call
+WRAP_UP_S = 3.0         # once the Caller has what it came for, how long a quiet line waits for it to wrap up
+QUIET_EVERY_S = 0.25    # how often the line is checked for quiet
+WRAP_UP = "[Wrap up now: thank them in one short sentence, say goodbye, and call end_call.]"
 
 
 class PhoneCaller:
@@ -140,8 +143,9 @@ class PhoneCaller:
 async def _talk(higgs: Any, transport: Any, ctx: Any, turns: Turns, playback: Playback,
                 recorder: CallRecorder) -> str:
     """Audio both ways until the Caller's goodbye has played (end_call), the agent hangs up, or the call is
-    over with no end_call (ends_itself). The recorder hears both sides, as the bridge's does, through a
-    guard: a recorder error never ends the call."""
+    over with no end_call (ends_itself). A Caller that has what it came for on a line gone quiet is told to
+    wrap up (wraps_up). The recorder hears both sides, as the bridge's does, through a guard: a recorder
+    error never ends the call."""
     rec = _Guard(ctx.call_id)
 
     async def listen() -> str:
@@ -223,7 +227,29 @@ async def _talk(higgs: Any, transport: Any, ctx: Any, turns: Turns, playback: Pl
                 log.info("listing call %s: over with no end_call; hanging up", ctx.call_id)
                 return ctx.end_reason or "done"
 
-    pumps = {asyncio.create_task(listen()), asyncio.create_task(speak()), asyncio.create_task(ends_itself())}
+    async def wraps_up() -> str:
+        """The Caller has what it came for (_has_it) and the line has been quiet WRAP_UP_S, with nobody
+        speaking, no answer coming and nothing left playing, yet no goodbye: a listing agent who just goes
+        quiet would otherwise hold the line open. It's told once, as a quoted note and a plain
+        response.create (as the call opens), to thank them, say goodbye and call end_call; if it says
+        goodbye without end_call, ends_itself ends the call. Never ends the call itself."""
+        clock = asyncio.get_running_loop().time
+        quiet_since = clock()
+        while True:
+            await asyncio.sleep(QUIET_EVERY_S)
+            if busy or playback.remaining() > 0:
+                quiet_since = clock()
+            elif (clock() - quiet_since >= WRAP_UP_S and not ctx.hang_up and not over.is_set()
+                  and _has_it(ctx)):
+                break
+        log.info("listing call %s: done and quiet; wrapping up", ctx.call_id)
+        note = {"type": "message", "role": "user", "content": [{"type": "input_text", "text": WRAP_UP}]}
+        await higgs.send({"type": "conversation.item.create", "item": note})
+        await higgs.send({"type": "response.create"})
+        await asyncio.Event().wait()   # once only; end_call or ends_itself ends the call
+
+    pumps = {asyncio.create_task(listen()), asyncio.create_task(speak()), asyncio.create_task(ends_itself()),
+             asyncio.create_task(wraps_up())}
     try:
         done, _ = await asyncio.wait(pumps, return_when=asyncio.FIRST_COMPLETED)
         return next(iter(done)).result()
@@ -231,6 +257,12 @@ async def _talk(higgs: Any, transport: Any, ctx: Any, turns: Turns, playback: Pl
         for task in pumps:
             task.cancel()
         await asyncio.gather(*pumps, return_exceptions=True)
+
+
+def _has_it(ctx: Any) -> bool:
+    """Whether the Caller has what it came for: its checklist covered (the viewing booked or settled with
+    it), or a scam warning heard, after which it asks nothing more."""
+    return not ctx.brief.missing() or bool(ctx.flags())
 
 
 class _Guard:
