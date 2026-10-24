@@ -318,3 +318,50 @@ def test_a_listing_called_again_never_shows_the_earlier_calls_outcome():
     assert _with_outcome(state, again).outcome is None
     first = CallView(call_id="c_earlier001", listing_id="t:1", state="ended")
     assert _with_outcome(state, first).outcome == earlier
+
+
+# ── what calls heard re-ranks the board (docs/SCORING.md §4, #103) ──────────
+
+
+def _heard(call_id: str, listing_id: str, field: str, value: str, quote: str) -> OutcomeReady:
+    fact = Fact(field=field, value=value, quote=quote, speaker="Agent heard", at=_at(9))
+    out = CallOutcome(call_id=call_id, listing_id=listing_id, end_reason="done", facts=[fact])
+    return OutcomeReady(session_id=SID, at=_at(10), idem_key=f"{SID}:outcome:{call_id}", outcome=out)
+
+
+async def _brief(rt: SessionRuntime, **prefs) -> None:
+    await _started(rt)
+    await rt.emit(PreferencesUpdated(session_id=SID, at=_at(1), idem_key=f"{SID}:prefs",
+                                     delta=PreferenceDelta(max_monthly=3000, **prefs)))
+
+
+async def test_a_cats_only_place_heard_on_a_call_drops_for_a_dog_owner(rt):
+    await _brief(rt, pets=["a dog"])
+    c1, _ = await _calling(rt)
+    assert "t:1" in rt.get(SID).matches   # the listing says nothing about pets, so it only ranks
+    await rt.emit(_heard(c1, "t:1", "pets", "cats only", "Cats are fine, but no dogs."))
+    view = rt.get(SID)
+    assert "t:1" not in view.matches and "t:2" in view.matches
+
+
+async def test_a_required_parking_fee_heard_on_a_call_raises_monthly_cost_and_its_reason(rt):
+    await _brief(rt)
+    c1, _ = await _calling(rt)
+    card = next(c for c in rt.get(SID).board if c.listing_id == "t:1")
+    assert card.monthly_cost == 2000 and "$1,000 under budget" in card.reasons
+    await rt.emit(_heard(c1, "t:1", "parking_cost", "$175 a month per spot",
+                         "Parking is $175 a month per spot, and it comes with the unit."))
+    card = next(c for c in rt.get(SID).board if c.listing_id == "t:1")
+    assert card.monthly_cost == 2175 and "$825 under budget" in card.reasons
+    assert card.rent == 2000   # the listed rent stays what the listing says
+
+
+async def test_optional_parking_counts_only_for_a_renter_who_needs_it(rt):
+    await _brief(rt)
+    c1, c2 = await _calling(rt)
+    optional = "Parking is optional, $175 a month if you want a spot."
+    await rt.emit(_heard(c1, "t:1", "parking_cost", "$175 a month per spot", optional))
+    assert next(c for c in rt.get(SID).board if c.listing_id == "t:1").monthly_cost == 2000
+    await rt.emit(PreferencesUpdated(session_id=SID, at=_at(11), idem_key=f"{SID}:car",
+                                     delta=PreferenceDelta(must_have=["parking"])))
+    assert next(c for c in rt.get(SID).board if c.listing_id == "t:1").monthly_cost == 2175
