@@ -1,0 +1,47 @@
+{
+  "id": "sofia-tomorrow",
+  "about": "From prod plans s_tdkHCSJyt6 and s_HHhJHTMdRf: the renter's window is 'tomorrow 9 am to 5 pm'. The landlord offers 'tomorrow at 11 am', which should book tomorrow at 11 inside the window",
+  "listing_id": "livrent:100219",
+  "persona": {
+    "name": "Sofia",
+    "manner": "cheerful and quick",
+    "knows": {
+      "availability": "Yes, still available, from November 15th.",
+      "fees": "There's a $35 monthly fee for the storage locker, and that's it."
+    },
+    "offers": [
+      "tomorrow at 11 am",
+      "tomorrow at 4 pm"
+    ],
+    "asks": []
+  },
+  "plan": {
+    "availability": [
+      {
+        "day": "tomorrow",
+        "from": "09:00",
+        "to": "17:00"
+      }
+    ],
+    "may_book": true,
+    "questions": [],
+    "shareable": {
+      "move_in": "December 1",
+      "occupants": 2,
+      "pets": []
+    }
+  },
+  "gold": {
+    "facts": {
+      "available_from": [
+        "november 15"
+      ],
+      "fees": [
+        "35"
+      ]
+    },
+    "booked": "{tomorrow_day} 11:00",
+    "red_flags": false,
+    "status": "booked"
+  }
+}
