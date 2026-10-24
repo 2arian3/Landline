@@ -143,8 +143,8 @@ def _wants(want: Want, state: dict, trace: Trace, catalogue: Catalogue, *, kind:
 def _request(want: Want, state: dict, trace: Trace, catalogue: Catalogue, line: int, check) -> None:
     req, w = state.get("request"), want.request
     assert w is not None
+    check("request", req is not None, "call_listings recorded nothing")
     if req is None:
-        check("request", False, "call_listings recorded nothing")
         return
     if w.listings is not None:
         calls = [t for t in trace.tools if t.name == "call_listings" and t.line <= line]
