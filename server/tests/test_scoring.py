@@ -5,7 +5,7 @@ from datetime import UTC, date, datetime
 import pytest
 
 from landline.contracts import Anchor, Listing, Preferences, Provenance
-from landline.scoring import FeatureMatrix, explain, rank, weights_for
+from landline.scoring import FeatureMatrix, explain, rank, reasons, weights_for
 from landline.scoring import utilities as u
 
 NOW = datetime(2026, 10, 23, tzinfo=UTC)
@@ -171,6 +171,14 @@ def test_distance_is_a_reason_when_close_and_a_watch_out_when_far():
     r = rank(FeatureMatrix.build([near, far]), _prefs(anchors=[KING_AND_BAY]))
     assert "0.8 km from King and Bay" in r.explain("t:near").reasons
     assert r.explain("t:far").watch_out == "6.0 km from King and Bay"
+
+
+def test_a_station_under_a_minute_away_is_next_to_it_never_0_min():
+    transit = reasons._PHRASES["transit"]
+    assert transit(True, {"transit_min": 0.3, "station": "Wellesley"}) == "next to Wellesley station"
+    assert transit(True, {"transit_min": 0.3, "station": None}) == "next to the subway"
+    assert transit(True, {"transit_min": 1.4, "station": "Wellesley"}) == "1 min walk to Wellesley"
+    assert transit(False, {"transit_min": 12.0, "station": None}) == "12 min walk to the subway"
 
 
 def test_watch_out_names_the_worst_known_feature():
