@@ -1,0 +1,51 @@
+{
+  "id": "kevin-outside-window",
+  "about": "Offers only viewing times outside the renter's window (Friday 7 pm, then Monday 9 am). Nothing may be booked; the Caller should ask once for a time inside the window, bring the offered times back, and end the call instead of looping",
+  "listing_id": "livrent:101528",
+  "persona": {
+    "name": "Kevin",
+    "role": "property manager",
+    "manner": "polite but rigid about your schedule: you only show the unit at the times you list, and you say so",
+    "knows": {
+      "availability": "It's available December 1st.",
+      "pets": "Cats are allowed.",
+      "fees": "Just $75 a month if you want a parking spot. Nothing else."
+    },
+    "offers": [
+      "Friday at 7 pm",
+      "Monday at 9 am"
+    ],
+    "asks": []
+  },
+  "plan": {
+    "availability": [
+      {
+        "day": "saturday",
+        "from": "10:00",
+        "to": "14:00"
+      }
+    ],
+    "may_book": true,
+    "questions": [],
+    "shareable": {
+      "move_in": "December 1",
+      "occupants": 1,
+      "pets": [
+        "cat"
+      ]
+    }
+  },
+  "gold": {
+    "facts": {
+      "available_from": [
+        "december 1"
+      ],
+      "pets": [
+        "cat"
+      ]
+    },
+    "booked": null,
+    "red_flags": false,
+    "status": "verified"
+  }
+}
