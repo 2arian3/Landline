@@ -115,7 +115,6 @@ Only into the Concierge, only between turns, as one `user` `input_text` item, qu
 | GET | `/api/listings/{listing_id}` | `ListingDetail` (with provenance and City record) |
 | GET | `/api/calls/{call_id}/turns` | live captions for a call |
 | POST | `/api/judge/start` | `{session_id, ws_url}` for browser audio |
-| POST | `/api/sessions/{id}/avatar` | While the renter's call is live: `{url, room, identity, token}` to watch Landline's face lip-sync it in a LiveKit room (the token only subscribes; the avatar is `identity`). The first ask starts the avatar (A-11). 404 `{reason: "off"}` without LiveKit keys, 404 `{reason: "no_call"}` with no live call, 503 `{reason: "unavailable", retry_after_s}` after a refused start |
 | GET | `/health` | `{status, listings, sessions, transport, higgs}` |
 | POST | `/api/me` | `{phone}` → that number's saved search, chosen places, sessions and calls (the admin user shape). 422 when `phone` isn't a number; 404 when it isn't stored or there is no database. Transcripts and recordings stay on the admin routes. |
 | GET | `/api/admin/users` | Admin: every renter with counts (needs `Authorization: Bearer $ADMIN_TOKEN`; 404 when unset) |

@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from landline.agents.auditor import llm as auditor_llm
-from landline.api import admin, avatar, browser_audio, me, twilio
+from landline.api import admin, browser_audio, me, twilio
 from landline.api.demo import DemoSessions
 from landline.api.judge import JudgeLines, StartLimit
 from landline.api.routes import router
@@ -19,7 +19,6 @@ from landline.db.catalogue import Catalogue
 from landline.db.pool import Database
 from landline.orchestrator import SessionRuntime
 from landline.voice import higgs, outbound
-from landline.voice.avatar import Avatars
 from landline.voice.calls import RenterCalls
 from landline.voice.dispatch import Dispatcher
 from landline.voice.line import Lines
@@ -87,8 +86,6 @@ def create_app(settings: Settings | None = None, catalogue: Catalogue | None = N
         # The renter's phone calls (A-02, A-04). Tests swap connect_higgs for a fake.
         app.state.calls = RenterCalls(settings.higgs_max_sessions)
         app.state.connect_higgs = higgs.connect
-        # The Concierge's face on the renter's board (A-11), off without LiveKit keys. Tests swap it.
-        app.state.avatars = Avatars.from_settings(settings)
         # Texts the phone renter their board link. Tests swap it for a fake.
         app.state.texter = Texter(settings.twilio_account_sid, settings.twilio_auth_token)
         # The hand-off (A-06): a brief that ends with a plan has its calls queued and run. A judge's calls
@@ -108,7 +105,6 @@ def create_app(settings: Settings | None = None, catalogue: Catalogue | None = N
                                           translate=Translator(chat))
         yield
         await app.state.dispatcher.close()
-        await app.state.avatars.aclose()
         await outbound.uninstall(app.state.outbound)
         await app.state.texter.close()
         app.state.sessions.close()
@@ -133,7 +129,6 @@ def create_app(settings: Settings | None = None, catalogue: Catalogue | None = N
     app.include_router(admin.router)
     app.include_router(twilio.router)
     app.include_router(browser_audio.router)
-    app.include_router(avatar.router)
     return app
 
 

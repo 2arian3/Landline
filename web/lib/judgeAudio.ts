@@ -14,10 +14,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
  *
  * Everything the page shows comes from real signals: the mic level is the
  * microphone's RMS, "Landline is talking" is audio actually queued to play.
- *
- * `quiet(true)` hushes Landline's audio without stopping it: the avatar
- * (components/AvatarTile.tsx) then speaks the same words in step with its lips.
- * "Landline is talking" and barge-in work the same either way.
  */
 
 export type LineState = "idle" | "connecting" | "live" | "ended" | "dropped";
@@ -74,8 +70,6 @@ export function useJudgeLine() {
 
   const ws = useRef<WebSocket | null>(null);
   const ctx = useRef<AudioContext | null>(null);
-  const out = useRef<GainNode | null>(null); // where Landline's audio plays; hushed while the avatar speaks
-  const hushed = useRef(false);
   const stream = useRef<MediaStream | null>(null);
   const queued = useRef<AudioBufferSourceNode[]>([]);
   const playUntil = useRef(0);
@@ -97,7 +91,6 @@ export function useJudgeLine() {
     stream.current = null;
     void ctx.current?.close().catch(() => {});
     ctx.current = null;
-    out.current = null;
     setLevel(0);
     setTalking(false);
   }, []);
@@ -109,10 +102,6 @@ export function useJudgeLine() {
       stream.current = mic;
       const ac = new AudioContext();
       ctx.current = ac;
-      const gain = ac.createGain();
-      gain.gain.value = hushed.current ? 0 : 1;
-      gain.connect(ac.destination);
-      out.current = gain;
       let node: AudioWorkletNode;
       try {
         await ac.audioWorklet.addModule(URL.createObjectURL(new Blob([WORKLET], { type: "text/javascript" })));
@@ -190,7 +179,7 @@ export function useJudgeLine() {
         for (let i = 0; i < pcm.length; i++) ch[i] = pcm[i] / 0x8000;
         const src = ac.createBufferSource();
         src.buffer = buf;
-        src.connect(gain);
+        src.connect(ac.destination);
         const at = Math.max(ac.currentTime + 0.02, playUntil.current);
         src.start(at);
         playUntil.current = at + buf.duration;
@@ -222,11 +211,6 @@ export function useJudgeLine() {
     });
   }, []);
 
-  const quiet = useCallback((on: boolean) => {
-    hushed.current = on;
-    if (out.current) out.current.gain.value = on ? 0 : 1;
-  }, []);
-
   const end = useCallback(() => {
     ending.current = true;
     if (ws.current && ws.current.readyState <= WebSocket.OPEN) ws.current.close(1000, "renter ended");
@@ -242,5 +226,5 @@ export function useJudgeLine() {
     teardown();
   }, [teardown]);
 
-  return { state, muted, level: muted ? 0 : level, talking, start, toggleMute, end, quiet };
+  return { state, muted, level: muted ? 0 : level, talking, start, toggleMute, end };
 }

@@ -4,7 +4,6 @@ import { AnimatePresence, motion } from "motion/react";
 import dynamic from "next/dynamic";
 import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Drawer } from "vaul";
-import { AvatarTile } from "./AvatarTile";
 import { Board } from "./Board";
 import { DemoControls } from "./DemoControls";
 import type { Mark } from "./ListingCard";
@@ -37,26 +36,17 @@ const SNAPS: (string | number)[] = [PEEK, 0.56, 1];
  * Judge mode reuses it: `intro` replaces the panel until a session exists,
  * `dock` (the voice controls) stays pinned to the panel, and `line` puts the
  * voice line's state in the header while it isn't live.
- *
- * `avatar` puts Landline's face (a Higgs Avatar lip-syncing the renter's call)
- * in the bottom corner of the map while the call is live, like the other side
- * of a video call. `face` puts a ready-made tile there instead (judge mode's,
- * which also takes over the voice).
  */
 export function LiveBoard({
   sessionId,
   intro,
   dock,
   line = null,
-  avatar = false,
-  face,
 }: {
   sessionId: string | null;
   intro?: ReactNode;
   dock?: ReactNode;
   line?: string | null;
-  avatar?: boolean;
-  face?: ReactNode;
 }) {
   const { view, stale, unreachable } = useLiveSession(sessionId);
   const points = useCatalogue();
@@ -294,21 +284,6 @@ export function LiveBoard({
   const idle = !!intro && !sessionId;
   const brand = <Brand stale={stale} connected={!!view} idle={idle} line={line} />;
 
-  // The face sits in the map's bottom corner; on a phone, just above the sheet. With the sheet all the way up
-  // it's hidden, not unmounted, so its room (and its voice, in judge mode) carries on.
-  const corner =
-    face ??
-    (avatar && sessionId ? (
-      <AvatarTile sessionId={sessionId} active={view?.phase === "open"} />
-    ) : null);
-  const cornerStyle: CSSProperties = desktop
-    ? { right: 16, bottom: 16 }
-    : {
-        right: 12,
-        bottom: snap === PEEK ? `calc(${PEEK} + 12px)` : "calc(56dvh + 12px)",
-        visibility: snap === 1 ? "hidden" : undefined,
-      };
-
   // One tree for both layouts, with the map in the same place in it, so a phone turning between the sheet
   // and the split layout keeps its map: the WebGL context, the tiles and where the renter had panned.
   return (
@@ -328,14 +303,6 @@ export function LiveBoard({
               {brand}
             </div>
           </header>
-        )}
-        {corner && (
-          <div
-            className={`pointer-events-none absolute z-10 transition-[bottom] duration-200 ease-out ${compact ? "w-[120px]" : "w-[176px]"}`}
-            style={cornerStyle}
-          >
-            <div className="pointer-events-auto">{corner}</div>
-          </div>
         )}
       </main>
       {desktop ? (
