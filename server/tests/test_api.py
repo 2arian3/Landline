@@ -388,9 +388,35 @@ def test_judge_hang_up_frees_the_line_at_once_and_calls_nothing():
         assert c.post("/api/judge/start").json()["reason"] == "busy"
         r = c.post(f"/api/judge/{sid}/hang-up")
         assert r.status_code == 204 and r.content == b""
-        assert c.get(f"/api/sessions/{sid}").json()["phase"] == "open"   # the brief is left as it was
+        assert c.get(f"/api/sessions/{sid}").json()["phase"] == "open"   # a planned brief is left as it was
         assert c.post(f"/api/judge/{sid}/hang-up").status_code == 204    # again: harmless
         assert c.post("/api/judge/start").status_code == 200
+
+
+def test_judge_hang_up_closes_a_brief_that_never_got_going():
+    with _judge_client(1) as c:
+        sid = c.post("/api/judge/start").json()["session_id"]
+        assert c.post(f"/api/judge/{sid}/hang-up").status_code == 204
+        assert c.get(f"/api/sessions/{sid}").json()["phase"] == "closed"   # nothing would close it otherwise
+
+
+def test_a_live_socket_keeps_its_line_whatever_the_page_says():
+    now = [0.0]
+    lines = JudgeLines(cap=1, deadline_s=960, clock=lambda: now[0])
+    sid = lines.take()
+    assert lines.connected(sid)
+    assert not lines.connected(sid)        # a second socket for the same line is refused
+    assert lines.release(sid) is False     # a stray beacon or a second tab can't free it
+    now[0] = 899.0                         # a long call, past the old 600 s deadline
+    assert lines.take() is None
+    lines.hang_up(sid)                     # the socket closed
+    assert lines.take() is not None
+
+
+def test_a_judge_lines_backstop_outlasts_the_call_deadline():
+    # A connected line frees when its socket closes; the deadline is only a backstop.
+    with _judge_client(1) as c:
+        assert c.app.state.judges.deadline_s > c.app.state.settings.renter_call_max_s
 
 
 def test_judge_lines_free_after_the_connect_window_through_the_api():

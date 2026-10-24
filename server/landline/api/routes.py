@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import math
 import secrets
@@ -259,7 +260,7 @@ async def judge_done(session_id: str, request: Request) -> SessionView | JSONRes
         return _refused(503, "closed", CLOSED)
     if not _live(request, session_id):
         raise HTTPException(404, "unknown session")
-    state.judges.hang_up(session_id)
+    state.judges.release(session_id)   # an open socket's line frees when the socket closes
     return await _emit(request, SessionEnded(**_meta(session_id, "ended"), reason="end_session"))
 
 
@@ -294,10 +295,15 @@ async def _emit(request: Request, event: Event) -> SessionView:
 
 @router.post("/api/judge/{session_id}/hang-up", status_code=204)
 async def judge_hang_up(session_id: str, request: Request) -> Response:
-    """/try leaving (a beacon on pagehide) or starting again: the judge's line frees at once instead of at
-    its timeout. Only the line: unlike Done, nothing gets called. Ungated and idempotent, because freeing
-    a line is always safe and a beacon can arrive after Done already freed it."""
-    request.app.state.judges.hang_up(session_id)
+    """/try leaving (a beacon on pagehide) or starting again. A line whose socket never opened frees at
+    once instead of at its timeout, and a brief with nothing requested closes, since nothing else would
+    close it; nothing gets called from here. An open socket's line frees when the socket closes, and the
+    bridge ends that brief. Ungated and idempotent: a beacon can arrive after Done or the socket."""
+    state = request.app.state
+    freed = state.judges.release(session_id)
+    if freed and _live(request, session_id) and state.runtime.state(session_id).request is None:
+        with contextlib.suppress(HTTPException):   # already ended: nothing to do
+            await _emit(request, SessionEnded(**_meta(session_id, "ended"), reason="closed"))
     return Response(status_code=204)
 
 
