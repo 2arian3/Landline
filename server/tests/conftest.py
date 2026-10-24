@@ -6,6 +6,9 @@ every test that asks for it skips.
 
 On Windows the tests run on the selector event loop: psycopg's async pool can't use the default
 Proactor loop, and every Postgres test there timed out opening it. CI (Linux) is untouched.
+
+Tests never send traces to Logfire, even with LOGFIRE_TOKEN in .env: the empty value set here wins over
+.env's, so app.py never configures it.
 """
 import asyncio
 import os
@@ -21,6 +24,8 @@ from landline.db.pool import Database
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+os.environ["LOGFIRE_TOKEN"] = ""
 
 URL = os.environ.get("TEST_DATABASE_URL")
 
