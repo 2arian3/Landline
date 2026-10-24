@@ -31,7 +31,7 @@ from typing import Any
 from landline.agents.auditor import extract as extractor
 from landline.agents.auditor import grounding, when
 from landline.agents.auditor.flags import Flag, red_flags
-from landline.agents.auditor.values import Refused, Value, fee_name, settle
+from landline.agents.auditor.values import Refused, Value, call_day, fee_name, settle
 from landline.agents.caller import slots
 from landline.contracts import CallOutcome, Conflict, EndReason, Fact, Viewing
 
@@ -173,13 +173,14 @@ def build(call: CallRecord, candidates: Sequence[extractor.Candidate], status: s
         result.dropped.append(Dropped(f, quote, source, why))
         return None
 
+    day = call_day(call.ended_at)   # "tomorrow" counts from the call's own day (#138)
     live: list[Heard] = []
     for tf in call.tool_facts:
         turn = ground(tf.field, tf.quote, "tool")
         if turn is None:
             continue
         try:
-            live.append(Heard(settle(tf.field, tf.value, tf.quote), tf.quote, turn.idx, "tool"))
+            live.append(Heard(settle(tf.field, tf.value, tf.quote, today=day), tf.quote, turn.idx, "tool"))
         except Refused as e:
             result.dropped.append(Dropped(tf.field, tf.quote, "tool", f"unreadable: {e}"))
     read: list[Heard] = []
@@ -189,7 +190,7 @@ def build(call: CallRecord, candidates: Sequence[extractor.Candidate], status: s
             continue
         try:
             v = settle(c.field, c.value, c.quote, amount=c.amount, count=c.count, each=c.each,
-                       period=c.period, mandatory=c.mandatory, name=c.name)
+                       period=c.period, mandatory=c.mandatory, name=c.name, today=day)
         except Refused as e:
             result.dropped.append(Dropped(c.field, c.quote, "transcript", f"unreadable: {e}"))
             continue
