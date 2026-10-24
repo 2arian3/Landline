@@ -3,8 +3,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { callNotes } from "./outcome.ts";
-import type { CallView, Card } from "./types.ts";
+import { callNotes, unheard } from "./outcome.ts";
+import type { CallView, Card, EndReason } from "./types.ts";
 
 const card = (address: string) => ({ address }) as Card;
 const LEASE = "Would they sign a 12-month lease?";
@@ -111,4 +111,33 @@ test("a place the Narrator couldn't name ends the run before its agent's questio
 test("a window clause with a period in it", () => {
   const text = "I booked 5 Main St for Saturday at 2 pm, inside your Sat. afternoon.";
   assert.equal(callNotes(called("5 Main St"), text).viewing, "Saturday at 2 pm");
+});
+
+// unheard: a no_answer card whose call was answered, hung up or dropped says how it ended (#152).
+const noAnswer = (id = "t:1") => ({ listing_id: id, status: "no_answer" }) as Card;
+const ended = (end_reason: EndReason, facts: unknown[] = [], call_id = "c_1", listing_id = "t:1") =>
+  ({ call_id, listing_id, state: "ended", outcome: { call_id, listing_id, end_reason, facts, conflicts: [], red_flags: [], open_questions: [] } }) as CallView;
+
+test("a call that learned nothing is worded from how it ended", () => {
+  const words: Record<EndReason, string> = {
+    no_answer: "No answer", busy: "No answer", voicemail: "Left a message", hangup: "Hung up early",
+    timeout: "Call dropped", failed: "Call dropped", blocked: "Couldn’t call", done: "Reached, nothing new",
+    refused: "Wouldn’t answer", wrong_number: "Wrong number",
+  };
+  for (const [reason, word] of Object.entries(words) as [EndReason, string][]) {
+    assert.equal(unheard(noAnswer(), [ended(reason)])?.word, word, reason);
+  }
+  assert.equal(unheard(noAnswer(), [ended("hangup")])?.line, "The agent hung up before Landline could ask anything.");
+});
+
+test("a card that heard facts, another status, or no outcome yet is left as it is", () => {
+  assert.equal(unheard(noAnswer(), [ended("hangup", [{ field: "pets" }])]), null);
+  assert.equal(unheard({ listing_id: "t:1", status: "verified" } as Card, [ended("done")]), null);
+  assert.equal(unheard(noAnswer(), [{ call_id: "c_1", listing_id: "t:1", state: "live" } as CallView]), null);
+  assert.equal(unheard(noAnswer("t:2"), [ended("hangup")]), null);   // another place's call
+  assert.equal(unheard(undefined, [ended("hangup")]), null);
+});
+
+test("the latest call to the place decides", () => {
+  assert.equal(unheard(noAnswer(), [ended("no_answer", [], "c_1"), ended("voicemail", [], "c_2")])?.word, "Left a message");
 });
