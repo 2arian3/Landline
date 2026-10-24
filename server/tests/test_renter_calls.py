@@ -2,24 +2,41 @@
 stream → fake Higgs) and the browser (judge start → audio socket → fake Higgs)."""
 import asyncio
 import base64
+import json
 import re
+import time
 from dataclasses import replace
+from datetime import UTC, datetime
 
 import pytest
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
+from landline.agents.concierge import tools
 from landline.agents.concierge.prompt import GREETING
 from landline.api.browser_audio import JUDGE_AUDIO_PATH
 from landline.api.twilio import BUSY, NOT_READY
 from landline.app import create_app
 from landline.config import Settings
+from landline.contracts import Listing
 from landline.db.catalogue import Catalogue
-from landline.voice import twilio
+from landline.voice import bridge, twilio
 from landline.voice.calls import CLAIM_WITHIN_S, RenterCalls
 
 PUBLIC = "https://landline.test"
 TOKEN = "test-token"
+T0 = datetime(2026, 10, 23, tzinfo=UTC)
+
+
+def _listing(i: int, rent: int, beds: float) -> Listing:
+    return Listing(listing_id=f"t:{i}", source="t", source_id=str(i), url=f"https://example.com/{i}",
+                   first_seen=T0, last_seen=T0, address=f"{i} Test St", lat=43.65, lng=-79.38,
+                   rent=rent, monthly_cost=rent, beds=beds, sqft=700)
+
+
+def _tool_call(name: str, arguments: dict, tool_call_id: str = "fc_1") -> dict:
+    return {"type": "response.function_call_arguments.done", "call_id": tool_call_id, "name": name,
+            "arguments": json.dumps(arguments)}
 
 
 class FakeHiggs:
@@ -57,12 +74,23 @@ class FakeHiggs:
 def _client(**overrides) -> TestClient:
     settings = Settings(database_url=None, web_url="http://localhost:3000", transport="stub",
                         boson_api_key="test-key", twilio_auth_token=TOKEN, public_url=PUBLIC)
-    return TestClient(create_app(replace(settings, **overrides), Catalogue([], "test")))
+    catalogue = Catalogue([_listing(1, 2400, 1), _listing(2, 2900, 2), _listing(3, 3600, 2)], "test")
+    return TestClient(create_app(replace(settings, **overrides), catalogue))
 
 
 def _start(call_id: str, sid: str = "MZ1") -> dict:
     return {"event": "start", "streamSid": sid,
             "start": {"streamSid": sid, "callSid": "CA1", "customParameters": {"call_id": call_id}}}
+
+
+def _hang_up_and_wait(c: TestClient, ws, session_id: str) -> None:
+    """The judge hangs up, and the server finishes ending the call before the test goes on. Leaving the
+    `with websocket_connect` block alone isn't enough: Starlette's TestClient sends the disconnect and then
+    cancels the server's task at once, so the call could be cut off before it sees the hang-up."""
+    ws.close(1000)
+    deadline = time.monotonic() + 5
+    while session_id in c.app.state.judges.open and time.monotonic() < deadline:   # freed last
+        time.sleep(0.01)
 
 
 def _ring(c: TestClient, params: dict | None = None, token: str = TOKEN):
@@ -104,7 +132,7 @@ def test_twiml_says_so_when_higgs_is_not_configured_or_lines_are_busy():
 
 # ── media stream ↔ Higgs ────────────────────────────────────────────────────
 
-def test_bridge_passes_audio_both_ways_with_no_tools():
+def test_bridge_passes_audio_both_ways_and_ends_the_phone_session():
     fake = FakeHiggs(script=[
         {"type": "response.output_audio.delta", "delta": "AAAA"},
         {"type": "input_audio_buffer.speech_started"},
@@ -126,7 +154,8 @@ def test_bridge_passes_audio_both_ways_with_no_tools():
         session = fake.session["session"]
         assert session["audio"]["input"]["format"] == {"type": "audio/pcmu"}
         assert session["audio"]["output"]["format"] == {"type": "audio/pcmu"}
-        assert (session["tools"], session["tool_choice"]) == ([], "none")   # the Concierge only talks for now
+        assert [t["name"] for t in session["tools"]] == [t["name"] for t in tools.TOOLS]
+        assert session["tool_choice"] == "auto"
         assert fake.sent == [
             {"type": "response.create", "response": {"instructions": GREETING}},
             {"type": "input_audio_buffer.append", "audio": "//8="},
@@ -135,6 +164,31 @@ def test_bridge_passes_audio_both_ways_with_no_tools():
         assert call.call_id not in c.app.state.calls.live
         assert c.app.state.calls.recent[-1].end_reason == "hangup"
         assert c.get("/health").json()["higgs"] == "ok"
+        # The call started a phone session in the runtime, and hanging up with no plan closed it.
+        assert c.app.state.runtime.state(call.session_id).caller_phone == "+14165550100"
+        assert c.app.state.runtime.get(call.session_id).phase == "closed"
+
+
+def test_a_tool_call_changes_the_session_and_speaks_its_board():
+    fake = FakeHiggs(script=[
+        _tool_call("update_preferences", {"max_monthly": 3000, "min_beds": 2}),
+        {"type": "response.output_audio.delta", "delta": "AAAA"},   # handled after the tool, in order
+    ])
+    with _client() as c:
+        c.app.state.connect_higgs = fake.connect
+        call = c.app.state.calls.open(caller="+14165550100")
+        with c.websocket_connect("/twilio/media") as ws:
+            ws.send_json(_start(call.call_id))
+            assert ws.receive_json()["event"] == "media"
+            view = c.app.state.runtime.get(call.session_id)
+            ws.send_json({"event": "stop", "streamSid": "MZ1"})
+        assert (view.preferences.max_monthly, view.preferences.min_beds) == (3000, 2)
+        assert [b.listing_id for b in view.board] == ["t:2"]
+        assert fake.sent[1:3] == [
+            {"type": "conversation.item.create",
+             "item": {"type": "function_call_output", "call_id": "fc_1", "output": view.agent_says}},
+            {"type": "response.create"},
+        ]
 
 
 def test_bridge_refuses_a_stream_with_an_unknown_call_id():
@@ -189,6 +243,7 @@ def test_browser_call_streams_pcm_both_ways_and_frees_the_judge_line():
             assert ws.receive_bytes() == spoken
             assert ws.receive_json() == {"type": "clear"}
             ws.send_bytes(b"\x03\x00\x04\x00")   # the judge's microphone
+            _hang_up_and_wait(c, ws, start["session_id"])
         session = fake.session["session"]
         pcm = {"type": "audio/pcm", "rate": 24000}
         assert session["audio"]["input"]["format"] == pcm and session["audio"]["output"]["format"] == pcm
@@ -209,6 +264,40 @@ def test_browser_socket_refuses_a_session_without_a_judge_line():
             with pytest.raises(WebSocketDisconnect) as closed:
                 ws.receive_bytes()
         assert closed.value.code == 1008 and fake.session is None
+
+
+def test_end_session_hangs_up_once_the_goodbye_has_played(monkeypatch):
+    monkeypatch.setattr(bridge, "HANG_UP_GRACE_S", 0.01)
+    goodbye = base64.b64encode(b"\x00\x00" * 2400).decode()   # 0.1 s of 24 kHz PCM16
+    fake = FakeHiggs(script=[
+        {"type": "response.output_audio.delta", "delta": goodbye},
+        _tool_call("end_session", {}, "fc_bye"),
+        {"type": "response.done"},
+    ])
+    with _client(judge_audio_ready=True) as c:
+        c.app.state.connect_higgs = fake.connect
+        start = c.post("/api/judge/start").json()
+        with c.websocket_connect(start["ws_url"]) as ws:
+            assert len(ws.receive_bytes()) == 4800
+            with pytest.raises(WebSocketDisconnect):   # the server hangs up; the judge didn't
+                ws.receive_bytes()
+        assert c.app.state.calls.recent[-1].end_reason == "end_session"
+        assert c.app.state.runtime.get(start["session_id"]).phase == "closed"
+        # The goodbye was already said: no new response after end_session's answer.
+        assert fake.sent[-1] == {"type": "conversation.item.create", "item": {
+            "type": "function_call_output", "call_id": "fc_bye", "output": "Goodbye."}}
+
+
+def test_playback_clock_counts_audio_sent_and_resets_on_barge_in():
+    now = [10.0]
+    clock = bridge.Playback(48000, clock=lambda: now[0])
+    clock.sent(base64.b64encode(b"\x00" * 48000).decode())   # one second of 24 kHz PCM16
+    clock.sent(base64.b64encode(b"\x00" * 24000).decode())
+    assert clock.remaining() == pytest.approx(1.5)
+    now[0] += 1.0
+    assert clock.remaining() == pytest.approx(0.5)
+    clock.clear()
+    assert clock.remaining() == 0
 
 
 def test_an_open_socket_holds_its_judge_line_past_the_connect_window():
