@@ -16,7 +16,6 @@ from fastapi import WebSocket
 
 from landline.config import Settings
 from landline.orchestrator import SessionRuntime
-from landline.voice.avatar import Avatars
 from landline.voice.bridge import POLICY_VIOLATION, close_socket, converse
 from landline.voice.calls import RenterCalls
 from landline.voice.higgs import PCM_24K, ConnectHiggs
@@ -55,8 +54,7 @@ class BrowserTransport:
 
 async def run_browser(ws: WebSocket, session_id: str, *, calls: RenterCalls, judges: JudgeLines,
                       runtime: SessionRuntime, connect_higgs: ConnectHiggs, settings: Settings,
-                      set_status: Callable[[str], None] = lambda _: None, lines: Lines | None = None,
-                      avatars: Avatars | None = None) -> None:
+                      set_status: Callable[[str], None] = lambda _: None, lines: Lines | None = None) -> None:
     """The judge's audio socket for `session_id`, a session /api/judge/start already started in the
     runtime. Ends the call and frees the judge line when it closes."""
     await ws.accept()
@@ -75,7 +73,7 @@ async def run_browser(ws: WebSocket, session_id: str, *, calls: RenterCalls, jud
         calls.claim(call.call_id)
         log.info("browser call %s opened for session %s", call.call_id, session_id)
         await converse(BrowserTransport(ws), call, calls=calls, runtime=runtime, connect_higgs=connect_higgs,
-                       settings=settings, set_status=set_status, lines=lines, avatars=avatars)
+                       settings=settings, set_status=set_status, lines=lines)
     finally:
         judges.hang_up(session_id)
         await close_socket(ws)
