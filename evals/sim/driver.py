@@ -121,22 +121,22 @@ async def simulate(case_id: str, run: int, opponent: Opponent, *, catalogue: Cat
                    prefs: dict[str, Any] | None = None, taps: dict[int, int] | None = None,
                    reader: Any | None = None) -> Trace:
     """One conversation between the Concierge and `opponent`, to its end. Never raises for what the
-    agent or Higgs did: that goes in the trace. With `remembered` (what Profiles would say about this
-    number) and `prefs` (the search it would restore), the caller is a returning one. `taps` maps a line
-    to the rank of the pin the renter taps instead of speaking it. `reader` (a text model) turns on the
-    bridge's catch-up for a line in another script answered with no tool; replays leave it off."""
+    agent or Higgs did: that goes in the trace. `remembered` is ignored: last-session memory is not
+    appended (#144). `prefs` still seeds the board when a case says so. `taps` maps a line to the rank of
+    the pin the renter taps instead of speaking it. `reader` (a text model) turns on the bridge's catch-up
+    for a line in another script answered with no tool; replays leave it off."""
     sid = f"s_sim_{case_id}_{run}"          # ids come from code, never from the model
     runtime = SessionRuntime(catalogue)
     await runtime.start(SessionStarted(session_id=sid, at=datetime.now(UTC), idem_key=f"{sid}:started",
                                        channel="judge"))
-    if prefs:   # Profiles restores a returning caller's search before the call opens
+    if prefs:   # a case can start the board already narrowed; this is not last-session memory
         await runtime.emit(PreferencesUpdated(session_id=sid, at=datetime.now(UTC),
                                               idem_key=f"{sid}:remembered", delta=PreferenceDelta(**prefs)))
     trace = Trace(case_id=case_id, run=run, session_id=sid)
     ctx = tools.ToolContext(session_id=sid, call_id=f"c_sim_{case_id}_{run}", runtime=runtime)
     higgs: Recorded | None = None
     try:
-        instructions, start = opening(remembered)   # the bridge's own: greeting or welcome back
+        instructions, start = opening(remembered)   # ignored (#144)
         higgs = Recorded(await connect_higgs(api_key, session_config(
             instructions=instructions, tools=tools.TOOLS, modality="text")))
         stream = higgs.events().__aiter__()

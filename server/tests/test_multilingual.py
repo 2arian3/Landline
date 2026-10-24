@@ -1,6 +1,6 @@
-"""Renters in any language (A-04): the results text is translated with every number checked, a returning
-caller is welcomed back in their language, and the transcription gets their language as a hint. No
-network: the text model is a fake."""
+"""Renters in any language (A-04): the results text is translated with every number checked. A previous
+call's language is not appended and is not a transcription hint (#144). No network: the text model is a
+fake."""
 import asyncio
 from datetime import UTC, datetime
 
@@ -8,7 +8,6 @@ from landline.agents.concierge.prompt import (
     CALL_CONNECTED,
     FIRST_CALL,
     INSTRUCTIONS,
-    WELCOME_BACK,
     language_name,
     primary,
 )
@@ -153,11 +152,12 @@ async def test_a_bad_translation_texts_the_english_results():
 # Opening a call
 
 
-def test_a_returning_caller_is_welcomed_back_in_their_language():
-    instructions, _ = bridge.opening("Last call: a 1 bed under $2,500.", "es")
-    assert "This renter spoke Spanish on their last call. Welcome them back in Spanish" in instructions
-    assert instructions.index("spoke Spanish") < instructions.index(WELCOME_BACK)
-    assert bridge.hint("Last call: …", "es-MX") == "es"
+def test_a_previous_call_is_not_appended_and_does_not_hint_the_language():
+    instructions, start = bridge.opening("Last call: a 1 bed under $2,500.", "es")
+    assert instructions == INSTRUCTIONS + FIRST_CALL
+    assert "Spanish" not in instructions and "Last call" not in instructions
+    assert start[-1] == {"type": "response.create"}
+    assert bridge.hint("Last call: …", "es-MX") is None
 
 
 def test_english_or_a_first_call_adds_no_language_line_and_no_hint():
