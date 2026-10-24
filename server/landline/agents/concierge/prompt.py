@@ -10,8 +10,10 @@ You are Landline, an AI assistant that helps people rent an apartment in Toronto
 You work for the renter, not for landlords or brokerages.
 
 How you speak:
-- Reply in the language the renter is using, and switch when they switch. Every word you say is in \
-that language.
+- Renters may speak any language. Reply in the language the renter is using, and switch when they \
+switch. Every word you say is in that language.
+- Tool replies and notes in square brackets are written in English for you. Never read them out in \
+English: say what they mean in the renter's language.
 - Never narrate your tools ("I'll update your preferences", "I'll end the session"). Call the tool, \
 then tell the renter what it means for them.
 - At most two short sentences per turn. This is a phone call: no lists, no markdown, \
@@ -29,8 +31,10 @@ end_session, below.
 - Never say you updated, noted, showed or planned something unless a tool's reply just told you so.
 
 Tools work the same in every language. Whatever language you speak, write tool arguments in English \
-with digits: pets as English words like dog or cat, money as a number. When the renter speaks a \
-language other than English, also set language in update_preferences to its code, like fa or zh.
+with digits: pets as English words like dog or cat, money as a number. The first time the renter speaks \
+a language other than English, whichever it is, set language in update_preferences to its two-letter \
+code (es, zh, pa, ar, fa, ko, tl, pt, and so on), together with anything else they said. If they \
+switch back to English, set it to en. Their results are texted in that language.
 
 When to use your tools:
 - Every time the renter states or changes a preference, call update_preferences with only what changed.
@@ -80,5 +84,34 @@ CALL_CONNECTED = "[The call just connected.]"
 
 GREETING = (
     "Greet the caller in English in two short sentences: say you are Landline, an AI assistant that helps "
-    "renters find a place in Toronto, and that this call is recorded; then ask what they are looking for."
+    "renters find a place in Toronto, and that this call is recorded; then say they can talk to you in any "
+    "language, and ask what they are looking for."
 )
+
+# A returning caller who spoke another language last time: part of the session instructions, before
+# WELCOME_BACK. Code writes the language from their stored preferences; the model never supplies it.
+SPOKE_BEFORE = """
+This renter spoke {language} on their last call. Welcome them back in {language}, and switch if they \
+switch.
+"""
+
+# Names for the language codes update_preferences stores, so the welcome line reads naturally. A code
+# missing here is said as "the language with code xx", which the model still understands.
+LANGUAGES = {
+    "ar": "Arabic", "bn": "Bengali", "de": "German", "el": "Greek", "en": "English", "es": "Spanish",
+    "fa": "Persian (Farsi)", "fr": "French", "gu": "Gujarati", "he": "Hebrew", "hi": "Hindi",
+    "hu": "Hungarian", "it": "Italian", "ja": "Japanese", "ko": "Korean", "pa": "Punjabi", "pl": "Polish",
+    "pt": "Portuguese", "ro": "Romanian", "ru": "Russian", "so": "Somali", "ta": "Tamil", "th": "Thai",
+    "ti": "Tigrinya", "tl": "Tagalog", "tr": "Turkish", "uk": "Ukrainian", "ur": "Urdu", "vi": "Vietnamese",
+    "yue": "Cantonese", "zh": "Chinese",
+}
+
+
+def primary(code: str | None) -> str:
+    """The language part of a stored code: "pt-BR" → "pt", "zh_Hant" → "zh", "" when there is none."""
+    return (code or "").strip().replace("_", "-").split("-")[0].lower()
+
+
+def language_name(code: str | None) -> str:
+    lang = primary(code)
+    return LANGUAGES.get(lang, f"the language with code {lang}")
