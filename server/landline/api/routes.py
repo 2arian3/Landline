@@ -101,10 +101,23 @@ async def feedback(session_id: str, body: FeedbackBody, request: Request) -> Ses
 
 
 @router.post("/api/sessions/{session_id}/calls", response_model=SessionView)
-async def call_top(session_id: str, request: Request) -> SessionView:
+async def plan_calls(session_id: str, request: Request) -> SessionView:
     """Demo hook: stands in for the Concierge's call_listings until the voice layer exists. The top four
-    cards show "calling", then a scripted outcome about 3 s later; the fourth doesn't pick up."""
-    return await request.app.state.sessions.call_top(session_id)
+    places with a pin become the plan; nothing dials until the renter hangs up."""
+    return await request.app.state.sessions.plan_top(session_id)
+
+
+@router.post("/api/sessions/{session_id}/hang-up", response_model=SessionView)
+async def hang_up(session_id: str, request: Request) -> SessionView:
+    """Demo hook: stands in for the renter hanging up (SessionEnded) until the voice layer exists. The
+    planned calls queue, ring and finish, scripted, and the session ends with its results."""
+    return await request.app.state.sessions.hang_up(session_id)
+
+
+@router.post("/api/sessions/{session_id}/reset", response_model=SessionView)
+async def reset(session_id: str, request: Request) -> SessionView:
+    """Demo hook: back to an open brief with nothing planned, to run the demo again."""
+    return await request.app.state.sessions.reset(session_id)
 
 
 class ReturningBody(BaseModel):

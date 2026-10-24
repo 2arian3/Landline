@@ -35,15 +35,32 @@ export function Activity({ view, compact = false }: { view: SessionView | null; 
   if (n.suspect) done.push(`${n.suspect} flagged`);
   if (n.no_answer) done.push(`${n.no_answer} no answer`);
   if (n.dead) done.push(`${n.dead} already rented`);
+  const queued = view.calls.filter((c) => c.state === "queued").length;
   const rest = compact ? "min-w-0 truncate" : "";
 
-  if (n.calling) {
-    const label = (
-      <span className="shrink-0 whitespace-nowrap font-label text-live">
-        Calling {n.calling} {n.calling === 1 ? "place" : "places"}
-      </span>
+  if (view.phase === "open" && view.plan.length) {
+    return (
+      <p className="flex items-baseline gap-x-1.5 text-meta" aria-live="polite">
+        <span aria-hidden className="h-2 w-2 shrink-0 self-center rounded-full bg-ink" />
+        <span className={`font-label text-ink ${rest}`}>
+          Will call {view.plan.length} {view.plan.length === 1 ? "place" : "places"} when you hang up
+        </span>
+      </p>
     );
-    const dot = <span aria-hidden className="live-dot h-2 w-2 shrink-0 self-center rounded-full bg-live" />;
+  }
+
+  if (n.calling || queued) {
+    const now = [n.calling && `Calling ${n.calling} ${n.calling === 1 ? "place" : "places"}`, queued && `${queued} queued`]
+      .filter(Boolean)
+      .join(" · ");
+    const label = (
+      <span className={`shrink-0 whitespace-nowrap font-label ${n.calling ? "text-live" : "text-ink-2"}`}>{now}</span>
+    );
+    const dot = n.calling ? (
+      <span aria-hidden className="live-dot h-2 w-2 shrink-0 self-center rounded-full bg-live" />
+    ) : (
+      <span aria-hidden className="h-2 w-2 shrink-0 self-center rounded-full bg-ink-3" />
+    );
     if (compact) {
       return (
         <p className="flex items-baseline gap-x-1.5 text-meta" aria-live="polite">
