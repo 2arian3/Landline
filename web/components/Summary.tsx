@@ -124,8 +124,8 @@ export function Results({ view, compact = false }: { view: SessionView | null; c
     <section aria-label="What the calls found">
       <p className="text-meta text-ink-3">What the calls found</p>
       <ul className="mt-1 space-y-1.5">
-        {lines.map((line) => (
-          <li key={line} className={`text-ink ${compact ? "text-support" : "text-fact"}`}>
+        {lines.map((line, i) => (
+          <li key={i} className={`text-ink ${compact ? "text-support" : "text-fact"}`}>
             {line}
           </li>
         ))}
@@ -136,19 +136,45 @@ export function Results({ view, compact = false }: { view: SessionView | null; c
 
 /** The results text as one line per place: a sentence that names no other place stays with the one before. */
 function perPlace(results: string, addresses: string[]): string[] {
+  // The longest address first, so a sentence about "112 King St W" isn't put with "12 King St W".
+  const places = [...new Set(addresses)].sort((a, b) => b.length - a.length);
   const lines: { text: string; place?: string }[] = [];
-  for (const sentence of results.split(SENTENCE_END)) {
-    const place = addresses.find((a) => sentence.includes(a));
+  for (const sentence of sentences(results)) {
+    const place = places.find((a) => names(sentence, a));
     const last = lines.at(-1);
     if (last && (!place || place === last.place)) last.text += ` ${sentence}`;
     else lines.push({ text: sentence, place });
   }
-  const booked = (l: { text: string }) => Number(/\bbooked\b/i.test(l.text));
-  return lines.sort((a, b) => booked(b) - booked(a)).map((l) => l.text);
+  // The booking leads, the way Landline says it ("I booked …"), not any line with "booked" in it.
+  const booking = (l: { text: string }) => Number(l.text.startsWith("I booked "));
+  return lines.sort((a, b) => booking(b) - booking(a)).map((l) => l.text);
 }
 
-// Between sentences, but not after "St." in "64 St. Clair Avenue West".
-const SENTENCE_END = /(?<=[.!?])(?<!\bSt\.)\s+(?=[A-Z0-9“"])/;
+/** Whether `sentence` names `address` whole: "12 King St W" isn't named in "112 King St W". */
+function names(sentence: string, address: string): boolean {
+  for (let at = sentence.indexOf(address); at >= 0; at = sentence.indexOf(address, at + 1)) {
+    const around = (sentence[at - 1] ?? " ") + (sentence[at + address.length] ?? " ");
+    if (!/[0-9A-Za-z]/.test(around)) return true;
+  }
+  return false;
+}
+
+/**
+ * The text's sentences, not split after "St." ("64 St. Clair Avenue West"). No lookbehind: Safari before
+ * 16.4 can't parse one, and the whole panel would fail to load.
+ */
+function sentences(text: string): string[] {
+  const out: string[] = [];
+  let start = 0;
+  for (const m of text.matchAll(/[.!?]\s+(?=[A-Z0-9“"])/g)) {
+    const end = m.index + 1;
+    if (/\bSt\.$/.test(text.slice(start, end))) continue;
+    out.push(text.slice(start, end));
+    start = m.index + m[0].length;
+  }
+  out.push(text.slice(start));
+  return out.map((s) => s.trim()).filter(Boolean);
+}
 
 /**
  * The first thing in the panel for a renter Landline knows (U-08). Landline

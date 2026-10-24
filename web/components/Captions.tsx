@@ -13,7 +13,7 @@ const POLL_MS = 1000;
 
 /**
  * What's said on a place's call, line by line and labelled by speaker. While the call is on the line it
- * asks every second for the lines after the last one shown; once the call is over, one last ask brings
+ * asks every second for the lines after the last one shown; once the call is over, a few more asks bring
  * the rest, and the lines stay, folded, under the facts. Under ?dev=1 the demo store's scripted calls
  * answer with their script until A-02 records real ones.
  */
@@ -49,7 +49,13 @@ export function Captions({ call }: { call: CallView }) {
       }
     };
     void pull();
-    const tick = onLine ? setInterval(pull, POLL_MS) : undefined;
+    // Once it's over, three more asks: the last lines can be written just after the call ends, and an ask
+    // that failed gets another go.
+    let asks = 0;
+    const tick = setInterval(() => {
+      if (over && ++asks > 3) return clearInterval(tick);
+      void pull();
+    }, POLL_MS);
     return () => {
       clearInterval(tick);
       ctl.abort();
