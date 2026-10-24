@@ -1,0 +1,52 @@
+{
+  "id": "studio-near-work",
+  "about": "Accepts a studio under 2,000, wants to be near an intersection, needs in-suite laundry, no calls",
+  "lines": [
+    {
+      "say": "I'm looking for a studio or anything bigger, as long as it's under 2,000 a month.",
+      "expect": {
+        "prefs": {
+          "max_monthly": 2000,
+          "min_beds": 0
+        }
+      }
+    },
+    {
+      "say": "I work near King and Bay, so I'd like to be close to there.",
+      "expect": {
+        "prefs": {
+          "anchors": [
+            "King and Bay"
+          ]
+        }
+      }
+    },
+    {
+      "say": "And I really need laundry in the unit.",
+      "expect": {
+        "prefs": {
+          "must_have": [
+            "laundry"
+          ]
+        }
+      }
+    },
+    {
+      "say": "Thanks, I'll call back later. Bye."
+    }
+  ],
+  "final": {
+    "prefs": {
+      "max_monthly": 2000,
+      "min_beds": 0,
+      "anchors": [
+        "King and Bay"
+      ],
+      "must_have": [
+        "laundry"
+      ]
+    },
+    "no_request": true,
+    "ended": true
+  }
+}

@@ -254,7 +254,7 @@ async def _higgs_to_renter(higgs: Any, transport: Transport, ctx: tools.ToolCont
             await transport.send_clear()
             playback.clear()
         elif kind == "response.function_call_arguments.done":
-            await _run_tool(higgs, event, ctx)
+            await run_tool(higgs, event, ctx)
         elif kind == "response.done" and ctx.hang_up:
             await asyncio.sleep(playback.remaining() + HANG_UP_GRACE_S)
             return "end_session"
@@ -269,7 +269,7 @@ async def _higgs_to_renter(higgs: Any, transport: Transport, ctx: tools.ToolCont
     return "higgs_closed"
 
 
-async def _run_tool(higgs: Any, event: dict[str, Any], ctx: tools.ToolContext) -> None:
+async def run_tool(higgs: Any, event: dict[str, Any], ctx: tools.ToolContext) -> None:
     # Higgs's own `call_id` here names this tool call, not our phone call.
     tool_call_id = str(event.get("call_id", ""))
     try:

@@ -1,0 +1,40 @@
+{
+  "id": "mandarin-renter",
+  "about": "Speaks Mandarin from the first line, with a budget in Chinese numerals and a dog",
+  "lines": [
+    {
+      "say": "你好，我想找一个一室的公寓，每月最多两千八。",
+      "expect": {
+        "prefs": {
+          "max_monthly": 2800,
+          "min_beds": 1
+        }
+      }
+    },
+    {
+      "say": "我有一只狗。",
+      "expect": {
+        "prefs": {
+          "pets": [
+            "dog"
+          ]
+        }
+      }
+    },
+    {
+      "say": "谢谢，先这样，再见。"
+    }
+  ],
+  "final": {
+    "prefs": {
+      "max_monthly": 2800,
+      "min_beds": 1,
+      "pets": [
+        "dog"
+      ],
+      "language": "zh"
+    },
+    "replies_in": "zh",
+    "ended": true
+  }
+}
