@@ -48,8 +48,11 @@ from landline.scoring import FeatureMatrix, Ranked, explain, rank
 
 BOARD_SIZE = 6
 TICK_S = 1.2     # each step of the scripted calls: dialing, ringing, live, then one hang-up per tick
-if os.getenv("DEMO_TICK_S"):   # slower scripted calls for a video take, so their captions can be read
-    TICK_S = float(os.environ["DEMO_TICK_S"])
+try:   # DEMO_TICK_S slows the scripted calls for a video take, so their captions can be read
+    if 0 < (_tick := float(os.getenv("DEMO_TICK_S") or TICK_S)) <= 10:
+        TICK_S = _tick
+except ValueError:   # "2.5s", "slow": keep the default rather than fail the whole API at import
+    pass
 PLANNED = 4      # the demo plans the top four places with a pin; the fourth never picks up
 TORONTO = ZoneInfo("America/Toronto")
 # "I'm free Saturday afternoon, book one if you can": the renter's window, and the slot an agent offers.

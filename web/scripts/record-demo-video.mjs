@@ -10,15 +10,16 @@
 // WEB is the web app (default http://localhost:3000), OUT the MP4 (default ./landline-demo.mp4).
 // The end card's numbers come from E-05: ACCURACY, UNGROUNDED and FIRST_AUDIO (placeholders until set).
 // FFMPEG and CHROME point at the binaries if they aren't where macOS and Homebrew put them.
-import { spawn, spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { button, launch, sleep } from "./lib/cdp.mjs";
+import { frameList, recordFrames } from "./lib/screencast.mjs";
 
 const WEB = (process.env.WEB || "http://localhost:3000").replace(/\/+$/, "");
 const OUT = resolve(process.env.OUT || "landline-demo.mp4");
 const FFMPEG = process.env.FFMPEG || "/opt/homebrew/bin/ffmpeg";
-const CHROME = process.env.CHROME || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const STATS = {
   accuracy: process.env.ACCURACY || "[E-05: extraction accuracy]",
   ungrounded: process.env.UNGROUNDED || "[E-05: ungrounded facts]",
@@ -36,60 +37,7 @@ const CAPTIONS = {
   welcome: "Next call: “Welcome back.” Landline remembers each renter by phone number.",
 };
 const [W, H, SCALE] = [1440, 810, 1920 / 1440]; // 16:9 at 1440 CSS px, drawn at 1920x1080
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-const work = mkdtempSync(join(tmpdir(), "landline-video-"));
-const chrome = spawn(CHROME, ["--headless=new", "--remote-debugging-port=9338", "--no-first-run", "--hide-scrollbars", "--mute-audio",
-  `--user-data-dir=${join(work, "profile")}`], { stdio: "ignore" });
-let target;
-for (let i = 0; i < 60 && !target; i++) {
-  try {
-    target = (await (await fetch("http://127.0.0.1:9338/json/list")).json()).find((t) => t.type === "page");
-  } catch {
-    await sleep(250);
-  }
-}
-if (!target) {
-  console.error(`no headless Chrome at ${CHROME} (set CHROME)`);
-  process.exit(1);
-}
-const ws = new WebSocket(target.webSocketDebuggerUrl);
-await new Promise((ok) => (ws.onopen = ok));
-let seq = 0;
-const replies = new Map();
-const frames = []; // { file, at } with `at` in seconds, the page's own clock
-ws.onmessage = (ev) => {
-  const m = JSON.parse(ev.data);
-  if (m.id) return replies.get(m.id)?.(m.result);
-  if (m.method === "Page.screencastFrame") {
-    const file = join(work, `f${String(frames.length).padStart(5, "0")}.jpg`);
-    writeFileSync(file, Buffer.from(m.params.data, "base64"));
-    frames.push({ file, at: m.params.metadata.timestamp });
-    ws.send(JSON.stringify({ id: ++seq, method: "Page.screencastFrameAck", params: { sessionId: m.params.sessionId } }));
-  }
-};
-const send = (method, params = {}) => new Promise((ok) => replies.set(++seq, ok) && ws.send(JSON.stringify({ id: seq, method, params })));
-const read = async (expr) => (await send("Runtime.evaluate", { expression: expr, returnByValue: true }))?.result?.value;
-const until = async (expr, ms, what) => {
-  for (const t = Date.now(); Date.now() - t < ms; await sleep(150)) if (await read(expr)) return;
-  throw new Error(`timed out waiting for ${what}`);
-};
-const button = (label) => `[...document.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(label)})`;
-const click = (label) => read(`${button(label)}.click()`);
 const CARDS = `[...document.querySelectorAll('ol[aria-label="Best matches, ranked"] > li > button')]`;
-const openCard = (listingId, view) => {
-  const address = view.board.find((c) => c.listing_id === listingId)?.address ?? "";
-  return read(`${CARDS}.find(b => b.getAttribute('aria-label').includes(${JSON.stringify(address)}))?.click()`);
-};
-const back = () => read(`[...document.querySelectorAll('button')].find(b => /All places/.test(b.textContent))?.click()`);
-const scrollPanel = (y) => read(`document.querySelector('aside .overflow-y-auto')?.scrollTo({ top: ${y}, behavior: 'smooth' })`);
-const zoomOut = async (steps) => { // back out to the whole board after a place's close-up
-  for (let i = 0; i < steps; i++) { await read(`document.querySelector('.maplibregl-ctrl-zoom-out')?.click()`); await sleep(350); }
-};
-// The live captions sit at the end of the detail: scroll the panel to their heading (the deepest element
-// that says "On the call now"; document order puts it last).
-const showCaptions = () => read(`[...document.querySelectorAll('aside *')].filter(e => /On the call now/.test(e.textContent))
-  .at(-1)?.scrollIntoView({ behavior: 'smooth', block: 'start' })`);
 
 // The video's own layer over the app: cards, the caption and the "Simulated calls" label, in the app's type
 // and ink (live-map-ui: solid surfaces, sentence case, no gradients). The caption sits over the map, low.
@@ -118,142 +66,174 @@ const OVERLAY = `(() => {
     sim(on) { sim.style.opacity = on ? '1' : '0'; },
   };
 })()`;
-const v = (call) => read(`window.__v.${call}`);
+if (!process.env.ACCURACY || !process.env.UNGROUNDED || !process.env.FIRST_AUDIO) {
+  console.warn("warning: the end card shows E-05 placeholders; set ACCURACY, UNGROUNDED and FIRST_AUDIO for the real take");
+}
 
-let sid;
-let stoppedAt = 0; // when the take ended, in the screencast's clock (seconds since the epoch)
-const view = async () => (await fetch(`${WEB}/api/sessions/${sid}`)).json();
-
+const work = mkdtempSync(join(tmpdir(), "landline-video-"));
 try {
-  await send("Emulation.setDeviceMetricsOverride", { width: W, height: H, deviceScaleFactor: SCALE, mobile: false });
-  sid = `video-${Date.now().toString(36)}`;
-  await send("Page.navigate", { url: `${WEB}/s/${sid}?dev=1` });
-  await until(`${CARDS}.length > 0 && document.querySelectorAll('button.pin').length > 0 && !!(${button("Call the top 4")})`,
-    40000, "the board and its pins");
-  await read(OVERLAY);
-  await v(`card(${JSON.stringify(TITLE)}, [])`);
-  await sleep(3000); // tiles and the first fit settle under the title card, before recording starts
-  await send("Page.startScreencast", { format: "jpeg", quality: 88, maxWidth: 1920, maxHeight: 1080, everyNthFrame: 1 });
+  const page = await launch({ args: ["--hide-scrollbars"] });
+  const frames = recordFrames(page, work);
+  const read = page.read;
+  const until = page.until;
+  const send = page.send;
+  const click = (label) => read(`${button(label)}.click()`);
+  const v = (call) => read(`window.__v.${call}`);
+  const sid = `video-${Date.now().toString(36)}`;
+  const view = async () => {
+    const res = await fetch(`${WEB}/api/sessions/${sid}`);
+    if (!res.ok) throw new Error(`GET /api/sessions/${sid} answered ${res.status}`);
+    return res.json();
+  };
+  /** Polls the session until `test` passes; throws naming `what` after `ms`. */
+  const waitFor = async (test, ms, what) => {
+    for (const t = Date.now(); Date.now() - t < ms; await sleep(200)) {
+      const got = test(await view());
+      if (got) return got;
+    }
+    throw new Error(`timed out waiting for ${what}`);
+  };
+  /** Opens a place's detail by its rank on the board (cards are in rank order); fails the take if it isn't there. */
+  const openCard = async (listingId) => {
+    const card = (await view()).board.find((c) => c.listing_id === listingId);
+    if (!card) throw new Error(`${listingId} isn't on the board`);
+    await read(`${CARDS}[${card.rank - 1}].click()`);
+  };
+  const back = () => read(`[...document.querySelectorAll('button')].find(b => /All places/.test(b.textContent))?.click()`);
+  const scrollPanel = (y) => read(`document.querySelector('aside .overflow-y-auto')?.scrollTo({ top: ${y}, behavior: 'smooth' })`);
+  const zoomOut = async (steps) => { // back out to the whole board after a place's close-up
+    for (let i = 0; i < steps; i++) { await read(`document.querySelector('.maplibregl-ctrl-zoom-out')?.click()`); await sleep(350); }
+  };
+  // The live captions sit at the end of the detail: scroll the panel to their heading (the deepest element
+  // that says "On the call now"; document order puts it last).
+  const showCaptions = () => read(`[...document.querySelectorAll('aside *')].filter(e => /On the call now/.test(e.textContent))
+    .at(-1)?.scrollIntoView({ behavior: 'smooth', block: 'start' })`);
+  let stoppedAt = 0; // when the take ended, in the screencast's clock (seconds since the epoch)
 
-  // Title.
-  await sleep(4000);
-  await v("hideCard()");
-  await sleep(600);
+  try {
+    await send("Emulation.setDeviceMetricsOverride", { width: W, height: H, deviceScaleFactor: SCALE, mobile: false });
+    await send("Page.navigate", { url: `${WEB}/s/${sid}?dev=1` });
+    await until(`${CARDS}.length > 0 && document.querySelectorAll('button.pin').length > 0 && !!(${button("Call the top 4")})`,
+      40000, "the board and its pins");
+    await read(OVERLAY);
+    await v(`card(${JSON.stringify(TITLE)}, [])`);
+    await sleep(3000); // tiles and the first fit settle under the title card, before recording starts
+    await send("Page.startScreencast", { format: "jpeg", quality: 88, maxWidth: 1920, maxHeight: 1080, everyNthFrame: 1 });
 
-  // 1. The board.
-  await v(`caption(${JSON.stringify(CAPTIONS.board)})`);
-  for (let i = 0; i < 6; i++) { // the renter's eye moving down the list: each card raises its pin
-    await read(`${CARDS}[${i}]?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))`);
-    await sleep(2400);
-    await read(`${CARDS}[${i}]?.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }))`);
-  }
-  await sleep(2000);
+    // Title.
+    await sleep(4000);
+    await v("hideCard()");
+    await sleep(600);
 
-  // 2. The budget drops and the board re-ranks.
-  await v(`caption(${JSON.stringify(CAPTIONS.budget)})`);
-  await sleep(1800);
-  await read(`(() => { const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
-    const s = document.getElementById('demo-budget'); set.call(s, '2200'); s.dispatchEvent(new Event('input', { bubbles: true })); })()`);
-  await click("Say it");
-  await sleep(12000);
+    // 1. The board.
+    await v(`caption(${JSON.stringify(CAPTIONS.board)})`);
+    for (let i = 0; i < 6; i++) { // the renter's eye moving down the list: each card raises its pin
+      await read(`${CARDS}[${i}]?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))`);
+      await sleep(2400);
+      await read(`${CARDS}[${i}]?.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }))`);
+    }
+    await sleep(2000);
 
-  // 3. The renter picks the places to call.
-  await v(`caption(${JSON.stringify(CAPTIONS.plan)})`);
-  await sleep(1800);
-  await click("Call the top 4");
-  await until(`!!(${button("Hang up")})`, 10000, "Hang up");
-  await sleep(11000);
+    // 2. The budget drops and the board re-ranks.
+    await v(`caption(${JSON.stringify(CAPTIONS.budget)})`);
+    await sleep(1800);
+    await read(`(() => { const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+      const s = document.getElementById('demo-budget'); set.call(s, '2200'); s.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+    await click("Say it");
+    await sleep(12000);
 
-  // 4. They hang up; the calls go out.
-  await v(`caption(${JSON.stringify(CAPTIONS.hangUp)})`);
-  await v("sim(true)");
-  await sleep(1500);
-  await click("Hang up");
-  const planned = (await view()).plan;
-  const booked = planned[2]; // the scripted booking: the third place in the plan
-  for (const t = Date.now(); Date.now() - t < 20000; await sleep(200)) {
-    if ((await view()).calls.some((c) => c.state === "ringing")) break;
-  }
-  await sleep(5000);
+    // 3. The renter picks the places to call.
+    await v(`caption(${JSON.stringify(CAPTIONS.plan)})`);
+    await sleep(1800);
+    await click("Call the top 4");
+    await until(`!!(${button("Hang up")})`, 10000, "Hang up");
+    await sleep(11000);
 
-  // 5. A live call's captions, in its place's detail.
-  for (const t = Date.now(); Date.now() - t < 30000; await sleep(200)) {
-    if ((await view()).calls.find((c) => c.listing_id === booked)?.state === "live") break;
-  }
-  await openCard(booked, await view());
-  await v(`caption(${JSON.stringify(CAPTIONS.live)})`);
-  const liveAt = Date.now();
-  await sleep(1200);
-  await showCaptions();
-  for (let t = Date.now(); Date.now() - t < 40000 && (await view()).phase !== "done"; ) await sleep(300);
-  await sleep(Math.max(1500, 9000 - (Date.now() - liveAt)));
+    // 4. They hang up; the calls go out.
+    await v(`caption(${JSON.stringify(CAPTIONS.hangUp)})`);
+    await v("sim(true)");
+    await sleep(1500);
+    await click("Hang up");
+    const booked = (await view()).plan[2]; // the scripted booking: the third place in the plan
+    if (!booked) throw new Error("the plan has fewer than three places");
+    await waitFor((s) => s.calls.some((c) => c.state === "ringing"), 20000, "the calls to ring");
+    await sleep(5000);
 
-  // 6. The results.
-  await back();
-  await v("sim(false)");
-  await scrollPanel(0);
-  await v(`caption(${JSON.stringify(CAPTIONS.results)})`);
-  await zoomOut(3);
-  await sleep(9000);
-  await scrollPanel(420);
-  await sleep(6000);
-  await scrollPanel(0);
-  await sleep(3000);
-  // the red flag, then a fact in the agent's own words, each in its place's detail
-  for (const status of ["suspect", "verified"]) {
-    const lid = (await view()).board.find((c) => c.status === status)?.listing_id;
-    if (!lid) continue;
-    await openCard(lid, await view());
-    await sleep(6500);
-    await back();
+    // 5. A live call's captions, in its place's detail: as soon as the booked call is live, or if it's
+    // already over (calls this fast are hard to read: run the API with DEMO_TICK_S=2.5).
+    const state = await waitFor((s) => {
+      const call = s.calls.find((c) => c.listing_id === booked);
+      return (call?.state === "live" || call?.state === "ended" || s.phase === "done") && (call?.state ?? s.phase);
+    }, 30000, "the booked call to go live");
+    if (state !== "live") console.warn("warning: the booked call ended before it could be filmed live; set DEMO_TICK_S=2.5");
+    await openCard(booked);
+    await v(`caption(${JSON.stringify(CAPTIONS.live)})`);
+    const liveAt = Date.now();
     await sleep(1200);
+    await showCaptions();
+    for (let t = Date.now(); Date.now() - t < 40000 && (await view()).phase !== "done"; ) await sleep(300);
+    await sleep(Math.max(1500, 9000 - (Date.now() - liveAt)));
+
+    // 6. The results.
+    await back();
+    await v("sim(false)");
+    await scrollPanel(0);
+    await v(`caption(${JSON.stringify(CAPTIONS.results)})`);
+    await zoomOut(3);
+    await sleep(9000);
+    await scrollPanel(420);
+    await sleep(6000);
+    await scrollPanel(0);
+    await sleep(3000);
+    // the red flag, then a fact in the agent's own words, each in its place's detail
+    for (const status of ["suspect", "verified"]) {
+      const lid = (await view()).board.find((c) => c.status === status)?.listing_id;
+      if (!lid) continue;
+      await openCard(lid);
+      await sleep(6500);
+      await back();
+      await sleep(1200);
+    }
+
+    // 7. The booked viewing.
+    await openCard(booked);
+    await v(`caption(${JSON.stringify(CAPTIONS.booked)})`);
+    await sleep(14000);
+
+    // 8. The next call: welcome back.
+    await back();
+    await sleep(800);
+    await click("Start over");
+    await until(`!!(${button("Call the top 4")})`, 10000, "a fresh brief");
+    await read(`document.getElementById('demo-returning')?.click()`);
+    await scrollPanel(0);
+    await v(`caption(${JSON.stringify(CAPTIONS.welcome)})`);
+    await zoomOut(3);
+    await sleep(14000);
+
+    // End card.
+    await v(`card("Built on Higgs Realtime · Team AAMEL", ${JSON.stringify([
+      `Extraction accuracy: ${STATS.accuracy}`, `Ungrounded facts shown: ${STATS.ungrounded}`, `Time to first audio: ${STATS.firstAudio}`,
+    ])})`);
+    await sleep(4400);
+    await send("Page.stopScreencast");
+    stoppedAt = Date.now() / 1000;
+  } finally {
+    await page.close();
   }
 
-  // 7. The booked viewing.
-  await openCard(booked, await view());
-  await v(`caption(${JSON.stringify(CAPTIONS.booked)})`);
-  await sleep(14000);
-
-  // 8. The next call: welcome back.
-  await back();
-  await sleep(800);
-  await click("Start over");
-  await until(`!!(${button("Call the top 4")})`, 10000, "a fresh brief");
-  await read(`document.getElementById('demo-returning')?.click()`);
-  await scrollPanel(0);
-  await v(`caption(${JSON.stringify(CAPTIONS.welcome)})`);
-  await zoomOut(3);
-  await sleep(14000);
-
-  // End card.
-  await v(`card("Built on Higgs Realtime · Team AAMEL", ${JSON.stringify([
-    `Extraction accuracy: ${STATS.accuracy}`, `Ungrounded facts shown: ${STATS.ungrounded}`, `Time to first audio: ${STATS.firstAudio}`,
-  ])})`);
-  await sleep(4400);
-  await send("Page.stopScreencast");
-  stoppedAt = Date.now() / 1000;
+  if (frames.length < 2) throw new Error("no frames recorded");
+  // The last frame holds until the take ended, so the end card stays up.
+  const end = Math.max(stoppedAt, frames[frames.length - 1].at + 0.5);
+  const ff = spawnSync(FFMPEG, ["-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", frameList(frames, end, work),
+    "-vf", "fps=30,scale=1920:1080:flags=lanczos,format=yuv420p", "-c:v", "libx264", "-preset", "medium", "-crf", "20",
+    "-threads", "2", "-movflags", "+faststart", "-an", OUT], { stdio: "inherit" });
+  if (ff.status !== 0) throw new Error(`ffmpeg failed (${FFMPEG}; set FFMPEG)`);
+  const total = Math.round(end - frames[0].at);
+  console.log(`${OUT}: ${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}, 1920x1080, ${frames.length} frames`);
+} catch (e) {
+  console.error(e.message);
+  process.exitCode = 1;
 } finally {
-  ws.close();
-  chrome.kill();
+  rmSync(work, { recursive: true, force: true });
 }
-
-if (frames.length < 2) {
-  console.error("no frames recorded");
-  process.exit(1);
-}
-// Each frame lasts until the next one (the screencast only sends a frame when the page changes), and the
-// last one until the take ended, so the end card holds.
-const end = Math.max(stoppedAt, frames[frames.length - 1].at + 0.5);
-const list = frames.map((f, i) => `file '${f.file}'\nduration ${((frames[i + 1]?.at ?? end) - f.at).toFixed(3)}`);
-writeFileSync(join(work, "frames.txt"), `${list.join("\n")}\nfile '${frames[frames.length - 1].file}'\n`);
-const ff = spawnSync(FFMPEG, ["-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", join(work, "frames.txt"),
-  "-vf", "fps=30,scale=1920:1080:flags=lanczos,format=yuv420p", "-c:v", "libx264", "-preset", "medium", "-crf", "20",
-  "-threads", "2", "-movflags", "+faststart", "-an", OUT], { stdio: "inherit" });
-rmSync(work, { recursive: true, force: true });
-if (ff.status !== 0) {
-  console.error(`ffmpeg failed (${FFMPEG}; set FFMPEG)`);
-  process.exit(1);
-}
-const seconds = end - frames[0].at;
-const m = Math.floor(seconds / 60);
-console.log(`${OUT}: ${m}:${String(Math.round(seconds % 60)).padStart(2, "0")} (${seconds.toFixed(1)} s), 1920x1080, ${frames.length} frames`);
