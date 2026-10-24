@@ -14,6 +14,6 @@ JUDGE_AUDIO_PATH = "/api/judge/{session_id}/audio"
 @router.websocket(JUDGE_AUDIO_PATH)
 async def judge_audio(ws: WebSocket, session_id: str) -> None:
     state = ws.app.state
-    await run_browser(ws, session_id, calls=state.calls, judges=state.judges,
+    await run_browser(ws, session_id, calls=state.calls, judges=state.judges, runtime=state.runtime,
                       connect_higgs=state.connect_higgs, settings=state.settings,
                       set_status=lambda status: setattr(state, "higgs", status))
