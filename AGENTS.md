@@ -24,8 +24,8 @@ Design: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Interfaces: [docs/CONTRACT
 | `server/landline/agents/` | The three agents that use a model (Concierge, Caller, Auditor): prompts, tools, logic | Danial |
 | `evals/` | Fixtures, landlord personas, eval runners, reports | Danial |
 | `server/landline/api/` | REST + SSE read side for the web app, judge-mode endpoints | Mahyar (Twilio webhooks: Danial) |
-| `web/` | Next.js app: map, list, detail, judge mode | Mahyar |
-| `deploy/` | VM service files, reverse proxy, deploy scripts | Mahyar |
+| `web/` | Next.js app: map, list, detail, judge mode; its Vercel deploys | Mahyar |
+| `deploy/`, and the VM itself | VM service files, reverse proxy, deploy scripts; on the VM, its `~/landline/.env`, services and logs; shipping `main` to `release` | Arian |
 | `docs/`, `BACKLOG.md` | Design and plan | Arian |
 
 Work only inside your lane's paths. If a task needs a change in someone else's path, open a PR and tag them; don't push to their files.
@@ -45,7 +45,7 @@ Work only inside your lane's paths. If a task needs a change in someone else's p
 
 ## How we work
 
-- Branch per task: `<lane>/<task-id>-<slug>`, e.g. `data/D-04-geocoder`. Small PRs into `main`; the author merges once CI is green and, for contract changes, all three approved. Merging to `main` doesn't deploy. Shipping is `git push origin main:release` (see `deploy/README.md`).
+- Branch per task: `<lane>/<task-id>-<slug>`, e.g. `data/D-04-geocoder`. Small PRs into `main`; the author merges once CI is green and, for contract changes, all three approved. Merging to `main` doesn't deploy. Shipping is `git push origin main:release` (see `deploy/README.md`), and Arian does it, since the VM is his. Ask him rather than changing the VM yourself.
 - Commit messages: imperative, sentence case, what changed and why in one line (`Add geocoder cache with precision field`). Reference the task id in the body when useful.
 - Before you start a task, read its "Done when" in `BACKLOG.md` and the skill for your area. When you finish, tick the box in `BACKLOG.md` in the same PR.
 - Keep diffs to what the task asks. No drive-by refactors, no new abstractions "for later".
