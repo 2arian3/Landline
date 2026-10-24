@@ -41,6 +41,9 @@ class Settings:
     public_url: str | None = None
     higgs_voice_renter: str = "default"
     renter_call_max_s: float = 900
+    # Store both sides of each call's audio next to its transcript (A-10). On unless RECORD_AUDIO=0.
+    # The transcript and where each line sits in the call are stored either way.
+    record_audio: bool = True
     # Calls to listing agents (A-06). Only numbers on the allowlist are ever dialled (hard rule 6); calls
     # wait for Toronto business hours unless FORCE_BUSINESS_HOURS=1; at most CALL_CONCURRENCY run at once
     # (default: the Higgs lines minus one kept for renters calling in); each has a deadline.
@@ -70,6 +73,7 @@ class Settings:
             twilio_phone_number=os.getenv("TWILIO_PHONE_NUMBER") or None,
             public_url=(os.getenv("PUBLIC_URL") or "").rstrip("/") or None,
             higgs_voice_renter=os.getenv("HIGGS_VOICE_RENTER") or "default",
+            record_audio=os.getenv("RECORD_AUDIO", "1").strip().lower() not in ("0", "false", "no", "off"),
             demo_agent_phones=_list("DEMO_AGENT_PHONES"),
             force_business_hours=_on("FORCE_BUSINESS_HOURS"),
             call_concurrency=int(os.getenv("CALL_CONCURRENCY") or 0) or None,
