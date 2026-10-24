@@ -168,6 +168,19 @@ async def judge_start(request: Request) -> JudgeStart | JSONResponse:
     return JudgeStart(session_id=session_id, ws_url=ws_url)
 
 
+@router.post("/api/judge/{session_id}/done", response_model=SessionView)
+async def judge_done(session_id: str, request: Request) -> SessionView | JSONResponse:
+    """The judge's Done button ends the brief, the way hanging up ends a phone call: the planned calls go
+    out, or with nothing planned the brief closes. A stand-in until the browser transport (A-03) and the
+    session runtime (O-02) end the brief themselves, so it's behind the same JUDGE_AUDIO_READY gate as
+    /api/judge/start. The judge's line is free again for the next judge."""
+    state = request.app.state
+    if not state.settings.judge_audio_ready:
+        return _refused(503, "closed", CLOSED)
+    state.judges.hang_up(session_id)
+    return await state.sessions.hang_up(session_id)
+
+
 def _refused(status: int, reason: str, message: str, retry_after_s: int | None = None) -> JSONResponse:
     # The wait goes in the body too: a browser on another origin can't read Retry-After without CORS.
     body: dict = {"detail": message, "reason": reason}

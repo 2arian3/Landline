@@ -59,6 +59,15 @@ export function JudgeMode() {
     await line.start(mic, wsAddress(ws_url));
   }
 
+  // Done ends the brief the way hanging up ends a phone call: the places the judge picked get called,
+  // and the board stays up to watch them. The audio closes either way.
+  async function done() {
+    if (sessionId) {
+      await fetch(api(`/api/judge/${encodeURIComponent(sessionId)}/done`), { method: "POST" }).catch(() => null);
+    }
+    line.end();
+  }
+
   function again() {
     setSessionId(null);
     setPhase("intro");
@@ -68,7 +77,7 @@ export function JudgeMode() {
     <LiveBoard
       sessionId={sessionId}
       intro={<Intro phase={phase} waitMin={waitMin} onStart={begin} />}
-      dock={<VoiceBar line={line} onAgain={again} />}
+      dock={<VoiceBar line={line} onDone={done} onAgain={again} />}
     />
   );
 }
@@ -167,13 +176,21 @@ function Notice({ children }: { children: React.ReactNode }) {
   );
 }
 
-function VoiceBar({ line, onAgain }: { line: ReturnType<typeof useJudgeLine>; onAgain: () => void }) {
+function VoiceBar({
+  line,
+  onDone,
+  onAgain,
+}: {
+  line: ReturnType<typeof useJudgeLine>;
+  onDone: () => void;
+  onAgain: () => void;
+}) {
   const over = line.state === "ended" || line.state === "dropped";
   const label =
     line.state === "connecting"
       ? "Connecting…"
       : line.state === "ended"
-        ? "Session ended"
+        ? "Brief done"
         : line.state === "dropped"
           ? "The line dropped"
           : line.talking
@@ -189,36 +206,57 @@ function VoiceBar({ line, onAgain }: { line: ReturnType<typeof useJudgeLine>; on
         <p className="truncate text-support font-label text-ink">{label}</p>
       </div>
       {over ? (
-        <button
-          type="button"
-          onClick={onAgain}
-          className="h-10 shrink-0 rounded-[var(--radius-control)] bg-ink px-4 text-support font-label text-white"
-        >
-          Start again
-        </button>
+        <>
+          {/* A dropped line can still end the brief, so what the judge picked gets called. */}
+          {line.state === "dropped" && <Secondary onClick={onDone}>Done</Secondary>}
+          <button
+            type="button"
+            onClick={onAgain}
+            className="h-10 shrink-0 rounded-[var(--radius-control)] bg-ink px-4 text-support font-label text-white"
+          >
+            Start again
+          </button>
+        </>
       ) : (
         <>
-          <button
-            type="button"
-            onClick={line.toggleMute}
-            aria-pressed={line.muted}
-            disabled={line.state !== "live"}
-            className="h-10 shrink-0 rounded-[var(--radius-control)] bg-surface px-3 text-support font-label text-ink hover:bg-press disabled:opacity-60"
-            style={{ boxShadow: "0 0 0 1px var(--color-line)" }}
-          >
+          <Secondary onClick={line.toggleMute} pressed={line.muted} disabled={line.state !== "live"}>
             {line.muted ? "Unmute" : "Mute"}
-          </button>
+          </Secondary>
           <button
             type="button"
-            onClick={line.end}
-            className="h-10 shrink-0 rounded-[var(--radius-control)] bg-surface px-3 text-support font-label text-ink hover:bg-press"
-            style={{ boxShadow: "0 0 0 1px var(--color-line)" }}
+            onClick={onDone}
+            className="h-10 shrink-0 rounded-[var(--radius-control)] bg-ink px-4 text-support font-label text-white"
           >
-            End
+            Done
           </button>
         </>
       )}
     </div>
+  );
+}
+
+function Secondary({
+  children,
+  onClick,
+  pressed,
+  disabled,
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  pressed?: boolean;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={pressed}
+      disabled={disabled}
+      className="h-10 shrink-0 rounded-[var(--radius-control)] bg-surface px-3 text-support font-label text-ink hover:bg-press disabled:opacity-60"
+      style={{ boxShadow: "0 0 0 1px var(--color-line)" }}
+    >
+      {children}
+    </button>
   );
 }
 
