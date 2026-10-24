@@ -8,13 +8,14 @@ import secrets
 from datetime import UTC, datetime
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from landline.api.demo import PLANNED, _pinned
+from landline.api.demo import PLANNED, _pinned, area_named
 from landline.api.judge import client_ip
 from landline.contracts import (
+    AreaFocused,
     CallsRequested,
     CataloguePoint,
     Event,
@@ -191,6 +192,23 @@ async def returning(session_id: str, body: ReturningBody, request: Request) -> S
     return await request.app.state.sessions.welcome_back(session_id, body.returning, name)
 
 
+class AreaBody(BaseModel):
+    place: str = Field(max_length=60)
+
+
+@router.post("/api/sessions/{session_id}/area", response_model=SessionView)
+async def focus_area(session_id: str, body: AreaBody, request: Request) -> SessionView:
+    """Demo hook: stands in for the Concierge's focus_area ("show me Christie Pits") until the voice layer
+    exists. The session's focus_area becomes that place, and the map flies there. A runtime session gets
+    it as AreaFocused."""
+    area = area_named(body.place)
+    if area is None:
+        raise HTTPException(404, "unknown place")
+    if _live(request, session_id):
+        return await _emit(request, AreaFocused(**_meta(session_id), **area.model_dump()))
+    return await request.app.state.sessions.focus_area(session_id, area)
+
+
 @router.post("/api/sessions/{session_id}/preferences", response_model=SessionView)
 async def preferences(session_id: str, body: Preferences, request: Request) -> SessionView:
     """Demo hook: stands in for the Concierge's update_preferences until the voice layer exists. For a
@@ -230,6 +248,21 @@ async def judge_start(request: Request) -> JudgeStart | JSONResponse:
     return JudgeStart(session_id=session_id, ws_url=ws_url)
 
 
+@router.post("/api/judge/{session_id}/done", response_model=SessionView)
+async def judge_done(session_id: str, request: Request) -> SessionView | JSONResponse:
+    """The judge's Done button ends the brief (SessionEnded), the way hanging up ends a phone call: with a
+    plan the session goes on to its calls, with nothing planned it closes. A stand-in until the browser
+    transport (A-03) ends the brief itself, so it's behind the same JUDGE_AUDIO_READY gate as
+    /api/judge/start. The judge's line is free again for the next judge."""
+    state = request.app.state
+    if not state.settings.judge_audio_ready:
+        return _refused(503, "closed", CLOSED)
+    if not _live(request, session_id):
+        raise HTTPException(404, "unknown session")
+    state.judges.hang_up(session_id)
+    return await _emit(request, SessionEnded(**_meta(session_id, "ended"), reason="end_session"))
+
+
 def _live(request: Request, session_id: str) -> bool:
     """A session the runtime (O-02) owns: one that voice or judge mode started. Any other id is a demo
     session, which the demo store creates on first sight. Each session has exactly one writer."""
@@ -257,6 +290,15 @@ async def _emit(request: Request, event: Event) -> SessionView:
         return await request.app.state.runtime.emit(event)
     except Refused as e:
         raise HTTPException(409, str(e)) from e
+
+
+@router.post("/api/judge/{session_id}/hang-up", status_code=204)
+async def judge_hang_up(session_id: str, request: Request) -> Response:
+    """/try leaving (a beacon on pagehide) or starting again: the judge's line frees at once instead of at
+    its timeout. Only the line: unlike Done, nothing gets called. Ungated and idempotent, because freeing
+    a line is always safe and a beacon can arrive after Done already freed it."""
+    request.app.state.judges.hang_up(session_id)
+    return Response(status_code=204)
 
 
 def _refused(status: int, reason: str, message: str, retry_after_s: int | None = None) -> JSONResponse:

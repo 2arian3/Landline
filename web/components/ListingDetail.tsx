@@ -6,6 +6,7 @@ import { MARK, type Mark, STATUS } from "./ListingCard";
 import { Money } from "./Money";
 import { bathsLabel, bedsLabel, sizeLabel, sourceName, unitLabel } from "@/lib/format";
 import { api } from "@/lib/live";
+import { callNotes } from "@/lib/outcome";
 import type { Card, ListingDetail as Detail, Provenance } from "@/lib/types";
 
 export type { Reaction };
@@ -29,12 +30,15 @@ export function ListingDetail({
   id,
   card,
   mark,
+  results,
   onBack,
   onReact,
 }: {
   id: string;
   card?: Card;
   mark?: Mark;
+  /** The session's results text once its calls are done; this place's sentences show here. */
+  results?: string | null;
   onBack: () => void;
   onReact?: (reaction: Reaction, reason: string | null) => void;
 }) {
@@ -72,6 +76,8 @@ export function ListingDetail({
   const address = detail?.address ?? card?.address;
   const place = [detail?.building_name, card?.neighbourhood].find((p) => p && p !== address) ?? null;
   const flags = card?.red_flags ?? [];
+  const notes = callNotes(card, results);
+  const noted = !!notes.viewing || notes.questions.length > 0;
 
   return (
     <article className="flex min-h-full flex-col gap-6 pb-8">
@@ -168,8 +174,20 @@ export function ListingDetail({
             ))}
           </ul>
         ) : (
-          <p className="mt-1.5 text-support text-ink-2">{noFacts(card?.status, mark)}</p>
+          !noted && <p className="mt-1.5 text-support text-ink-2">{noFacts(card?.status, mark)}</p>
         )}
+        {notes.viewing && (
+          <div className="mt-3">
+            <p className="text-fact">Viewing booked for {notes.viewing}</p>
+            <p className="text-meta text-ink-3">Booked on the call, inside the times you gave</p>
+          </div>
+        )}
+        {notes.questions.map((q) => (
+          <div key={q} className="mt-3">
+            <p className="text-fact">The agent asked, &ldquo;{q}&rdquo;</p>
+            <p className="text-meta text-ink-3">Landline said it would check with you</p>
+          </div>
+        ))}
       </section>
 
       <section className="px-4" aria-labelledby="listing-heading">
