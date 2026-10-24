@@ -215,7 +215,7 @@ async def test_call_the_first_one_records_the_plan_for_listing_1():
     first = ctx.runtime.get(SID).board[0]
     reply = await catch_up_calls(CALL_FIRST, ctx)
     assert ctx.runtime.state(SID).request.listing_ids == [first.listing_id]
-    assert reply.startswith(f"I'll call {first.address} after you hang up")
+    assert reply.startswith(f"Calling {first.address} right after you hang up")
     assert await catch_up_calls("I'll call you back.", ctx) is None
 
 
@@ -265,7 +265,7 @@ async def test_through_the_bridge_a_reply_with_no_call_listings_records_the_plan
     await asyncio.gather(*list(bridge._CATCHING))
     assert ctx.runtime.state(SID).request.listing_ids == [first]
     notes = [e["item"]["content"][0]["text"] for e in sent if e["type"] == "conversation.item.create"]
-    assert len(notes) == 1 and notes[0].startswith(f"{PLANNED} I'll call ")
+    assert len(notes) == 1 and notes[0].startswith(f"{PLANNED} Calling ")
     assert sent[-1] == {"type": "response.create"}
 
 
