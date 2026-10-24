@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from landline.agents.concierge import tools
-from landline.agents.concierge.prompt import GREETING
+from landline.agents.concierge.prompt import GREETING, RETURNING, WELCOME_BACK
 from landline.api.browser_audio import JUDGE_AUDIO_PATH
 from landline.api.twilio import BUSY, NOT_READY
 from landline.app import create_app
@@ -189,6 +189,23 @@ def test_a_tool_call_changes_the_session_and_speaks_its_board():
              "item": {"type": "function_call_output", "call_id": "fc_1", "output": view.agent_says}},
             {"type": "response.create"},
         ]
+
+
+def test_a_returning_caller_is_welcomed_back_with_what_the_runtime_remembers():
+    fake = FakeHiggs()
+    remembered = "This renter last called yesterday. What you know: Wants up to $2,600 a month."
+    with _client() as c:
+        c.app.state.connect_higgs = fake.connect
+        # Profiles (O-05) need Postgres (see test_profiles.py), so stand in for what they remember.
+        c.app.state.runtime.opening = lambda sid: remembered
+        call = c.app.state.calls.open(caller="+14165550100")
+        with c.websocket_connect("/twilio/media") as ws:
+            ws.send_json(_start(call.call_id))
+            ws.send_json({"event": "stop", "streamSid": "MZ1"})
+            with pytest.raises(WebSocketDisconnect):
+                ws.receive_json()
+        assert fake.session["session"]["instructions"].endswith(f"{RETURNING}{remembered}")
+        assert fake.sent[0] == {"type": "response.create", "response": {"instructions": WELCOME_BACK}}
 
 
 class FakeTexter:

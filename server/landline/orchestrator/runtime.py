@@ -7,6 +7,7 @@
         await tx.apply(CallsScheduled(...))
         await db.calls.create(..., conn=tx.conn)
     runtime.on("SessionEnded", dispatcher.on_session_ended)   # runs after the commit
+    runtime.opening(sid)                              # what the Concierge remembers about a returning caller
 
 `session_tx` holds the session's lock, applies each event to a working copy, then
 re-ranks, appends the events, saves the snapshot and bumps the version in one
@@ -14,6 +15,10 @@ Postgres transaction. Only then does the copy become the session, so a handler
 that fails or is refused leaves nothing behind. A duplicate `idem_key` is a no-op.
 After the commit, SSE subscribers wake on `changed` and each subscriber to the
 committed event types runs as a background task, so none of them blocks a turn.
+
+With Postgres, a phone call's number is looked up when its session starts (Profiles, O-05): a new number
+gets a user, and a returning one gets back its search, its reactions and its last results. The profile
+is saved when the brief ends and again when the calls are done, after those commits.
 """
 from __future__ import annotations
 
@@ -23,6 +28,7 @@ from collections import defaultdict
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import asynccontextmanager, nullcontext
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 
 from psycopg import AsyncConnection
 
@@ -30,12 +36,14 @@ from landline.contracts import Event, SessionStarted, SessionView
 from landline.db.catalogue import Catalogue
 from landline.db.pool import Database
 from landline.orchestrator import board, handlers, narrator
+from landline.orchestrator.profiles import Profiles, Remembered, opening
 from landline.orchestrator.state import SessionState
-from landline.scoring import FeatureMatrix
+from landline.scoring import FeatureMatrix, rank
 
 log = logging.getLogger(__name__)
 
 Subscriber = Callable[[Event, SessionView], Awaitable[None]]
+RECALL_TIMEOUT_S = 2.0   # a slow lookup never holds up the greeting: the caller is treated as new
 
 
 class UnknownSession(KeyError):
@@ -90,6 +98,10 @@ class SessionRuntime:
         self._starting = asyncio.Lock()
         self._subscribers: dict[str, list[Subscriber]] = defaultdict(list)
         self._tasks: set[asyncio.Task] = set()
+        self.profiles = Profiles(db) if db is not None else None
+        if self.profiles is not None:
+            self.on("SessionEnded", self._remember)
+            self.on("CallsCompleted", self._remember)
 
     def __len__(self) -> int:
         return len(self._live)
@@ -104,6 +116,10 @@ class SessionRuntime:
         """A copy of the session's state, to read from (the Dispatcher freezes the plan from it)."""
         return self._get(session_id).state.model_copy(deep=True)
 
+    def opening(self, session_id: str) -> str | None:
+        """What the Concierge is told about a returning caller (≤ 120 words); None for a new one."""
+        return self._get(session_id).state.opening
+
     def on(self, event_type: str, fn: Subscriber) -> None:
         """Run `fn(event, view)` after every committed event of `event_type`, as a background task."""
         self._subscribers[event_type].append(fn)
@@ -111,15 +127,18 @@ class SessionRuntime:
     async def start(self, event: SessionStarted) -> SessionView:
         """Create the session at version 1. Starting one that exists is a no-op."""
         sid = event.session_id
+        remembered = await self._recall(event) if sid not in self._live else None
         async with self._starting:
             if sid in self._live:
                 return self._live[sid].view
             state = SessionState(session_id=sid, channel=event.channel, user_id=event.user_id,
                                  caller_phone=event.caller_phone)
+            if remembered is not None:
+                self._returning(state, remembered)
             view = self._build(state, 1, events=[event])
             if self.db is not None:
                 async with self.db.transaction() as conn:
-                    await self.db.sessions.create(sid, event.channel, event.user_id, conn=conn)
+                    await self.db.sessions.create(sid, event.channel, state.user_id, conn=conn)
                     await self.db.events.append(event, conn=conn)
                     await self.db.sessions.save(sid, expected_version=0, status=state.phase,
                                                 snapshot=_snapshot(state, view), conn=conn)
@@ -150,6 +169,11 @@ class SessionRuntime:
             live.seen.update(e.idem_key for e in tx.events)
         await self._published(session_id, tx.events)
 
+    async def idle(self) -> None:
+        """Wait for the subscribers already running (tests, and a clean shutdown)."""
+        while self._tasks:
+            await asyncio.gather(*list(self._tasks), return_exceptions=True)
+
     async def close(self) -> None:
         for task in list(self._tasks):
             task.cancel()
@@ -172,7 +196,43 @@ class SessionRuntime:
         says = narrator.line(before, view, events, state, self.catalogue)
         if says is None and before is not None:
             says = before.agent_says
-        return view.model_copy(update={"agent_says": says or view.agent_says, "results": state.results})
+        return view.model_copy(update={"agent_says": says or view.agent_says, "results": state.results,
+                                       "returning": state.returning, "user_name": state.user_name})
+
+    async def _recall(self, event: SessionStarted) -> Remembered | None:
+        """The profile for a phone call's number. Any failure, or a slow database, starts the call fresh."""
+        if self.profiles is None or event.channel != "phone" or not event.caller_phone:
+            return None
+        try:
+            async with asyncio.timeout(RECALL_TIMEOUT_S):
+                return await self.profiles.recall(event.caller_phone)
+        except Exception:
+            log.exception("could not recall the caller for %s; starting fresh", event.session_id)
+            return None
+
+    def _returning(self, state: SessionState, r: Remembered) -> None:
+        """Start the session from what this number told us before."""
+        state.user_id = r.user_id
+        if not r.returning:
+            return
+        state.returning, state.user_name = True, r.name
+        state.preferences = r.preferences
+        state.reactions, state.recalled = dict(r.reactions), dict(r.reactions)
+        state.previous_results = None if r.calls_running else r.last_results
+        new = 0
+        if r.last_seen_at is not None:
+            fits, by_id = rank(self.matrix, r.preferences).order, self.catalogue.by_id
+            new = sum(by_id[lid].first_seen > r.last_seen_at for lid in fits)
+        state.opening = opening(r, new, datetime.now(UTC))
+
+    async def _remember(self, event: Event, view: SessionView) -> None:
+        if self.profiles is not None and self.has(event.session_id):
+            state = self.state(event.session_id)
+            await self.profiles.remember(state, event.type, self._address)
+
+    def _address(self, listing_id: str) -> str:
+        listing = self.catalogue.by_id.get(listing_id)
+        return listing.address if listing else listing_id
 
     async def _persist(self, tx: Tx, view: SessionView, expected_version: int) -> None:
         db, conn, state = self.db, tx.conn, tx.state
