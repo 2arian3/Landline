@@ -155,9 +155,10 @@ async def test_a_phone_call_records_what_the_agent_said_and_ends_once_after_the_
     assert [(f.field, f.quote) for f in out.facts] == [("parking_cost", "Parking is 150 a month")]
     assert higgs.session["session"]["audio"]["input"]["format"] == {"type": "audio/pcmu"}
     assert any(t["name"] == "record_fact" for t in higgs.session["session"]["tools"])
-    first = higgs.sent[0]
-    assert first["type"] == "response.create"
-    assert f'exactly: "{DISCLOSURE}"' in first["response"]["instructions"]
+    # The disclosure is in the session instructions, and no response.create carries a response object.
+    assert f'exactly: "{DISCLOSURE}"' in higgs.session["session"]["instructions"]
+    assert [e["type"] for e in higgs.sent[:2]] == ["conversation.item.create", "response.create"]
+    assert all("response" not in e for e in higgs.sent if e["type"] == "response.create")
     assert {"type": "input_audio_buffer.append", "audio": "/w=="} in higgs.sent
     assert higgs.closed and twilio_api.hung_up == ["CA1"]                 # Twilio's line is put down too
     assert rt.get(SID).phase == "done"

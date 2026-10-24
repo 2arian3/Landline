@@ -46,14 +46,15 @@ class PhoneCaller:
         ctx = caller_tools.CallerContext(session_id=dial.session_id, call_id=dial.call_id,
                                          listing_id=dial.listing_id, brief=b, runtime=self.runtime,
                                          clock=self.clock)
-        text = instructions(b)
+        text, start = opening(instructions(b))
         reason = "failed"
         higgs = None
         turns = Turns(self.runtime.db, dial.call_id)
         try:
             higgs = await self.connect(self.api_key, session_config(
                 instructions=text, tools=caller_tools.TOOLS, voice=self.voice, audio_format=PCMU))
-            await higgs.send(opening(text))
+            for event in start:
+                await higgs.send(event)
             left = (dial.deadline - self.clock()).total_seconds() - DEADLINE_MARGIN_S
             try:
                 async with asyncio.timeout(max(1.0, left)):

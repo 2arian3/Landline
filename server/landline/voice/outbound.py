@@ -238,12 +238,18 @@ class TwilioRunner:
         await self.client.aclose()
 
 
-def opening(instructions: str) -> dict[str, Any]:
-    """The first response: the disclosure word for word (hard rule 6), then the call's reason. Response
-    instructions replace the session's, so they carry the session's along."""
-    return {"type": "response.create", "response": {"instructions": (
-        f"{instructions}\n\nThe call has just been answered. Your first words are exactly: \"{DISCLOSURE}\" "
-        "Then say which listing you are calling about and ask if they have a minute.")}}
+ANSWERED = "[The call was just answered.]"
+
+
+def opening(instructions: str) -> tuple[str, list[dict[str, Any]]]:
+    """The Caller's session instructions, with how the call opens (the disclosure word for word, hard rule 6),
+    and the events that start it: a quoted note and a plain response.create, as the sim starts a Caller's
+    turn. Never a response object on response.create: its instructions replace the session's (#129)."""
+    opens = (f"\n\nHow this call opens: the call has just been answered. Your first words are exactly: "
+             f"\"{DISCLOSURE}\" Then say which listing you are calling about and ask if they have a minute.")
+    note = {"type": "message", "role": "user", "content": [{"type": "input_text", "text": ANSWERED}]}
+    return f"{instructions}{opens}", [{"type": "conversation.item.create", "item": note},
+                                      {"type": "response.create"}]
 
 
 class Turns:

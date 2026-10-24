@@ -4,7 +4,14 @@ network: the text model is a fake."""
 import asyncio
 from datetime import UTC, datetime
 
-from landline.agents.concierge.prompt import GREETING, INSTRUCTIONS, WELCOME_BACK, language_name, primary
+from landline.agents.concierge.prompt import (
+    CALL_CONNECTED,
+    FIRST_CALL,
+    INSTRUCTIONS,
+    WELCOME_BACK,
+    language_name,
+    primary,
+)
 from landline.config import Settings
 from landline.contracts import (
     CallOutcome,
@@ -157,14 +164,15 @@ def test_english_or_a_first_call_adds_no_language_line_and_no_hint():
     assert "spoke" not in bridge.opening("Last call: …", "en")[0]
     assert "spoke" not in bridge.opening("Last call: …", None)[0]
     instructions, start = bridge.opening(None, "es")   # a first call: nothing remembered to welcome back
-    assert instructions == INSTRUCTIONS
-    assert start == [{"type": "response.create", "response": {"instructions": GREETING}}]
+    assert instructions == INSTRUCTIONS + FIRST_CALL
+    assert start[-1] == {"type": "response.create"}   # no response object (#129)
+    assert start[0]["item"]["content"][0]["text"] == CALL_CONNECTED
     hints = bridge.hint(None, "es"), bridge.hint("Last call: …", None), bridge.hint("Last call: …", "yue")
     assert hints == (None, None, None)   # Cantonese has no two-letter code: Higgs detects it
 
 
 def test_the_greeting_invites_any_language():
-    assert "any language" in GREETING and "Renters may speak any language" in INSTRUCTIONS
+    assert "any language" in FIRST_CALL and "Renters may speak any language" in INSTRUCTIONS
 
 
 def test_the_transcription_hint_goes_in_only_when_known():
