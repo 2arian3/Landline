@@ -24,7 +24,7 @@ from typing import Any, Protocol
 from fastapi import WebSocket, WebSocketDisconnect
 
 from landline.agents.concierge import tools
-from landline.agents.concierge.prompt import GREETING, INSTRUCTIONS
+from landline.agents.concierge.prompt import GREETING, INSTRUCTIONS, RETURNING, WELCOME_BACK
 from landline.config import Settings
 from landline.contracts import SessionEnded, SessionStarted
 from landline.orchestrator import SessionRuntime
@@ -110,9 +110,12 @@ def _link_texter(texter: Texter | None, call: RenterCall, settings: Settings) ->
 async def _talk(transport: Transport, call: RenterCall, runtime: SessionRuntime, connect_higgs: ConnectHiggs,
                 settings: Settings, set_status: Callable[[str], None],
                 text_link: Callable[[], bool] | None) -> str:
+    # A returning caller (O-05): the Concierge gets what the runtime remembers, and welcomes them back.
+    remembered = runtime.opening(call.session_id)
+    instructions = f"{INSTRUCTIONS}{RETURNING}{remembered}" if remembered else INSTRUCTIONS
     try:
         higgs = await connect_higgs(settings.boson_api_key or "", session_config(
-            instructions=INSTRUCTIONS, tools=tools.TOOLS, voice=settings.higgs_voice_renter,
+            instructions=instructions, tools=tools.TOOLS, voice=settings.higgs_voice_renter,
             audio_format=transport.audio_format))
     except Exception as exc:
         log.exception("Higgs session failed for call %s", call.call_id)
@@ -125,7 +128,8 @@ async def _talk(transport: Transport, call: RenterCall, runtime: SessionRuntime,
     playback = Playback(transport.bytes_per_second)
     pumps: set[asyncio.Task[str]] = set()
     try:
-        await higgs.send({"type": "response.create", "response": {"instructions": GREETING}})
+        greeting = WELCOME_BACK if remembered else GREETING
+        await higgs.send({"type": "response.create", "response": {"instructions": greeting}})
         pumps = {asyncio.create_task(_renter_to_higgs(transport, higgs)),
                  asyncio.create_task(_higgs_to_renter(higgs, transport, ctx, playback))}
         done, _ = await asyncio.wait(pumps, timeout=settings.renter_call_max_s,

@@ -42,6 +42,12 @@ class SessionState(BaseModel):
     channel: str
     user_id: int | None = None
     caller_phone: str | None = None      # E.164 from Twilio; the results SMS goes here and nowhere else
+    # A caller this number has called before (Profiles, O-05): what was recalled when the call started.
+    returning: bool = False
+    user_name: str | None = None
+    previous_results: str | None = None  # the last session's results, which this call opens with
+    recalled: dict[str, Said] = Field(default_factory=dict)   # reactions from earlier calls, by listing
+    opening: str | None = None           # what the Concierge remembers, ≤ 120 words
     phase: Phase = "open"
     preferences: Preferences = Field(default_factory=Preferences)
     focus_listing_id: str | None = None
