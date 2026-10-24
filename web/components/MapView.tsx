@@ -10,7 +10,7 @@ import {
   setWorkerUrl,
 } from "maplibre-gl";
 import { useEffect, useRef, useState } from "react";
-import type { Card, CataloguePoint } from "@/lib/types";
+import type { Area, Card, CataloguePoint } from "@/lib/types";
 
 // Copied there by `npm install` (scripts/copy-maplibre-worker.mjs); the bundler
 // can't resolve MapLibre's own worker path.
@@ -48,6 +48,7 @@ export function MapView({
   focusId,
   hoverId,
   marks,
+  focusArea = null,
   padding,
   showZoom,
   onSelect,
@@ -59,6 +60,7 @@ export function MapView({
   focusId: string | null;
   hoverId: string | null;
   marks: Record<string, string>;
+  focusArea?: Area | null;
   padding: Padding;
   showZoom: boolean;
   onSelect: (id: string) => void;
@@ -220,6 +222,17 @@ export function MapView({
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, focusId]);
+
+  // ── fly to an area the renter named ("show me Christie Pits") ──────────
+  const areaKey = focusArea ? `${focusArea.lat},${focusArea.lng},${focusArea.zoom}` : "";
+  useEffect(() => {
+    const m = map.current;
+    if (!m || !ready || !focusArea) return;
+    const to = { center: [focusArea.lng, focusArea.lat] as [number, number], zoom: focusArea.zoom, padding };
+    if (reducedMotion()) m.jumpTo(to);
+    else m.flyTo({ ...to, duration: 600 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, areaKey]);
 
   // MapLibre sets `position: relative` on its container (unlayered CSS wins over
   // Tailwind's layered utilities), so the sizing lives on a wrapper.
