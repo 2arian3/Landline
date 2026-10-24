@@ -83,11 +83,15 @@ async def converse(transport: Transport, call: RenterCall, *, calls: RenterCalls
     caller owns the socket and closes it afterwards. With a `texter`, a phone caller is texted the link
     to their board the first time their preferences change."""
     reason = "error"
+    # The call and its transcript are stored for the admin panel (orchestrator/calllog.py).
+    kind = "voice" if transport.audio_format == PCMU else "browser"
+    runtime.calls.started(call.call_id, call.session_id, kind)
     try:
         reason = await _talk(transport, call, runtime, connect_higgs, settings, set_status,
                              _link_texter(texter, call, settings))
     finally:
         calls.finalize(call.call_id, reason)
+        runtime.calls.ended(call.call_id, reason)
         await _end_session(runtime, call.session_id, reason)
     return reason
 
@@ -256,8 +260,10 @@ async def _higgs_to_renter(higgs: Any, transport: Transport, ctx: tools.ToolCont
             return "end_session"
         elif kind == "conversation.item.input_audio_transcription.completed":
             log.info("call %s renter: %s", ctx.call_id, event.get("transcript", ""))
+            ctx.runtime.calls.said(ctx.call_id, "renter", str(event.get("transcript", "")))
         elif kind == "response.output_audio_transcript.done":
             log.info("call %s concierge: %s", ctx.call_id, event.get("transcript", ""))
+            ctx.runtime.calls.said(ctx.call_id, "agent", str(event.get("transcript", "")))
         elif kind == "error":
             log.warning("call %s Higgs error: %s", ctx.call_id, event.get("error"))
     return "higgs_closed"
