@@ -175,9 +175,18 @@ const opensWithWelcome = (view: SessionView) => view.returning && /^welcome back
 /**
  * What Landline heard and what it last said: the renter's half of the call, on
  * screen. `compact` (phones) keeps it to one line so the first place shows
- * above the fold of the sheet; the renter is hearing Landline already.
+ * above the fold of the sheet; the renter is hearing Landline already. `wrap`
+ * lets that line wrap once the sheet is raised and there's room.
  */
-export function Heard({ view, compact = false }: { view: SessionView | null; compact?: boolean }) {
+export function Heard({
+  view,
+  compact = false,
+  wrap = false,
+}: {
+  view: SessionView | null;
+  compact?: boolean;
+  wrap?: boolean;
+}) {
   if (!view) {
     return (
       <div className="space-y-2" aria-hidden>
@@ -192,7 +201,7 @@ export function Heard({ view, compact = false }: { view: SessionView | null; com
     return (
       <div className="min-w-0">
         {heard && (
-          <p className="truncate text-support text-ink">
+          <p className={`text-support text-ink ${wrap ? "" : "truncate"}`}>
             <span className="text-ink-3">Heard </span>
             {heard.charAt(0).toLowerCase() + heard.slice(1)}
           </p>
@@ -209,7 +218,9 @@ export function Heard({ view, compact = false }: { view: SessionView | null; com
           <p className="text-support text-ink">{heard}</p>
         </div>
       )}
-      {view.agent_says && !opensWithWelcome(view) && (
+      {/* What Landline said during the brief: stale once the calls start, and with nothing on the board the
+          list's own empty state says it. */}
+      {view.agent_says && view.phase === "open" && view.board.length > 0 && !opensWithWelcome(view) && (
         <blockquote className="m-0 border-0 p-0">
           <p className="text-meta text-ink-3">Landline said</p>
           <p className="text-fact">“{view.agent_says}”</p>
