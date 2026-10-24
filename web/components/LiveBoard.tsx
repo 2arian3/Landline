@@ -1,15 +1,23 @@
 "use client";
 
 import { AnimatePresence, motion } from "motion/react";
+import dynamic from "next/dynamic";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Drawer } from "vaul";
 import { Board } from "./Board";
 import { DemoControls } from "./DemoControls";
 import { ListingDetail, type Reaction } from "./ListingDetail";
-import { MapView, type Padding } from "./MapView";
+import type { Padding } from "./MapView";
 import { Activity, Brand, Heard, Welcome } from "./Summary";
 import { postJSON, useCatalogue, useLiveSession } from "@/lib/live";
 import { useMedia } from "@/lib/useMedia";
+
+// MapLibre is a 1 MB chunk. Loading it after the panel lets the places paint first on a slow phone;
+// until then the map's own land colour holds its spot.
+const MapView = dynamic(() => import("./MapView").then((m) => m.MapView), {
+  ssr: false,
+  loading: () => <div className="absolute inset-0 bg-map-land" aria-hidden />,
+});
 
 const PEEK = "196px";
 const SNAPS: (string | number)[] = [PEEK, 0.56, 1];
