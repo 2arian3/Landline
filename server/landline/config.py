@@ -41,6 +41,8 @@ class Settings:
     public_url: str | None = None
     higgs_voice_renter: str = "default"
     renter_call_max_s: float = 900
+    # The admin panel (/admin) and its API need this token as a bearer header. Unset, they answer 404.
+    admin_token: str | None = None
 
     @classmethod
     def load(cls) -> Settings:
@@ -61,6 +63,7 @@ class Settings:
             twilio_phone_number=os.getenv("TWILIO_PHONE_NUMBER") or None,
             public_url=(os.getenv("PUBLIC_URL") or "").rstrip("/") or None,
             higgs_voice_renter=os.getenv("HIGGS_VOICE_RENTER") or "default",
+            admin_token=os.getenv("ADMIN_TOKEN") or None,
         )
 
     def allowed_origins(self) -> list[str]:
