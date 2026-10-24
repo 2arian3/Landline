@@ -59,3 +59,28 @@ def test_without_neighbourhood_data_only_an_exact_name_counts():
 def test_two_named_areas_both_count_as_inside():
     loc = _location(["Annex", "Niagara"])
     assert loc["t:3"] == loc["t:2"] == 1.0 and loc["t:1"] == 0.6   # Liberty Village touches Niagara
+
+
+# Names the City doesn't use for one neighbourhood (#101)
+
+DOWNTOWN = [Hood(170, "Yonge-Bay Corridor", 43.651, -79.383, (168,)),
+            Hood(168, "Downtown Yonge East", 43.659, -79.378, (170,))]
+
+
+def test_downtown_toronto_finds_the_downtown_neighbourhoods_and_puts_them_on_top():
+    listings = [*LISTINGS, _listing(5, "Yonge-Bay Corridor", 43.651, -79.384),
+                _listing(6, "Downtown Yonge East", 43.659, -79.377)]
+    matrix = FeatureMatrix.build(listings, [*HOODS, *DOWNTOWN])
+    assert [h.id for h in matrix.named(["downtown Toronto"])] == [170, 168]   # not Annex, not Niagara
+    assert matrix.named(["downtown"]) == matrix.named(["downtown core"]) == matrix.named(["downtown Toronto"])
+    # Every place costs the same, so without the area the order is by id; with it, downtown leads.
+    assert rank(matrix, Preferences(max_monthly=2800)).order[:2] == ["t:1", "t:2"]
+    assert rank(matrix, Preferences(max_monthly=2800, areas=["downtown Toronto"])).order[:2] == ["t:5", "t:6"]
+
+
+def test_an_area_that_names_nothing_gives_location_no_weight():
+    matrix = FeatureMatrix.build(LISTINGS, HOODS)
+    said = rank(matrix, Preferences(max_monthly=2800, areas=["Narnia"]), keep_all=True)
+    plain = rank(matrix, Preferences(max_monthly=2800), keep_all=True)
+    assert "location" not in said.explain("t:1").contributions
+    assert said.scores == plain.scores   # nothing flattened: the scores are the ones with no area at all

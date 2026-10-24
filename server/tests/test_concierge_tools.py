@@ -129,20 +129,6 @@ async def test_update_preferences_re_ranks_and_speaks_the_board(ctx):
     assert _view(ctx).version == before + 1 and _view(ctx).preferences.max_monthly == 3000
 
 
-async def test_only_the_first_preferences_of_a_call_text_the_link_and_say_so(ctx):
-    texts = []
-    ctx.text_link = lambda: texts.append(1) or True
-    first = json.loads(await _say(ctx, "update_preferences", '{"max_monthly": 3000}'))
-    assert first == {"result": _view(ctx).agent_says, "texted_link": True}
-    assert await _say(ctx, "update_preferences", '{"min_beds": 2}', "fc_2") == _view(ctx).agent_says
-    assert texts == [1]
-
-
-async def test_no_texted_link_field_when_the_text_could_not_go(ctx):
-    ctx.text_link = lambda: False
-    assert await _say(ctx, "update_preferences", '{"max_monthly": 3000}') == _view(ctx).agent_says
-
-
 async def test_focus_listing_by_rank_reads_the_card_back(ctx):
     second = _view(ctx).board[1]
     reply = await _say(ctx, "focus_listing", '{"listing_ref": "second"}')
@@ -166,8 +152,42 @@ async def test_focus_area_flies_to_a_known_street_or_says_it_cannot(ctx):
     assert area.label == "Bloor" and area.lat == pytest.approx(43.669) and area.zoom == tools.AREA_ZOOM
     before = _view(ctx).version
     assert await _say(ctx, "focus_area", '{"place": "King and Bay"}', "fc_2") == \
-        "I can't place that on the map yet."
+        f"Couldn't find King and Bay on the map. Nothing changed. {tools.ASK_PLACE}"
     assert _view(ctx).version == before
+
+
+def test_area_finds_places_said_loosely():
+    """"Queens" is Queen station; a street said with no type, a possessive or "over by" is still found."""
+    stations = [{"name": "Queen", "lat": 43.653, "lng": -79.379}, {"name": "Queen's Park", "lat": 43.660,
+                                                                   "lng": -79.390}]
+    def find(label):
+        return refs.area(label, lambda _: [], stations, CATALOGUE)
+    for said in ("Queens", "Queen's", "around Queens", "Queen station"):
+        assert find(said).how == "station" and find(said).lat == pytest.approx(43.653), said
+    assert find("Queens Park").lat == pytest.approx(43.660)
+    assert find("over by Dupont").how == "street" and find("Dupont Street").lat == pytest.approx(43.675)
+    east = find("Bloor East")
+    assert east.how == "street" and east.lng == pytest.approx(-79.380)   # only the east part of Bloor
+    assert find("Leslieville").how == "listings"                         # a listing's neighbourhood
+    for nonsense in ("purple fridge", "the", ""):
+        assert find(nonsense) is None, nonsense
+
+
+async def test_update_preferences_places_an_area_or_says_it_cannot(ctx):
+    """An area the search can't use doesn't get a bare "got it": a street becomes a point the board moves
+    to; a place nothing here holds stays for the geocoder, and the agent hears the list doesn't use it."""
+    reply = await _say(ctx, "update_preferences", '{"areas": ["over by Dupont"]}')
+    prefs = ctx.runtime.state(SID).preferences
+    assert prefs.areas == [] and prefs.anchors[0].label == "over by Dupont"
+    assert prefs.anchors[0].lat == pytest.approx(43.675)
+    assert _view(ctx).board[0].address == "322 Dupont St" and "Couldn't find" not in reply
+    reply = await _say(ctx, "update_preferences", '{"anchors": [{"label": "over by Dupont"}, '
+                                                  '{"label": "King and Bay"}]}', "fc_2")
+    assert reply.endswith(f"Couldn't find King and Bay on the map, so the list doesn't use it yet. "
+                          f"{tools.ASK_PLACE}")
+    prefs = ctx.runtime.state(SID).preferences
+    assert [(a.label, a.lat is not None) for a in prefs.anchors] == [("over by Dupont", True),
+                                                                      ("King and Bay", False)]
 
 
 KING_AND_BAY = (43.6486561, -79.3802633)
@@ -215,7 +235,8 @@ async def test_focus_area_asks_places_for_what_no_listing_names(placed, place, p
 
 async def test_focus_area_says_it_cannot_when_places_finds_nothing_either(placed):
     before = _view(placed).version
-    assert await _say(placed, "focus_area", '{"place": "Narnia"}') == "I can't place that on the map yet."
+    assert await _say(placed, "focus_area", '{"place": "Narnia"}') == \
+        f"Couldn't find Narnia on the map. Nothing changed. {tools.ASK_PLACE}"
     assert _view(placed).version == before
 
 

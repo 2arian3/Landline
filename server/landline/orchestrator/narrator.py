@@ -17,6 +17,7 @@ from zoneinfo import ZoneInfo
 from landline.contracts import Card, Event, PreferencesUpdated, SessionView
 from landline.db.catalogue import Catalogue
 from landline.orchestrator.state import SessionState
+from landline.scoring.weights import feature_key
 
 TORONTO = ZoneInfo("America/Toronto")
 MAX_WORDS = 25          # a tool reply is spoken; docs/CONTRACTS.md caps it
@@ -70,8 +71,11 @@ def line(before: SessionView | None, after: SessionView, events: Sequence[Event]
 
 
 def acknowledge(updates: Sequence[PreferencesUpdated]) -> str | None:
-    """"Got it: up to $2,600, light first." The first two things the renter changed, in a fixed order."""
+    """"Got it: up to $2,600, light first." The first two things the renter changed, in a fixed order. A
+    priority no feature ranks by isn't acknowledged; the line says so instead, and since it is also the
+    Concierge's tool reply, the Concierge can ask what the renter meant."""
     parts: list[str] = []
+    unranked: list[str] = []
     for u in updates:
         d = u.delta
         if d.max_monthly is not None:
@@ -84,11 +88,15 @@ def acknowledge(updates: Sequence[PreferencesUpdated]) -> str | None:
             parts.append(f"near {_join(_cap([a.label for a in d.anchors]))}")
         if d.pets:
             parts.append(f"with your {_join(_cap(d.pets))}")
-        if d.priorities:
-            parts.append(f"{d.priorities[0].strip().lower()} first")
+        if ranked := [p for p in d.priorities or () if feature_key(p)]:
+            parts.append(f"{ranked[0].strip().lower()} first")
+        unranked += [p.strip().lower() for p in d.priorities or () if not feature_key(p) and p.strip()]
         if d.must_have:
             parts.append(f"must have {_join(_cap(d.must_have))}")
-    return f"Got it: {', '.join(parts[:2])}." if parts else None
+    said = [f"Got it: {', '.join(parts[:2])}."] if parts else []
+    if unranked:
+        said.append(f"I can't rank by {_join(_cap(unranked))}.")
+    return " ".join(said) or None
 
 
 def rank_diff(before: SessionView, after: SessionView) -> str:

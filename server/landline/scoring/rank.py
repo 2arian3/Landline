@@ -96,6 +96,9 @@ def rank(matrix: FeatureMatrix, prefs: Preferences, *, weights: dict[str, float]
     status = status or {}
     weights = weights if weights is not None else weights_for(prefs, today=today)
     ctx = _Context(matrix, prefs, weights, overrides or {}, desired_sqft, decay_km, today)
+    if "location" in weights and not ctx.located():
+        # Areas that name nothing would make location a constant that only flattens every score.
+        weights = ctx.weights = {f: w for f, w in weights.items() if f != "location"}
     rows = list(range(len(matrix))) if keep_all else ctx.passing(rejected, status)
 
     # Weighted sum over the whole matrix from cached columns, then the passing rows once. A column that
@@ -144,10 +147,13 @@ def rank(matrix: FeatureMatrix, prefs: Preferences, *, weights: dict[str, float]
     return Ranking(order, ids, score, ctx)
 
 
-def explain(listing: Listing, prefs: Preferences, weights: dict[str, float] | None = None) -> Ranked:
-    """Reasons for one listing outside the catalogue (say, after a call added a fee). Rank is 1."""
+def explain(listing: Listing, prefs: Preferences, weights: dict[str, float] | None = None,
+            overrides: dict[str, Any] | None = None) -> Ranked:
+    """Reasons for one listing outside the catalogue (say, after a call added a fee). Rank is 1.
+    `overrides` are the values calls found for it, by matrix column."""
     matrix = FeatureMatrix.build([listing])
-    return rank(matrix, prefs, weights=weights, keep_all=True).explain(listing.listing_id)
+    found = {listing.listing_id: overrides} if overrides else None
+    return rank(matrix, prefs, weights=weights, keep_all=True, overrides=found).explain(listing.listing_id)
 
 
 class _Context:
@@ -318,6 +324,14 @@ class _Context:
             known = [v for v in values if v is not None]
             out.append(sum(known) / len(known) if known else None)
         return out
+
+    def located(self) -> bool:
+        """Whether location can tell listings apart: an anchor with a point, or an area that names a
+        neighbourhood or is some listing's own."""
+        if self.anchors:
+            return True
+        return bool(self.areas) and (bool(self.matrix.named(self.areas))
+                                     or not self.areas.isdisjoint(self.matrix.neighbourhood))
 
     # Words (docs/SCORING.md §5)
 

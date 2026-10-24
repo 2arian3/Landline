@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from landline.agents.auditor import llm as auditor_llm
-from landline.api import admin, browser_audio, twilio
+from landline.api import admin, browser_audio, me, twilio
 from landline.api.demo import DemoSessions
 from landline.api.judge import JudgeLines, StartLimit
 from landline.api.routes import router
@@ -101,6 +101,7 @@ def create_app(settings: Settings | None = None, catalogue: Catalogue | None = N
         max_age=600,
     )
     app.include_router(router)
+    app.include_router(me.router)
     app.include_router(admin.router)
     app.include_router(twilio.router)
     app.include_router(browser_audio.router)

@@ -1,0 +1,35 @@
+{
+  "id": "nonsense-then-cat",
+  "about": "Holdout: word salad after a budget; asks again and changes nothing, then saves the cat it hears next",
+  "lines": [
+    {
+      "say": "Hello, I want a studio or a one bedroom, max 2,200."
+    },
+    {
+      "say": "Seven bananas, the elevator dreams in green, yes, the carpet.",
+      "expect": {
+        "no_tools": true,
+        "says_any": ["catch", "again", "repeat", "understand", "follow", "mean"],
+        "says_none": ["banana", "elevator", "carpet", "green", "Don Mills", "listing"],
+        "prefs": {"max_monthly": 2200, "pets": null, "areas": null, "anchors": null, "must_have": null,
+                  "priorities": null}
+      }
+    },
+    {
+      "say": "Sorry, bad line. I have a cat.",
+      "expect": {
+        "prefs": {"pets": ["cat"]}
+      }
+    },
+    {
+      "say": "Thanks, goodbye."
+    }
+  ],
+  "final": {
+    "prefs": {"max_monthly": 2200, "pets": ["cat"], "areas": null, "anchors": null, "must_have": null,
+              "priorities": null},
+    "replies_avoid": ["banana", "elevator", "carpet"],
+    "no_request": true,
+    "ended": true
+  }
+}

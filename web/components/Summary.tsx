@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { heardLine } from "@/lib/format";
 import { resultsByPlace } from "@/lib/results";
 import type { Card, SessionView } from "@/lib/types";
@@ -22,8 +23,14 @@ export function Brand({
   const color = !line && connected && !stale ? "var(--color-real)" : "var(--color-ink-3)";
   return (
     <div className="flex items-center justify-between gap-3">
-      <div className="min-w-0">
+      <div className="flex min-w-0 items-baseline gap-2">
         <p className="text-fact font-strong tracking-[-0.01em]">Landline</p>
+        <Link
+          href="/me"
+          className="shrink-0 text-meta text-ink-3 underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-ink"
+        >
+          Your calls
+        </Link>
       </div>
       {!idle && (
         <p className="flex items-center gap-1.5 text-meta text-ink-2" aria-live="polite">

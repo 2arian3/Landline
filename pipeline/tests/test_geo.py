@@ -81,6 +81,32 @@ def test_listings_get_their_neighbourhood_and_nearest_station(conn):
     assert _listing(conn, "t:nowhere")["station"] is None
 
 
+def test_each_neighbourhood_gets_its_median_rent_by_bedrooms(conn):
+    # Fort York-Liberty Village: three 1-beds (t:in at 2000, plus these two) and one 2-bed.
+    for lid, cost, beds, lng in (("t:cheap", 1800, 1, -79.414), ("t:dear", 2600, 1, -79.416),
+                                 ("t:two", 3000, 2, -79.413)):
+        conn.execute("insert into listings (listing_id, source, source_id, url, first_seen, last_seen, "
+                     "status, address, rent, monthly_cost, beds, geom) values (%s, 't', %s, 'u', now(), "
+                     "now(), 'active', '1 Geo St', %s, %s, %s, "
+                     "ST_SetSRID(ST_MakePoint(%s, 43.635), 4326)::geography)",
+                     (lid, lid, cost, cost, beds, lng))
+    conn.commit()
+    coverage = geo.load(conn, HOODS, STATIONS, median_min=3)
+    medians = dict(conn.execute("select id, median_rent from neighbourhoods").fetchall())
+    assert medians == {1: {"1": 2000}, 2: {}, 3: {}}   # too few 2-beds, and Niagara has one listing
+    ratios = dict(conn.execute("select listing_id, price_vs_median from listings").fetchall())
+    assert ratios == {"t:in": 1.0, "t:cheap": pytest.approx(0.9), "t:dear": pytest.approx(1.3),
+                      "t:two": None, "t:next": None, "t:far": None, "t:nowhere": None}
+    assert (coverage["with_median"], coverage["price_vs_median"]) == (1, 3)
+    assert _listing(conn, "t:cheap")["provenance"]["price_vs_median"]["source"] == "derived"
+    # The 1-bed that sets the median leaves: the group is too small now, and nobody keeps a stale ratio.
+    conn.execute("update listings set status = 'removed' where listing_id = 't:dear'")
+    conn.commit()
+    geo.load(conn, HOODS, STATIONS, median_min=3)
+    assert conn.execute("select count(price_vs_median) from listings").fetchone()[0] == 0
+    assert "price_vs_median" not in _listing(conn, "t:cheap")["provenance"]
+
+
 def test_neighbourhoods_that_touch_are_adjacent(conn):
     geo.load(conn, HOODS, STATIONS)
     adjacent = dict(conn.execute("select id, adjacent from neighbourhoods order by id").fetchall())
