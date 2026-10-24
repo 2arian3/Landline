@@ -27,9 +27,11 @@ export function JudgeMode() {
   const [phase, setPhase] = useState<Phase>("intro");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [waitMin, setWaitMin] = useState(1);
+  const [doneFailed, setDoneFailed] = useState(false); // Done couldn't reach the server: nothing was ended
   const line = useJudgeLine();
 
   async function begin() {
+    setDoneFailed(false);
     setPhase("asking");
     const mic = await askForMic();
     if (mic === "denied") return setPhase("denied");
@@ -61,15 +63,22 @@ export function JudgeMode() {
 
   // Done ends the brief the way hanging up ends a phone call. The audio closes first, so Landline stops at
   // once; then the places the judge picked get called, and the board stays up to watch them.
+  // Pressed while still connecting, it ends the brief all the same (no socket opens after it). If the server
+  // can't be reached, the dock says so and Done can be tried again: nothing gets called until it answers.
   async function done() {
     line.end();
-    if (sessionId) {
-      await fetch(api(`/api/judge/${encodeURIComponent(sessionId)}/done`), { method: "POST" }).catch(() => null);
-    }
+    if (!sessionId) return;
+    setDoneFailed(false);
+    const res = await fetch(api(`/api/judge/${encodeURIComponent(sessionId)}/done`), {
+      method: "POST",
+      signal: AbortSignal.timeout(8000),
+    }).catch(() => null);
+    setDoneFailed(!res?.ok);
   }
 
   // Starting over ends the old session first, so its line is free for the next start.
   function again() {
+    setDoneFailed(false);
     if (sessionId) hangUp(sessionId);
     setSessionId(null);
     setPhase("intro");
@@ -90,7 +99,7 @@ export function JudgeMode() {
     <LiveBoard
       sessionId={sessionId}
       intro={<Intro phase={phase} waitMin={waitMin} onStart={begin} />}
-      dock={<VoiceBar line={line} onDone={done} onAgain={again} />}
+      dock={<VoiceBar line={line} doneFailed={doneFailed} onDone={done} onAgain={again} />}
       line={line.state === "connecting" || line.state === "dropped" ? LINE_WORDS[line.state] : null}
     />
   );
@@ -202,16 +211,19 @@ function Notice({ children }: { children: React.ReactNode }) {
 
 function VoiceBar({
   line,
+  doneFailed,
   onDone,
   onAgain,
 }: {
   line: ReturnType<typeof useJudgeLine>;
+  doneFailed: boolean;
   onDone: () => void;
   onAgain: () => void;
 }) {
   const over = line.state === "ended" || line.state === "dropped";
-  const label =
-    line.state === "connecting" || line.state === "ended" || line.state === "dropped"
+  const label = doneFailed
+    ? "Couldn\u2019t end the brief"
+    : line.state === "connecting" || line.state === "ended" || line.state === "dropped"
       ? LINE_WORDS[line.state]
       : line.talking
             ? "Landline is talking"
@@ -227,8 +239,11 @@ function VoiceBar({
       </div>
       {over ? (
         <>
-          {/* A dropped line can still end the brief, so what the judge picked gets called. */}
-          {line.state === "dropped" && <Secondary onClick={onDone}>Done</Secondary>}
+          {/* A dropped line can still end the brief, so what the judge picked gets called; a Done that
+              couldn't reach the server can be tried again. */}
+          {(line.state === "dropped" || doneFailed) && (
+            <Secondary onClick={onDone}>{doneFailed ? "Try again" : "Done"}</Secondary>
+          )}
           <button
             type="button"
             onClick={onAgain}

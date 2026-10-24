@@ -241,6 +241,7 @@ export function MapView({
     framed.current = boardKey;
     const bounds = new LngLatBounds();
     located.forEach((c) => bounds.extend([c.lng!, c.lat!]));
+    m.resize(); // a layout change (the panel, the sheet, a rotation) may have resized the map since its last frame
     m.fitBounds(bounds, { padding, maxZoom: 14, duration: reducedMotion() ? 0 : 800 });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, boardKey, padding.bottom, padding.right]);
