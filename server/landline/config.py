@@ -23,6 +23,15 @@ class Settings:
     # Where a judge's browser sends its audio, relative to the API. A placeholder until the browser
     # transport (A-03) settles it; nothing else spells it out.
     judge_ws_path: str = "/api/judge/{session_id}/audio"
+    # The renter's phone call (A-02, A-04). Without the key the number answers "not taking calls";
+    # without the token every Twilio webhook is refused.
+    boson_api_key: str | None = None
+    twilio_auth_token: str | None = None
+    # The API's public origin, e.g. https://landline.134.87.8.230.sslip.io. Twilio signs this URL, and the
+    # media stream's wss:// URL is built from it. Unset: taken from the request (local runs only).
+    public_url: str | None = None
+    higgs_voice_renter: str = "default"
+    renter_call_max_s: float = 900
 
     @classmethod
     def load(cls) -> Settings:
@@ -34,6 +43,10 @@ class Settings:
             cors_origins=tuple(o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()),
             cors_origin_regex=os.getenv("CORS_ORIGIN_REGEX") or None,
             higgs_max_sessions=int(os.getenv("HIGGS_MAX_SESSIONS") or 5),
+            boson_api_key=os.getenv("BOSON_API_KEY") or None,
+            twilio_auth_token=os.getenv("TWILIO_AUTH_TOKEN") or None,
+            public_url=(os.getenv("PUBLIC_URL") or "").rstrip("/") or None,
+            higgs_voice_renter=os.getenv("HIGGS_VOICE_RENTER") or "default",
         )
 
     def allowed_origins(self) -> list[str]:
