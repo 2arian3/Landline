@@ -11,9 +11,10 @@ One call goes like this:
    (PORTING #1), the stream claims the call once, and `converse` runs the Caller on it from the first second.
    Detection says a machine (after its beep): the call is switched to a short voicemail that hangs up, which
    ends the stream and the Caller with it.
-3. Whatever happens first ends the call through `OutboundCalls.finalize(call_id, reason)`: Twilio saying
+3. Whatever happens first ends the call through `OutboundCalls.end(call_id, reason)`: Twilio saying
    busy, no-answer or failed, the voicemail finishing, the conversation ending, or the Dispatcher's
-   deadline. Only the first does anything (PORTING #2). If Twilio's line is still up, it is hung up.
+   deadline. The row is written before it is logged, and only the first end does anything (PORTING #2).
+   If Twilio's line is still up, it is hung up.
 
 What is said on the line is `converse`: the Caller (A-05) on Higgs, in voice/phone_caller.py. Its first
 words are the disclosure, from `opening()` here, and that the call is recorded when its audio is (A-10).
@@ -108,13 +109,28 @@ class OutboundCalls:
         return call
 
     def finalize(self, call_id: str, reason: EndReason) -> bool:
-        """Ends the call. Only the first end for a call does anything; returns whether this was it."""
+        """Claims the end in memory. Only the first end for a call does anything. It does not log and
+        does not touch the database: `end` writes the row, and only then logs (#217)."""
         call = self.live.get(call_id)
         if call is None or call.done:
             return False
         call.ended.set_result(reason)
         if not call.media.done():
             call.media.cancel()
+        return True
+
+    async def end(self, call_id: str, reason: EndReason, db: Any = None) -> bool:
+        """Ends the call. The row is written before the log, so a restart cannot say the call ended
+        while the row is still ringing. A failed write is not logged as an end. Only the first end
+        for a call does anything."""
+        if not self.finalize(call_id, reason):
+            return False
+        if db is not None:
+            try:
+                await db.calls.finalize(call_id, reason)
+            except Exception:
+                log.exception("listing call %s: the end was not saved", call_id)
+                return True
         log.info("listing call %s ended: %s", call_id, reason)
         return True
 
@@ -152,6 +168,10 @@ class TwilioRunner:
         self.client = client or httpx.AsyncClient(timeout=TIMEOUT_S)
 
     @property
+    def _db(self) -> Any:
+        return self.runtime.db if self.runtime is not None else None
+
+    @property
     def ready(self) -> bool:
         s = self.settings
         return bool(s.twilio_account_sid and s.twilio_auth_token and s.twilio_phone_number and s.public_url)
@@ -167,10 +187,10 @@ class TwilioRunner:
                 call.twilio_sid = await self.dial(dial)
             except NotAllowed:
                 log.error("call %s: %s is not on the allowlist; not dialled", dial.call_id, _tail(dial.to))
-                self.calls.finalize(dial.call_id, "blocked")
+                await self.calls.end(dial.call_id, "blocked", self._db)
             except Exception:
                 log.exception("call %s: Twilio would not place it", dial.call_id)
-                self.calls.finalize(dial.call_id, "failed")
+                await self.calls.end(dial.call_id, "failed", self._db)
             # A person answered: open Higgs while Twilio connects the stream, when the Caller can. It runs in
             # this call's line, so it counts against the Dispatcher's limit like the call itself.
             prepare = getattr(self.converse, "prepare", None)
@@ -192,13 +212,14 @@ class TwilioRunner:
                     # A machine after all: its voicemail is playing, and Twilio's final status ends the
                     # call `voicemail` once it has, so the line isn't put down on the message.
                     return CallResult(await call.ended)
-                self.calls.finalize(dial.call_id, result.end_reason)
+                await self.calls.end(dial.call_id, result.end_reason, self._db)
                 return CallResult(await call.ended, result.outcome)
             return CallResult(await call.ended)
         finally:
             await _discard(warm)   # opened, but no stream came for it: closed, never left open
-            # The deadline, a crash or the conversation ending: make sure Twilio's line is down too.
-            self.calls.finalize(dial.call_id, "timeout")
+            # The deadline, a crash or the conversation ending: the row records it before the log,
+            # then Twilio's line is hung up too. A call that already ended is left as it was.
+            await self.calls.end(dial.call_id, "timeout", self._db)
             self.calls.live.pop(dial.call_id, None)
             if call.twilio_sid and not call.hung_up:
                 with contextlib.suppress(Exception):
@@ -277,7 +298,8 @@ class TwilioRunner:
         Twilio's final status ends that call. A hang-up that fails is logged, and place() tries again."""
         if call.state == "voicemail":
             return
-        self.calls.finalize(call.dial.call_id, reason)   # before the hang-up, whose "completed" says "hangup"
+        # Before the hang-up, whose "completed" would say "hangup".
+        await self.calls.end(call.dial.call_id, reason, self._db)
         if not call.twilio_sid:
             return
         try:

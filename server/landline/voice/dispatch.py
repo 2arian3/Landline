@@ -24,7 +24,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
-from typing import Protocol
+from typing import Protocol, cast
 from zoneinfo import ZoneInfo
 
 from landline.config import Settings
@@ -45,6 +45,7 @@ from landline.contracts import (
     as_e164,
 )
 from landline.contracts.tools import Availability
+from landline.db.rows import CallRow, SessionRow
 from landline.orchestrator import Refused, SessionRuntime, SessionState
 from landline.voice.calls import mint
 from landline.voice.sms import Texter
@@ -55,6 +56,9 @@ TORONTO = ZoneInfo("America/Toronto")
 OPENS, CLOSES = time(9, 0), time(20, 0)   # Toronto business hours for calling listing agents
 WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
 SMS_MAX = 1500                            # Twilio joins long texts; keep the results well inside one message
+# end_reason values the contracts accept. A row with anything else is closed as timeout.
+_REASONS = frozenset({"done", "refused", "wrong_number", "voicemail", "hangup", "no_answer",
+                      "busy", "failed", "blocked", "timeout"})
 
 
 @dataclass(frozen=True)
@@ -103,6 +107,7 @@ class Dispatcher:
         for number in sorted(self.allowlist):
             self._phones.put_nowait(number)
         self._tasks: set[asyncio.Task] = set()
+        self._running: set[str] = set()   # call ids this process is placing; a sweep must not take them
         runtime.on("SessionEnded", self.on_session_ended)
         runtime.on("CallsCompleted", self.on_calls_completed)
 
@@ -152,17 +157,21 @@ class Dispatcher:
     # One call
 
     async def _call(self, call_id: str, listing_id: str, plan: CallPlan, runner: CallRunner) -> None:
-        if runner.uses_phone and not self.allowlist:
-            await self._state(plan.session_id, call_id, "blocked")
-            await self._finish(plan, call_id, listing_id, CallResult("blocked"))
-            return
-        to = await self._phones.get() if runner.uses_phone else None   # waits for a free phone
+        self._running.add(call_id)
         try:
-            result = await self._place(call_id, listing_id, plan, runner, to)
+            if runner.uses_phone and not self.allowlist:
+                await self._state(plan.session_id, call_id, "blocked")
+                await self._finish(plan, call_id, listing_id, CallResult("blocked"))
+                return
+            to = await self._phones.get() if runner.uses_phone else None   # waits for a free phone
+            try:
+                result = await self._place(call_id, listing_id, plan, runner, to)
+            finally:
+                if to is not None:
+                    self._phones.put_nowait(to)   # free again, whether answered, failed or timed out
+            await self._finish(plan, call_id, listing_id, result)
         finally:
-            if to is not None:
-                self._phones.put_nowait(to)   # free again, whether the call was answered, failed or timed out
-        await self._finish(plan, call_id, listing_id, result)
+            self._running.discard(call_id)
 
     async def _place(self, call_id: str, listing_id: str, plan: CallPlan, runner: CallRunner,
                      to: str | None) -> CallResult:
@@ -172,9 +181,10 @@ class Dispatcher:
         async with self._lines:
             if runner.uses_phone:
                 await self._wait_for_hours()
+            deadline = self.clock() + timedelta(seconds=self.settings.listing_call_max_s)
             dial = Dial(call_id=call_id, session_id=plan.session_id, listing_id=listing_id, to=to, plan=plan,
-                        deadline=self.clock() + timedelta(seconds=self.settings.listing_call_max_s))
-            await self._state(plan.session_id, call_id, "dialing")
+                        deadline=deadline)
+            await self._state(plan.session_id, call_id, "dialing", deadline=deadline)
 
             async def report(state: CallState) -> None:
                 await self._state(plan.session_id, call_id, state)
@@ -196,19 +206,22 @@ class Dispatcher:
                 return
             await self.sleep(wait)
 
-    async def _state(self, sid: str, call_id: str, state: CallState) -> None:
+    async def _state(self, sid: str, call_id: str, state: CallState, *,
+                     deadline: datetime | None = None) -> None:
         await self._emit(CallStateChanged(session_id=sid, at=self.clock(), idem_key=f"{call_id}:{state}",
                                           call_id=call_id, state=state))
         if self.runtime.db is not None:
-            await self.runtime.db.calls.set_state(call_id, state, answered=state == "live")
+            await self.runtime.db.calls.set_state(call_id, state, answered=state == "live",
+                                                  deadline_at=deadline)
 
     async def _finish(self, plan: CallPlan, call_id: str, listing_id: str, result: CallResult) -> None:
-        """End the call once, then record its outcome, then complete the plan if this was the last one."""
+        """End the call once, then record its outcome, then complete the plan if this was the last one.
+        The row is written before the events, so a restart cannot lose the end and keep the call open."""
         sid, now, reason = plan.session_id, self.clock(), result.end_reason
-        await self._emit(CallEnded(session_id=sid, at=now, idem_key=f"{call_id}:ended", call_id=call_id,
-                                   reason=reason))
         if self.runtime.db is not None:
             await self.runtime.db.calls.finalize(call_id, reason)   # the first end wins
+        await self._emit(CallEnded(session_id=sid, at=now, idem_key=f"{call_id}:ended", call_id=call_id,
+                                   reason=reason))
         outcome = result.outcome or CallOutcome(call_id=call_id, listing_id=listing_id, end_reason=reason)
         await self._emit(OutcomeReady(session_id=sid, at=now, idem_key=f"{call_id}:outcome", outcome=outcome))
         state = self.runtime.state(sid)
@@ -259,6 +272,101 @@ class Dispatcher:
         for task in list(self._tasks):
             task.cancel()
         await asyncio.gather(*self._tasks, return_exceptions=True)
+
+    # A process that died mid-call (#217)
+
+    async def recover(self) -> None:
+        """Reload sessions a restart left open, close calls past their deadline as timeout, and place
+        again any call that never dialled. When every call in a plan has ended, CallsCompleted fires
+        and the renter is texted once. No database: nothing was stored, so there is nothing to resume."""
+        db = self.runtime.db
+        if db is None:
+            return
+        for row in await db.sessions.list_active():
+            self._reload(row)
+        late = [c for c in await db.calls.past_deadline(self.clock()) if c.role == "listing"]
+        for call in late:
+            if call.call_id not in self._running:
+                await self._sweep_timeout(call)
+        for call in await db.calls.in_state(["queued"]):
+            self._requeue(call)
+        for row in await db.sessions.list_active():
+            await self._complete(row.session_id)
+        if late:
+            log.info("restart: finalized %d listing call(s) past their deadline", len(late))
+
+    def _reload(self, row: SessionRow) -> None:
+        raw = row.snapshot or {}
+        state_raw, view_raw = raw.get("state"), raw.get("view")
+        if not isinstance(state_raw, dict) or not isinstance(view_raw, dict):
+            log.warning("session %s has no snapshot to reload", row.session_id)
+            return
+        state = SessionState.model_validate(state_raw)
+        view = SessionView.model_validate(view_raw)
+        if view.version != row.version:
+            view = view.model_copy(update={"version": row.version})
+        self.runtime.load(state, view)
+
+    async def _sweep_timeout(self, call: CallRow) -> None:
+        """The row first, then the events. The events are what text the renter; if the process dies
+        between them, the next start sees an ended row and still completes the plan."""
+        db = self.runtime.db
+        assert db is not None
+        await db.calls.finalize(call.call_id, "timeout")
+        sid = call.session_id
+        if sid is None or not self.runtime.has(sid):
+            return
+        state = self.runtime.state(sid)
+        plan, view = state.plan, state.calls.get(call.call_id)
+        lid = (view.listing_id if view else None) or call.listing_id
+        if plan is None or lid is None or state.phase != "calling":
+            return
+        await self._finish(plan, call.call_id, lid, CallResult("timeout"))
+
+    def _requeue(self, call: CallRow) -> None:
+        """A call that never left `queued` (waiting for a phone, or for business hours) is placed again.
+        One this process is already placing, or one past its deadline, is left to that path."""
+        if call.role != "listing" or not call.session_id or not call.listing_id:
+            return
+        if call.call_id in self._running:
+            return
+        if call.deadline_at is not None and call.deadline_at < self.clock():
+            return
+        if not self.runtime.has(call.session_id):
+            return
+        state = self.runtime.state(call.session_id)
+        if state.phase != "calling" or state.plan is None or call.listing_id not in state.plan.listing_ids:
+            return
+        runner = self.runner_for(call.session_id)
+        if runner is None:
+            return
+        self._spawn(self._call(call.call_id, call.listing_id, state.plan, runner))
+
+    async def _complete(self, sid: str) -> None:
+        """A plan whose calls have all ended in the table, but whose CallsCompleted never committed
+        (the process died after the row and before the text)."""
+        if not self.runtime.has(sid) or self.runtime.db is None:
+            return
+        state = self.runtime.state(sid)
+        if state.phase != "calling" or state.plan is None:
+            return
+        rows = {r.call_id: r for r in await self.runtime.db.calls.for_session(sid)}
+        pending = False
+        for cid, view in list(state.calls.items()):
+            row = rows.get(cid)
+            if cid in self._running or row is None or row.ended_at is None:
+                pending = True   # still to run, or still open: the plan is not finished
+                continue
+            if view.listing_id not in self.runtime.state(sid).outcomes:
+                reason = cast(EndReason, row.end_reason if row.end_reason in _REASONS else "timeout")
+                await self._finish(state.plan, cid, view.listing_id, CallResult(reason))
+        if pending:
+            return
+        state = self.runtime.state(sid)
+        if (state.phase == "calling" and state.plan is not None
+                and all(lid in state.outcomes for lid in state.plan.listing_ids)):
+            await self._emit(CallsCompleted(session_id=sid, at=self.clock(), idem_key=f"{sid}:completed",
+                                            call_ids=list(state.calls)))
 
 
 def freeze(state: SessionState, now: datetime) -> CallPlan:

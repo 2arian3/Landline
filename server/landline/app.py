@@ -29,6 +29,8 @@ from landline.voice.sim import SimRunner
 from landline.voice.sms import Texter
 from landline.voice.translate import Translator
 
+log = logging.getLogger(__name__)
+
 
 def _log_landline_info() -> None:
     """uvicorn sets up only its own loggers, so landline.* INFO lines (calls, transcripts, tool calls)
@@ -109,6 +111,12 @@ def create_app(settings: Settings | None = None, catalogue: Catalogue | None = N
                                           translate=Translator(chat))
         # A restart lets live calls finish and page streams end before uvicorn stops (#167).
         app.state.drain = drain.install(app.state)
+        # Calls a previous process left open: past their deadline they end timeout, and ones that
+        # never dialled are placed again (#217). A failure here must not stop the API coming up.
+        try:
+            await app.state.dispatcher.recover()
+        except Exception:
+            log.exception("restart sweep failed")
         yield
         await app.state.dispatcher.close()
         await outbound.uninstall(app.state.outbound)
