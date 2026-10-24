@@ -3,7 +3,9 @@
 The Caller passes the landlord's words to `book_viewing`; nothing about the date comes from the model. A
 day (a weekday, today or tomorrow) and a time (digits or words, with or without am/pm) are both needed. A
 time with no am/pm reads as the one inside the renter's windows when exactly one is; otherwise 8–11 is
-morning and 12–7 is afternoon or evening, the way people talk about viewings.
+morning and 12–7 is afternoon or evening, the way people talk about viewings. A weekday that is today and
+already past reads as next week, unless `keep_past_today`: `book_viewing` keeps it today, so it can say the
+time has passed and offer what's left (`open_times`) rather than call it outside the renter's windows.
 """
 from __future__ import annotations
 
@@ -23,8 +25,10 @@ EVENING = re.compile(r"\b(pm|p\.m\.|afternoon|evening|tonight|at night)\b")
 MORNING = re.compile(r"\b(am|a\.m\.|morning)\b")
 
 
-def parse(text: str, now: datetime, windows: list[Window] = ()) -> datetime | None:
-    """The next such slot in Toronto time, or None if the words don't name both a day and a time."""
+def parse(text: str, now: datetime, windows: list[Window] = (),
+          keep_past_today: bool = False) -> datetime | None:
+    """The next such slot in Toronto time (with `keep_past_today`, today's even when it has passed), or None
+    if the words don't name both a day and a time."""
     words = text.lower().replace("’", "'")
     day = _day(words, now.astimezone(TORONTO))
     clock = _clock(words)
@@ -42,7 +46,7 @@ def parse(text: str, now: datetime, windows: list[Window] = ()) -> datetime | No
     else:
         readings = [_at(day, hour % 12, minute), _at(day, hour % 12 + 12, minute)]
     named_weekday = not re.search(r"\b(today|tonight|tomorrow|this (afternoon|evening|morning))\b", words)
-    if named_weekday:   # "Saturday at 11" said on a Saturday afternoon means next Saturday
+    if named_weekday and not keep_past_today:   # "Saturday at 11" on a Saturday afternoon: next Saturday
         readings = [r + timedelta(days=7) if r <= now else r for r in readings]
     inside = [r for r in readings if within(r, windows)]
     if len(inside) == 1 or len(readings) == 1:
@@ -54,12 +58,33 @@ def within(at: datetime, windows: list[Window]) -> bool:
     return any(w.start <= at < w.end for w in windows)
 
 
+def open_times(windows: list[Window], now: datetime, most: int = 2) -> str | None:
+    """What can still be booked, in words: "between 12 pm and 2 pm today, or Sunday between 1 pm and 5 pm".
+    Each window from now (rounded up to the half hour) to its end; None when every window has passed."""
+    soonest = now + timedelta(minutes=-now.minute % 30, seconds=-now.second, microseconds=-now.microsecond)
+    today = now.astimezone(TORONTO).date()
+    said = []
+    for w in sorted(windows, key=lambda w: w.start):
+        start = max(w.start, soonest)
+        if start >= w.end:
+            continue
+        local = start.astimezone(TORONTO)
+        span = f"between {_clock_words(start)} and {_clock_words(w.end)}"
+        day = "today" if local.date() == today else WEEKDAYS[local.weekday()].capitalize()
+        said.append(f"{span} today" if day == "today" else f"{day} {span}")
+    return ", or ".join(said[:most]) or None
+
+
 def spoken(at: datetime) -> str:
     """'Saturday at 2 pm', for replies and results."""
     local = at.astimezone(TORONTO)
+    return f"{WEEKDAYS[local.weekday()].capitalize()} at {_clock_words(at)}"
+
+
+def _clock_words(at: datetime) -> str:
+    local = at.astimezone(TORONTO)
     h12, half = local.hour % 12 or 12, "am" if local.hour < 12 else "pm"
-    clock = f"{h12} {half}" if local.minute == 0 else f"{h12}:{local.minute:02d} {half}"
-    return f"{WEEKDAYS[local.weekday()].capitalize()} at {clock}"
+    return f"{h12} {half}" if local.minute == 0 else f"{h12}:{local.minute:02d} {half}"
 
 
 def _day(words: str, local: datetime) -> date | None:
