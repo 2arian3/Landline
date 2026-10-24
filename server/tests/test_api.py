@@ -9,7 +9,7 @@ from landline.api.demo import NO_RESULTS_YET, TORONTO, DemoSessions, slot, windo
 from landline.api.judge import JudgeLines, StartLimit, client_ip
 from landline.app import create_app
 from landline.config import Settings
-from landline.contracts import Listing, Preferences
+from landline.contracts import Listing, Preferences, SessionStarted
 from landline.db.catalogue import Catalogue
 
 NOW = datetime(2026, 10, 22, tzinfo=UTC)
@@ -303,6 +303,13 @@ def test_judge_done_ends_the_brief_behind_the_gate():
         unplanned = c.post("/api/judge/start").json()["session_id"]
         assert c.post(f"/api/judge/{unplanned}/done").json()["phase"] == "closed"   # nothing to call
         assert c.post("/api/judge/s_unknown000/done").status_code == 404   # not a judge session
+        # A renter's phone call is in the runtime too, and Done must not end it from outside.
+        phone = "s_phonecall1"
+        c.portal.call(c.app.state.runtime.start, SessionStarted(
+            session_id=phone, at=datetime.now(UTC), idem_key=f"{phone}:started", channel="phone",
+            caller_phone="+14165550199"))
+        assert c.post(f"/api/judge/{phone}/done").status_code == 404
+        assert c.get(f"/api/sessions/{phone}").json()["phase"] == "open"
 
 
 def test_judge_start_mints_a_session_and_its_audio_socket():

@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from landline.agents.concierge import tools
-from landline.agents.concierge.prompt import GREETING, RETURNING, WELCOME_BACK
+from landline.agents.concierge.prompt import CALL_CONNECTED, GREETING, INSTRUCTIONS, RETURNING, WELCOME_BACK
 from landline.api.browser_audio import JUDGE_AUDIO_PATH
 from landline.api.twilio import BUSY, NOT_READY
 from landline.app import create_app
@@ -204,8 +204,17 @@ def test_a_returning_caller_is_welcomed_back_with_what_the_runtime_remembers():
             ws.send_json({"event": "stop", "streamSid": "MZ1"})
             with pytest.raises(WebSocketDisconnect):
                 ws.receive_json()
-        assert fake.session["session"]["instructions"].endswith(f"{RETURNING}{remembered}")
-        assert fake.sent[0] == {"type": "response.create", "response": {"instructions": WELCOME_BACK}}
+        assert fake.session["session"]["instructions"].endswith(f"{WELCOME_BACK}{RETURNING}{remembered}")
+        # No instructions on response.create: they would replace the session's, memory and all.
+        assert fake.sent[:2] == [{"type": "conversation.item.create", "item": {
+            "type": "message", "role": "user", "content": [{"type": "input_text", "text": CALL_CONNECTED}]}},
+            {"type": "response.create"}]
+
+
+def test_a_first_time_caller_is_greeted_with_the_greeting_alone():
+    instructions, start = bridge.opening(None)
+    assert instructions == INSTRUCTIONS and WELCOME_BACK not in instructions
+    assert start == [{"type": "response.create", "response": {"instructions": GREETING}}]
 
 
 class FakeTexter:
@@ -366,6 +375,31 @@ def test_end_session_hangs_up_once_the_goodbye_has_played(monkeypatch):
         # The goodbye was already said: no new response after end_session's answer.
         assert fake.sent[-1] == {"type": "conversation.item.create", "item": {
             "type": "function_call_output", "call_id": "fc_bye", "output": "Goodbye."}}
+
+
+def test_end_session_with_nothing_said_asks_for_a_goodbye_before_hanging_up(monkeypatch):
+    monkeypatch.setattr(bridge, "HANG_UP_GRACE_S", 0.01)
+    goodbye = base64.b64encode(b"\x00\x00" * 2400).decode()
+    fake = FakeHiggs(script=[
+        {"type": "response.created", "response": {"id": "r1"}},
+        {**_tool_call("end_session", {}, "fc_bye"), "response_id": "r1"},
+        {"type": "response.done", "response": {"id": "r1", "output": [{"type": "function_call"}]}},
+        {"type": "response.created", "response": {"id": "r2"}},
+        {"type": "response.output_audio.delta", "delta": goodbye},
+        {"type": "response.done", "response": {"id": "r2", "output": [{"type": "message"}]}},
+    ])
+    with _client(judge_audio_ready=True) as c:
+        c.app.state.connect_higgs = fake.connect
+        start = c.post("/api/judge/start").json()
+        with c.websocket_connect(start["ws_url"]) as ws:
+            assert len(ws.receive_bytes()) == 4800   # the goodbye played before the hang-up
+            with pytest.raises(WebSocketDisconnect):
+                ws.receive_bytes()
+        assert c.app.state.calls.recent[-1].end_reason == "end_session"
+        # The goodbye is asked for in the tool's answer, so the Concierge keeps its own instructions.
+        assert fake.sent[-2:] == [{"type": "conversation.item.create", "item": {
+            "type": "function_call_output", "call_id": "fc_bye", "output": tools.SAY_GOODBYE}},
+            {"type": "response.create"}]
 
 
 def test_playback_clock_counts_audio_sent_and_resets_on_barge_in():

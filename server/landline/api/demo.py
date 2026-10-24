@@ -49,8 +49,11 @@ from landline.scoring import FeatureMatrix, Ranked, explain, rank
 
 BOARD_SIZE = 6
 TICK_S = 1.2     # each step of the scripted calls: dialing, ringing, live, then hang-ups a tick or more apart
-if os.getenv("DEMO_TICK_S"):   # slower scripted calls for a video take, so their captions can be read
-    TICK_S = float(os.environ["DEMO_TICK_S"])
+try:   # DEMO_TICK_S slows the scripted calls for a video take, so their captions can be read
+    if 0 < (_tick := float(os.getenv("DEMO_TICK_S") or TICK_S)) <= 10:
+        TICK_S = _tick
+except ValueError:   # "2.5s", "slow": keep the default rather than fail the whole API at import
+    pass
 PLANNED = 4      # the demo plans the top four places with a pin; the fourth never picks up
 TORONTO = ZoneInfo("America/Toronto")
 # "I'm free Saturday afternoon, book one if you can": the renter's window, and the slot an agent offers.
@@ -407,8 +410,8 @@ def _upper(s: str) -> str:
 
 
 def _pinned(c: Card) -> bool:
-    """Inside the box MapView.tsx draws pins in. A place outside it (701 Don Mills Rd's flipped longitude
-    in the fixture) stays in the list without a pin, so the demo doesn't plan it: its status couldn't show."""
+    """Inside the box MapView.tsx draws pins in (the parser nulls points outside it since #17). A place
+    without a pin stays in the list, so the demo doesn't plan it: its status couldn't show."""
     return c.lat is not None and c.lng is not None and 43.3 < c.lat < 44.4 and -80.3 < c.lng < -78.6
 
 
