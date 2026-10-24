@@ -3,6 +3,7 @@
 import { heardLine } from "@/lib/format";
 import { resultsByPlace } from "@/lib/results";
 import type { Card, SessionView } from "@/lib/types";
+import { splitWelcome } from "@/lib/welcome";
 
 export function Brand({
   stale,
@@ -142,10 +143,7 @@ export function Results({ view, compact = false }: { view: SessionView | null; c
  */
 export function Welcome({ view, compact = false }: { view: SessionView | null; compact?: boolean }) {
   if (!view?.returning) return null;
-  const opening = opensWithWelcome(view) ? view.agent_says : "";
-  const greeting =
-    /^Welcome back[^.!?]*[.!?]/i.exec(opening)?.[0] ?? `Welcome back${view.user_name ? `, ${view.user_name}` : ""}.`;
-  const news = opening.slice(greeting.length).trim();
+  const { greeting, news } = splitWelcome(opensWithWelcome(view) ? view.agent_says : "", view.user_name);
   return (
     <div className="space-y-0.5">
       <p className={`font-label text-ink ${compact ? "text-support" : "text-fact"}`}>{greeting}</p>
