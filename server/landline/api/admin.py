@@ -218,6 +218,18 @@ async def call_audio(call_id: str, db: AdminDb, track: Literal["both", "caller",
     return Response(wav, media_type="audio/wav", headers={"Cache-Control": "no-store"})
 
 
+@router.get("/calls/{call_id}/avatar", response_class=Response,
+            responses={200: {"content": {"video/mp4": {}}}, 404: {"description": "no clip yet"}})
+async def call_avatar(call_id: str, db: AdminDb, request: Request) -> Response:
+    """The call's Higgs Avatar clip, the same MP4 the board plays, behind the admin token. 404 until ready."""
+    del db  # the dependency is the token check; the bytes come from the clip store
+    clips = getattr(request.app.state, "clips", None)
+    video = await clips.mp4(call_id, None) if clips is not None else None
+    if not video:
+        raise HTTPException(404, "no clip yet")
+    return Response(video, media_type="video/mp4", headers={"Cache-Control": "private"})
+
+
 @router.get("/export", response_class=StreamingResponse,
             responses={200: {"content": {"application/gzip": {}}}})
 async def export_db(db: AdminDb, audio: bool = False) -> StreamingResponse:

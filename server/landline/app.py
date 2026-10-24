@@ -20,6 +20,7 @@ from landline.db.catalogue import Catalogue
 from landline.db.pool import Database
 from landline.orchestrator import SessionRuntime
 from landline.voice import higgs, outbound
+from landline.voice.avatar_clip import Clips
 from landline.voice.calls import RenterCalls
 from landline.voice.dispatch import Dispatcher
 from landline.voice.line import Lines
@@ -95,11 +96,13 @@ def create_app(settings: Settings | None = None, catalogue: Catalogue | None = N
         # queued.
         chat = auditor_llm.from_env()   # the Auditor's text LLM (A-07); None runs it on rules alone
         extractor = chat.json if chat else None
+        # Clips of Landline's voice, rendered after each call. Before the runners, so they can schedule one.
+        app.state.clips = Clips.open(settings, db)
         app.state.outbound = outbound.install(app.state, settings, extractor=extractor)
         # Hard rule 6: a judge's (or any browser brief's) calls always go to the sim landlords; only a phone
         # renter's go over Twilio, and only with TRANSPORT=voice (voice/routing.py).
         sim = SimRunner(app.state.runtime, lambda key, cfg: app.state.connect_higgs(key, cfg),
-                        settings.boson_api_key or "", extractor=extractor)
+                        settings.boson_api_key or "", extractor=extractor, clips=app.state.clips)
         runner = ByChannel(app.state.runtime, phone=app.state.outbound.runner, sim=sim,
                            sim_for_phone=settings.transport == "sim")
         app.state.dispatcher = Dispatcher(app.state.runtime, settings, runner=runner, texter=app.state.texter,
@@ -112,6 +115,7 @@ def create_app(settings: Settings | None = None, catalogue: Catalogue | None = N
         await app.state.texter.close()
         app.state.sessions.close()
         await app.state.runtime.close()
+        await app.state.clips.aclose()
         if db is not None:
             await db.close()
 

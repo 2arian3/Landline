@@ -17,7 +17,19 @@ from psycopg.types.json import Jsonb
 
 from landline.contracts import EventBase
 from landline.db.base import Conn, Repo
-from landline.db.rows import AudioRow, BoardEntry, BoardRow, CallRow, EventRow, FactRow, SessionRow, TurnRow
+from landline.db.rows import (
+    AudioRow,
+    AvatarClip,
+    AvatarFile,
+    AvatarRow,
+    BoardEntry,
+    BoardRow,
+    CallRow,
+    EventRow,
+    FactRow,
+    SessionRow,
+    TurnRow,
+)
 
 
 class StaleVersion(Exception):
@@ -201,6 +213,57 @@ class Audio(Repo):
             await cur.execute("select exists (select 1 from call_audio where call_id = %s)", (call_id,))
             row = await cur.fetchone()
             return bool(row and row[0])
+
+
+class Avatars(Repo):
+    """call_avatar: one Higgs Avatar MP4 of Landline's voice per call, rendered after the call."""
+
+    async def claim(self, call_id: str, conn: Conn = None) -> bool:
+        """Start this call's clip. False when a row is already there: a second ask does nothing."""
+        n = await self._count(
+            "insert into call_avatar (call_id, status) values (%s, 'queued') "
+            "on conflict (call_id) do nothing",
+            (call_id,), conn,
+        )
+        return n == 1
+
+    async def save(self, call_id: str, *, status: str, boson_video_id: str | None = None,
+                   error: str | None = None, video: bytes | None = None, conn: Conn = None) -> None:
+        """Move the clip on. A missing id or MP4 leaves the one already stored."""
+        await self._count(
+            "update call_avatar set status = %s, boson_video_id = coalesce(%s, boson_video_id), "
+            "error = %s, video = coalesce(%s, video), updated_at = now() where call_id = %s",
+            (status, boson_video_id, error, video, call_id), conn,
+        )
+
+    async def get(self, call_id: str, conn: Conn = None) -> AvatarRow | None:
+        return await self._one(
+            AvatarRow,
+            "select call_id, status, boson_video_id, error, updated_at from call_avatar where call_id = %s",
+            (call_id,), conn,
+        )
+
+    async def file(self, call_id: str, session_id: str | None = None, conn: Conn = None) -> AvatarFile | None:
+        """The MP4 when this call has one. With `session_id`, only if the call belongs to that session."""
+        if session_id is None:
+            return await self._one(AvatarFile, "select status, video from call_avatar where call_id = %s",
+                                   (call_id,), conn)
+        return await self._one(
+            AvatarFile,
+            "select a.status, a.video from call_avatar a join calls c using (call_id) "
+            "where a.call_id = %s and c.session_id = %s",
+            (call_id, session_id), conn,
+        )
+
+    async def for_session(self, session_id: str, conn: Conn = None) -> list[AvatarClip]:
+        """The session's clips, the renter's call first, then listing calls in the order they were made."""
+        return await self._all(
+            AvatarClip,
+            "select c.call_id, c.role, c.listing_id, a.status from calls c "
+            "join call_avatar a using (call_id) where c.session_id = %s "
+            "order by case when c.role = 'renter' then 0 else 1 end, c.created_at, c.call_id",
+            (session_id,), conn,
+        )
 
 
 class Facts(Repo):
