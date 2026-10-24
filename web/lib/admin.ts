@@ -1,6 +1,6 @@
 /**
- * The admin panel's API (server/landline/api/admin.py): every renter, their sessions, calls and
- * transcripts. Kept out of lib/types.ts, which holds the frozen contracts the live board reads.
+ * The admin panel's API (server/landline/api/admin.py): every renter, their sessions, calls, transcripts
+ * and call recordings. Kept out of lib/types.ts, which holds the frozen contracts the live board reads.
  * Every request carries the admin token as a bearer header, never in the URL.
  */
 import { api } from "./live";
@@ -77,9 +77,23 @@ export type UserDetail = UserRow & {
   history: SessionRow[];
 };
 
-export type Turn = { idx: number; speaker: "agent" | "landlord" | "renter"; text: string; t_ms: number | null };
+export type Turn = {
+  idx: number;
+  speaker: "agent" | "landlord" | "renter";
+  text: string;
+  t_ms: number | null;
+  /** Where the line is in the call's recording, when known (A-10). */
+  audio_start_ms?: number | null;
+  audio_end_ms?: number | null;
+};
 export type Fact = { field: string; value: unknown; quote: string; confirmed: boolean; created_at: string };
-export type CallDetail = CallRow & { session_id: string | null; transcript: Turn[]; facts: Fact[] };
+export type CallDetail = CallRow & {
+  session_id: string | null;
+  transcript: Turn[];
+  facts: Fact[];
+  /** Whether /api/admin/calls/{call_id}/audio has a recording to play. */
+  audio?: boolean;
+};
 
 /** Why a request didn't return data: the token is wrong, the panel is off, or the API can't be reached. */
 export type Refusal = "token" | "off" | "missing" | "unreachable";
@@ -102,7 +116,30 @@ export async function adminGet<T>(path: string, token: string, signal?: AbortSig
   }
 }
 
+/**
+ * GET a call's recording as a WAV blob (`/api/admin/calls/{call_id}/audio?…`, written out in full at the
+ * call). An <audio src> can't send the bearer header, so the page fetches it and plays the blob.
+ */
+export async function adminAudio(path: string, token: string, signal?: AbortSignal): Promise<Blob | Refusal> {
+  try {
+    const res = await fetch(api(path), { headers: { Authorization: `Bearer ${token}` }, cache: "no-store", signal });
+    if (res.status === 401) return "token";
+    if (res.status === 404) return "missing";
+    if (!res.ok) return "unreachable";
+    return await res.blob();
+  } catch (e) {
+    if (signal?.aborted) throw e;
+    return "unreachable";
+  }
+}
+
 export const isRefusal = (x: unknown): x is Refusal => typeof x === "string";
+
+/** A place in a recording, e.g. 75_300 ms as "1:15". */
+export function clockTime(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
 
 const WHEN = new Intl.DateTimeFormat("en-CA", {
   timeZone: "America/Toronto",
