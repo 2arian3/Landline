@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 from fastapi import WebSocket
 
 from landline.config import Settings
+from landline.orchestrator import SessionRuntime
 from landline.voice.bridge import POLICY_VIOLATION, close_socket, converse
 from landline.voice.calls import RenterCalls
 from landline.voice.higgs import PCM_24K, ConnectHiggs
@@ -29,6 +30,7 @@ TRY_AGAIN_LATER = 1013   # every Higgs line is busy
 
 class BrowserTransport:
     audio_format = PCM_24K
+    bytes_per_second = 48000   # PCM16 mono at 24 kHz
 
     def __init__(self, ws: WebSocket) -> None:
         self.ws = ws
@@ -50,9 +52,10 @@ class BrowserTransport:
 
 
 async def run_browser(ws: WebSocket, session_id: str, *, calls: RenterCalls, judges: JudgeLines,
-                      connect_higgs: ConnectHiggs, settings: Settings,
+                      runtime: SessionRuntime, connect_higgs: ConnectHiggs, settings: Settings,
                       set_status: Callable[[str], None] = lambda _: None) -> None:
-    """The judge's audio socket for `session_id`. Ends the call and frees the judge line when it closes."""
+    """The judge's audio socket for `session_id`, a session /api/judge/start already started in the
+    runtime. Ends the call and frees the judge line when it closes."""
     await ws.accept()
     if judges.open.get(session_id, 0) <= judges.clock():
         log.warning("browser audio refused: %r holds no judge line", session_id)
@@ -66,7 +69,7 @@ async def run_browser(ws: WebSocket, session_id: str, *, calls: RenterCalls, jud
             return
         calls.claim(call.call_id)
         log.info("browser call %s opened for session %s", call.call_id, session_id)
-        await converse(BrowserTransport(ws), call, calls=calls, connect_higgs=connect_higgs,
+        await converse(BrowserTransport(ws), call, calls=calls, runtime=runtime, connect_higgs=connect_higgs,
                        settings=settings, set_status=set_status)
     finally:
         judges.hang_up(session_id)
