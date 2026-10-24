@@ -242,7 +242,7 @@ The real ranking (`server/landline/scoring/`, with feedback from `orchestrator/f
 
 ### Holdout (quote these)
 
-2026-10-24T15:03:06+00:00 · `e637cdd` · 3 briefs · listings.json
+2026-10-24T15:09:04+00:00 · `dba1e10` · 3 briefs · listings.json
 
 | | Now | Previous |
 |---|---|---|
@@ -265,7 +265,7 @@ Violations:
 
 ### Tune (prompts change against these)
 
-2026-10-24T15:03:06+00:00 · `e637cdd` · 7 briefs · listings.json
+2026-10-24T15:09:04+00:00 · `dba1e10` · 7 briefs · listings.json
 
 | | Now | Previous |
 |---|---|---|
@@ -303,7 +303,7 @@ Violations:
 
 - Light twins (a brighter copy never loses): pass
 - "Too dark" on a dark top card (a small catalogue where light varies): **fail**: too-dark: 'too dark' on the top card left it first
-- Ranking time, warm: p50 0.18 ms, p95 0.235 ms on 400 listings (cold 1.0 ms); p50 1.345 ms, p95 1.628 ms on 4000. Target < 5 ms.
+- Ranking time, warm: p50 0.18 ms, p95 0.284 ms on 400 listings (cold 1.04 ms); p50 1.332 ms, p95 1.476 ms on 4000. Target < 5 ms.
 
 ## Voice: real audio on Higgs Realtime
 
