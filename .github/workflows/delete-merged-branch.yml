@@ -1,0 +1,52 @@
+# Delete a PR's branch once it merges, so merged branches don't pile up.
+#
+# GitHub's "Automatically delete head branches" setting does the same job; this
+# stands in while that setting is off. It never touches main, release or a
+# branch from a fork, and it leaves the branch alone if someone pushed to it
+# after the merge or another open PR still uses it.
+name: Delete merged branch
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  delete:
+    if: >-
+      github.event.pull_request.merged &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref != 'main' &&
+      github.event.pull_request.head.ref != 'release'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete the head branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+          MERGED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          if ! tip=$(gh api "repos/$REPO/git/ref/heads/$BRANCH" --jq .object.sha 2>/dev/null); then
+            echo "$BRANCH is already gone."
+            exit 0
+          fi
+          if [ "$tip" != "$MERGED_SHA" ]; then
+            echo "$BRANCH has commits pushed after the merge; leaving it."
+            exit 0
+          fi
+
+          open_base=$(gh pr list -R "$REPO" --state open --base "$BRANCH" --json number --jq length)
+          open_head=$(gh pr list -R "$REPO" --state open --head "$BRANCH" --json number --jq length)
+          if [ "$open_base" != 0 ] || [ "$open_head" != 0 ]; then
+            echo "$BRANCH is still used by an open PR; leaving it."
+            exit 0
+          fi
+
+          gh api -X DELETE "repos/$REPO/git/refs/heads/$BRANCH"
+          echo "Deleted $BRANCH."
