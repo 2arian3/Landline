@@ -25,10 +25,8 @@ from landline.app import create_app
 from landline.config import ROOT, Settings
 from landline.contracts import (
     CallOutcome,
-    CallPlan,
     CallsCompleted,
     CallsRequested,
-    CallsScheduled,
     CataloguePoint,
     Listing,
     OutcomeReady,
@@ -434,7 +432,6 @@ def _meta(session_id: str, n: int) -> dict:
 
 def test_a_returning_caller_opens_on_welcome_back_with_the_last_results():
     phone, first, second = "+14165550123", "s_firstcall1", "s_secondcal1"
-    calls = ["c_firstcal01", "c_firstcal02"]
     with _client() as c:
         rt, run = c.app.state.runtime, c.portal.call
         rt.profiles = MemoryProfiles(name="Sara")
@@ -443,8 +440,11 @@ def test_a_returning_caller_opens_on_welcome_back_with_the_last_results():
         assert not c.get(f"/api/sessions/{first}").json()["returning"]   # a number never heard before
         run(rt.emit, CallsRequested(**_meta(first, 1), listing_ids=["t:1", "t:2"]))
         run(rt.emit, SessionEnded(**_meta(first, 2), reason="hangup"))
-        plan = CallPlan(session_id=first, listing_ids=["t:1", "t:2"], created_at=NOW)
-        run(rt.emit, CallsScheduled(**_meta(first, 3), plan=plan, call_ids=calls))
+        # The Dispatcher (A-06) freezes the plan and queues one call per place; with no caller plugged in,
+        # they stay queued, and the outcomes below stand in for the calls.
+        run(c.app.state.dispatcher.idle)
+        calls = list(rt.state(first).calls)
+        assert [rt.state(first).calls[cid].listing_id for cid in calls] == ["t:1", "t:2"]
         viewing = Viewing(starts_at=datetime(2026, 10, 24, 18, tzinfo=UTC), slot_text="Saturday at two")
         run(rt.emit, OutcomeReady(**_meta(first, 4), outcome=CallOutcome(
             call_id=calls[0], listing_id="t:1", end_reason="done", viewing=viewing)))

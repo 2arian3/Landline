@@ -294,7 +294,8 @@ def test_the_api_sends_a_judge_session_through_the_runtime():
         assert c.post(f"/api/sessions/{sid}/hang-up").json()["phase"] == "calling"
         assert c.post(f"/api/sessions/{sid}/calls").status_code == 409       # the brief is over
         assert c.post(f"/api/sessions/{sid}/reset").status_code == 409       # demo sessions only
-        assert c.get(f"/api/sessions/{sid}").json()["version"] == 6
+        # 6, then 7 once the Dispatcher (A-06) has frozen the plan and queued the calls in the background.
+        assert c.get(f"/api/sessions/{sid}").json()["version"] in (6, 7)
         assert c.get("/health").json()["sessions"] == 1
         # Any other id is a demo session, which the demo store keeps.
         assert c.get("/api/sessions/demo-abc").json()["version"] == 1 and not rt.has("demo-abc")

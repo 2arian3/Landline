@@ -264,7 +264,11 @@ def test_judge_done_ends_the_brief_behind_the_gate():
         done = c.post(f"/api/judge/{sid}/done").json()
         assert plan and done["phase"] == "calling" and done["plan"] == plan   # on to the Dispatcher (A-06)
         assert sid not in c.app.state.judges.open   # the line is free for the next judge
-        assert c.post(f"/api/judge/{sid}/done").json()["version"] == done["version"]   # it ends once
+        # It ends once: a second Done changes nothing. (The Dispatcher may have frozen the plan meanwhile,
+        # a commit of its own, so compare with the session as it stands, not with `done`.)
+        before = c.get(f"/api/sessions/{sid}").json()
+        again = c.post(f"/api/judge/{sid}/done").json()
+        assert again["phase"] == "calling" and again["version"] in (before["version"], before["version"] + 1)
         unplanned = c.post("/api/judge/start").json()["session_id"]
         assert c.post(f"/api/judge/{unplanned}/done").json()["phase"] == "closed"   # nothing to call
         assert c.post("/api/judge/s_unknown000/done").status_code == 404   # not a judge session
