@@ -133,6 +133,20 @@ async def returning(session_id: str, body: ReturningBody, request: Request) -> S
     return await request.app.state.sessions.welcome_back(session_id, body.returning, name)
 
 
+class AreaBody(BaseModel):
+    place: str = Field(max_length=60)
+
+
+@router.post("/api/sessions/{session_id}/area", response_model=SessionView)
+async def focus_area(session_id: str, body: AreaBody, request: Request) -> SessionView:
+    """Demo hook: stands in for the Concierge's focus_area ("show me Christie Pits") until the voice layer
+    exists. The session's focus_area becomes that place, and the map flies there."""
+    view = await request.app.state.sessions.focus_area(session_id, body.place)
+    if view is None:
+        raise HTTPException(404, "unknown place")
+    return view
+
+
 @router.post("/api/sessions/{session_id}/preferences", response_model=SessionView)
 async def preferences(session_id: str, body: Preferences, request: Request) -> SessionView:
     """Demo hook: stands in for the Concierge's update_preferences until the voice layer exists."""
