@@ -225,12 +225,81 @@ def render(data: dict[str, Any], calls: dict[str, Any] | None = None) -> str:
             out += _calls(title, calls[name]["current"], calls[name].get("previous"))
     out += extraction()
     out += ranking()
+    out += voice()
     out += ["## Not measured yet", "",
-            "- Anything audio: time to first audio, barge-in, speech-to-text errors. Text mode can't see "
-            "them; they need the audio sim transport (A-03).",
+            "- Speech-to-text errors on real voices: the audio sim speaks synthesized clips.",
             "- Claims in languages other than English: the \"said it changed something\" check reads English "
             "only.", ""]
     return "\n".join(out)
+
+
+AUDIO = REPORTS / "audio.json"
+
+
+def voice() -> list[str]:
+    """The audio sim (E-04): the real voice paths on Higgs audio, from evals/reports/audio.json."""
+    out = ["## Voice: real audio on Higgs Realtime", "",
+           "The real voice paths, unchanged (`evals/run_audio.py`): the Concierge through the bridge on "
+           "24 kHz PCM (the browser), the Caller through the phone runner on μ-law (Twilio's format). "
+           "The other side streams speech in real time with silence between lines, as a phone line does. "
+           "Its lines are clips synthesized with Higgs TTS (`higgs-tts-v3`), not recordings of people. "
+           "Time to first audio runs from the end of the other side's voice to the agent's first audio "
+           "chunk (what a caller waits through, including the VAD's end-of-speech wait), "
+           "and from Higgs' `speech_stopped` to it. "
+           "A barge-in talks over a reply 1.2 s in. It counts when Higgs hears it within 2 s, the audio is "
+           "cleared, and the next reply picks up what was said (its words or its tool arguments).", ""]
+    if not AUDIO.exists():
+        return out + ["Not run yet: `uv run python -m evals.run_audio` with `BOSON_API_KEY` set.", ""]
+    data = json.loads(AUDIO.read_text(encoding="utf-8"))
+    cur, prev = data["current"], data.get("previous")
+
+    def ms(s: dict) -> str:
+        return "—" if not s or s.get("p50") is None else f"{s['p50']:,} / {s['p90']:,} ms (n={s['n']})"
+
+    out += [f"{cur['at']} · `{cur['sha']}` · {cur['runs']} sessions · clips {cur['clips']}", "",
+            "| | p50 / p90 | Previous p50 / p90 |", "|---|---|---|"]
+
+    def row(label: str, fn) -> None:
+        out.append(f"| {label} | {fn(cur)} | {fn(prev) if prev else '—'} |")
+
+    row("Concierge greeting: `response.create` → first audio", lambda s: ms(s["greeting_ms"]))
+    row("**Concierge (browser): end of the renter's voice → first audio**",
+        lambda s: ms(s["concierge"]["from_speech_end"]))
+    row("Concierge: `speech_stopped` → first audio", lambda s: ms(s["concierge"]["from_speech_stopped"]))
+    row("**Caller (phone): end of the landlord's voice → first audio**",
+        lambda s: ms(s["caller"]["from_speech_end"]))
+    row("Caller: `speech_stopped` → first audio", lambda s: ms(s["caller"]["from_speech_stopped"]))
+    b = cur["barge_in"]
+    out += ["", "| Barge-in | This run |", "|---|---|",
+            f"| **Recovered** (heard, cleared, next reply answers it) | **{b['ok']} / {b['tries']}** |",
+            f"| Voice onset → `speech_started` | {ms(b['detected'])} |",
+            f"| Voice onset → audio cleared at the caller | {ms(b['cleared'])} |",
+            f"| Next reply picked up the interruption | {b['answered']} / {b['tries']} |",
+            f"| Interrupted reply's response cancelled by the server | {b['cancelled']} / {b['tries']} |",
+            f"| `conversation.item.truncate` sent by our code | {b['truncated_by_us']} / {b['tries']} |",
+            f"| Agent audio played before the cut | {ms(b['played_ms'])} |", ""]
+    t = cur.get("barge_in_with_truncate")
+    if t and t["tries"]:
+        out += ["With `conversation.item.truncate` sent on `speech_started` (tried in the harness only; the "
+                "bridge doesn't send it yet):", "",
+                "| | This run |", "|---|---|",
+                f"| Recovered | {t['ok']} / {t['tries']} |",
+                f"| Truncates sent / acknowledged by Higgs (`conversation.item.truncated`) | {t['sent']} / "
+                f"{t['acked']} |",
+                f"| Higgs' `audio_end_ms` equal to what had played | {t['matched']} / {t['sent']} |",
+                f"| Errors | {', '.join(t['errors']) or 'none'} |", ""]
+    if cur["calls"]:
+        out += ["| Caller call on audio | Length | Caller turns | Ended | Facts | Booked | Red flags |",
+                "|---|---|---|---|---|---|---|"]
+        for c in cur["calls"]:
+            out.append(f"| `{c['persona']}` | {c['seconds']:.0f} s | {c['caller_turns']} | {c['end']} | "
+                       f"{c['facts']} | {'yes' if c['booked'] else 'no'} | {c['red_flags']} |")
+        out.append("")
+    if b["failures"]:
+        out += ["Barge-ins that didn't recover: " + "; ".join(
+            f"`{f['clip']}` ({', '.join(f['why'])}: {f['answer']!r})" for f in b["failures"]), ""]
+    out += [f"Timelines: `{cur['traces']}` (not committed).", ""]
+    return out
 
 
 def _set(title: str, cur: dict, prev: dict | None) -> list[str]:
@@ -348,12 +417,6 @@ def _secs(ms: int | None) -> str:
     return "—" if ms is None else f"{ms / 1000:.1f} s"
 
 
-if __name__ == "__main__":
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8")
-    print(write())
-
-
 # ── ranking (E-03) ──────────────────────────────────────────────────────────
 
 RANKING = REPORTS / "ranking.json"
@@ -416,3 +479,9 @@ def _ranking_set(title: str, cur: dict, prev: dict | None) -> list[str]:
 
 def _fails(violations: list[str]) -> str:
     return "pass" if not violations else "**fail**: " + "; ".join(violations)
+
+
+if __name__ == "__main__":
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+    print(write())

@@ -169,7 +169,10 @@ In Farsi the model answers in English, as if it had translated the line ("I'll s
 10. **`end_session` is missed after about a third of tune goodbyes today** (Sat 04:30, on `main`'s code too: 10 of 36 runs), against about 1 in 4 on Friday night. The renter hears a goodbye, but the line stays open until they hang up.
 11. **`give_feedback` without a ref isn't resent.** The reply now says "call give_feedback again with listing_ref" instead of asking the renter, but in holdout `too-expensive-then-call-default` the Concierge moved on without resending it.
 12. **Rank numbers go stale after a re-rank.** A like moved the renter's card from 5 to 6, the Concierge sent "5", and a different listing was lined up for a call. A prompt rule ("use the street words for a listing you already talked about") made it send addresses for "the first one" too, so it was reverted. A fix in code would resolve ranks against the board the renter last heard.
-13. **Calls are text only.** Time to first audio, barge-in and speech-to-text on the listing leg need the audio sim, and the phone runner (A-02) is being built in another session.
+13. **Audio (measured Sat 04:57, `evals/run_audio.py`).** Time to first audio is about 1.5 s from the end of the caller's voice on both paths (about 0.6 s of it is the VAD's end-of-speech wait). Barge-in recovers 12 of 12. Two problems found:
+    - **The interrupted reply isn't trimmed.** Higgs sends a reply's audio in one burst, so the reply is already `completed` when the caller talks over it (0 of 12 cancelled), and the bridge sends no `conversation.item.truncate`. The model then believes it said the whole reply, though the caller heard about 1.6 s. Sending `truncate` with the played ms on `speech_started` works: Higgs acknowledged 6 of 6 with that exact `audio_end_ms`. **Open** (a small change in `voice/bridge.py` and `voice/phone_caller.py`).
+    - **Two tool calls in one reply send two `response.create`s.** `run_tool` asks for a response after each, and Higgs rejects the second with 400 "No user input". Harmless (one reply comes out) but noisy in the logs. **Open.**
+    - Speech-to-text on real voices isn't measured: the clips are synthesized.
 
 ## Lessons for the next eval
 
