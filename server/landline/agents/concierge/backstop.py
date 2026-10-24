@@ -170,7 +170,7 @@ class Turn:
     def call_line(self) -> str | None:
         """The renter's line when it asked for calls or a viewing and the reply ran no call_listings, once."""
         if (self.heard and self.answered and "call_listings" not in self.tools and not self.call_taken
-                and asks_for_calls(self.heard)):
+                and (asks_for_calls(self.heard) or tools.windows_in(self.heard))):   # or a time (#174)
             self.call_taken = True
             return self.heard
         return None
@@ -191,7 +191,7 @@ _ORDINALS = {"first": 1, "1st": 1, "second": 2, "2nd": 2, "third": 3, "3rd": 3, 
 _ORD = r"(?:first|second|third|fourth|fifth|sixth|last|1st|2nd|3rd|4th|5th|6th)"
 _TARGET = (rf"(?:them|those|these|both|all\s+of\s+them|all\s+three|number\s+\w+|#\s?\d"
            rf"|(?:this|that)\s+(?:one|place|listing|landlord|building)"
-           rf"|the\s+(?:{_ORD}|top\s+\w+|landlords?|agents?|owners?|listings?|places?|buildings?|ones?)"
+           rf"|the\s+(?:{_ORD}|(?:top|best)\s+\w+|landlords?|agents?|owners?|listings?|places?|buildings?|ones?)"
            rf"|{_ORD}\s+one)")
 # What makes a clause a request to Landline, right before the verb: "can/could/would/will you (please)",
 # "please", "go ahead and", "I'd like / I want you to", "let's", or the verb opening the clause ("call the
@@ -207,6 +207,8 @@ _AVAILABLE = re.compile(rf"{_LEAD}check\s+(?:if|whether)\s+(?:it|they|this|that|
                         r"(?:'s|’s|\s+is|\s+are)\s+(?:still\s+)?available\b", re.I)
 _NOT = re.compile(r"\b(?:don't|don’t|dont|do\s+not|no\s+need\s+to|won't|never)\b[^.?!]{0,12}"
                   r"\b(?:call|phone|contact|book|set)\b|\bnot\s+yet\b|\bcall\b[^.?!]{0,20}\byet\b", re.I)
+_NOT_CALL = re.compile(r"\b(?:don't|don’t|dont|do\s+not|no\s+need\s+to|won't|never)\b[^.?!]{0,12}"
+                       r"\b(?:call|phone|contact)\b|\bnot\s+yet\b|\bcall\b[^.?!]{0,20}\byet\b", re.I)
 _CLAUSES = re.compile(r"[.!?;]+|\bbut\b", re.I)   # "I'm not sure, but call the first one": the ask is its own
 # Where the words a request is about end: a new clause after a comma ("call the first one, I saw it…").
 _TARGET_END = re.compile(r",\s*(?:i|i'm|i’m|i'd|i’d|we|it|it's|it’s|that|that's|they|because|since|so)\b"
@@ -217,9 +219,12 @@ def _request(line: str) -> re.Match | None:
     """The first clause's request to Landline (a call, a viewing, a check), in a clause that doesn't say not
     to; None when the line asks for none."""
     for clause in _CLAUSES.split(line):
+        # "Call the second one, don't book anything" is still a call (#174): a "don't" stops only its verb.
+        if (m := _CALL.search(clause)) and not _NOT_CALL.search(clause):
+            return m
         if _NOT.search(clause):
             continue
-        if m := (_CALL.search(clause) or _VISIT.search(clause) or _AVAILABLE.search(clause)):
+        if m := (_VISIT.search(clause) or _AVAILABLE.search(clause)):
             return m
     return None
 
@@ -250,6 +255,8 @@ def refs_in(line: str, ctx: tools.ToolContext) -> list[str]:
     if top:
         n = _WORD_NUMBERS.get(top.group(1)) or int(top.group(1))
         return [str(i) for i in range(1, n + 1)]
+    if tools.asks_for_the_best(text):   # "the best ones", no number: the top three (#174)
+        return [str(i) for i in range(1, tools.TO_CALL + 1)]
     found: list[str] = []
     for m in re.finditer(r"\b(?:number\s+(\w+)|#\s?(\d)|(" + _ORD + r"))\b", text):
         word = m.group(1) or m.group(2) or m.group(3)
@@ -281,16 +288,42 @@ def refs_in(line: str, ctx: tools.ToolContext) -> list[str]:
 async def catch_up_calls(line: str, ctx: tools.ToolContext) -> str | None:
     """Records the calls `line` asked for through call_listings' own handler, and returns its reply; None
     when the line doesn't ask for any, names no listing it can read (never the top three by default), or
-    call_listings recorded nothing ("Which one?"), so "[calls recorded]" only ever comes with a plan."""
+    call_listings recorded nothing ("Which one?"), so "[calls recorded]" only ever comes with a plan. The
+    whole ask counts (#174): "set up a visit tomorrow" also gives the viewing window and leave to book."""
     if not asks_for_calls(line):
-        return None
+        return await _times_answer(line, ctx)
     refs = refs_in(line, ctx)
     if not refs:
         log.info("call %s: the renter asked for calls, but not for listings code can tell", ctx.call_id)
         return None
     log.info("call %s: catch-up for calls after a turn without call_listings: refs %s", ctx.call_id, refs)
+    args: dict[str, Any] = {"listing_refs": refs}
+    if when := tools.windows_in(line):
+        args["availability"] = [w.model_dump(by_alias=True) for w in when]
+    if (book := tools.books(line)) is not None:
+        args["may_book"] = book
+    return await _plan(args, ctx)
+
+
+# "Tomorrow morning", after the Concierge asked when they can view (#174): with calls already planned, a
+# short line that names a day is their viewing window. Not a move-in date.
+_MOVE = re.compile(r"\bmov(?:e|es|ing)\b", re.I)
+
+
+async def _times_answer(line: str, ctx: tools.ToolContext) -> str | None:
+    plan = ctx.runtime.state(ctx.session_id).request
+    when = tools.windows_in(line)
+    if plan is None or not when or foreign(line) or _MOVE.search(line) or len(line.split()) > 10:
+        return None
+    if [a.model_dump() for a in plan.availability] == [w.model_dump() for w in when]:
+        return None
+    log.info("call %s: catch-up for viewing times after a turn without call_listings", ctx.call_id)
+    return await _plan({"availability": [w.model_dump(by_alias=True) for w in when]}, ctx)
+
+
+async def _plan(args: dict[str, Any], ctx: tools.ToolContext) -> str | None:
     before = ctx.runtime.state(ctx.session_id).request
-    arguments = json.dumps({"listing_refs": refs})
+    arguments = json.dumps(args)
     reply = await tools.handle("call_listings", arguments, f"call_catch_up_{next(_ids)}", ctx)
     after = ctx.runtime.state(ctx.session_id).request
     return reply if after is not None and after != before else None
