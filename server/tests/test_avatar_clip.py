@@ -1,5 +1,5 @@
-"""Higgs Avatar clips after a call (voice/avatar_clip.py). No network: a fake video client, or httpx's
-mock transport for the one request shape a sim call sends."""
+"""Higgs Avatar clips after a call (voice/avatar_clip.py). No network and no ffmpeg: a fake video client
+and a fake compositor. One httpx mock checks the speech and video request shapes."""
 import asyncio
 import io
 import wave
@@ -12,8 +12,19 @@ from landline.app import create_app
 from landline.config import Settings
 from landline.contracts import Listing
 from landline.db.catalogue import Catalogue
-from landline.db.rows import AudioRow, AvatarClip
-from landline.voice.avatar_clip import SAMPLE_FACE, Busy, Clips, HiggsVideos, agent_script, agent_wav
+from landline.db.rows import AudioRow, AvatarClip, TurnRow
+from landline.voice.avatar_clip import (
+    MALE_FACE,
+    SAMPLE_FACE,
+    Busy,
+    Clips,
+    HiggsVideos,
+    gender_of_voice,
+    pair_from_audio,
+    pair_from_pieces,
+    pcm_of_wav,
+    side_faces,
+)
 
 NOW = datetime(2026, 10, 24, tzinfo=UTC)
 
@@ -28,8 +39,27 @@ def _catalogue() -> Catalogue:
 
 
 def _pcm(call_id: str, seq: int, seconds: int, sample: bytes = b"\x01\x00", *, track: str = "agent",
-         rate: int = RATE) -> AudioRow:
-    return AudioRow(call_id, track, seq, 0, "pcm16", rate, sample * (rate * seconds))
+         rate: int = RATE, start_ms: int = 0) -> AudioRow:
+    return AudioRow(call_id, track, seq, start_ms, "pcm16", rate, sample * (rate * seconds))
+
+
+def _turn(speaker: str, text: str, start: int | None = None, end: int | None = None, idx: int = 0) -> TurnRow:
+    return TurnRow("c", idx, speaker, text, None, None, start, end)
+
+
+def _tone(rate: int, ms: int, sample: bytes = b"\x01\x00") -> bytes:
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as out:
+        out.setnchannels(1)
+        out.setsampwidth(2)
+        out.setframerate(rate)
+        out.writeframes(sample * (rate * ms // 1000))
+    return buf.getvalue()
+
+
+def _frames(wav: bytes) -> bytes:
+    pcm, _rate = pcm_of_wav(wav)
+    return pcm
 
 
 class Memory:
@@ -38,7 +68,8 @@ class Memory:
     def __init__(self) -> None:
         self.rows: dict[str, dict] = {}
         self.audio: dict[str, list[AudioRow]] = {}
-        self.lines: dict[str, list[str]] = {}
+        self.turns: dict[str, list[TurnRow]] = {}
+        self.roles: dict[str, str] = {}
         self.order: list[tuple[str, str, str, str | None]] = []
 
     async def claim(self, call_id: str) -> bool:
@@ -57,11 +88,8 @@ class Memory:
         if video is not None:
             row["video"] = video
 
-    async def agent_audio(self, call_id: str) -> list[AudioRow]:
-        return self.audio.get(call_id, [])
-
-    async def agent_lines(self, call_id: str) -> list[str]:
-        return self.lines.get(call_id, [])
+    async def call(self, call_id: str) -> tuple[str, list[AudioRow], list[TurnRow]]:
+        return self.roles.get(call_id, "renter"), self.audio.get(call_id, []), self.turns.get(call_id, [])
 
     def add(self, session_id: str, call_id: str, role: str, listing_id: str | None, status: str,
             video: bytes | None = None) -> None:
@@ -85,17 +113,25 @@ class Memory:
 
 
 class Fake:
-    """Higgs /v1/videos, in process. `hold` pauses inside create; `busy` raises 429 that many times first."""
+    """Higgs /v1/videos and /v1/audio/speech, in process. `hold` pauses inside create; `busy` raises 429
+    that many times first."""
 
     def __init__(self, *, error: Exception | None = None, busy: int = 0, hold: asyncio.Event | None = None):
         self.calls: list[dict] = []
+        self.spoken: list[tuple[str, str]] = []
         self.error = error
         self.busy = busy
         self.hold = hold
         self.mp4 = b"mp4-bytes"
+        self._n = 0
 
-    async def create(self, *, image_url: str, wav: bytes | None, text: str | None) -> str:
-        self.calls.append({"image": image_url, "wav": wav, "text": text})
+    async def speak(self, text: str, voice: str) -> bytes:
+        self.spoken.append((text, voice))
+        return _tone(RATE, 500)
+
+    async def create(self, *, image_url: str, wav: bytes | None, text: str | None,
+                     voice: str = "default") -> str:
+        self.calls.append({"image": image_url, "wav": wav, "text": text, "voice": voice})
         if self.busy:
             self.busy -= 1
             raise Busy(0)
@@ -103,7 +139,8 @@ class Fake:
             await self.hold.wait()
         if self.error is not None:
             raise self.error
-        return "vid"
+        self._n += 1
+        return f"vid{self._n}"
 
     async def status(self, video_id: str) -> tuple[str, str | None]:
         return "completed", None
@@ -115,36 +152,81 @@ class Fake:
         return None
 
 
-def _clips(store: Memory, client: Fake | HiggsVideos, key: str | None = "key") -> Clips:
-    return Clips(store, key, SAMPLE_FACE, client)
+class Joined:
+    """The compositor. Records the spans and returns one file, so the tests never run ffmpeg."""
+
+    def __init__(self) -> None:
+        self.calls: list[dict] = []
+
+    def join(self, left: bytes, right: bytes, *, left_spans, right_spans, duration_ms: int) -> bytes:
+        self.calls.append({"left": left, "right": right, "left_spans": tuple(left_spans),
+                           "right_spans": tuple(right_spans), "duration_ms": duration_ms})
+        return b"side-by-side"
 
 
-def test_agent_chunks_become_one_wav_and_stop_at_60_seconds():
+def _clips(store: Memory, client: Fake | HiggsVideos, key: str | None = "key",
+           joined: Joined | None = None) -> Clips:
+    return Clips(store, key, SAMPLE_FACE, client, joined or Joined())
+
+
+def test_a_recorded_call_keeps_each_person_in_place_and_stops_at_60_seconds():
     rows = [
-        _pcm("c", 2, 61, b"\x02\x00"),          # later in the call, stored first
-        _pcm("c", 0, 30, track="renter"),       # the other person: not in the clip
-        _pcm("c", 1, 1, b"\x01\x00"),           # Landline's first second
-        _pcm("c", 3, 1, rate=24000),            # a different rate is dropped, not mixed in
+        _pcm("c", 1, 1, b"\x02\x00", start_ms=2000),          # the concierge, two seconds in
+        _pcm("c", 0, 1, b"\x01\x00", start_ms=0),             # the concierge's first second
+        _pcm("c", 2, 3, b"\x03\x00", track="renter"),         # the renter, the whole three seconds
+        _pcm("c", 3, 1, rate=24000, track="renter"),          # a different rate is dropped
     ]
-    wav = agent_wav(rows)
-    assert wav is not None
-    with wave.open(io.BytesIO(wav)) as parsed:
-        assert parsed.getnchannels() == 1
-        assert parsed.getframerate() == RATE
-        assert parsed.getnframes() == RATE * 60
-        frames = parsed.readframes(parsed.getnframes())
-    assert frames[:2] == b"\x01\x00"             # seq order, not the order the chunks arrived
-    assert frames[RATE * 2:RATE * 2 + 2] == b"\x02\x00"
-    assert agent_wav([]) is None
-    assert agent_script(["  hello  ", "", "there"]) == "hello there"
-    assert len(agent_script(["x" * 6000]) or "") == 5000
+    pair = pair_from_audio(rows, [_turn("renter", "hello", 1000, 2000)], "renter")
+    assert pair is not None
+    renter, agent = pair
+    assert renter.duration_ms == 3000 and agent.duration_ms == 3000
+    assert renter.spans == ((1000, 2000),)
+    assert agent.spans == ((0, 1000), (2000, 3000))
+    heard = _frames(renter.wav)
+    assert heard[:RATE * 2] == b"\x00\x00" * RATE          # before their turn
+    assert heard[RATE * 2:RATE * 4] == b"\x03\x00" * RATE  # the one second they spoke
+    assert heard[RATE * 4:] == b"\x00\x00" * RATE
+    said = _frames(agent.wav)
+    assert said[:2] == b"\x01\x00"
+    assert said[RATE * 2:RATE * 2 + 2] == b"\x00\x00"      # quiet while the renter talks
+    assert said[RATE * 4:RATE * 4 + 2] == b"\x02\x00"
+    assert pair_from_audio([], [], "renter") is None
+
+    long = pair_from_audio([_pcm("c", 0, 61, b"\x04\x00")], [], "renter")
+    assert long is not None
+    assert long[1].duration_ms == 60_000
+    assert len(_frames(long[1].wav)) == RATE * 60 * 2
+
+
+def test_text_turns_are_laid_back_to_back_and_a_line_past_60_seconds_is_dropped():
+    second = b"\x01\x00" * RATE
+    pieces = [("agent", second, RATE), ("landlord", b"\x02\x00" * RATE, RATE),
+              ("agent", b"\x03\x00" * (RATE * 60), RATE)]
+    pair = pair_from_pieces(pieces, "listing")
+    assert pair is not None
+    caller, landlord = pair
+    assert caller.spans == ((0, 1000),)
+    assert landlord.spans == ((1000, 2000),)
+    assert _frames(caller.wav) == second + bytes(RATE * 2)
+    assert _frames(landlord.wav) == bytes(RATE * 2) + b"\x02\x00" * RATE
+    assert pair_from_pieces([("agent", b"\x01\x00" * (RATE * 61), RATE)], "listing") is None
+
+
+def test_the_two_faces_differ_and_follow_the_known_gender():
+    assert side_faces("renter", "female", None, SAMPLE_FACE) == (MALE_FACE, SAMPLE_FACE)
+    assert side_faces("listing", "female", "male", SAMPLE_FACE) == (SAMPLE_FACE, MALE_FACE)
+    assert side_faces("listing", "male", "male", SAMPLE_FACE) == (MALE_FACE, SAMPLE_FACE)
+    assert gender_of_voice("oliver") == "male"
+    assert gender_of_voice(" Marcus ") == "male"
+    assert gender_of_voice("default") == "female"
+    assert gender_of_voice("chloe") == "female"
 
 
 async def test_a_second_schedule_does_not_start_a_second_job():
     store, hold = Memory(), asyncio.Event()
     store.audio["c1"] = [_pcm("c1", 1, 1)]
-    fake = Fake(hold=hold)
-    clips = _clips(store, fake)
+    fake, joined = Fake(hold=hold), Joined()
+    clips = _clips(store, fake, joined=joined)
     first = clips.schedule("c1")
     assert first is not None
     for _ in range(50):
@@ -159,36 +241,82 @@ async def test_a_second_schedule_does_not_start_a_second_job():
     await first
     assert second is not None
     await second
-    assert len(fake.calls) == 1
+    assert len(fake.calls) == 2                         # one face each, not a second render of the call
     assert store.rows["c1"]["status"] == "ready"
-    assert store.rows["c1"]["video"] == b"mp4-bytes"
+    assert store.rows["c1"]["video"] == b"side-by-side"
+    assert len(joined.calls) == 1
 
 
-async def test_a_sim_call_submits_input_tts_and_no_audio_file():
-    seen: dict[str, bytes] = {}
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.method == "POST":
-            seen["body"] = request.content
-            return httpx.Response(200, json={"id": "vid"})
-        if request.url.path.endswith("/content"):
-            return httpx.Response(200, content=b"mp4")
-        return httpx.Response(200, json={"status": "completed"})
-
+async def test_a_recorded_call_sends_both_faces_and_stores_the_composite():
     store = Memory()
-    store.lines["c1"] = ["Still available?", "Dogs are fine."]
-    http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    clips = _clips(store, HiggsVideos("key", http))
-    task = clips.schedule("c1")
+    store.roles["c1"] = "renter"
+    store.audio["c1"] = [
+        _pcm("c1", 0, 1, b"\x01\x00", start_ms=0),
+        _pcm("c1", 1, 1, b"\x03\x00", track="renter", start_ms=1000),
+    ]
+    store.turns["c1"] = [_turn("renter", "hello", 1000, 2000)]
+    fake, joined = Fake(), Joined()
+    task = _clips(store, fake, joined=joined).schedule("c1", agent_gender="female")
     assert task is not None
     await task
+    renter, agent = fake.calls
+    assert renter["image"] == MALE_FACE and agent["image"] == SAMPLE_FACE
+    assert renter["text"] is None and agent["text"] is None
+    assert _frames(renter["wav"])[RATE * 2:RATE * 2 + 2] == b"\x03\x00"
+    assert _frames(renter["wav"])[:2] == b"\x00\x00"
+    assert _frames(agent["wav"])[:2] == b"\x01\x00"
+    assert _frames(agent["wav"])[RATE * 2:RATE * 2 + 2] == b"\x00\x00"
+    assert joined.calls[0]["left_spans"] == ((1000, 2000),)
+    assert joined.calls[0]["right_spans"] == ((0, 1000),)
+    assert store.rows["c1"]["video"] == b"side-by-side"
+    assert store.rows["c1"]["video_id"] == "vid1,vid2"
+
+
+async def test_a_text_call_speaks_each_side_then_sends_two_wavs():
+    store = Memory()
+    store.roles["c1"] = "listing"
+    store.turns["c1"] = [
+        _turn("agent", "Still available?", idx=0),
+        _turn("landlord", "Dogs are fine.", idx=1),
+    ]
+    fake = Fake()
+    task = _clips(store, fake).schedule("c1", agent_gender="female", other_gender="male")
+    assert task is not None
+    await task
+    assert fake.spoken == [("Still available?", "default"), ("Dogs are fine.", "oliver")]
+    caller, landlord = fake.calls
+    assert caller["image"] == SAMPLE_FACE and landlord["image"] == MALE_FACE
+    assert _frames(caller["wav"]) == b"\x01\x00" * (RATE // 2) + bytes(RATE)
+    assert _frames(landlord["wav"]) == bytes(RATE) + b"\x01\x00" * (RATE // 2)
+    assert store.rows["c1"]["video"] == b"side-by-side"
+
+
+async def test_a_video_request_uploads_the_wav_and_speech_returns_audio():
+    seen: list[tuple[str, bytes]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((request.url.path, request.content))
+        if request.url.path.endswith("/speech"):
+            return httpx.Response(200, content=_tone(RATE, 200))
+        if request.url.path.endswith("/content"):
+            return httpx.Response(200, content=b"mp4")
+        if request.method == "POST":
+            return httpx.Response(200, json={"id": "vid"})
+        return httpx.Response(200, json={"status": "completed"})
+
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    videos = HiggsVideos("key", http)
+    spoken = await videos.speak("Hello", "oliver")
+    assert pcm_of_wav(spoken)[1] == RATE
+    await videos.create(image_url=MALE_FACE, wav=spoken, text=None)
     await http.aclose()
-    body = seen["body"]
-    assert b"input_tts" in body
-    assert b"Still+available" in body
-    assert b"Dogs+are+fine" in body
-    assert b"landline.wav" not in body
-    assert store.rows["c1"]["status"] == "ready"
+    speech, video = seen
+    assert speech[0].endswith("/audio/speech")
+    assert b"oliver" in speech[1] and b"Hello" in speech[1]
+    assert video[0].endswith("/videos")
+    assert b"landline.wav" in video[1]
+    assert b"coaching-centered" in video[1]
+    assert b"input_tts" not in video[1]
 
 
 async def test_a_render_error_leaves_the_call_ended():
@@ -211,8 +339,9 @@ async def test_a_busy_higgs_is_retried():
     task = _clips(store, fake).schedule("c1")
     assert task is not None
     await task
-    assert len(fake.calls) == 2
+    assert len(fake.calls) == 3                        # the first face once more, then the second face
     assert store.rows["c1"]["status"] == "ready"
+    assert store.rows["c1"]["video"] == b"side-by-side"
 
 
 def test_the_session_route_lists_the_renter_first_and_serves_the_mp4_only_when_ready():

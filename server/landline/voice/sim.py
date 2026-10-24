@@ -95,10 +95,12 @@ class SimRunner:
                  persona_for: Callable[[Dial, Listing], Persona] = demo_persona,
                  clock: Callable[[], datetime] = lambda: datetime.now(UTC),
                  max_turns: int = MAX_TURNS, turn_timeout_s: float = TURN_TIMEOUT_S,
-                 extractor: Complete | None = None, clips: Clips | None = None):
+                 extractor: Complete | None = None, clips: Clips | None = None,
+                 agent_gender: str = "female"):
         self.runtime, self.connect, self.api_key = runtime, connect_higgs, api_key
         self.extractor = extractor   # the Auditor's text LLM (A-07); None: rules and the live record only
-        self.clips = clips             # the face clip, from the lines Landline said (a sim call has no audio)
+        self.clips = clips             # both faces, from the lines (a sim call has no audio)
+        self.agent_gender = agent_gender   # the caller's face; the landlord's is the persona's
         self.persona_for, self.clock = persona_for, clock
         self.max_turns, self.turn_timeout_s = max_turns, turn_timeout_s
         self.traces: OrderedDict[str, SimTrace] = OrderedDict()
@@ -145,7 +147,8 @@ class SimRunner:
             if trace.captions is not None:
                 await trace.captions.flush()
             if self.clips is not None:
-                self.clips.schedule(dial.call_id)
+                self.clips.schedule(dial.call_id, agent_gender=self.agent_gender,
+                                    other_gender=persona.gender)
         trace.end_reason, trace.ungrounded, trace.noted_by_code = reason, ctx.ungrounded, ctx.noted_by_code
         viewing = Viewing(starts_at=ctx.booked, slot_text=ctx.slot_text or "") if ctx.booked else None
         return CallResult(reason, await self._audit(dial, listing, reason, ctx, trace, viewing))

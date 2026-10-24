@@ -29,7 +29,7 @@ from landline.agents.caller.brief import brief, instructions, wants
 from landline.contracts import CallOutcome, Listing, Preferences, Viewing
 from landline.orchestrator import SessionRuntime
 from landline.voice import bridge
-from landline.voice.avatar_clip import Clips
+from landline.voice.avatar_clip import Clips, gender_of_voice
 from landline.voice.bridge import (
     HANG_UP_GRACE_S,
     KEEP_AUDIO_EVERY_S,
@@ -135,7 +135,7 @@ class PhoneCaller:
                 log.exception("could not keep the end of call %s's audio", dial.call_id)
             await turns.flush()
             if self.clips is not None:
-                self.clips.schedule(dial.call_id)
+                self.clips.schedule(dial.call_id, agent_gender=gender_of_voice(self.voice))
         viewing = Viewing(starts_at=ctx.booked, slot_text=ctx.slot_text or "") if ctx.booked else None
         return CallResult(reason, await self._audit(dial, listing, reason, ctx, turns, viewing))
 
