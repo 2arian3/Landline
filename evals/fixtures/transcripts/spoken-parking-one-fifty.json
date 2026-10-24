@@ -1,0 +1,62 @@
+{
+ "id": "spoken-parking-one-fifty",
+ "note": "Parking said as one fifty / one hundred fifty dollars, then confirmed. A digits quote must still ground (#216).",
+ "end_reason": "done",
+ "listing": {
+  "listing_id": "livrent:e02-21",
+  "address": "798 Ossington Ave",
+  "rent": 2300,
+  "monthly_cost": 2300
+ },
+ "turns": [
+  {
+   "speaker": "agent",
+   "text": "Hi, I'm an AI assistant calling for a renter about the apartment at 798 Ossington Ave. Does parking come with it, and what does it cost?"
+  },
+  {
+   "speaker": "landlord",
+   "text": "Yeah, there's an extra charge for parking if you want. It is one fifty, one fifty, one hundred fifty dollars per month."
+  },
+  {
+   "speaker": "agent",
+   "text": "Just to confirm, is the parking fee exactly one hundred and fifty dollars per month?"
+  },
+  {
+   "speaker": "landlord",
+   "text": "Yeah."
+  },
+  {
+   "speaker": "agent",
+   "text": "Are there any other monthly fees on top of the rent?"
+  },
+  {
+   "speaker": "landlord",
+   "text": "No, that's it."
+  }
+ ],
+ "tool_facts": [
+  {
+   "field": "parking_cost",
+   "value": "$150 per month",
+   "quote": "Yeah, there's an extra charge for parking if you want. It is $150 per month.",
+   "turn_idx": 1
+  },
+  {
+   "field": "parking_cost",
+   "value": "$150 per month",
+   "quote": "Yeah.",
+   "turn_idx": 3
+  },
+  {
+   "field": "fees",
+   "value": "none",
+   "quote": "No, that's it.",
+   "turn_idx": 5
+  }
+ ],
+ "slot_text": null,
+ "gold": {
+  "parking_cost": "150",
+  "fees": "none"
+ }
+}
