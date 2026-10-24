@@ -196,7 +196,7 @@ async def test_lines_route_ui_taps_by_session_with_the_board_address_and_numbers
 
 def test_describe_says_studio_and_unit():
     card = SimpleNamespace(address="1 Test St", unit_label="Unit 1405", beds=0, monthly_cost=1900, floor=None,
-                           sqft=None)
+                           sqft=None, neighbourhood=None)
     assert describe(card) == "1 Test St, Unit 1405: studio, $1,900 a month"
 
 
