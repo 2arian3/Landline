@@ -512,6 +512,9 @@ class SpyLog:
     def ended(self, call_id, reason):
         self.log.append(("ended", reason))
 
+    async def flushed(self, call_id):
+        """The bridge waits here until the call's writes have landed. This spy's already have."""
+
     def of(self, kind):
         return [e for e in self.log if e[0] == kind]
 
