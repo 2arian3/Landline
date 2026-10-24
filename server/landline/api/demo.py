@@ -11,11 +11,18 @@ call_listings), `hang_up` ends the brief (SessionEnded), and then four canned
 listing agents go queued, dialing, ringing and live, hang up one by one, and the
 session ends `done` with a results text. Until the Dispatcher (A-02) and the
 Caller (A-05) exist, this is how the board shows every call status.
+
+CAPTIONS. Each answered call has a script, served by /api/calls/{id}/turns as
+the call goes: nothing until it's live, then a line every half tick, and the
+whole script once it has ended. A fact on a card quotes a landlord's line word
+for word, so the quotes below are written once and used by both.
 """
 from __future__ import annotations
 
 import asyncio
 import secrets
+import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -34,6 +41,7 @@ from landline.contracts import (
 )
 from landline.contracts.session import CardStatus
 from landline.db.catalogue import Catalogue
+from landline.db.rows import TurnRow
 from landline.scoring import FeatureMatrix, Ranked, explain, rank
 
 BOARD_SIZE = 6
@@ -43,6 +51,13 @@ TORONTO = ZoneInfo("America/Toronto")
 # "I'm free Saturday afternoon, book one if you can": the renter's window, and the slot an agent offers.
 WINDOW_DAY, WINDOW_FROM, WINDOW_TO, SLOT = 5, 13, 17, 14   # Saturday (Monday is 0), 13:00–17:00, at 14:00
 ON_THE_LINE = ("dialing", "ringing", "live")
+
+# What the scripted listing agents say on the record: each is a fact's quote, a fee's or a noted question,
+# and the same words in that call's captions (AGENTS.md rule 3: a quote is what was said, verbatim).
+PARKING = "Parking's a hundred and eighty a month. It comes with the unit, it's not optional."
+DEPOSIT = "I'll need first and last by e-transfer before I can show it to you."
+DOGS = "Dogs are fine. There are a couple in the building already."
+LEASE = "Would they sign a 12-month lease?"
 
 
 @dataclass(frozen=True)
@@ -54,6 +69,7 @@ class DemoCall:
     red_flags: tuple[str, ...] = ()
     questions: tuple[str, ...] = ()      # noted for the renter (note_question); they come back in the results
     viewing: datetime | None = None      # a booked viewing, inside the renter's window
+    said: tuple[tuple[str, str], ...] = ()   # (speaker, words) after the Caller's opener, as captions
 
 
 @dataclass
@@ -64,13 +80,17 @@ class DemoRun:
     calls: dict[str, CallView] = field(default_factory=dict)      # by listing, in plan order
     outcomes: dict[str, DemoCall] = field(default_factory=dict)   # by listing, as each call ends
     results: str | None = None
+    captions: dict[str, tuple[TurnRow, ...]] = field(default_factory=dict)   # by listing: its whole script
+    live_at: dict[str, float] = field(default_factory=dict)       # by listing: when it went live (clock)
 
 
 class DemoSessions:
     """In-memory sessions with a version counter that SSE subscribers wait on."""
 
-    def __init__(self, catalogue: Catalogue, tick_s: float = TICK_S):
+    def __init__(self, catalogue: Catalogue, tick_s: float = TICK_S,
+                 clock: Callable[[], float] = time.monotonic):
         self.catalogue = catalogue
+        self.clock = clock   # when calls went live, for how far their captions have got
         self.matrix = FeatureMatrix.build(catalogue.listings)   # once, at boot
         self.views: dict[str, SessionView] = {}
         # What the renter said about a listing, shown on its card ("You: too dark").
@@ -126,8 +146,41 @@ class DemoSessions:
         self.runs.pop(session_id, None)
         return await self.update(session_id)
 
+    def turns(self, call_id: str, after: int = -1) -> list[TurnRow] | None:
+        """A demo call's captions after line `after`, as far as the call has got: none until it's live,
+        then line i from live_at + i × tick_s/2, and all of them once it has ended. None for a call this
+        store didn't dial (or forgot on reset)."""
+        for run in self.runs.values():
+            for lid, call in run.calls.items():
+                if call.call_id == call_id:
+                    return [t for t in self._said_so_far(run, lid) if t.idx > after]
+        return None
+
+    def _said_so_far(self, run: DemoRun, lid: str) -> tuple[TurnRow, ...]:
+        lines = run.captions.get(lid, ())
+        if run.calls[lid].state == "ended":
+            return lines
+        went_live = run.live_at.get(lid)
+        if went_live is None:
+            return ()
+        now = self.clock()
+        return tuple(t for i, t in enumerate(lines) if now >= went_live + i * self.tick_s / 2)
+
+    def _captions(self, call_id: str, lid: str, call: DemoCall) -> tuple[TurnRow, ...]:
+        """The call's whole script: the Caller's opener (AGENTS.md rule 6), then what was said."""
+        if call.status == "no_answer":
+            return ()
+        address = self.catalogue.by_id[lid].address
+        opener = (f"Hi, I'm an AI assistant calling for a renter about the place at {address}. "
+                  "Is it still available?")
+        lines = (("agent", opener), *call.said)
+        return tuple(TurnRow(call_id=call_id, idx=i, speaker=speaker, text=text, lang="en",
+                             t_ms=round(i * self.tick_s / 2 * 1000))
+                     for i, (speaker, text) in enumerate(lines))
+
     async def _dial(self, session_id: str, run: DemoRun) -> None:
         outcomes = dict(zip(run.plan, _outcomes(datetime.now(UTC)), strict=False))
+        run.captions = {lid: self._captions(run.calls[lid].call_id, lid, outcomes[lid]) for lid in run.plan}
         answered = [lid for lid in run.plan if outcomes[lid].status != "no_answer"]
         for state, who in (("dialing", run.plan), ("ringing", run.plan), ("live", answered)):
             await asyncio.sleep(self.tick_s)
@@ -135,6 +188,8 @@ class DemoSessions:
                 call = run.calls[lid]
                 run.calls[lid] = call.model_copy(update={"state": state,
                                                          "started_at": call.started_at or datetime.now(UTC)})
+                if state == "live":
+                    run.live_at[lid] = self.clock()
             await self.update(session_id)
         for lid in run.plan:   # one hang-up a tick, as each outcome comes in
             await asyncio.sleep(self.tick_s)
@@ -229,19 +284,29 @@ def _outcomes(at: datetime) -> list[DemoCall]:
     def heard(field: str, value: str, quote: str) -> Fact:
         return Fact(field=field, value=value, quote=quote, speaker="Agent heard", at=at)
 
-    parking = "Parking's a hundred and eighty a month. It comes with the unit, it's not optional."
     start, _ = window(at)
+    viewing = start.replace(hour=SLOT)
     return [
-        DemoCall("verified", facts=(heard("parking_cost", "Parking is $180 a month, required", parking),),
-                 fees=(Fee(name="parking", amount=180, period="monthly", mandatory=True, quote=parking),),
-                 questions=("Would they sign a 12-month lease?",)),
+        DemoCall("verified", facts=(heard("parking_cost", "Parking is $180 a month, required", PARKING),),
+                 fees=(Fee(name="parking", amount=180, period="monthly", mandatory=True, quote=PARKING),),
+                 questions=(LEASE,),
+                 said=(("landlord", "Yes, it is."),
+                       ("agent", "What does parking cost?"),
+                       ("landlord", PARKING),
+                       ("landlord", LEASE),
+                       ("agent", "I'll check with my client and get back to you."))),
         DemoCall("suspect",
-                 facts=(heard("red_flags", "First and last month by e-transfer before a viewing",
-                              "I'll need first and last by e-transfer before I can show it to you."),),
-                 red_flags=("Wants a deposit by e-transfer before anyone sees the unit",)),
-        DemoCall("booked", facts=(heard("pets", "Dogs are fine",
-                                        "Dogs are fine. There are a couple in the building already."),),
-                 viewing=start.replace(hour=SLOT)),
+                 facts=(heard("red_flags", "First and last month by e-transfer before a viewing", DEPOSIT),),
+                 red_flags=("Wants a deposit by e-transfer before anyone sees the unit",),
+                 said=(("landlord", DEPOSIT),
+                       ("agent", "Thanks. I'll pass that on."))),
+        DemoCall("booked", facts=(heard("pets", "Dogs are fine", DOGS),), viewing=viewing,
+                 said=(("landlord", "Yes."),
+                       ("agent", "Are pets okay? My client has a dog."),
+                       ("landlord", DOGS),
+                       ("agent", "Could they see it Saturday afternoon?"),
+                       ("landlord", "Saturday at two works."),
+                       ("agent", f"{_when(viewing)}, then. I'll let my client know."))),
         DemoCall("no_answer"),
     ]
 
