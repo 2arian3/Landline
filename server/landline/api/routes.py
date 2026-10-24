@@ -68,20 +68,26 @@ def listing(listing_id: str, request: Request) -> Listing:
 
 
 @router.get("/api/sessions/{session_id}", response_model=SessionView)
-def session(session_id: str, request: Request) -> SessionView:
-    return _store(request, session_id).get(session_id)
+async def session(session_id: str, request: Request) -> SessionView:
+    if _live(request, session_id):
+        return request.app.state.runtime.get(session_id)
+    if (stored := await _stored(request, session_id)) is not None:
+        return stored
+    return request.app.state.sessions.get(session_id)
 
 
 @router.get("/api/sessions/{session_id}/stream")
 async def stream(session_id: str, request: Request) -> StreamingResponse:
     """Server-sent events: `{"version": n}` whenever the session changes, and a `ping` event every
-    few seconds so the page can tell a quiet session from a dead connection."""
+    few seconds so the page can tell a quiet session from a dead connection. A stored session never
+    changes: its version once, then pings."""
+    stored = await _stored(request, session_id)
     sessions = _store(request, session_id)
 
     async def events():
         sent = 0
         while not await request.is_disconnected():
-            version = sessions.get(session_id).version
+            version = stored.version if stored is not None else sessions.get(session_id).version
             if version != sent:
                 sent = version
                 yield f"data: {json.dumps({'version': version})}\n\n"
@@ -106,6 +112,7 @@ async def focus(session_id: str, body: FocusBody, request: Request) -> SessionVi
     if _live(request, session_id):
         tap = ListingFocused(**_meta(session_id), listing_id=body.listing_id, origin="ui")
         return await _emit(request, tap)
+    await _not_stored(request, session_id)
     return await request.app.state.sessions.update(session_id, focus=body.listing_id)
 
 
@@ -123,6 +130,7 @@ async def feedback(session_id: str, body: FeedbackBody, request: Request) -> Ses
     if _live(request, session_id):
         return await _emit(request, FeedbackGiven(**_meta(session_id), listing_id=body.listing_id,
                                                   reaction=body.reaction, reason=body.reason))
+    await _not_stored(request, session_id)
     return await request.app.state.sessions.react(session_id, body.listing_id, body.reaction, body.reason)
 
 
@@ -151,6 +159,7 @@ async def plan_calls(session_id: str, request: Request) -> SessionView:
         if not top:
             raise HTTPException(409, "nothing on the board to call")
         return await _emit(request, CallsRequested(**_meta(session_id), listing_ids=top))
+    await _not_stored(request, session_id)
     return await request.app.state.sessions.plan_top(session_id)
 
 
@@ -161,13 +170,14 @@ async def hang_up(session_id: str, request: Request) -> SessionView:
     session goes on to `calling` with its plan, and waits there for the Dispatcher (A-06)."""
     if _live(request, session_id):
         return await _emit(request, SessionEnded(**_meta(session_id), reason="hangup"))
+    await _not_stored(request, session_id)
     return await request.app.state.sessions.hang_up(session_id)
 
 
 @router.post("/api/sessions/{session_id}/reset", response_model=SessionView)
 async def reset(session_id: str, request: Request) -> SessionView:
     """Demo hook: back to an open brief with nothing planned, to run the demo again."""
-    _demo_only(request, session_id)
+    await _demo_only(request, session_id)
     return await request.app.state.sessions.reset(session_id)
 
 
@@ -181,7 +191,7 @@ async def returning(session_id: str, body: ReturningBody, request: Request) -> S
     """Demo hook: marks a demo session as a returning renter, the way profiles (O-05) recognise a phone
     call's number for a runtime session. The panel then opens with "Welcome back, <name>."."""
     name = (body.name or "").strip() or None
-    _demo_only(request, session_id)
+    await _demo_only(request, session_id)
     return await request.app.state.sessions.welcome_back(session_id, body.returning, name)
 
 
@@ -199,6 +209,7 @@ async def focus_area(session_id: str, body: AreaBody, request: Request) -> Sessi
         raise HTTPException(404, "unknown place")
     if _live(request, session_id):
         return await _emit(request, AreaFocused(**_meta(session_id), **area.model_dump()))
+    await _not_stored(request, session_id)
     return await request.app.state.sessions.focus_area(session_id, area)
 
 
@@ -209,6 +220,7 @@ async def preferences(session_id: str, body: Preferences, request: Request) -> S
     if _live(request, session_id):
         delta = PreferenceDelta.model_validate(body.model_dump(exclude_unset=True))
         return await _emit(request, PreferencesUpdated(**_meta(session_id), delta=delta))
+    await _not_stored(request, session_id)
     return await request.app.state.sessions.update(session_id, prefs=body)
 
 
@@ -258,9 +270,28 @@ async def judge_done(session_id: str, request: Request) -> SessionView | JSONRes
 
 
 def _live(request: Request, session_id: str) -> bool:
-    """A session the runtime (O-02) owns: one that voice or judge mode started. Any other id is a demo
-    session, which the demo store creates on first sight. Each session has exactly one writer."""
+    """A session the runtime (O-02) owns: one that voice or judge mode started. Any other id is a stored
+    session (below) or a demo session, which the demo store creates on first sight. Each session has
+    exactly one writer."""
     return request.app.state.runtime.has(session_id)
+
+
+async def _stored(request: Request, session_id: str) -> SessionView | None:
+    """The last view stored for a session the runtime doesn't hold: a restart forgets every live session,
+    and Postgres keeps each one's snapshot, written on every commit. Read-only, so a renter's results link
+    still shows the results. None without a database, or for an id never stored."""
+    db = request.app.state.db
+    if db is None or _live(request, session_id):
+        return None
+    row = await db.sessions.get(session_id)
+    view = row.snapshot.get("view") if row is not None and row.snapshot else None
+    return SessionView.model_validate(view) if view else None
+
+
+async def _not_stored(request: Request, session_id: str) -> None:
+    """Nothing writes to a stored session, and the demo store never takes its id."""
+    if await _stored(request, session_id) is not None:
+        raise HTTPException(409, "this session has ended")
 
 
 def _store(request: Request, session_id: str):
@@ -268,9 +299,10 @@ def _store(request: Request, session_id: str):
     return state.runtime if _live(request, session_id) else state.sessions
 
 
-def _demo_only(request: Request, session_id: str) -> None:
+async def _demo_only(request: Request, session_id: str) -> None:
     if _live(request, session_id):
         raise HTTPException(409, "only demo sessions can do that")
+    await _not_stored(request, session_id)
 
 
 def _meta(session_id: str, key: str | None = None) -> dict:
