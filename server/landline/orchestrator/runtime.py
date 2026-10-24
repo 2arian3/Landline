@@ -92,7 +92,7 @@ class SessionRuntime:
     def __init__(self, catalogue: Catalogue, db: Database | None = None, *,
                  matrix: FeatureMatrix | None = None):
         self.catalogue = catalogue
-        self.matrix = matrix or FeatureMatrix.build(catalogue.listings)   # once, at boot
+        self.matrix = matrix or FeatureMatrix.build(catalogue.listings, catalogue.hoods)   # once, at boot
         self.db = db
         self.changed = asyncio.Condition()   # SSE subscribers wait on it; notified after every commit
         self._live: dict[str, _Live] = {}

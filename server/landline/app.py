@@ -46,7 +46,7 @@ def create_app(settings: Settings | None = None, catalogue: Catalogue | None = N
         app.state.sessions = DemoSessions(app.state.catalogue)
         # The session runtime (O-02): sessions that voice or judge mode start. It persists to Postgres when
         # DATABASE_URL is set, else keeps them in memory. Demo sessions stay in `sessions` until A-06.
-        app.state.runtime = SessionRuntime(app.state.catalogue, db, matrix=app.state.sessions.matrix)
+        app.state.runtime = SessionRuntime(app.state.catalogue, db)   # its own matrix, with neighbourhoods
         app.state.judges = JudgeLines(settings.higgs_max_sessions)
         app.state.judge_limit = StartLimit(settings.judge_starts_per_ip, settings.judge_start_window_s)
         # For /health. The renter's call bridge sets "ok" or "error: …" each time it opens a Higgs session.

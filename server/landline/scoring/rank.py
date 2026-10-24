@@ -28,6 +28,8 @@ CITED = 0.1              # a reason needs u ≥ 0.6, a watch-out u ≤ 0.4
 VERIFIED_BONUS = 7.0     # on the 100-point scale
 SUSPECT_PENALTY = 25.0
 LOCATION_DECAY_KM = 2.5  # feedback "too far" tightens this to 1.8 (O-04)
+NEXT_DOOR = 0.6          # a neighbourhood touching a named one (D-05)
+AREA_DECAY_KM = 2.0      # beyond that, from the named neighbourhood's middle
 BUDGET_SLACK = 1.10      # the budget filter, and where the cost utility reaches 0
 CACHE_LIMIT = 256        # utility columns kept per matrix
 
@@ -301,13 +303,12 @@ class _Context:
         return [None] * len(rows)   # building_quality and value have no data until the City join (D-05)
 
     def _location(self, rows) -> list[float | None]:
-        """The mean of the known parts: each resolved anchor's exp(-d / decay), and 1 inside a named area."""
+        """The mean of the known parts: each resolved anchor's exp(-d / decay), and for named areas 1 inside,
+        0.6 in a neighbourhood next to one, and exp(-d / 2) from the nearest one's middle beyond that."""
         parts = [[None if d[i] is None else u.distance(d[i], self.decay_km) for i in rows]
                  for _, d in self.anchors]
         if self.areas:
-            # Outside a named area stays unknown until neighbourhood adjacency arrives with D-05.
-            hood = self.matrix.neighbourhood
-            parts.append([1.0 if hood[i] is not None and hood[i] in self.areas else None for i in rows])
+            parts.append(self._areas(rows))
         if not parts:
             return [None] * len(rows)
         if len(parts) == 1:
@@ -319,6 +320,26 @@ class _Context:
         return out
 
     # Words (docs/SCORING.md §5)
+
+    def _areas(self, rows) -> list[float | None]:
+        hood = self.matrix.neighbourhood
+        named = self.matrix.named(self.areas)
+        if not named:   # no neighbourhood data, or a name the City doesn't use: only an exact match counts
+            return [1.0 if hood[i] is not None and hood[i] in self.areas else None for i in rows]
+        inside = {h.name.lower() for h in named}
+        hoods = self.matrix.hoods
+        nextdoor = {hoods[a].name.lower() for h in named for a in h.adjacent if a in hoods} - inside
+        dists = [self.matrix.distances_km(h.lat, h.lng) for h in named]
+        out: list[float | None] = []
+        for i in rows:
+            if hood[i] in inside:
+                out.append(1.0)
+            elif hood[i] in nextdoor:
+                out.append(NEXT_DOOR)
+            else:
+                known = [d[i] for d in dists if d[i] is not None]
+                out.append(min(NEXT_DOOR, u.distance(min(known), AREA_DECAY_KM)) if known else None)
+        return out
 
     def row(self, f: str, i: int) -> dict[str, Any]:
         """What a phrase needs to describe feature `f` for listing `i`."""
