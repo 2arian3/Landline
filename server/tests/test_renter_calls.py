@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from landline.agents.concierge import tools
-from landline.agents.concierge.prompt import GOODBYE, GREETING, RETURNING, WELCOME_BACK
+from landline.agents.concierge.prompt import GREETING, RETURNING, WELCOME_BACK
 from landline.api.browser_audio import JUDGE_AUDIO_PATH
 from landline.api.twilio import BUSY, NOT_READY
 from landline.app import create_app
@@ -387,7 +387,10 @@ def test_end_session_with_nothing_said_asks_for_a_goodbye_before_hanging_up(monk
             with pytest.raises(WebSocketDisconnect):
                 ws.receive_bytes()
         assert c.app.state.calls.recent[-1].end_reason == "end_session"
-        assert fake.sent[-1] == {"type": "response.create", "response": {"instructions": GOODBYE}}
+        # The goodbye is asked for in the tool's answer, so the Concierge keeps its own instructions.
+        assert fake.sent[-2:] == [{"type": "conversation.item.create", "item": {
+            "type": "function_call_output", "call_id": "fc_bye", "output": tools.SAY_GOODBYE}},
+            {"type": "response.create"}]
 
 
 def test_playback_clock_counts_audio_sent_and_resets_on_barge_in():

@@ -24,7 +24,7 @@ from typing import Any, Protocol
 from fastapi import WebSocket, WebSocketDisconnect
 
 from landline.agents.concierge import tools
-from landline.agents.concierge.prompt import GOODBYE, GREETING, INSTRUCTIONS, RETURNING, WELCOME_BACK
+from landline.agents.concierge.prompt import GREETING, INSTRUCTIONS, RETURNING, WELCOME_BACK
 from landline.config import Settings
 from landline.contracts import SessionEnded, SessionStarted
 from landline.orchestrator import SessionRuntime
@@ -279,15 +279,16 @@ async def run_tool(higgs: Any, event: dict[str, Any], ctx: tools.ToolContext, *,
     except Exception:
         log.exception("tool %s failed on call %s", event.get("name"), ctx.call_id)
         output = tools.BROKEN
+    # end_session with nothing said yet: one more response for the goodbye, or the renter hears the line
+    # drop. Asked once. The request goes in the tool's answer, not in response instructions, which would
+    # replace the Concierge's own (it then greets: "Hello! How can I help you today?").
+    say_bye = ctx.hang_up and not spoke and ctx.bye_response is None
+    if say_bye:
+        output, ctx.bye_response = tools.SAY_GOODBYE, str(event.get("response_id") or "")
     await higgs.send({"type": "conversation.item.create",
                       "item": {"type": "function_call_output", "call_id": tool_call_id, "output": output}})
-    if not ctx.hang_up:
+    if not ctx.hang_up or say_bye:   # otherwise the goodbye is already out, and nothing more is said
         await higgs.send({"type": "response.create"})
-    elif not spoke and ctx.bye_response is None:
-        # end_session with nothing said: ask for the goodbye, or the renter hears the line drop. Asked once.
-        ctx.bye_response = str(event.get("response_id") or "")
-        await higgs.send({"type": "response.create", "response": {"instructions": GOODBYE}})
-    # Otherwise the goodbye is already out, and nothing more is said.
 
 
 def ends_call(done: dict[str, Any], ctx: tools.ToolContext) -> bool:

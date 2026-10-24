@@ -102,6 +102,8 @@ def test_hanging_up_without_a_goodbye_fails_the_case():
     assert score(case, _trace([AgentTurn(0, "Goodbye!", ["end_session"], 1)]), CATALOGUE).passed
     result = score(case, _trace([AgentTurn(0, "", ["end_session"], 1)]), CATALOGUE)
     assert [c.name for c in result.failed()] == ["final.ended.goodbye"]
+    greeted = _trace([AgentTurn(0, "Hello! How can I help you today?", ["end_session"], 1)])
+    assert not score(case, greeted, CATALOGUE).passed
 
 
 def test_an_empty_run_still_writes_a_report():

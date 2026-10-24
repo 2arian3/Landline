@@ -49,6 +49,9 @@ UNKNOWN = "Sorry, I can't do that yet."
 NOT_CAUGHT = "Sorry, I didn't catch that. Could you say it again?"
 WHICH = "Which one do you mean? You can say its street or its number on the list."
 BROKEN = "Sorry, something went wrong on my side."
+# end_session's answer when it came before any word: the bridge asks for one more response to say it in.
+SAY_GOODBYE = "You haven't said goodbye yet. Say a short goodbye now, in the renter's language; the line " \
+              "closes after it."
 
 
 @dataclass
