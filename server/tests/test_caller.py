@@ -182,7 +182,8 @@ CALL = "c_caller00001"
 
 
 async def _ctx(plan: CallPlan | None = None,
-               said=("Hi, it's available from November 1st.",)) -> tools.CallerContext:
+               said=("Hi, it's available from November 1st.",), opened=True) -> tools.CallerContext:
+    """A Caller mid-call: its first turn, with the disclosure, is over unless `opened` is False."""
     runtime = SessionRuntime(Catalogue([_listing(1), _listing(2)], "test"))
     sid = "s_caller00001"
     await runtime.start(SessionStarted(session_id=sid, at=NOW, idem_key=f"{sid}:s", channel="judge"))
@@ -193,7 +194,7 @@ async def _ctx(plan: CallPlan | None = None,
     await runtime.emit(CallsScheduled(session_id=sid, at=NOW, idem_key=f"{sid}:q", plan=plan,
                                       call_ids=[CALL, "c_caller00002"]))
     return tools.CallerContext(session_id=sid, call_id=CALL, listing_id="t:1", brief=brief(_listing(), plan),
-                               runtime=runtime, clock=lambda: NOW, said=list(said))
+                               runtime=runtime, clock=lambda: NOW, said=list(said), opened=opened)
 
 
 async def _say(ctx, name, args, n=1):
@@ -572,6 +573,35 @@ async def test_a_call_still_on_its_checklist_is_not_ended():
     assert ctx.end_reason is None and not ctx.ended_by_code
     ctx.said.append("Thanks, bye.")
     assert not tools.over(ctx, "Goodbye!", ["end_call"])                  # it ended the call itself
+
+
+async def test_a_landlord_who_picks_up_with_a_fact_still_hears_the_disclosure_first():
+    """omar-scam-abroad-3: "It's available right away." got a tool call first, and the read-back went ahead
+    of "I'm an AI assistant" (hard rule 6)."""
+    ctx = await _ctx(_plan(may_book=False), said=["Hello, Omar speaking. It's available from November 1st."],
+                     opened=False)
+    reply = await _say(ctx, "record_fact", {"field": "available", "value": "yes",
+                                            "quote": "It's available from November 1st"})
+    assert reply.startswith('Your first words are the disclosure: "Hi, I\'m an AI assistant calling for a '
+                            'renter about 1 Dial St." Then: Recorded available: yes.')
+    assert "Start your reply with" not in reply
+    assert await _say(ctx, "end_call", {"reason": "voicemail"}, 2) == (
+        'Your first words are the disclosure: "Hi, I\'m an AI assistant calling for a renter about '
+        '1 Dial St." Then: Goodbye.')
+    ctx = await _ctx(_plan(may_book=False), said=["Hello, Omar speaking. It's available from November 1st."],
+                     opened=False)
+    tools.over(ctx, "Hi, I'm an AI assistant calling for a renter about 1 Dial St. Any monthly fees?", [])
+    ctx.said.append("Parking is $150 a month.")
+    reply = await _say(ctx, "record_fact", {"field": "parking_cost", "value": "$150 a month",
+                                            "quote": "Parking is $150 a month"})
+    assert reply.startswith("Recorded parking cost") and "disclosure" not in reply   # never twice
+
+
+def test_the_caller_never_claims_the_renter_confirmed_anything():
+    """priya-no-booking-3: "I've confirmed with my client that Thursday at 6:30 pm works.\""""
+    text = " ".join(instructions(brief(_listing(), _plan(may_book=False))).split())
+    assert "Never say the renter confirmed, agreed or chose anything during the call: you can't reach them." \
+        in text
 
 
 async def test_two_renter_questions_in_one_turn_are_both_noted_and_not_again():
