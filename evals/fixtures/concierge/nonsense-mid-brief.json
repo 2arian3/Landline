@@ -1,0 +1,35 @@
+{
+  "id": "nonsense-mid-brief",
+  "about": "A garbled line mid-brief: the Concierge says it didn't catch that, saves nothing, then acts on the repeat",
+  "lines": [
+    {
+      "say": "Hi, I'm looking for a one bedroom under 2,600."
+    },
+    {
+      "say": "Purple seventeen the fridge is singing backwards over gravy.",
+      "expect": {
+        "no_tools": true,
+        "says_any": ["catch", "again", "repeat", "understand", "follow", "mean"],
+        "says_none": ["fridge", "gravy", "purple", "Carabob", "listing"],
+        "prefs": {"max_monthly": 2600, "min_beds": 1, "pets": null, "areas": null, "anchors": null,
+                  "must_have": null, "priorities": null}
+      }
+    },
+    {
+      "say": "Sorry, I meant I have a small dog.",
+      "expect": {
+        "prefs": {"pets": ["dog"]}
+      }
+    },
+    {
+      "say": "That's all for now, bye."
+    }
+  ],
+  "final": {
+    "prefs": {"max_monthly": 2600, "min_beds": 1, "pets": ["dog"], "areas": null, "anchors": null,
+              "must_have": null, "priorities": null},
+    "replies_avoid": ["fridge", "gravy", "purple", "backwards"],
+    "no_request": true,
+    "ended": true
+  }
+}

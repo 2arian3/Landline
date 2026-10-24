@@ -1,0 +1,25 @@
+{
+  "id": "area-queens",
+  "about": "Names an area loosely (\"around Queens\"): the search places it near Queen and Yonge, not 'got it' and nothing",
+  "lines": [
+    {
+      "say": "Hi, one bedroom up to 2,800 please."
+    },
+    {
+      "say": "Somewhere around Queens would be great.",
+      "expect": {
+        "placed": ["Queen"]
+      }
+    },
+    {
+      "say": "Great, thanks, bye."
+    }
+  ],
+  "final": {
+    "prefs": {"max_monthly": 2800, "min_beds": 1},
+    "placed": ["Queen"],
+    "near": {"lat": 43.6529, "lng": -79.3795, "km": 1.5, "top": 3},
+    "no_request": true,
+    "ended": true
+  }
+}

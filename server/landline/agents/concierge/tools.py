@@ -13,12 +13,14 @@ import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from functools import cache
 from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
 from landline.agents.concierge import refs
 from landline.contracts import (
+    AnchorResolved,
     AreaFocused,
     CallsRequested,
     Card,
@@ -28,6 +30,7 @@ from landline.contracts import (
 )
 from landline.contracts.tools import (
     CONCIERGE_TOOLS,
+    AnchorRef,
     Availability,
     CallListings,
     FocusArea,
@@ -37,6 +40,7 @@ from landline.contracts.tools import (
     concierge_tools,
 )
 from landline.orchestrator import Refused, SessionRuntime, UnknownSession
+from landline.orchestrator.places import load_stations
 
 log = logging.getLogger(__name__)
 
@@ -50,6 +54,8 @@ UNKNOWN = "Sorry, I can't do that yet."
 NOT_CAUGHT = "Sorry, I didn't catch that. Could you say it again?"
 WHICH = "Which one do you mean? You can say its street or its number on the list."
 BROKEN = "Sorry, something went wrong on my side."
+# A place no data holds: the agent asks for one it can find, instead of saying "got it" to nothing.
+ASK_PLACE = "Nothing changed. Ask the renter for a nearby main street, intersection or subway station."
 # give_feedback with no listing_ref and nothing focused: the renter usually did say which ("the second
 # one"), and the agent left it out. Asking them again would annoy them; the agent can fix it itself.
 NO_REF = "Not saved: no listing_ref. Call give_feedback again now with listing_ref set to the number or " \
@@ -149,13 +155,80 @@ def _misplaced_hint(name: str, keys: list[str]) -> str:
 
 
 async def update_preferences(args: PreferenceDelta, ctx: ToolContext, meta: dict) -> str:
-    """The first one of a phone call also texts the renter their board link. Its result then says so
-    (`texted_link`), and the Concierge tells them."""
-    view = await ctx.runtime.emit(PreferencesUpdated(**meta, delta=args))
+    """The places the renter named are found in code first (`_places`), and their points go in the same
+    commit, so the board has moved by the time the agent hears the reply. The first one of a phone call
+    also texts the renter their board link. Its result then says so (`texted_link`), and the Concierge
+    tells them."""
+    args, points, lost = _places(args, ctx)
+    sid = ctx.session_id
+    version = ctx.runtime.get(sid).version
+    async with ctx.runtime.session_tx(sid) as tx:
+        await tx.apply(PreferencesUpdated(**meta, delta=args))
+        for label, spot in points:
+            key = f"{meta['idem_key']}:place:{' '.join(label.lower().split())}"
+            await tx.apply(AnchorResolved(session_id=sid, at=meta["at"], idem_key=key, label=label,
+                                          lat=spot.lat, lng=spot.lng))
+    view = ctx.runtime.get(sid)
+    # With nothing changed, agent_says is still the last commit's line; only the missing place is news.
+    said = " ".join(filter(None, [view.agent_says if view.version != version or not lost else None,
+                                  _not_found(lost, ctx)]))
     first, ctx.preferences_seen = not ctx.preferences_seen, True
     if first and ctx.text_link is not None and ctx.text_link():
-        return json.dumps({"result": view.agent_says, "texted_link": True})
-    return view.agent_says
+        return json.dumps({"result": said, "texted_link": True})
+    return said
+
+
+def _places(args: PreferenceDelta, ctx: ToolContext) -> tuple[PreferenceDelta, list[tuple[str, refs.Spot]],
+                                                                list[str]]:
+    """Finds each area and anchor the renter named (`refs.area`). A City neighbourhood stays an area, under
+    the City's name, which is what the ranker matches. Anything else found (a street, a station, a
+    building) becomes an anchor with its point. An area left as said and never matched would do nothing
+    while the agent said "got it" ("around Queens"). A place nothing holds is kept for the geocoder when
+    there is one; without one it's dropped, and the reply asks the renter for a street or station."""
+    if not args.areas and not args.anchors:
+        return args, [], []
+    runtime = ctx.runtime
+    known = runtime.state(ctx.session_id).preferences.anchors
+    placed = {a.label.lower() for a in known if a.lat is not None}
+    geocoder = bool(runtime.places.contact)
+    areas: list[str] = []
+    anchors: list[str] = [] if args.anchors is not None else [a.label for a in known]
+    points: list[tuple[str, refs.Spot]] = []
+    lost: list[str] = []
+    named = [(a, True) for a in args.areas or []] + [(a.label, False) for a in args.anchors or []]
+    for label, is_area in named:
+        if label.lower() in placed:
+            anchors.append(label)
+            continue
+        spot = refs.area(label, runtime.matrix.named, _stations(), runtime.catalogue)
+        if spot is not None and spot.hoods and is_area:
+            areas += spot.hoods
+        elif spot is not None:
+            anchors.append(label)
+            points.append((label, spot))
+        else:
+            lost.append(label)
+            if geocoder:
+                anchors.append(label)
+    update: dict[str, Any] = {}
+    if args.areas is not None:
+        update["areas"] = list(dict.fromkeys(areas))
+    if args.anchors is not None or anchors != [a.label for a in known]:
+        update["anchors"] = [AnchorRef(label=x) for x in dict.fromkeys(anchors)]
+    return args.model_copy(update=update), points, lost
+
+
+def _not_found(lost: list[str], ctx: ToolContext) -> str | None:
+    if not lost:
+        return None
+    if ctx.runtime.places.contact:
+        return f"Looking up {_join(lost)} on the map; the list moves if it's found."
+    return f"Couldn't find {_join(lost)} on the map. {ASK_PLACE}"
+
+
+@cache
+def _stations() -> list[dict]:
+    return load_stations()
 
 
 async def give_feedback(args: GiveFeedback, ctx: ToolContext, meta: dict) -> str:
@@ -185,10 +258,11 @@ async def focus_listing(args: FocusListing, ctx: ToolContext, meta: dict) -> str
 
 
 async def focus_area(args: FocusArea, ctx: ToolContext, meta: dict) -> str:
-    point = refs.place(args.place, ctx.runtime.catalogue)
-    if point is None:
-        return "I can't place that on the map yet."
-    await ctx.runtime.emit(AreaFocused(**meta, label=args.place, lat=point[0], lng=point[1], zoom=AREA_ZOOM))
+    runtime = ctx.runtime
+    spot = refs.area(args.place, runtime.matrix.named, _stations(), runtime.catalogue)
+    if spot is None:
+        return f"Couldn't find {args.place} on the map. {ASK_PLACE}"
+    await runtime.emit(AreaFocused(**meta, label=args.place, lat=spot.lat, lng=spot.lng, zoom=AREA_ZOOM))
     return f"Showing {args.place}."
 
 

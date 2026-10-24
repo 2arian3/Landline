@@ -17,6 +17,7 @@ from evals.sim.cases import Case, Want
 from evals.sim.driver import Trace
 from landline.agents.concierge import tools
 from landline.db.catalogue import Catalogue
+from landline.scoring.features import haversine_km
 
 # A past-tense claim that something changed. Said in a turn with no tool call, nothing did change.
 CLAIM = re.compile(r"\b(i'?ve|i have)\s+(just\s+|now\s+|also\s+)?(noted|updated|added|saved|recorded|set|"
@@ -130,6 +131,29 @@ def _wants(want: Want, state: dict, trace: Trace, catalogue: Catalogue, *, kind:
             called = [n for a in trace.agent if a.line == line for n in a.tools]
             for name in want.tools:
                 check(f"tool.{name}", name in called, f"called {called}")
+        if want.no_tools:
+            called = [n for a in trace.agent if a.line == line for n in a.tools]
+            check("no_tools", not called, f"called {called}")
+        if want.says_any is not None:
+            said = " ".join(a.text for a in trace.agent if a.line == line)
+            check("says_any", any(w.lower() in said.lower() for w in want.says_any),
+                  f"said {said!r}")
+        for word in want.says_none or []:
+            said = " ".join(a.text for a in trace.agent if a.line == line)
+            check(f"says_none.{word}", word.lower() not in said.lower(), f"said {said!r}")
+        for word in want.placed or []:
+            prefs = state["preferences"]
+            anchors = [a["label"] for a in prefs.get("anchors") or [] if a.get("lat") is not None]
+            hoods = [h.name for h in catalogue.hoods]
+            areas = [a for a in prefs.get("areas") or [] if any(_close(a, h) for h in hoods)]
+            check(f"placed.{word}", any(_close(word, x) for x in anchors + areas),
+                  f"anchors {prefs.get('anchors')}, areas {prefs.get('areas')}")
+        if want.near is not None:
+            n = want.near
+            top = [catalogue.by_id[lid] for lid in state.get("board", [])[:n.top] if lid in catalogue.by_id]
+            dists = [haversine_km(n.lat, n.lng, x.lat, x.lng) for x in top if x.lat is not None]
+            mean = sum(dists) / len(dists) if dists else float("inf")
+            check("near", mean <= n.km, f"top {n.top} are {mean:.1f} km away on average, want ≤ {n.km}")
         if want.ended is not None:
             check("ended", (trace.end == "end_session") == want.ended, f"ended by {trace.end}")
         if want.ended:
