@@ -159,10 +159,12 @@ async def simulate(case_id: str, run: int, opponent: Opponent, *, catalogue: Cat
                                                   listing_id=card.listing_id))
                 line = f"{LOOKING} {describe(card)}"
             trace.lines.append(line)
+            ctx.renter_said = line   # as the bridge does from the transcript (#154, #183)
             await higgs.send({"type": "conversation.item.create", "item": {
                 "type": "message", "role": "user", "content": [{"type": "input_text", "text": line}]}})
             await higgs.send({"type": "response.create"})
             said = await _agent_turn(stream, higgs, ctx, trace, len(trace.lines) - 1, turn_timeout_s)
+            ctx.agent_said = trace.agent[-1].text or ctx.agent_said
             if reader is not None and not trace.agent[-1].tools and not ctx.hang_up:   # as the bridge does
                 caught = await backstop.catch_up(reader, line, ctx,
                                                  claimed=backstop.claims_save(trace.agent[-1].text))
