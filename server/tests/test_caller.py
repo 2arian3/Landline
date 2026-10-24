@@ -507,6 +507,7 @@ async def test_a_question_asked_twice_is_noted_even_without_a_promise():
     ("Does your client have any pets?", None),                 # shareable: a dog
     ("How many people would be living there?", None),          # not asked of the renter
     ("Would you like to schedule a viewing?", None),           # left to book_viewing
+    ("Does that time work for your client?", None),            # raj-upsell-3, after the booking
     ("Do you have any other questions?", None),
     ("Parking is $150 a month.", None),                        # not a question
 ])
