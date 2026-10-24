@@ -224,8 +224,8 @@ def render(data: dict[str, Any], calls: dict[str, Any] | None = None) -> str:
         if name in calls:
             out += _calls(title, calls[name]["current"], calls[name].get("previous"))
     out += extraction()
+    out += ranking()
     out += ["## Not measured yet", "",
-            "- Ranking (E-03).",
             "- Anything audio: time to first audio, barge-in, speech-to-text errors. Text mode can't see "
             "them; they need the audio sim transport (A-03).",
             "- Claims in languages other than English: the \"said it changed something\" check reads English "
@@ -352,3 +352,67 @@ if __name__ == "__main__":
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
     print(write())
+
+
+# ── ranking (E-03) ──────────────────────────────────────────────────────────
+
+RANKING = REPORTS / "ranking.json"
+
+
+def ranking() -> list[str]:
+    """The Matcher on renter briefs (E-03), from evals/reports/ranking.json."""
+    out = ["## Matcher: ranking renter briefs", "",
+           "The real ranking (`server/landline/scoring/`, with feedback from `orchestrator/feedback.py`) "
+           "on 10 renter briefs over the frozen catalogue (`evals/run_ranking.py`), through the session "
+           "runtime. Each brief's acceptable listings are labelled from criteria written in its fixture, not "
+           "from the ranker. **hit@3**: one of them is in the top 3. **Turns to converge**: the renter keeps "
+           "disliking the top card for a reason the brief didn't give (\"too small\") until a listing with "
+           "what they want reaches the top 3, at most 5 turns. Pure code: the same numbers every run, "
+           "no key.",
+           ""]
+    if not RANKING.exists():
+        return out + ["Not run yet: `uv run python -m evals.run_ranking`.", ""]
+    data = json.loads(RANKING.read_text(encoding="utf-8"))
+    for name, title in SETS:
+        if name in data:
+            out += _ranking_set(title, data[name]["current"], data[name].get("previous"))
+    checks = (data.get("checks") or {}).get("current")
+    if checks:
+        lat = checks["latency"]
+        out += ["### Checks", "",
+                f"- Light twins (a brighter copy never loses): {_fails(checks['light_twins'])}",
+                f"- \"Too dark\" on a dark top card (a small catalogue where light varies): "
+                f"{_fails(checks['too_dark'])}",
+                f"- Ranking time, warm: p50 {lat['p50_ms']} ms, p95 {lat['p95_ms']} ms on {lat['listings']} "
+                f"listings (cold {lat['cold_ms']} ms); p50 {lat['big_p50_ms']} ms, "
+                f"p95 {lat['big_p95_ms']} ms on {lat['big_listings']}. Target < 5 ms.", ""]
+    return out
+
+
+def _ranking_set(title: str, cur: dict, prev: dict | None) -> list[str]:
+    def turns(s: dict) -> str:
+        mean = "—" if s["turns_mean"] is None else f"{s['turns_mean']} mean, {s['turns_max']} max"
+        return f"{s['converged']} / {s['cases']} ({mean})"
+
+    rows = [("**hit@3**", lambda s: _fmt_rate(s["hit_at_3"])),
+            ("Precision@3", lambda s: _fmt_rate(s["precision_at_3"])),
+            ("Converged after feedback", turns),
+            ("Monotonicity violations", lambda s: str(len(s["monotonicity"]))),
+            ("Stability violations", lambda s: str(len(s["stability"])))]
+    out = [f"### {title}", "",
+           f"{cur['at']} · `{cur['sha']}` · {cur['cases']} briefs · {cur['catalogue']}", "",
+           "| | Now | Previous |", "|---|---|---|"]
+    out += [f"| {label} | {fn(cur)} | {fn(prev) if prev else '—'} |" for label, fn in rows]
+    out += ["", "| Brief | hit@3 | Precision@3 | Turns (reason) |", "|---|---|---|---|"]
+    for c in cur["per_case"]:
+        t = "not converged" if c["turns"] is None else str(c["turns"])
+        hit = "yes" if c["hit"] else "no"
+        out.append(f"| {c['id']} | {hit} | {c['precision']:.2f} | {t} ({c['reason']}) |")
+    if cur["monotonicity"] or cur["stability"]:
+        out += ["", "Violations:", ""] + [f"- {v}" for v in cur["monotonicity"] + cur["stability"]]
+    out.append("")
+    return out
+
+
+def _fails(violations: list[str]) -> str:
+    return "pass" if not violations else "**fail**: " + "; ".join(violations)

@@ -214,8 +214,76 @@ The real Auditor (`server/landline/agents/auditor/`) on 20 written call transcri
 | rent | 67% / 67% (2/3) | 100% / 100% (3/3) |
 | utilities included | 100% / 100% (1/1) | 100% / 100% (1/1) |
 
+## Matcher: ranking renter briefs
+
+The real ranking (`server/landline/scoring/`, with feedback from `orchestrator/feedback.py`) on 10 renter briefs over the frozen catalogue (`evals/run_ranking.py`), through the session runtime. Each brief's acceptable listings are labelled from criteria written in its fixture, not from the ranker. **hit@3**: one of them is in the top 3. **Turns to converge**: the renter keeps disliking the top card for a reason the brief didn't give ("too small") until a listing with what they want reaches the top 3, at most 5 turns. Pure code: the same numbers every run, no key.
+
+### Holdout (quote these)
+
+2026-10-24T08:30:50+00:00 · `dabed61` · 3 briefs · listings.json
+
+| | Now | Previous |
+|---|---|---|
+| **hit@3** | 100% | — |
+| Precision@3 | 89% | — |
+| Converged after feedback | 2 / 3 (1 mean, 1 max) | — |
+| Monotonicity violations | 0 | — |
+| Stability violations | 2 | — |
+
+| Brief | hit@3 | Precision@3 | Turns (reason) |
+|---|---|---|---|
+| dog-near-tmu | yes | 1.00 | 1 (too small) |
+| liberty-couple | yes | 1.00 | 1 (too small) |
+| scarborough | yes | 0.67 | not converged (too far) |
+
+Violations:
+
+- dog-near-tmu: 'too small' on the top card left it first
+- scarborough: 'too far' on the top card left it first
+
+### Tune (prompts change against these)
+
+2026-10-24T08:30:50+00:00 · `dabed61` · 7 briefs · listings.json
+
+| | Now | Previous |
+|---|---|---|
+| **hit@3** | 100% | — |
+| Precision@3 | 76% | — |
+| Converged after feedback | 2 / 7 (2 mean, 3 max) | — |
+| Monotonicity violations | 0 | — |
+| Stability violations | 11 | — |
+
+| Brief | hit@3 | Precision@3 | Turns (reason) |
+|---|---|---|---|
+| cheapest-studio | yes | 1.00 | 1 (too small) |
+| family-space | yes | 0.33 | not converged (too expensive) |
+| one-bed-space | yes | 1.00 | not converged (too expensive) |
+| three-bed-value | yes | 0.33 | not converged (too expensive) |
+| union-commuter | yes | 1.00 | 3 (too small) |
+| uoft-student | yes | 0.67 | not converged (too small) |
+| yonge-eglinton | yes | 1.00 | not converged (too small) |
+
+Violations:
+
+- cheapest-studio: 'too small' on the top card left it first
+- family-space: 'too expensive' on the top card left it first
+- one-bed-space: 'too expensive' on the top card left it first
+- three-bed-value: 'too expensive' on the top card left it first
+- union-commuter: 'too small' on the top card left it first
+- union-commuter: 'too small' moved livrent:108451 above livrent:139609, which is no worse on size
+- union-commuter: 'too small' moved livrent:130282 above livrent:139609, which is no worse on size
+- union-commuter: 'too small' moved livrent:100747 above livrent:139609, which is no worse on size
+- uoft-student: 'too small' on the top card left it first
+- uoft-student: 'too small' moved livrent:125599 above livrent:137404, which is no worse on size
+- yonge-eglinton: 'too small' on the top card left it first
+
+### Checks
+
+- Light twins (a brighter copy never loses): pass
+- "Too dark" on a dark top card (a small catalogue where light varies): **fail**: too-dark: 'too dark' on the top card left it first
+- Ranking time, warm: p50 0.103 ms, p95 0.153 ms on 400 listings (cold 1.1 ms); p50 1.632 ms, p95 2.847 ms on 4000. Target < 5 ms.
+
 ## Not measured yet
 
-- Ranking (E-03).
 - Anything audio: time to first audio, barge-in, speech-to-text errors. Text mode can't see them; they need the audio sim transport (A-03).
 - Claims in languages other than English: the "said it changed something" check reads English only.

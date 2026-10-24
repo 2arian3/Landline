@@ -1,0 +1,36 @@
+{
+  "id": "scarborough",
+  "renter": "Works at Scarborough Town Centre, one bedroom, up to $2,300.",
+  "brief": {
+    "max_monthly": 2300,
+    "min_beds": 1,
+    "priorities": [
+      "location",
+      "cost"
+    ],
+    "anchors": [
+      {
+        "label": "Scarborough Town Centre",
+        "lat": 43.7757,
+        "lng": -79.2578
+      }
+    ]
+  },
+  "acceptable": [
+    "livrent:119479",
+    "livrent:118496",
+    "livrent:120278",
+    "livrent:145645",
+    "livrent:145646",
+    "livrent:145647"
+  ],
+  "why": "1+ bed, ≤ $2,300, about as close to Scarborough Town Centre as the closest",
+  "feedback": {
+    "reason": "too far",
+    "attribute": "location",
+    "goal": [
+      "livrent:119479"
+    ],
+    "why": "within 3 km of Scarborough Town Centre"
+  }
+}
