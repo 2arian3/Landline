@@ -207,7 +207,7 @@ async def test_record_fact_keeps_only_what_the_landlord_said():
     assert ctx.runtime.state(ctx.session_id).heard == {}
     reply = await _say(ctx, "record_fact", {"field": "available", "value": "yes",
                                             "quote": "it's available from November 1st"}, 2)
-    assert reply.startswith("Recorded available: yes.") and "also record available_from" in reply
+    assert reply.startswith("Recorded available: yes.") and "also call record_available_from" in reply
     assert [f.field for f in ctx.runtime.state(ctx.session_id).heard["t:1"]] == ["available"]
     assert ctx.brief.items[0].done
 
