@@ -2,6 +2,7 @@
 
 import { Money } from "./Money";
 import { money, photoAt, specLine } from "@/lib/format";
+import type { Unheard } from "@/lib/outcome";
 import type { Card } from "@/lib/types";
 
 export const STATUS: Partial<Record<Card["status"], { word: string; color: string }>> = {
@@ -31,6 +32,7 @@ export function ListingCard({
   hovered,
   moved = null,
   mark,
+  ended,
   onSelect,
   onHover,
 }: {
@@ -39,10 +41,12 @@ export function ListingCard({
   hovered: boolean;
   moved?: Move;
   mark?: Mark;
+  /** How a call that learned nothing ended, in place of "No answer yet". */
+  ended?: Unheard | null;
   onSelect: (id: string) => void;
   onHover: (id: string | null) => void;
 }) {
-  const status = mark ? MARK[mark] : STATUS[card.status];
+  const status = mark ? MARK[mark] : ended ? { word: ended.word, color: "var(--color-ink-3)" } : STATUS[card.status];
   const dead = card.status === "dead";
   const flag = card.red_flags[0];
   // What a person said on the phone. A red flag outranks it here; the detail shows both.

@@ -105,6 +105,19 @@ class RecordFact(BaseModel):
     quote: str = Field(description="The landlord's exact words")
 
 
+class AvailableFrom(BaseModel):
+    """When the place is free, as the landlord said it, in parts (#157). Code makes the calendar date from
+    the call's day in Toronto; the model never gives a date."""
+    kind: Literal["now", "tomorrow", "weekday", "next_week", "in_weeks", "date", "month", "end_of_month",
+                  "unknown"] = Field(description="What kind of day they named")
+    weekday: Literal["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"] | None = \
+        Field(None, description="kind=weekday: the day they named")
+    weeks: int | None = Field(None, ge=1, le=52, description="kind=in_weeks: how many weeks")
+    month: int | None = Field(None, ge=1, le=12, description="kind=date or month: the month they named, 1-12")
+    day: int | None = Field(None, ge=1, le=31, description="kind=date: the day of the month they named")
+    quote: str = Field(description="The landlord's exact words")
+
+
 class NoteQuestion(BaseModel):
     question: str
 
@@ -141,6 +154,11 @@ CONCIERGE_TOOLS: dict[str, tuple[type[BaseModel], str]] = {
 CALLER_TOOLS: dict[str, tuple[type[BaseModel], str]] = {
     "record_fact": (
         RecordFact, "Record something the landlord said as soon as they say it, with their exact words.",
+    ),
+    "record_available_from": (
+        AvailableFrom,
+        "The landlord said when it's free. Fill in the parts of what they said, never a date you work out; "
+        "code makes the date. Read back the day the reply gives.",
     ),
     "note_question": (
         NoteQuestion,
