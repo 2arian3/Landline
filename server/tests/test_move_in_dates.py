@@ -48,8 +48,21 @@ ROWS = [   # what the landlord said, the model's value, the key, what the renter
     ("September 2nd.", "September 2", "09-02", "free from Thursday, September 2, 2027"),
 ]
 
+TRICKY = [   # words that once read as the wrong day
+    ("The 2 bedroom is available right away.", "2025-09-02", "now", "available now"),
+    ("Yes, the 3 bed unit is free today.", "2025-09-02", "now", "available now"),
+    ("It's available now, it's on the second floor.", "2025-09-02", "now", "available now"),
+    ("It's free from Sunday, November first.", "Sunday", "11-01", "free from Sunday, November 1"),
+    ("Monday, November 2nd works.", "Monday", "11-02", "free from Monday, November 2"),
+    ("Available Sunday the 1st.", "Sunday", "11-01", "free from Sunday, November 1"),
+    ("It's rented right now, free from December 1st.", "now", "12-01", "free from Tuesday, December 1"),
+    ("End of next month.", "next month", "11-30", "free from Monday, November 30"),
+    ("11月底", "11-01", "11-30", "free from Monday, November 30"),
+    ("Mid-November.", "November", "11-15", "free from Sunday, November 15"),
+]
 
-@pytest.mark.parametrize(("quote", "model", "key", "says"), ROWS)
+
+@pytest.mark.parametrize(("quote", "model", "key", "says"), ROWS + TRICKY)
 def test_the_day_comes_from_the_quote_counted_from_the_call(quote, model, key, says):
     v = settle("available_from", model, quote, today=call_day(CALLED))
     assert v.value == key
@@ -88,7 +101,7 @@ def _fact(quote: str, model: str) -> Fact:
     return Fact(field="available_from", value=v.display, quote=quote, speaker="Agent heard", at=CALLED)
 
 
-@pytest.mark.parametrize(("quote", "model", "key", "says"), ROWS)
+@pytest.mark.parametrize(("quote", "model", "key", "says"), ROWS + TRICKY)
 async def test_the_results_text_says_the_day_in_words(quote, model, key, says):
     results, _ = await _results([_fact(quote, model)])
     assert f"At 77 Wellesley St E, {says}." in results

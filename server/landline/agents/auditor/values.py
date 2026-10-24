@@ -226,6 +226,8 @@ def _category_word(field: str, value: str) -> str | None:
 _NOW = re.compile(r"\b(now|immediately|right away|today|asap)\b|现在|马上|随时")
 _COUNT = {"a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6}
 _DAY_WORD = r"(\d{1,2})(?:st|nd|rd|th)?|(" + "|".join(when.ORDINALS) + ")"
+_NTH = r"(\d{1,2})(?:st|nd|rd|th)|(" + "|".join(when.ORDINALS) + ")"   # "the 1st", never "the 2 bedroom"
+_NOT_A_DAY = r"(?![\s-]*(?:floor|bed|room|unit|stor|level))"         # "the second floor"
 
 
 def call_day(at: datetime | None) -> date:
@@ -245,16 +247,16 @@ def free_from(text: str, today: date) -> date | None:
         n = _COUNT.get(m.group(1)) or int(m.group(1))
         return (_months_on(today, n) if m.group(2) == "month"
                 else today + timedelta(days=n * (7 if m.group(2) == "week" else 1)))
+    if re.search(r"\bend of next month\b|下个?月底", t + text):
+        return _months_on(today.replace(day=1), 2) - timedelta(days=1)
+    if m := re.search(r"(\d{1,2})月底", text):
+        first = when._next_date(today.replace(day=1), int(m.group(1)), 1) or today
+        return _months_on(first, 1) - timedelta(days=1)
     if re.search(r"\bend of (the|this) month\b|\bend of month\b|月底", t + text):
         return _months_on(today.replace(day=1), 1) - timedelta(days=1)
     if re.search(r"\b(first|1st|beginning|start) of (the )?next month\b|\bnext month\b|下个?月", t + text):
         return _months_on(today.replace(day=1), 1)
-    for i, name in enumerate(when.DAYS):
-        if re.search(rf"\b{name}\b", t):
-            return today + timedelta(days=(i - today.weekday()) % 7 or 7)   # the coming one
-    if re.search(r"\bnext week\b|下(个)?(星期|周|礼拜)", t + text):
-        return today + timedelta(days=(0 - today.weekday()) % 7 or 7)       # that week's Monday
-    for i, name in enumerate(when.MONTHS):
+    for i, name in enumerate(when.MONTHS):   # a named date beats its weekday: "Sunday, November first"
         month = rf"(?:{name}|{name[:3]}|sept)" if name == "september" else rf"(?:{name}|{name[:3]})"
         if not re.search(rf"\b{month}\b", t):
             continue
@@ -266,17 +268,24 @@ def free_from(text: str, today: date) -> date | None:
             return _months_on(first, 1) - timedelta(days=1)
         m = (re.search(rf"\b{month}\.?\s+(?:the\s+)?(?:{_DAY_WORD})\b", t)
              or re.search(rf"\b(?:the\s+)?(?:{_DAY_WORD})\s+of\s+{month}\b", t))
-        day = 1 if m is None else int(m.group(1)) if m.group(1) else when.ORDINALS[m.group(2)]
+        day = (1 if m is None else int(m.group(1)) if m.group(1) else when.ORDINALS[m.group(2)])
+        if m is None and re.search(rf"\bmid[\s-]*{month}\b", t):
+            day = 15
         return when._next_date(today, i + 1, day)
     if m := re.search(r"(\d{1,2})月(\d{1,2})?[日号]?", text):
         return when._next_date(today, int(m.group(1)), int(m.group(2) or 1))
-    if m := re.search(rf"\bthe\s+(?:{_DAY_WORD})\b", t):   # "from the first": the next such day of a month
+    if m := re.search(rf"\bthe\s+(?:{_NTH})\b{_NOT_A_DAY}", t):   # "from the first": the next such day
         d = int(m.group(1)) if m.group(1) else when.ORDINALS[m.group(2)]
         month, year = (today.month, today.year) if d >= today.day else when._next_month(today)
         try:
             return date(year, month, d)
         except ValueError:
             return None
+    for i, name in enumerate(when.DAYS):
+        if re.search(rf"\b{name}\b", t):
+            return today + timedelta(days=(i - today.weekday()) % 7 or 7)   # the coming one
+    if re.search(r"\bnext week\b|下(个)?(星期|周|礼拜)", t + text):
+        return today + timedelta(days=(0 - today.weekday()) % 7 or 7)       # that week's Monday
     if _NOW.search(t + text):
         return today
     return None
