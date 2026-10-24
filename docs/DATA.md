@@ -91,7 +91,11 @@ create table calls (call_id text primary key, session_id text references session
   created_at timestamptz not null default now(), answered_at timestamptz, ended_at timestamptz, deadline_at timestamptz,
   attempt int not null default 1);
 create table call_turns (call_id text references calls on delete cascade, idx int, speaker text not null,
-  text text not null, lang text, t_ms int, primary key (call_id, idx));
+  text text not null, lang text, t_ms int, audio_start_ms int, audio_end_ms int,   -- audio_*: 0002, A-10
+  primary key (call_id, idx));
+-- 0002 (A-10): each side of a call's audio in chunks, on the clock audio_start_ms / audio_end_ms count on
+create table call_audio (call_id text references calls on delete cascade, track text not null, seq int not null,
+  start_ms int not null, format text not null, rate int not null, audio bytea not null, primary key (call_id, track, seq));
 create table facts (fact_id bigserial primary key, call_id text references calls, listing_id text references listings,
   field text not null, value jsonb not null, quote text not null, turn_idx int, confirmed boolean not null default false,
   source text not null, created_at timestamptz not null default now());

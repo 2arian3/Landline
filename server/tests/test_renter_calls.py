@@ -6,7 +6,7 @@ import json
 import re
 import time
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -400,6 +400,91 @@ def test_end_session_with_nothing_said_asks_for_a_goodbye_before_hanging_up(monk
         assert fake.sent[-2:] == [{"type": "conversation.item.create", "item": {
             "type": "function_call_output", "call_id": "fc_bye", "output": tools.SAY_GOODBYE}},
             {"type": "response.create"}]
+
+
+class SpyLog:
+    """Stands in for the runtime's CallLog (orchestrator/calllog.py): keeps what the bridge reports."""
+
+    def __init__(self):
+        self.log = []
+
+    def started(self, call_id, session_id, transport, deadline_at=None):
+        self.log.append(("started", transport, deadline_at))
+
+    def said(self, call_id, speaker, text, *, start_ms=None, end_ms=None):
+        self.log.append(("said", speaker, text, start_ms, end_ms))
+        return sum(1 for e in self.log if e[0] == "said") - 1
+
+    def placed(self, call_id, idx, start_ms, end_ms):
+        self.log.append(("placed", idx, start_ms, end_ms))
+
+    def audio(self, call_id, track, start_ms, audio, *, fmt, rate):
+        self.log.append(("audio", track, start_ms, len(audio), fmt, rate))
+
+    def ended(self, call_id, reason):
+        self.log.append(("ended", reason))
+
+    def of(self, kind):
+        return [e for e in self.log if e[0] == kind]
+
+
+def _recorded_call(c, spy) -> None:
+    """A phone call: the renter says a line, the Concierge answers it, the renter sends 40 ms and hangs up."""
+    c.app.state.runtime.calls = spy
+    call = c.app.state.calls.open(caller="+14165550100")
+    with c.websocket_connect("/twilio/media") as ws:
+        ws.send_json(_start(call.call_id))
+        assert ws.receive_json()["event"] == "clear"    # speech_started
+        assert ws.receive_json()["event"] == "media"    # the answer's 20 ms
+        time.sleep(0.05)                                # it has played
+        for _ in range(2):
+            ws.send_json({"event": "media", "streamSid": "MZ1",
+                          "media": {"payload": base64.b64encode(b"\xff" * 160).decode()}})
+        ws.send_json({"event": "stop", "streamSid": "MZ1"})
+        with pytest.raises(WebSocketDisconnect):
+            ws.receive_json()
+
+
+RECORDED = [
+    {"type": "input_audio_buffer.speech_started", "item_id": "u1", "audio_start_ms": 0},
+    {"type": "input_audio_buffer.speech_stopped", "item_id": "u1", "audio_end_ms": 40},
+    {"type": "conversation.item.input_audio_transcription.completed", "item_id": "u1",
+     "transcript": "A one-bedroom."},
+    {"type": "response.output_audio.delta", "item_id": "a1",
+     "delta": base64.b64encode(b"\x7f" * 160).decode()},
+    {"type": "response.output_audio_transcript.done", "item_id": "a1", "transcript": "Got it."},
+]
+
+
+def test_a_call_is_recorded_with_each_line_at_its_place_in_the_audio(monkeypatch):
+    monkeypatch.setattr(bridge, "KEEP_AUDIO_EVERY_S", 0.01)   # store during the call too, not only at the end
+    spy = SpyLog()
+    with _client() as c:
+        c.app.state.connect_higgs = FakeHiggs(script=RECORDED).connect
+        _recorded_call(c, spy)
+    [(_, transport, deadline)] = spy.of("started")
+    assert transport == "voice" and deadline > datetime.now(UTC) + timedelta(seconds=800)   # 15 minutes
+    renter, agent = spy.of("said")
+    assert renter == ("said", "renter", "A one-bedroom.", 0, 40)          # Higgs's own numbers
+    assert agent[1:3] == ("agent", "Got it.") and agent[4] - agent[3] == 20   # 160 bytes of 8 kHz
+    audio = spy.of("audio")
+    assert {(fmt, rate) for *_, fmt, rate in audio} == {("pcmu", 8000)}
+    heard = [e for e in audio if e[1] == "renter"]
+    assert sum(e[3] for e in heard) == 320 and heard[0][2] == 0   # 40 ms, from the start of the call
+    said = [(e[2], e[3]) for e in audio if e[1] == "agent"]   # maybe split across stores, never apart
+    assert said[0][0] == agent[3] and sum(n for _, n in said) == 160   # from where its line says it starts
+    assert all(b[0] == a[0] + a[1] // 8 for a, b in zip(said, said[1:], strict=False))
+    assert spy.of("placed") == []                   # it played to the end
+    assert spy.log[-1] == ("ended", "hangup")       # everything is stored before the call ends
+
+
+def test_with_recording_off_the_lines_keep_their_place_but_no_audio_is_stored():
+    spy = SpyLog()
+    with _client(record_audio=False) as c:
+        c.app.state.connect_higgs = FakeHiggs(script=RECORDED).connect
+        _recorded_call(c, spy)
+    assert spy.of("audio") == []
+    assert spy.of("said")[0] == ("said", "renter", "A one-bedroom.", 0, 40)
 
 
 def test_playback_clock_counts_audio_sent_and_resets_on_barge_in():

@@ -18,7 +18,7 @@ import contextlib
 import logging
 import time
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 
 from fastapi import WebSocket, WebSocketDisconnect
@@ -31,6 +31,7 @@ from landline.orchestrator import SessionRuntime
 from landline.voice import twilio
 from landline.voice.calls import RenterCall, RenterCalls
 from landline.voice.higgs import PCMU, ConnectHiggs, session_config
+from landline.voice.recorder import CallRecorder, Chunk, Placed, format_of
 from landline.voice.sms import Texter
 
 log = logging.getLogger(__name__)
@@ -38,6 +39,7 @@ log = logging.getLogger(__name__)
 START_TIMEOUT_S = 10      # Twilio sends `connected` then `start` right after the socket opens
 POLICY_VIOLATION = 1008
 HANG_UP_GRACE_S = 0.5     # after the goodbye has played, before hanging up
+KEEP_AUDIO_EVERY_S = 5    # how often the call's audio so far is stored (voice/recorder.py)
 SESSION_END = {"hangup": "hangup", "end_session": "end_session", "deadline": "timeout"}   # else "closed"
 LINK_TEXT = "Landline: here are the places that fit what you've told us. They update as we talk: {link}"
 
@@ -83,14 +85,20 @@ async def converse(transport: Transport, call: RenterCall, *, calls: RenterCalls
     caller owns the socket and closes it afterwards. With a `texter`, a phone caller is texted the link
     to their board the first time their preferences change."""
     reason = "error"
-    # The call and its transcript are stored for the admin panel (orchestrator/calllog.py).
+    # The call, its transcript and its audio are stored for the admin panel (orchestrator/calllog.py).
     kind = "voice" if transport.audio_format == PCMU else "browser"
-    runtime.calls.started(call.call_id, call.session_id, kind)
+    recorder = CallRecorder(format_of(transport.audio_format))
+    runtime.calls.started(call.call_id, call.session_id, kind,
+                          deadline_at=datetime.now(UTC) + timedelta(seconds=settings.renter_call_max_s))
     try:
         reason = await _talk(transport, call, runtime, connect_higgs, settings, set_status,
-                             _link_texter(texter, call, settings))
+                             _link_texter(texter, call, settings), recorder)
     finally:
         calls.finalize(call.call_id, reason)
+        try:   # before it ends, and never in the way of ending it
+            _keep(runtime, call.call_id, recorder, recorder.finish(), settings.record_audio)
+        except Exception:
+            log.exception("could not keep the end of call %s's audio", call.call_id)
         runtime.calls.ended(call.call_id, reason)
         await _end_session(runtime, call.session_id, reason)
     return reason
@@ -126,7 +134,7 @@ def opening(remembered: str | None) -> tuple[str, list[dict[str, Any]]]:
 
 async def _talk(transport: Transport, call: RenterCall, runtime: SessionRuntime, connect_higgs: ConnectHiggs,
                 settings: Settings, set_status: Callable[[str], None],
-                text_link: Callable[[], bool] | None) -> str:
+                text_link: Callable[[], bool] | None, recorder: CallRecorder) -> str:
     instructions, start = opening(runtime.opening(call.session_id))
     try:
         higgs = await connect_higgs(settings.boson_api_key or "", session_config(
@@ -142,18 +150,19 @@ async def _talk(transport: Transport, call: RenterCall, runtime: SessionRuntime,
                             text_link=text_link)
     playback = Playback(transport.bytes_per_second)
     pumps: set[asyncio.Task[str]] = set()
+    keeper = asyncio.create_task(_keep_every(runtime, call.call_id, recorder, settings.record_audio))
     try:
         for event in start:
             await higgs.send(event)
-        pumps = {asyncio.create_task(_renter_to_higgs(transport, higgs)),
-                 asyncio.create_task(_higgs_to_renter(higgs, transport, ctx, playback))}
+        pumps = {asyncio.create_task(_renter_to_higgs(transport, higgs, recorder)),
+                 asyncio.create_task(_higgs_to_renter(higgs, transport, ctx, playback, recorder))}
         done, _ = await asyncio.wait(pumps, timeout=settings.renter_call_max_s,
                                      return_when=asyncio.FIRST_COMPLETED)
         return _why(done)
     finally:
-        for task in pumps:
+        for task in (*pumps, keeper):
             task.cancel()
-        await asyncio.gather(*pumps, return_exceptions=True)
+        await asyncio.gather(*pumps, keeper, return_exceptions=True)
         with contextlib.suppress(Exception):
             await higgs.close()
 
@@ -245,15 +254,16 @@ async def _wait_for_start(ws: WebSocket) -> dict[str, Any] | None:
 
 # ── shared ──────────────────────────────────────────────────────────────────
 
-async def _renter_to_higgs(transport: Transport, higgs: Any) -> str:
+async def _renter_to_higgs(transport: Transport, higgs: Any, recorder: CallRecorder) -> str:
     """The renter's audio, chunk by chunk, into Higgs. Ends when they hang up."""
     while (audio := await transport.receive_audio()) is not None:
+        recorder.heard(audio)
         await higgs.send({"type": "input_audio_buffer.append", "audio": audio})
     return "hangup"
 
 
 async def _higgs_to_renter(higgs: Any, transport: Transport, ctx: tools.ToolContext,
-                           playback: Playback) -> str:
+                           playback: Playback, recorder: CallRecorder) -> str:
     """The Concierge's audio back to the renter, barge-in and tool calls. Ends when Higgs closes, or once
     the goodbye has played after end_session."""
     spoke = False   # whether the response under way has sent any audio yet
@@ -265,9 +275,14 @@ async def _higgs_to_renter(higgs: Any, transport: Transport, ctx: tools.ToolCont
             spoke = True
             await transport.send_audio(event["delta"])
             playback.sent(event["delta"])
+            recorder.played(event["delta"], event.get("item_id"))
         elif kind == "input_audio_buffer.speech_started":
             await transport.send_clear()
             playback.clear()
+            recorder.cut()
+            recorder.speech_started(event.get("item_id"), event.get("audio_start_ms"))
+        elif kind == "input_audio_buffer.speech_stopped":
+            recorder.speech_stopped(event.get("item_id"), event.get("audio_end_ms"))
         elif kind == "response.function_call_arguments.done":
             await run_tool(higgs, event, ctx, spoke=spoke)
         elif kind == "response.done" and ends_call(event, ctx):
@@ -275,13 +290,43 @@ async def _higgs_to_renter(higgs: Any, transport: Transport, ctx: tools.ToolCont
             return "end_session"
         elif kind == "conversation.item.input_audio_transcription.completed":
             log.info("call %s renter: %s", ctx.call_id, event.get("transcript", ""))
-            ctx.runtime.calls.said(ctx.call_id, "renter", str(event.get("transcript", "")))
+            _said(ctx, recorder, "renter", event)
         elif kind == "response.output_audio_transcript.done":
             log.info("call %s concierge: %s", ctx.call_id, event.get("transcript", ""))
-            ctx.runtime.calls.said(ctx.call_id, "agent", str(event.get("transcript", "")))
+            _said(ctx, recorder, "agent", event)
         elif kind == "error":
             log.warning("call %s Higgs error: %s", ctx.call_id, event.get("error"))
     return "higgs_closed"
+
+
+def _said(ctx: tools.ToolContext, recorder: CallRecorder, speaker: str, event: dict[str, Any]) -> None:
+    """Stores a transcript line at its place in the call's audio."""
+    item_id = event.get("item_id")
+    start_ms, end_ms = recorder.span(item_id)
+    idx = ctx.runtime.calls.said(ctx.call_id, speaker, str(event.get("transcript", "")),
+                                 start_ms=start_ms, end_ms=end_ms)
+    recorder.stored(item_id, idx)
+
+
+async def _keep_every(runtime: SessionRuntime, call_id: str, recorder: CallRecorder, record: bool) -> None:
+    """Stores what the recorder has ready every few seconds, so a crash loses only the last few."""
+    while True:
+        await asyncio.sleep(KEEP_AUDIO_EVERY_S)
+        try:
+            _keep(runtime, call_id, recorder, recorder.take(), record)
+        except Exception:
+            log.exception("could not keep call %s's audio", call_id)
+
+
+def _keep(runtime: SessionRuntime, call_id: str, recorder: CallRecorder,
+          taken: tuple[list[Chunk], list[Placed]], record: bool) -> None:
+    chunks, moved = taken
+    if record:
+        for chunk in chunks:
+            runtime.calls.audio(call_id, chunk.track, chunk.start_ms, chunk.audio,
+                                fmt=recorder.fmt.name, rate=recorder.fmt.rate)
+    for line in moved:
+        runtime.calls.placed(call_id, line.idx, line.start_ms, line.end_ms)
 
 
 async def run_tool(higgs: Any, event: dict[str, Any], ctx: tools.ToolContext, *,
