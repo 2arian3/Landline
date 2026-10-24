@@ -115,6 +115,10 @@ def test_area_hook_sets_where_the_map_flies():
         assert c.post("/api/sessions/s_area/area", json={"place": "Atlantis"}).status_code == 404
         king_and_bay = c.post("/api/sessions/s_area/area", json={"place": "King and Bay"}).json()
         assert king_and_bay["focus_area"]["zoom"] == 15.5
+        # the same area again changes nothing, as in the runtime; "Start over" clears it
+        again = c.post("/api/sessions/s_area/area", json={"place": "King and Bay"}).json()
+        assert again["version"] == king_and_bay["version"]
+        assert c.post("/api/sessions/s_area/reset").json()["focus_area"] is None
 
 
 def test_area_hook_sends_a_runtime_session_area_focused():
