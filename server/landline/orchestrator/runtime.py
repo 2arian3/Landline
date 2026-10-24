@@ -39,14 +39,13 @@ from landline.db.pool import Database
 from landline.orchestrator import board, handlers, narrator
 from landline.orchestrator.calllog import CallLog
 from landline.orchestrator.places import Places
-from landline.orchestrator.profiles import Profiles, Remembered
+from landline.orchestrator.profiles import Profiles
 from landline.orchestrator.state import SessionState
 from landline.scoring import FeatureMatrix
 
 log = logging.getLogger(__name__)
 
 Subscriber = Callable[[Event, SessionView], Awaitable[None]]
-RECALL_TIMEOUT_S = 2.0   # a slow lookup never holds up the greeting: the caller is treated as new
 PLACE_TIMEOUT_S = 20.0   # a place lookup off the hot path; past this the place stays unresolved
 
 
@@ -137,14 +136,13 @@ class SessionRuntime:
     async def start(self, event: SessionStarted) -> SessionView:
         """Create the session at version 1. Starting one that exists is a no-op."""
         sid = event.session_id
-        remembered = await self._recall(event) if sid not in self._live else None
+        # Nothing is read about the caller first: a call doesn't open with memory (#144, #149), so the
+        # greeting waits on nothing. Their profile is written when the brief ends (Profiles.remember).
         async with self._starting:
             if sid in self._live:
                 return self._live[sid].view
             state = SessionState(session_id=sid, channel=event.channel, user_id=event.user_id,
                                  caller_phone=event.caller_phone)
-            if remembered is not None:
-                self._returning(state, remembered)
             view = self._build(state, 1, events=[event])
             if self.db is not None:
                 async with self.db.transaction() as conn:
@@ -218,21 +216,6 @@ class SessionRuntime:
             says = before.agent_says
         return view.model_copy(update={"agent_says": says or view.agent_says, "results": state.results,
                                        "returning": state.returning, "user_name": state.user_name})
-
-    async def _recall(self, event: SessionStarted) -> Remembered | None:
-        """The profile for a phone call's number. Any failure, or a slow database, starts the call fresh."""
-        if self.profiles is None or event.channel != "phone" or not event.caller_phone:
-            return None
-        try:
-            async with asyncio.timeout(RECALL_TIMEOUT_S):
-                return await self.profiles.recall(event.caller_phone)
-        except Exception:
-            log.exception("could not recall the caller for %s; starting fresh", event.session_id)
-            return None
-
-    def _returning(self, state: SessionState, r: Remembered) -> None:
-        """Link this number's user. Earlier calls stay in the profile and are not copied onto this one."""
-        state.user_id = r.user_id
 
     async def _resolve_places(self, event: Event, view: SessionView) -> None:
         for anchor in view.preferences.anchors:
