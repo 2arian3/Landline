@@ -11,6 +11,11 @@ const config: NextConfig = {
   async rewrites() {
     return [{ source: "/api/:path*", destination: `${API_URL}/api/:path*` }];
   },
+  // The cover page took `/`; the board moved to `/map`. `/?dev=1` (the README, judge mode) keeps working,
+  // and the query goes along.
+  async redirects() {
+    return [{ source: "/", has: [{ type: "query", key: "dev" }], destination: "/map", permanent: false }];
+  },
 };
 
 export default config;
