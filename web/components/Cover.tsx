@@ -106,8 +106,8 @@ export function Cover() {
         <footer className="mt-20 border-t border-line py-8 text-meta text-ink-3 sm:mt-28">
           <p className="max-w-2xl">
             Built on Boson AI&rsquo;s Higgs Realtime, on the renter&rsquo;s call and every listing call, by Team AAMEL
-            (Arian Boukani, Danial Kordmodanlou, Mahyar Jaberi) for the Boson AI Higgs Audio Hackathon, 23&ndash;24
-            October 2026. About 1,080 real Toronto listings.
+            (Arian Boukani, Danial Kordmodanlou, Mahyar Jaberi). About
+            1,080 real Toronto listings.
           </p>
         </footer>
       </div>

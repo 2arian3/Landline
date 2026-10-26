@@ -1,3 +1,3 @@
 # db/migrations
 
-Empty until kickoff. See ../README.md.
+See ../README.md.

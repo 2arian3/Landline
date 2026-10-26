@@ -145,7 +145,7 @@ class Places:
             self._last = time.monotonic()
             client = self._client or httpx.AsyncClient(timeout=TIMEOUT_S)
             try:
-                agent = f"LandlineResearch/0.1 (hackathon prototype; +mailto:{self.contact})"
+                agent = f"LandlineResearch/0.1 (research prototype; +mailto:{self.contact})"
                 resp = await client.request(method, url, headers={"User-Agent": agent}, **kw)
             finally:
                 if self._client is None:

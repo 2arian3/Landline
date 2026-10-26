@@ -200,7 +200,7 @@ def _calls(title: str, cur: dict, prev: dict | None) -> list[str]:
 def render(data: dict[str, Any], calls: dict[str, Any] | None = None) -> str:
     out = ["# Landline eval report", "",
            "Built by `make eval` (`evals/run_concierge.py`, then `evals/report.py`) from "
-           "`evals/reports/concierge.json`. Every number in the submission comes from this file. Quote the "
+           "`evals/reports/concierge.json`. Every number we state comes from this file. Quote the "
            "holdout set: prompts are changed against the tune set only.", "",
            "## Concierge: simulated calls in text", "",
            "The real Concierge (its prompt and tools) on Higgs Realtime in text mode, talking to a scripted "

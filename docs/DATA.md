@@ -119,7 +119,7 @@ create table events (seq bigserial primary key, session_id text, call_id text, t
 | RentSeeker | Allows `/`, blocks `/api/` | 200 | sitemaps for rentals | Candidate second source (purpose-built rentals; pairs well with City building records) |
 | City of Toronto open data | Open Government Licence | API | CKAN datastore | **Enrichment** (building registration and evaluations; see below) |
 
-**Terms.** liv.rent's terms forbid copying its content for commercial use or redistribution without permission. Landline is a non-commercial hackathon prototype. We store facts (address, price, size, coordinates), always link back, show photos only by URL with "Photos: liv.rent" attribution, keep volume low (9 page loads per refresh, ≥2 s apart, honest User-Agent with a contact address), and never read or store contact details. If we ever go beyond the demo, we ask liv.rent first.
+**Terms.** liv.rent's terms forbid copying its content for commercial use or redistribution without permission. Landline is a non-commercial research prototype. We store facts (address, price, size, coordinates), always link back, show photos only by URL with "Photos: liv.rent" attribution, keep volume low (9 page loads per refresh, ≥2 s apart, honest User-Agent with a contact address), and never read or store contact details. If we ever go beyond the demo, we ask liv.rent first.
 
 **What liv.rent gives us today** (from the latest run): coordinates, postal code, rent, beds, baths 100%; sqft 83%; furnished 98%; utilities flag 78%; building amenities 64%. Floor, pets, parking and laundry are not in the list pages. They come from the description (D-06), the City record (D-05) and phone calls.
 
@@ -143,7 +143,7 @@ The VM re-scrapes every 6 hours (`landline-refresh.timer`), next to the database
 | Listing catalogue | API process memory, loaded at boot | Ranking per utterance can't wait on a network hop |
 | Sessions | API process memory + Postgres (O-02) | One writer per session; SSE wakes subscribers in-process |
 
-Redis would earn its place only when the API runs as **more than one process**: SSE fan-out via pub/sub, a shared rate limiter for judge mode, or a job queue for scraping and extraction. Until then it is one more service to keep alive during judging, with nothing to do. If we scale the API out, add Redis for pub/sub and rate limiting, and keep Postgres as the source of truth.
+Redis would earn its place only when the API runs as **more than one process**: SSE fan-out via pub/sub, a shared rate limiter for judge mode, or a job queue for scraping and extraction. Until then it is one more service to keep alive during a demo, with nothing to do. If we scale the API out, add Redis for pub/sub and rate limiting, and keep Postgres as the source of truth.
 
 ## Pipeline
 
