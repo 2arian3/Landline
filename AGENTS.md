@@ -6,9 +6,9 @@ Read this file before you change anything. It applies to every coding agent and 
 
 **Landline is a voice agent that works for renters, not brokerages.** A renter phones in (or talks to it in the browser). While they talk, a live map of Toronto listings re-ranks from what they say, and they pick the places they want checked. Once they hang up, Landline phones those listing agents in parallel, asks what listings never say (is it still available, what does parking really cost, are dogs allowed, how much light does it get), books a viewing inside the times the renter gave, re-ranks from what those people answered, and texts the renter the results. It remembers each renter by phone number, so the next call picks up where the last one ended.
 
-Built by Team AAMEL (Arian Boukani, Danial Kordmodanlou, Mahyar Jaberi) for the **Boson AI Higgs Audio Hackathon**, 23–24 October 2026. Judging: Use of Higgs Audio 30%, User Experience 25%, Innovation 25%, Technical Execution 20%. Track 03 (Agents That Act), touching Track 02.
+Built by Team AAMEL (Arian Boukani, Danial Kordmodanlou, Mahyar Jaberi).
 
-Design: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Interfaces: [docs/CONTRACTS.md](docs/CONTRACTS.md). Data: [docs/DATA.md](docs/DATA.md). Ranking: [docs/SCORING.md](docs/SCORING.md). What we carry over from Realest and which bugs we must not repeat: [docs/PORTING.md](docs/PORTING.md). Demo and submission: [docs/DEMO.md](docs/DEMO.md). **Your tasks are in [BACKLOG.md](BACKLOG.md).** Take the next open task in your lane.
+Design: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Interfaces: [docs/CONTRACTS.md](docs/CONTRACTS.md). Data: [docs/DATA.md](docs/DATA.md). Ranking: [docs/SCORING.md](docs/SCORING.md). What we carry over from Realest and which bugs we must not repeat: [docs/PORTING.md](docs/PORTING.md). Demo: [docs/DEMO.md](docs/DEMO.md). **Your tasks are in [BACKLOG.md](BACKLOG.md).** Take the next open task in your lane.
 
 ## Repo map and owners
 
@@ -32,7 +32,7 @@ Work only inside your lane's paths. If a task needs a change in someone else's p
 
 ## Hard rules
 
-1. **Contracts are frozen after kickoff.** `server/landline/contracts/`, `db/migrations/` and `web/lib/types.ts` change only through a PR that all three approve. Add fields, never rename or remove them during the event. See the `contracts` skill.
+1. **Contracts are frozen.** `server/landline/contracts/`, `db/migrations/` and `web/lib/types.ts` change only through a PR that all three approve. Add fields; never rename or remove them. See the `contracts` skill.
 2. **Code owns identity, time and money.** A model never supplies a session id, call id, listing id, phone number, timestamp or price total. Ids come from the call or session the code is running; numbers are computed in code.
 3. **Every fact shown to a renter has a source.** Each listing field carries its provenance (`scraped`, `llm`, `city`, `call`, `derived`, `synthetic`) and, where a model extracted it, the verbatim quote it came from. A quote that is not found in the source text means the field is dropped. Never invent a value; leave it null.
 4. **One writer per session.** All session state changes go through `orchestrator.session_tx(session_id)`. No module-level dicts holding session data.
@@ -76,4 +76,3 @@ Load the one for your area before working in it (`.claude/skills/<name>/SKILL.md
 - `data-pipeline`: scraping rules, stage layout, provenance, grounding, the feature dictionary
 - `agent-evals`: fixtures, personas, metrics, how to add a case
 - `live-map-ui`: design rules for `web/`, the map, motion, live updates
-- `submission`: what Boson requires and the checklist for the last three hours

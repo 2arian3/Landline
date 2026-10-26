@@ -54,7 +54,7 @@ Gradients and glows, glass on content, coloured left stripes on cards, tinted pi
 ## Before you merge a UI change
 
 1. Screenshots at 375 px and 1440 px with every card status visible.
-2. Lighthouse mobile performance ≥ 85 (waived for the hackathon: Mahyar's call on Fri 23 Oct at 22:35, because changing how the map starts is too risky before the demo; mobile is 46 after PR #8); map pan stays smooth on a mid-range phone.
+2. Lighthouse mobile performance ≥ 85 (waived: Mahyar's call on Fri 23 Oct at 22:35, because changing how the map starts is too risky before the demo; mobile is 46 after PR #8); map pan stays smooth on a mid-range phone.
 3. Keyboard: every pin and card is reachable and focus is visible; the map has a list equivalent.
 4. Read the banned list against your diff.
 

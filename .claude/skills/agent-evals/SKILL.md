@@ -1,11 +1,11 @@
 ---
 name: agent-evals
-description: How Landline measures its agents, covering extraction accuracy, ranking quality, call behaviour with simulated landlords, latency, and the report the submission cites. Use when working in evals/, adding a fixture or landlord persona, tuning a prompt, or when someone asks whether a change made things better.
+description: How Landline measures its agents, covering extraction accuracy, ranking quality, call behaviour with simulated landlords, latency, and the report every number we state comes from. Use when working in evals/, adding a fixture or landlord persona, tuning a prompt, or when someone asks whether a change made things better.
 ---
 
 # Agent evals
 
-Prompts change only when an eval shows they got better. Every number in the submission write-up comes from `evals/reports/latest.md`.
+Prompts change only when an eval shows they got better. Every number we state comes from `evals/reports/latest.md`.
 
 ## Layout
 

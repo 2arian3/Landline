@@ -45,7 +45,7 @@ class PoliteClient:
 
     @property
     def user_agent(self) -> str:
-        return f"LandlineResearch/0.1 (hackathon prototype; +mailto:{self.contact})"
+        return f"LandlineResearch/0.1 (research prototype; +mailto:{self.contact})"
 
     def _http(self) -> httpx.Client:
         if self._client is None:

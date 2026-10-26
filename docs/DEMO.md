@@ -1,16 +1,4 @@
-# Demo and submission
-
-## What Boson requires
-
-From the hackathon page:
-
-- **Project information:** name, track, a one-sentence description, and a write-up of up to 200 words (problem, audience, how it works).
-- **Demo video:** 2–3 minutes showing the project running, on a public link with no access request. A live public demo URL is optional, but "if the judges can't open it, they can't score it."
-- **Repository:** public GitHub repo with source, setup instructions, and example inputs and outputs. It must be pinned to a commit SHA or tagged release; anything pushed later won't be seen. Remove API keys.
-- **How you built it** (≤ 200 words): each Higgs model or API used, its role, and what's novel or hard.
-- **Team:** each contributor's GitHub handle and what they built, plus known limitations.
-
-Scoring: Use of Higgs Audio 30 · User Experience 25 · Innovation 25 · Technical Execution 20. Primary track: **03 Agents That Act**.
+# Demo
 
 ## The 2:30 video
 
@@ -24,19 +12,18 @@ Scoring: Use of Higgs Audio 30 · User Experience 25 · Innovation 25 · Technic
 | 1:15 | Three pins pulse. We listen in: one landlord switches to Mandarin, one adds $180 parking, one asks for an e-transfer deposit (flagged). The Caller answers the move-in date from the brief, and for a question it can't answer says "I'll check with my client" | Parallel Higgs calls, each on its own; scam check |
 | 1:45 | Results land on the pins. Markham is booked for Saturday at 2, inside the renter's window. An SMS arrives in Farsi with the results | Agents that act on their own |
 | 2:00 | The renter calls again: "Welcome back, Sara. I booked 412 Markham for Saturday at two. Dupont is really $3,470 with parking, and 88 Erskine asked for a deposit before viewing, so I'd skip it." | Results and memory by phone number |
-| 2:20 | Numbers: extraction accuracy, zero ungrounded facts, time to first audio, listings and sources | Technical execution |
+| 2:20 | Numbers: extraction accuracy, zero ungrounded facts, time to first audio, listings and sources | How well it works |
 
 Record the phone parts on real phones, with teammates as landlords. Use sim landlords only for the listen-in shot if needed, and say so.
 
-## Rehearsal checklist (Sat 12:30–15:00)
+## Rehearsal checklist
 
 - [ ] `FORCE_BUSINESS_HOURS=1` on the VM, or business hours in Toronto time
 - [ ] `DEMO_AGENT_PHONES` holds teammates only; the allowlist test passes
-- [ ] Higgs concurrency ≥ 5 confirmed; enough credits for rehearsal and judging
+- [ ] Higgs concurrency ≥ 5 confirmed; enough credits for rehearsals and demos
 - [ ] A switch from `TRANSPORT=voice` to `sim` is one env change and one restart
 - [ ] A backup recording plays offline on a laptop
 - [ ] `/health` green over cellular; no tunnels
 - [ ] Judge mode works from a clean browser on another network
 - [ ] `gitleaks detect` clean; `.env` not in git history
-- [ ] Repo public; tag `submission` on the final SHA; the SHA pasted into the form
-- [ ] VM and Vercel stay up until judging ends
+- [ ] VM and Vercel stay up through the demo

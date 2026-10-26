@@ -198,6 +198,6 @@ The three agents never import each other. They share only `contracts/`, where `C
 | CI/CD | Work lands on `main`; shipping is `git push origin main:release`. Every push to `release` that passes CI is rsynced to the VM through the gateway (SSH jump host), migrated and restarted. The VM's own timer re-scrapes every 6 h. See [deploy/README.md](../deploy/README.md) |
 | Models | Boson Higgs Realtime and Higgs TTS; a text LLM for the Auditor and the pipeline's feature extractor, behind one provider interface |
 
-No tunnels in the demo path. The VM stays up until judging ends.
+No tunnels in the demo path.
 
 **No Redis for now.** One API process holds the catalogue and sessions in memory and persists to Postgres; SSE subscribers are woken in-process. Redis comes in only if the API runs as several processes (pub/sub for SSE, shared rate limits, a job queue). See [DATA.md](DATA.md#caching-and-why-no-redis-yet).

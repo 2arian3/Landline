@@ -1,6 +1,6 @@
 # Contracts
 
-These are the shapes all three lanes code against. At kickoff they become Pydantic models in `server/landline/contracts/`, the first migration, and `web/lib/types.ts` (task X-01). After that they change only by adding fields, through a PR all three approve.
+These are the shapes all three lanes code against. They are Pydantic models in `server/landline/contracts/`, the first migration, and `web/lib/types.ts` (task X-01). They change only by adding fields, through a PR all three approve.
 
 ## Ids
 

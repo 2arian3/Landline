@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
  * Browser audio for judge mode (U-06), talking to the browser transport (A-03)
  * at the `ws_url` that POST /api/judge/start returns.
  *
- * WIRE FORMAT (agree with A-03 before Checkpoint C; change it here only):
+ * WIRE FORMAT (agree changes with A-03; change it here only):
  *   - binary frames, both ways: PCM16 little-endian, mono, 24 kHz
  *     (Higgs `audio/pcm` at 24000, proxied through our server)
  *   - text frames from the server are JSON; `{"type":"clear"}` stops audio

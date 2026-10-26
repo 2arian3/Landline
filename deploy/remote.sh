@@ -21,7 +21,7 @@ compose() { docker compose --env-file "$LIVE/.env" -f "$SRC/deploy/compose.yml" 
 
 # A refresh restarts the API onto whatever is in ~/landline, so keep it off while
 # that changes. Remember its state: someone may have stopped it on purpose (before
-# judging), and a deploy must not turn it back on. A failed deploy leaves it off.
+# a demo), and a deploy must not turn it back on. A failed deploy leaves it off.
 timer_was_active=0
 systemctl is-active --quiet landline-refresh.timer && timer_was_active=1
 first_install=0

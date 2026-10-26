@@ -125,7 +125,7 @@ On the VM:
 | Restart the API | `sudo systemctl restart landline-api` |
 | Refresh now / its log | `sudo systemctl start landline-refresh` / `journalctl -u landline-refresh -n 80` |
 | Next refresh | `systemctl list-timers landline-refresh.timer` |
-| **Before judging** | `sudo systemctl stop landline-refresh.timer`: a refresh restarts the API, which resets in-memory demo sessions. Deploys leave a stopped timer stopped and skip their own re-scrape. `start` it again afterwards; a slot missed while it was stopped then runs at once |
+| **Before a demo** | `sudo systemctl stop landline-refresh.timer`: a refresh restarts the API, which resets in-memory demo sessions. Deploys leave a stopped timer stopped and skip their own re-scrape. `start` it again afterwards; a slot missed while it was stopped then runs at once |
 | psql | `cd ~/landline && docker compose --env-file .env -f deploy/compose.yml exec db psql -U landline` |
 | Manual deploy of what's on disk | `bash ~/landline/deploy/remote.sh no` |
 | After a failed deploy | The live code is unchanged if a migration failed. The refresh timer stays stopped until a deploy succeeds; fix forward, or `sudo systemctl start landline-refresh.timer` |
@@ -156,7 +156,7 @@ The production web app calls the API directly (`NEXT_PUBLIC_API_URL`, set by `de
 
 ## SevenTask (paused)
 
-The VM used to run SevenTask, and it is stopped for the hackathon:
+The VM used to run SevenTask, and it is stopped while Landline runs there:
 - the containers `seventask-api` and `seventask-sql` are stopped
 - `seventask-admin-api.service` and the VM's nginx are disabled
 
