@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { CallPopup } from "@/components/CallPopup";
 import { JudgeMode } from "@/components/JudgeMode";
 
 export const metadata: Metadata = {
@@ -8,5 +9,10 @@ export const metadata: Metadata = {
 
 // Judge mode (U-06): browser audio, simulated listing agents, never the phone network.
 export default function TryPage() {
-  return <JudgeMode />;
+  return (
+    <>
+      <JudgeMode />
+      <CallPopup />
+    </>
+  );
 }
