@@ -182,7 +182,7 @@ function History({ user, onLeave }: { user: UserDetail; onLeave: () => void }) {
       >
         <div className="flex items-center justify-between gap-3">
           <Link
-            href="/"
+            href="/map"
             className="-ml-2 inline-flex min-h-11 items-center rounded-[var(--radius-control)] px-2 text-support text-ink-2 hover:bg-press focus-visible:outline-2 focus-visible:outline-ink"
           >
             ← Map
