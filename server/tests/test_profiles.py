@@ -5,7 +5,7 @@ These run against Postgres in a throwaway schema (conftest.py) and skip without 
 import asyncio
 import os
 import time
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 
@@ -133,6 +133,25 @@ async def test_the_brief_is_saved_and_the_next_call_does_not_start_from_it(db):
     # Ending the second call without new reactions stores nothing twice.
     await _hang_up(rt, "s_prof000003")
     assert len(await db.interactions.for_user(user.user_id)) == 2
+
+
+async def test_a_call_adds_to_the_profile_and_keeps_the_renters_own_edits(db):
+    """U-12a review: a call's end used to rewrite the whole profile from that call alone, so it reset what
+    the renter allowed Landline to share, their move-in date, and a budget they saved on /me."""
+    rt = _runtime(db)
+    user = await db.users.upsert(PHONE)
+    saved = {"max_monthly": 2500, "areas": ["Annex"], "move_in": "2026-12-01"}
+    await db.profiles.upsert(user.user_id, hard=saved, move_in=date(2026, 12, 1), shareable=["name"])
+    await _call(rt, "s_prof000009")
+    said = PreferenceDelta(pets=["cat"], max_monthly=2700)
+    await rt.emit(PreferencesUpdated(**_meta("s_prof000009", "p1", 1), delta=said))
+    await _hang_up(rt, "s_prof000009")
+    profile = await db.profiles.get(user.user_id)
+    assert profile.hard == {"max_monthly": 2700, "areas": ["Annex"], "move_in": "2026-12-01", "pets": ["cat"]}
+    assert (profile.shareable, profile.move_in) == (["name"], date(2026, 12, 1))
+    await _call(rt, "s_prof000010")   # a call where nothing is said keeps it all
+    await _hang_up(rt, "s_prof000010")
+    assert (await db.profiles.get(user.user_id)).hard == profile.hard
 
 
 async def test_the_next_call_does_not_open_with_the_results_of_the_last_one(db):
