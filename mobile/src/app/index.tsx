@@ -1,37 +1,28 @@
 import { useAuth, useClerk } from "@clerk/expo";
 import { Redirect, router } from "expo-router";
-import { useState } from "react";
-import { ActivityIndicator, Linking, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
 import { ListingCard } from "@/components/ListingCard";
-import { Button, ErrorLine, Screen } from "@/components/ui";
-import { getListings, getMe } from "@/lib/api";
-import { LANDLINE_PHONE } from "@/lib/config";
+import { Button, CallLandline, Calm, ErrorLine, Screen } from "@/components/ui";
+import { getListings, getMe, NO_CALLS_YET } from "@/lib/api";
 import { phoneLabel } from "@/lib/heard";
 import { latest } from "@/lib/listings";
 import { color, radius } from "@/lib/theme";
 import { useLoad } from "@/lib/useLoad";
 
-/** Signed in: who Landline knows this phone as, a button that calls Landline, and the latest results.
- *  Signed out: the sign-in screen. */
+/** Signed in: who Landline knows this phone as, a button that calls Landline, and the latest results; a number
+ *  Landline doesn't know yet gets the button and how to start, never an error. Signed out: the sign-in screen. */
 export default function Home() {
   const { isLoaded, isSignedIn } = useAuth();
   const { signOut } = useClerk();
   // Two loads, so a failed listings request still shows who the renter is.
   const who = useLoad(getMe);
   const called = useLoad(getListings);
-  const [callError, setCallError] = useState<string | null>(null);
 
   if (!isLoaded) return <Screen><ActivityIndicator color={color.ink} /></Screen>;
   if (!isSignedIn) return <Redirect href="/sign-in" />;
 
-  // The phone's own dialer places the call; a phone that can't (a tablet, a simulator) gets the number to dial.
-  const call = () => {
-    setCallError(null);
-    Linking.openURL(`tel:${LANDLINE_PHONE}`).catch(() =>
-      setCallError(`This phone can't place calls. Call ${phoneLabel(LANDLINE_PHONE)} from one that can.`));
-  };
-
+  const fresh = who.newNumber || called.newNumber;
   const me = who.data;
   const errors = [...new Set([who.error, called.error])].filter((e) => e !== null);
   const again = () => {
@@ -52,19 +43,14 @@ export default function Home() {
             {me.calls} {me.calls === 1 ? "place" : "places"} called · {me.booked} {me.booked === 1 ? "viewing" : "viewings"} booked
           </Text>
         </View>
-      ) : who.error ? null : (
+      ) : who.error || fresh ? null : (
         <ActivityIndicator color={color.ink} />
       )}
       {errors.map((e) => <ErrorLine key={e}>{e}</ErrorLine>)}
       {errors.length > 0 && !(who.data && called.data) ? <Button label="Try again" onPress={again} quiet /> : null}
 
-      <View style={styles.call}>
-        <Button label="Call Landline" onPress={call} />
-        <Text style={styles.meta}>
-          {phoneLabel(LANDLINE_PHONE)}. Say what you're looking for, and Landline calls the places for you.
-        </Text>
-        {callError ? <ErrorLine>{callError}</ErrorLine> : null}
-      </View>
+      <CallLandline pitch={!fresh} />
+      {fresh ? <Calm>{NO_CALLS_YET}</Calm> : null}
 
       {called.data ? (
         <>
@@ -75,7 +61,7 @@ export default function Home() {
               <Button label="See all my listings" onPress={() => router.push("/listings")} quiet />
             </>
           ) : (
-            <Text style={styles.empty}>Landline hasn't called any places for you yet.</Text>
+            <Calm>{NO_CALLS_YET}</Calm>
           )}
         </>
       ) : null}
@@ -95,8 +81,6 @@ const styles = StyleSheet.create({
   },
   hello: { fontSize: 28, fontWeight: "600", color: color.ink },
   meta: { fontSize: 15, color: color.ink3 },
-  call: { gap: 8 },
   heading: { fontSize: 20, fontWeight: "600", color: color.ink, marginTop: 8 },
-  empty: { fontSize: 15, color: color.ink2 },
   spacer: { flex: 1, minHeight: 8 },
 });

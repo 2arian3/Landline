@@ -2,9 +2,10 @@
 
 The renter's side of Landline after the call, on their phone (U-13). Sign in with the phone number you call
 Landline from. Home then has a Call Landline button (the phone's own dialer) and the latest results: the
-places Landline called in your last session. My listings has every place it called, with how the call went,
-the viewing it booked, what to watch out for and each fact the agent gave. Tap a fact to see the agent's
-words and when they said them, as on the web's `/me`. My search edits the search Landline keeps (budget,
+places Landline called in your last session. A number Landline doesn't know yet sees the button and how to
+start, not an error. My listings has every place it called, with what it costs a month, how the call went,
+the viewing it booked, what to watch out for and each fact the agent gave, with the agent's words and when
+they said them, as on the web's `/me`. My search edits the search Landline keeps (budget,
 bedrooms, areas, pets, must-haves, move-in date, email), what it may tell listing agents, and whether the
 next call starts from it: the same form, checks and words as `/me`'s, saved only where something changed. The
 move-in date is typed as YYYY-MM-DD, since a date picker would need a package. A push when the calls finish

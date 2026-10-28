@@ -4,20 +4,27 @@ import { test } from "node:test";
 import { factLine, viewingLine } from "./heard.ts";
 
 test("facts read as a label and the Auditor's words", () => {
-  assert.equal(factLine("parking_cost", "$180 a month per spot"), "parking: $180 a month per spot");
-  assert.equal(factLine("pets", "pets allowed, $300 pet fee, one time."), "pets: pets allowed, $300 pet fee, one time");
-  assert.equal(factLine("utilities_included", "heat, water included"), "utilities: heat, water included");
+  assert.equal(factLine("parking_cost", "$180 a month per spot"), "Parking: $180 a month per spot");
+  assert.equal(factLine("pets", "pets allowed, $300 pet fee, one time."), "Pets: pets allowed, $300 pet fee, one time");
+  assert.equal(factLine("utilities_included", "heat, water included"), "Utilities: heat, water included");
+  assert.equal(factLine("ac", "central air"), "AC: central air");
 });
 
 test("availability and no fees read as themselves", () => {
-  assert.equal(factLine("available", "still available"), "still available");
-  assert.equal(factLine("available_from", "Sunday, October 25"), "free from Sunday, October 25");
-  assert.equal(factLine("available_from", "now"), "available now");
-  assert.equal(factLine("fees", "no other monthly fees"), "no other monthly fees");
+  assert.equal(factLine("available", "still available"), "Still available");
+  assert.equal(factLine("available_from", "Sunday, October 25"), "Free from Sunday, October 25");
+  assert.equal(factLine("available_from", "now"), "Available now");
+  assert.equal(factLine("fees", "no other monthly fees"), "No other monthly fees");
+});
+
+test("only the first letter changes: the Auditor's words stay as they are", () => {
+  assert.equal(factLine("pets", "Cats yes, dogs no"), "Pets: Cats yes, dogs no");
+  assert.equal(factLine("available_from", "Dec 1"), "Free from Dec 1");
+  assert.equal(factLine("parking", "included, 1 spot (P2)"), "Parking: included, 1 spot (P2)");
 });
 
 test("an unknown field still has a label", () => {
-  assert.equal(factLine("move_in_bonus", "one month free"), "move in bonus: one month free");
+  assert.equal(factLine("move_in_bonus", "one month free"), "Move in bonus: one month free");
 });
 
 // The Mac mini's U-12c check saw "Viewing booked: Thu 29 Oct, 6:30 p.m. (Thu, Oct 29, 6:30 p.m.)".

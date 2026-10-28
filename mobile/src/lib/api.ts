@@ -1,5 +1,8 @@
 import { API_URL } from "./config";
-import { type Edit, type MyProfile, type Problems, problemsFrom422 } from "./search";
+import { ApiError, notFound, Refused } from "./errors";
+import { type Edit, type MyProfile, problemsFrom422 } from "./search";
+
+export { ApiError, NO_CALLS_YET, Refused, UnknownNumber } from "./errors";
 
 /** The part of GET /api/me's UserDetail the app shows (server/landline/api/admin.py). */
 export type Me = {
@@ -10,16 +13,6 @@ export type Me = {
   calls: number;
   booked: number;
 };
-
-/** Why the app couldn't load the renter, in words for the screen. */
-export class ApiError extends Error {}
-
-/** A save the API refused field by field (a 422): what's wrong with each. */
-export class Refused extends ApiError {
-  constructor(readonly problems: Problems) {
-    super("Check the fields marked above.");
-  }
-}
 
 /** One fact a listing call heard, with the listing agent's words (GET /api/me/listings, U-12c). */
 export type HeardFact = { field: string; value: string; quote: string; at?: string | null };
@@ -36,6 +29,7 @@ export type MyListing = {
   facts: HeardFact[];
   red_flags: string[];
   viewing?: { starts_at: string; slot_text: string; status: string } | null;
+  monthly_cost?: number | null;   // rent plus required monthly fees, computed by the API; null when unknown
 };
 
 /** The signed-in renter (U-11a): the API reads their phone number from the Clerk session token only. */
@@ -76,11 +70,7 @@ async function call(path: string, token: string | null, change?: Edit): Promise<
   if (res.status === 401) throw new ApiError("Landline couldn't check your sign-in. Sign out and in again.");
   if (res.status === 404) {
     // The API says which: a number it doesn't know yet, or sign-in not switched on (no CLERK_SECRET_KEY).
-    const detail = await res.json().then((b: { detail?: string }) => b.detail ?? "", () => "");
-    throw new ApiError(detail === "unknown number"
-      ? "Landline doesn't know this number yet. Call Landline first."
-      : detail === "history is off" ? "Landline's history isn't switched on yet."
-        : "Sign-in isn't switched on for Landline yet.");
+    throw notFound(await res.json().then((b: { detail?: string }) => b.detail ?? "", () => ""));
   }
   if (!res.ok) throw new ApiError(`Landline answered ${res.status}. Try again in a moment.`);
   return res.json();
