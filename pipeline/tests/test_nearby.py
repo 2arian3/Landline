@@ -56,7 +56,8 @@ class FakeMaps:
         self.minutes = minutes if minutes is not None else {"No Frills": 6.32, "Shoppers Drug Mart": 4.0}
         self.places_cache, self.posts, self.walks = FakeCache(), [], []
 
-    def post(self, url, body, field_mask):
+    def post(self, url, body, field_mask, quota=None):
+        assert quota == "nearby"   # paced under the searchNearby quota (pipeline/maps.py)
         self.posts.append((url, body, field_mask))
         return self.answers["grocery" if "grocery_store" in body["includedTypes"] else "pharmacy"]
 
@@ -157,7 +158,7 @@ def _stores(conn, lid):
 
 def test_the_step_writes_both_stores_and_clears_them_when_none_is_close(conn):
     counts = nearby.run(conn, FakeMaps(), [("t:near", *HOME)], load=True, today=lambda: TODAY)
-    assert counts == {"listings": 1, "grocery": 1, "pharmacy": 1, "neither": 0}
+    assert counts == {"listings": 1, "grocery": 1, "pharmacy": 1, "neither": 0, "pending": 0}
     gname, gmin, pname, pmin, prov = _stores(conn, "t:near")
     assert (gname, gmin, pname, pmin) == ("No Frills", 6.3, "Shoppers Drug Mart", 4.0)
     assert prov["pharmacy_walk_min"] == {"source": "derived", "via": "Google Maps", "at": "2026-10-28",
