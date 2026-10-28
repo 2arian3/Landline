@@ -32,7 +32,7 @@ from landline.agents.auditor.flags import red_flags
 from landline.agents.auditor.numbers import amounts
 from landline.agents.auditor.values import bare, call_day, fee_name, free_from, from_parts, spoken_day
 from landline.agents.caller import slots
-from landline.agents.caller.brief import Brief, disclosure
+from landline.agents.caller.brief import CONFIRM_LINE, Brief, disclosure
 from landline.contracts import EndReason, Fact, FactRecorded, QuestionNoted, Shareable, ViewingBooked
 from landline.contracts.tools import (
     CALLER_TOOLS,
@@ -359,8 +359,9 @@ async def book_viewing(args: BookViewing, ctx: CallerContext, meta: dict) -> str
         if item.key == "viewing":
             item.done = True
     when = slots.spoken(at)
+    told = f' Then say once: "{CONFIRM_LINE}"' if b.texts_confirm else ""   # O-08b: a number to text
     return (f"Booked for {when}. Start your reply with \"So that's {when}.\" Say it once; if they already "
-            "agreed, don't ask them to confirm it.")
+            f"agreed, don't ask them to confirm it.{told}")
 
 
 def _ask_time(day, windows, now: datetime) -> str:
