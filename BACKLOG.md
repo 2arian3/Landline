@@ -88,19 +88,19 @@ Landline is one of ten finalists at Build North's Demo Day: Thursday 29 October,
 | Status | ID | Task | Priority | Needs | Done when | Issue |
 |---|---|---|---|---|---|---|
 | Done (#250, #252) | U-11a | Check Clerk sign-ins on the API | P0 | – | a bare phone number gets 401 once Clerk is on | [#245](https://github.com/2arian3/Landline/issues/245) |
-| Built (#249): verified with a Clerk test number; real-phone check at the Wednesday rehearsal | U-11b | Phone sign-in on /me | P0 | U-11a | a teammate signs in with their phone and sees only their history | [#245](https://github.com/2arian3/Landline/issues/245) |
+| Built (#249): verified with a Clerk test number; real-phone check at the Wednesday rehearsal | U-11b | Phone sign-in on /me | P0 | U-11a. **Needs** X-03a (Arian): a web ship that carries #289's Clerk publishable key, since the live build has none | a teammate signs in with their phone and sees only their history | [#245](https://github.com/2arian3/Landline/issues/245) |
 | Done | U-12a | Save profile changes (`PATCH /api/me/profile`) | P0 | X-04, U-11a | every field is checked in code | [#246](https://github.com/2arian3/Landline/issues/246) |
 | Built (#266): real route checked locally with a Clerk test user (sign-in, 422s); a budget change seen to stick needs the Mac mini's database | U-12b | The "My search" form on /me | P0 | U-12a, U-11b | a budget change sticks | [#246](https://github.com/2arian3/Landline/issues/246) |
 | Built (#253): needs a deploy with the Clerk keys to check a renter's listings on the site | U-12c | "My listings" on /me | P0 | U-11a | each called listing shows its facts with their sources | [#246](https://github.com/2arian3/Landline/issues/246) |
 | To do | O-08d | The confirm page listing agents open from the SMS | P0 | O-08c | an agent confirms from their phone | [#238](https://github.com/2arian3/Landline/issues/238) |
 | Built (#268): the live flip needs a real confirm from O-08c | O-08e | The card shows the viewing and whether it's confirmed | P0 | X-04 | the card flips to confirmed without a reload | [#238](https://github.com/2arian3/Landline/issues/238) |
 | Done | D-10d | Show the walk to the subway, the stores and the commute on each listing | P0 | X-04 | screenshots at 375 px and on desktop | [#237](https://github.com/2arian3/Landline/issues/237) |
-| Built (#251): needs the Clerk key to test | U-13a | The Expo app, with phone sign-in | P1 | U-11a | a teammate signs in on their phone | [#247](https://github.com/2arian3/Landline/issues/247) |
+| Built (#251): the Mac mini's simulator check waits for Xcode's first-launch password; then a phone at the Wednesday rehearsal | U-13a | The Expo app, with phone sign-in | P1 | U-11a | a teammate signs in on their phone | [#247](https://github.com/2arian3/Landline/issues/247) |
 | Built (#256): phone check with a real history at the Wednesday rehearsal | U-13b | Home and My listings in the app | P1 | U-13a, U-12c | they see their listings and can call Landline from the app | [#247](https://github.com/2arian3/Landline/issues/247) |
 | To do | U-13c | A push when the calls finish | P1 | U-13a | the push arrives after a sim plan | [#247](https://github.com/2arian3/Landline/issues/247) |
 | Built (#267): a budget save checked against a database (Mac mini) or on a phone | U-13d | My search in the app | P2 | U-13a, U-12a | a budget change saves | [#247](https://github.com/2arian3/Landline/issues/247) |
 
-*Status, Tue 27 Oct 22:50: U-11a is merged. U-11b and U-13a are merged but untested until Mahyar's Clerk development keys exist. U-12c is merged (#253). U-12a, O-08e and D-10d wait for X-04 (Wed 10:00), and O-08d waits for O-08c.*
+*Status, Wed 28 Oct 10:09: U-11a, U-12a and D-10d are Done. U-11b, U-12b, U-12c, O-08e, U-13a, U-13b and U-13d are merged and built; each waits for its check on production, on the Mac mini or at the rehearsal. Production /me can't sign in yet: the live web build has no Clerk publishable key, and the Vercel project isn't on Mahyar's account, so #289 builds the key in from `web/` and needs Arian's next ship. O-08d waits for O-08c (#287). U-13c waits for an Expo account and Mahyar's OK on the push packages.*
 
 ### All three: getting ready (X-03)
 
