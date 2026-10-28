@@ -15,6 +15,7 @@ from landline.api import admin, browser_audio, me, twilio
 from landline.api.demo import DemoSessions
 from landline.api.judge import JudgeLines, StartLimit
 from landline.api.routes import router
+from landline.api.viewings import router as viewing_page
 from landline.config import Settings
 from landline.db.catalogue import Catalogue
 from landline.db.pool import Database
@@ -151,6 +152,7 @@ def create_app(settings: Settings | None = None, catalogue: Catalogue | None = N
     )
     app.include_router(router)
     app.include_router(me.router)
+    app.include_router(viewing_page)   # /v/<token>, the listing agent's confirm page (O-08d)
     app.include_router(admin.router)
     app.include_router(twilio.router)
     app.include_router(browser_audio.router)
