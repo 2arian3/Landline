@@ -5,7 +5,7 @@ import {
   ActivityIndicator, Pressable, StyleSheet, Switch, Text, TextInput, type TextInputProps, View,
 } from "react-native";
 
-import { Back, Button, ErrorLine, Screen } from "@/components/ui";
+import { Back, Button, ErrorLine, NoCallsYet, Screen } from "@/components/ui";
 import { ApiError, getProfile, Refused, saveProfile } from "@/lib/api";
 import {
   edit, type Field, type Form, formFrom, problems, type Problems, type Saved, savedFrom, SHAREABLE, type Shareable,
@@ -58,7 +58,9 @@ export default function MySearch() {
       <Screen>
         <Back />
         <Text style={styles.title}>My search</Text>
-        {profile.error ? (
+        {profile.newNumber ? (
+          <NoCallsYet />
+        ) : profile.error ? (
           <>
             <ErrorLine>{profile.error}</ErrorLine>
             <Button label="Try again" onPress={() => void profile.load()} quiet />

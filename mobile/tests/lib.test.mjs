@@ -3,9 +3,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { money as webMoney } from "../../web/lib/format.ts";
 import * as web from "../../web/lib/heard.ts";
+import { ApiError, NO_CALLS_YET, notFound, UnknownNumber } from "../src/lib/errors.ts";
 import { factLine, phoneLabel, VIEWING, viewingLine, WENT, when } from "../src/lib/heard.ts";
-import { latest } from "../src/lib/listings.ts";
+import { latest, money } from "../src/lib/listings.ts";
 import { latestWins } from "../src/lib/loads.ts";
 import { toE164 } from "../src/lib/phone.ts";
 
@@ -13,12 +15,13 @@ test("a heard fact reads as it does on the web's /me", () => {
   const facts = [
     ["available", "still available."], ["available_from", "now"], ["available_from", "November 1"],
     ["fees", "no other monthly fees"], ["fees", "amenity $40 a month, required"], ["parking_cost", "$150 a month"],
-    ["pets", "cats only"], ["ac", "central"], ["move_in_fee", "$200"],
+    ["pets", "cats only"], ["pets", "Cats yes, dogs no"], ["ac", "central"], ["move_in_fee", "$200"],
   ];
   for (const [field, value] of facts) assert.equal(factLine(field, value), web.factLine(field, value), field);
-  assert.equal(factLine("available_from", "November 1"), "free from November 1");
-  assert.equal(factLine("parking_cost", "$150 a month."), "parking: $150 a month");
-  assert.equal(factLine("move_in_fee", "$200"), "move in fee: $200");
+  assert.equal(factLine("available_from", "November 1"), "Free from November 1");
+  assert.equal(factLine("parking_cost", "$150 a month."), "Parking: $150 a month");
+  assert.equal(factLine("move_in_fee", "$200"), "Move in fee: $200");
+  assert.equal(factLine("available_from", "Dec 1"), "Free from Dec 1");   // only the first letter changes
   assert.deepEqual(WENT, web.WENT);
   assert.deepEqual(VIEWING, web.VIEWING);
 });
@@ -46,6 +49,22 @@ test("times are Toronto's", () => {
 test("numbers read as the web writes them", () => {
   assert.equal(phoneLabel("+12895122338"), "+1 289 512 2338");
   assert.equal(phoneLabel("+442071234567"), "+442071234567");
+});
+
+test("money reads as the web writes it", () => {
+  for (const n of [0, 950, 2450, 2450.6, 12345, 1234567]) assert.equal(money(n), webMoney(n), String(n));
+  assert.equal(money(2450), "$2,450");
+});
+
+test("a number Landline doesn't know yet is its own error, which says how to start", () => {
+  const unknown = notFound("unknown number");
+  assert.ok(unknown instanceof UnknownNumber && unknown instanceof ApiError);
+  assert.equal(unknown.message, NO_CALLS_YET);
+  for (const detail of ["history is off", "sign-in is off", ""]) {
+    const off = notFound(detail);
+    assert.ok(off instanceof ApiError && !(off instanceof UnknownNumber), detail);
+    assert.notEqual(off.message, NO_CALLS_YET);
+  }
 });
 
 test("the latest results are the newest call's session", () => {

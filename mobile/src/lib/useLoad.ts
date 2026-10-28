@@ -2,13 +2,14 @@ import { useAuth } from "@clerk/expo";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";
 
-import { ApiError } from "./api";
+import { ApiError, NO_CALLS_YET } from "./api";
 import { latestWins, type Loaded } from "./loads";
 
 /**
  * What a screen shows, fetched with the renter's Clerk token once they're signed in, again whenever the app
  * comes back to the front (from the dialer, or from the text saying the calls are done), and on `refresh`
  * (pull to refresh). `fetcher` must be a module-level function, so it doesn't refetch on every render.
+ * A number Landline doesn't know yet isn't an error: `newNumber` is true instead, and the screen says to call.
  */
 export function useLoad<T>(fetcher: (token: string | null) => Promise<T>) {
   const { isSignedIn, userId, getToken } = useAuth();
@@ -42,5 +43,6 @@ export function useLoad<T>(fetcher: (token: string | null) => Promise<T>) {
     setRefreshing(false);
   }, [load]);
 
-  return { data, error, load, refresh, refreshing };
+  const newNumber = error === NO_CALLS_YET;   // only UnknownNumber says this
+  return { data, error: newNumber ? null : error, newNumber, load, refresh, refreshing };
 }
