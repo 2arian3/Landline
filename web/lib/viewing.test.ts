@@ -6,10 +6,18 @@ import { viewingStatus, viewingTime } from "./viewing.ts";
 
 const SAT_2PM: CardViewing = { starts_at: "2026-10-31T18:00:00Z", slot_text: "Saturday at 2 pm", status: "booked" };
 
+const plain = (s: string) => s.replace(/[  ]/g, " ");
+
 test("each status reads as the card says it, at the time in Toronto", () => {
-  assert.equal(viewingStatus(SAT_2PM).word, "Viewing Sat 2:00 PM · waiting for the agent");
-  assert.equal(viewingStatus({ ...SAT_2PM, status: "confirmed" }).word, "Viewing Sat 2:00 PM · confirmed");
-  assert.equal(viewingStatus({ ...SAT_2PM, status: "declined" }).word, "The agent can't do Sat 2:00 PM");
+  assert.equal(plain(viewingStatus(SAT_2PM).word), "Viewing Sat 2:00 PM · waiting for the agent");
+  assert.equal(plain(viewingStatus({ ...SAT_2PM, status: "confirmed" }).word), "Viewing Sat 2:00 PM · confirmed");
+  assert.equal(plain(viewingStatus({ ...SAT_2PM, status: "declined" }).word), "The agent can't do Sat 2:00 PM");
+});
+
+test("a wrapped line never splits the time or starts with the dot (seen at 768 px)", () => {
+  // Only the space after "Viewing" and the one after the dot can break.
+  assert.deepEqual(viewingStatus({ ...SAT_2PM, status: "confirmed" }).word.split(" "), ["Viewing", "Sat 2:00 PM ·", "confirmed"]);
+  assert.deepEqual(viewingStatus({ ...SAT_2PM, status: "declined" }).word.split(" ").slice(-1), ["Sat 2:00 PM"]);
 });
 
 test("confirmed is the checked green, declined the something's-off red, waiting stays quiet", () => {
