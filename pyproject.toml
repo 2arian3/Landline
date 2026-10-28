@@ -26,6 +26,9 @@ dev = [
 
 [tool.uv]
 package = false
+# cryptography 49 and 50 (from clerk-backend-api) ship no Intel-Mac wheel and their source builds fail there, so
+# Intel Macs stay on the last release that has one. The VM, CI and Apple-silicon Macs are unaffected.
+constraint-dependencies = ["cryptography<49 ; sys_platform == 'darwin' and platform_machine == 'x86_64'"]
 
 [tool.logfire]
 # app.py calls logfire.configure() only when LOGFIRE_TOKEN is set. Without it the tool spans in
