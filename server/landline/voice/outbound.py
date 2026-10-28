@@ -18,8 +18,10 @@ One call goes like this:
 What is said on the line is `converse`: the Caller (A-05) on Higgs, in voice/phone_caller.py. Its first
 words are the disclosure, from `opening()` here, and that the call is recorded when its audio is (A-10).
 
-A listing agent calling back (A-13b) goes the same way from step 2: the call is already on the line, so
-`place(..., answered=)` dials nothing, and the stream api/twilio.py hands it is claimed like any other.
+A listing agent calling back (A-13b) goes the same way from step 2: the call is already on the line
+(`dial.callback`, with Twilio's sid of it), so `place()` dials nothing, and the stream api/twilio.py hands it
+is claimed like any other. One whose stream never comes within STREAM_WITHIN_S ends `failed`: no status
+callback reports a call coming in.
 """
 from __future__ import annotations
 
@@ -45,6 +47,7 @@ HANG_UP_API = "https://api.twilio.com/2010-04-01/Accounts/{sid}/Calls/{call_sid}
 TIMEOUT_S = 10
 HANG_UP_S = 3               # a deadline's hang-up must not hold the Dispatcher up
 RING_S = 25                 # how long Twilio lets it ring before no-answer
+STREAM_WITHIN_S = 15        # a callback (A-13b) whose stream hasn't started by then has dropped
 DISCLOSURE = "I'm an AI assistant calling for a renter."
 RECORDED = "This call is recorded."   # said right after the disclosure when the call's audio is stored
 VOICEMAIL = ("Hi, this is Landline. I'm an AI assistant calling for a renter about your listing at "
@@ -147,7 +150,7 @@ class TwilioRunner:
     """Places listing calls through Twilio's Calls API, without the SDK."""
     transport = "voice"
     uses_phone = True
-    answers_callbacks = True   # place(answered=): a listing agent calling back (A-13b)
+    answers_callbacks = True   # place() takes a listing agent's call back (A-13b, dial.callback)
 
     def __init__(self, settings: Settings, calls: OutboundCalls, *, runtime: SessionRuntime | None = None,
                  converse: Converse = no_caller, client: httpx.AsyncClient | None = None):
@@ -162,17 +165,15 @@ class TwilioRunner:
 
     # Placing one call
 
-    async def place(self, dial: Dial, report: Report, *, answered: str | None = None) -> CallResult:
-        """Places the call and returns once it has ended. `answered`: Twilio's sid of a listing agent's call
-        back (A-13b), already on the line, so nothing is dialled and the Caller takes it from the stream."""
+    async def place(self, dial: Dial, report: Report) -> CallResult:
         call = Outbound(dial=dial, report=report)
         self.calls.live[dial.call_id] = call
         warm: asyncio.Task | None = None   # the Higgs session opened once a person answered (#148)
         if (recall := getattr(self.converse, "recall", None)) is not None:
             recall(dial)   # what earlier calls heard about the place (O-09b), read while it rings
         try:
-            if answered is not None:
-                call.twilio_sid = answered or None
+            if dial.callback:   # the listing agent called us (A-13b): their call is on the line already
+                call.twilio_sid = dial.twilio_sid
                 call.answered.set()
             else:
                 try:
@@ -197,7 +198,11 @@ class TwilioRunner:
                 finally:
                     answered.cancel()   # a deadline mid-wait never leaves it waiting on a call that's gone
             # A person answered and the stream connected, or the call ended first.
-            done, _ = await asyncio.wait({call.media, call.ended}, return_when=asyncio.FIRST_COMPLETED)
+            done, _ = await asyncio.wait({call.media, call.ended}, return_when=asyncio.FIRST_COMPLETED,
+                                         timeout=STREAM_WITHIN_S if dial.callback else None)
+            if not done:   # a callback whose stream never came: the line dropped before it
+                log.warning("callback %s: no stream within %ss", dial.call_id, STREAM_WITHIN_S)
+                self.calls.finalize(dial.call_id, "failed")
             if call.media in done and not call.media.cancelled() and not call.done:
                 higgs, warm = await _ready(warm, dial), None   # the call has it now, and closes it
                 result = await self._converse(call, call.media.result(), higgs)
