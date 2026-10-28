@@ -27,14 +27,16 @@ import logging
 import re
 import secrets
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
 from landline.config import Settings
-from landline.contracts import CallOutcome, Event, SessionView, ViewingBooked, as_e164
+from landline.contracts import CallOutcome, Event, SessionView, ViewingBooked, ViewingDecided, as_e164
+from landline.db.rows import ViewingConfirmationRow
 from landline.orchestrator.calendar import CalendarError, add_to_calendar_link
-from landline.orchestrator.runtime import SessionRuntime
+from landline.orchestrator.handlers import Refused
+from landline.orchestrator.runtime import SessionRuntime, UnknownSession
 from landline.orchestrator.state import SessionState
 
 log = logging.getLogger(__name__)
@@ -118,6 +120,7 @@ class Decisions:
         row = await db.confirmations.decide(token, status="confirmed", agent_email=email)
         if row is None:
             return await self._undecided(token)
+        await self._flip(row)
         state = await self._state(row.session_id)
         address = self._address(row.listing_id)
         description = heard_lines(_outcome(state, row.call_id))
@@ -147,11 +150,25 @@ class Decisions:
         row = await db.confirmations.decide(token, status="declined")
         if row is None:
             return await self._undecided(token)
+        await self._flip(row)
         state = await self._state(row.session_id)
         text = DECLINED.format(address=self._address(row.listing_id), when=when(row.starts_at))
         self._text_renter(state, text, token)
         log.info("viewing %s…: declined by the agent", token[:6])
         return Answer("declined", "declined")
+
+    async def _flip(self, row: ViewingConfirmationRow) -> None:
+        """The card's viewing takes the answer through session_tx (ViewingDecided) while the session is live.
+        After a restart the answer is in viewing_confirmations alone, which is what the /v page reads."""
+        if not self.runtime.has(row.session_id):
+            return
+        event = ViewingDecided(session_id=row.session_id, at=datetime.now(UTC),
+                               idem_key=f"{row.call_id}:decided", call_id=row.call_id,
+                               listing_id=row.listing_id, starts_at=row.starts_at, status=row.status)
+        try:
+            await self.runtime.emit(event)
+        except (Refused, UnknownSession) as e:   # the decision stands; only the card didn't flip
+            log.warning("call %s: viewing %s, but the card didn't flip: %s", row.call_id, row.status, e)
 
     async def _undecided(self, token: str) -> Answer:
         row = await self.runtime.db.confirmations.get(token)

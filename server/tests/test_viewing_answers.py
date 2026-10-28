@@ -6,10 +6,13 @@ from datetime import UTC, datetime
 
 import pytest
 
-from landline.contracts import CallOutcome, Fact, OutcomeReady
+from landline.contracts import CallOutcome, Fact, OutcomeReady, ViewingDecided
+from landline.db.catalogue import Catalogue
+from landline.orchestrator import SessionRuntime
 from landline.orchestrator.calendar import RENDER_URL, CalendarError
 from landline.orchestrator.viewings import Answer, Decisions, heard_lines, valid_email
-from tests.test_viewings import CID, LANDLINE, NOW, SAT_2PM, SID, _booking, _settings, db  # noqa: F401
+from landline.voice.line import BOARD, Lines
+from tests.test_viewings import CID, LANDLINE, LISTINGS, NOW, SAT_2PM, SID, _booking, _settings, db  # noqa: F401
 
 RENTER = "+14165550100"
 AGENT_EMAIL, RENTER_EMAIL = "agent@example.com", "renter@example.com"
@@ -117,3 +120,58 @@ def test_emails_and_the_two_lines_are_made_in_code():
     fact = Fact(field="rent", value="$2,000", quote="", speaker="Agent heard", at=datetime.now(UTC))
     assert heard_lines(CallOutcome(call_id=CID, listing_id="t:1", end_reason="done", facts=[fact])) == \
         "Booked by Landline on a call with the listing agent."   # a fact without its quote is never shown
+
+
+# The card (ViewingDecided)
+
+
+def _card(rt):
+    return next(c for c in rt.get(SID).board if c.listing_id == "t:1")
+
+
+@pytest.mark.parametrize("answer, status, says", [
+    ("confirm", "confirmed", "The agent at 112 Markham St confirmed Saturday at 2 pm."),
+    ("decline", "declined", "The agent at 112 Markham St can't do Saturday at 2 pm.")])
+async def test_the_answer_flips_the_card_and_the_narrator_says_it(db, answer, status, says):   # noqa: F811
+    rt, _, decisions, token = await _booked(db, calendar=FakeCalendar())
+    assert _card(rt).viewing.status == "booked"
+    await (decisions.confirm(token, AGENT_EMAIL) if answer == "confirm" else decisions.decline(token))
+    view = rt.get(SID)
+    assert _card(rt).viewing.status == status and view.agent_says == says
+    assert rt.state(SID).viewing_status == {"t:1": status}
+    assert [e.type for e in await db.events.list(SID)][-1] == "ViewingDecided"
+
+
+async def test_viewing_decided_twice_or_for_another_time_changes_nothing(db):   # noqa: F811
+    rt, _, decisions, token = await _booked(db, calendar=FakeCalendar())
+    await decisions.confirm(token, AGENT_EMAIL)
+    version = rt.get(SID).version
+    again = ViewingDecided(session_id=SID, at=NOW, idem_key=f"{CID}:decided", call_id=CID, listing_id="t:1",
+                           starts_at=SAT_2PM, status="confirmed")
+    assert (await rt.emit(again)).version == version   # idempotent on idem_key
+    other_time = again.model_copy(update={"idem_key": "x", "starts_at": SAT_2PM.replace(hour=19),
+                                          "status": "declined"})
+    assert (await rt.emit(other_time)).version == version   # not the booked time
+    assert _card(rt).viewing.status == "confirmed"
+
+
+async def test_after_a_restart_the_decision_stands_without_the_card(db):   # noqa: F811
+    _, texter, _, token = await _booked(db)
+    restarted = SessionRuntime(Catalogue(LISTINGS, "test"), db)   # the session isn't live in this process
+    answer = await Decisions(restarted, _settings(), texter, FakeCalendar()).confirm(token, AGENT_EMAIL)
+    assert answer.outcome == "confirmed" and (await db.confirmations.get(token)).status == "confirmed"
+    assert texter.sent[0][0] == RENTER   # the renter is still texted, from the session's snapshot
+
+
+async def test_the_live_concierge_hears_the_answer(db):   # noqa: F811
+    rt, _, decisions, token = await _booked(db, calendar=FakeCalendar())
+    lines, sent = Lines(rt), []
+
+    async def send(event):
+        sent.append(event)
+
+    lines.open(SID, send)
+    await decisions.decline(token)
+    await rt.idle()
+    notes = [e["item"]["content"][0]["text"] for e in sent if e["type"] == "conversation.item.create"]
+    assert notes == [f"{BOARD} The agent at 112 Markham St can't do Saturday at 2 pm."]
