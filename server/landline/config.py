@@ -73,6 +73,9 @@ class Settings:
     google_oauth_client_id: str | None = None
     google_oauth_client_secret: str | None = None
     google_oauth_refresh_token: str | None = None
+    # Area questions from Google's Maps MCP server, Maps Grounding Lite (O-07a, orchestrator/maps_mcp.py). The
+    # pipeline's maps stage (D-10) reads the same key from the environment. Without it there's no client.
+    google_maps_api_key: str | None = None
 
     @classmethod
     def load(cls) -> Settings:
@@ -110,6 +113,7 @@ class Settings:
             google_oauth_client_id=os.getenv("GOOGLE_OAUTH_CLIENT_ID") or None,
             google_oauth_client_secret=os.getenv("GOOGLE_OAUTH_CLIENT_SECRET") or None,
             google_oauth_refresh_token=os.getenv("GOOGLE_OAUTH_REFRESH_TOKEN") or None,
+            google_maps_api_key=(os.getenv("GOOGLE_MAPS_API_KEY") or "").strip() or None,
         )
 
     def voice_api_key(self) -> str | None:
