@@ -58,7 +58,7 @@ Landline is one of ten finalists at Build North's Demo Day: Thursday 29 October,
 | To do | U-12d | Start the next call from the saved search, when the renter turns that on | P0 | X-04 | the first board of the next call uses the saved search | [#246](https://github.com/2arian3/Landline/issues/246) |
 | To do | O-07a | A client for Google's Maps MCP server | P1 | – | a live run finds a real place near a listing | [#239](https://github.com/2arian3/Landline/issues/239) |
 | To do | O-07b | `ask_maps`: answer questions about the area, and fly the map to the place | P1 | O-07a | "Is there a grocery store near the first one?" gets a real name and minutes | [#239](https://github.com/2arian3/Landline/issues/239) |
-| To do | O-09a | Save each call's facts to SurrealDB Agent Memory | P1 | – | a sim call's facts come back from a memory query | [#240](https://github.com/2arian3/Landline/issues/240) |
+| Built (#270), live run pending the SurrealDB Agent Memory keys | O-09a | Save each call's facts to SurrealDB Agent Memory | P1 | – | a sim call's facts come back from a memory query | [#240](https://github.com/2arian3/Landline/issues/240) |
 | To do | O-09b | The Caller confirms what an earlier call heard instead of asking cold | P1 | O-09a | a second renter's call opens with "Last week they said…" | [#240](https://github.com/2arian3/Landline/issues/240) |
 | To do | O-09c | Remember a renter who agreed to it, and backfill last week's facts | P2 | O-09a | the backfill runs once | [#240](https://github.com/2arian3/Landline/issues/240) |
 
