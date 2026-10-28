@@ -3,9 +3,11 @@
 GET /api/me with `Authorization: Bearer <Clerk session token>` returns the signed-in renter's history. The
 phone number comes only from the verified token: its `phone` claim, which the Clerk dashboard adds to the
 session token ({"phone": "{{user.primary_phone_number}}"}). Clerk's SMS code proved the number belongs to
-whoever signed in. The token must be signed by our Clerk instance, current, and made for our web app: its
-`azp` is WEB_URL, a CORS origin, or a Vercel preview that CORS_ORIGIN_REGEX matches. Anything else is 401.
-Without CLERK_SECRET_KEY, sign-in is off (404).
+whoever signed in. The token must be signed by our Clerk instance and current. A browser's token carries
+an `azp` (the page's origin), which must be WEB_URL, a CORS origin, or a Vercel preview that
+CORS_ORIGIN_REGEX matches. A native app's token (the Expo app, U-13) has none, since Clerk sets `azp` from
+the Origin header and native requests send no Origin; our instance's signature is the proof there. Anything
+else is 401. Without CLERK_SECRET_KEY, sign-in is off (404).
 
 POST /api/me {phone} is the hackathon's way in, where the number is the login. With CLERK_SECRET_KEY set it
 answers 401, since a typed number proves nothing; without it (local dev, CI) it works as before.
@@ -74,8 +76,11 @@ async def _signed_in_phone(request: Request, settings: Settings) -> str:
 
 
 def _ours(azp: object, settings: Settings) -> bool:
-    """Whether the token was made for our web app: WEB_URL, a CORS origin, or a matching Vercel preview."""
-    if not isinstance(azp, str) or not azp:
+    """Whether the token was made for us: no `azp` (a native app's), or WEB_URL, a CORS origin, or a
+    matching Vercel preview. A native app that turns out to send a fixed `azp` goes in CORS_ORIGINS."""
+    if azp is None or azp == "":
+        return True
+    if not isinstance(azp, str):
         return False
     azp = azp.rstrip("/")
     allowed = {o.rstrip("/") for o in (settings.web_url, *settings.cors_origins)}
