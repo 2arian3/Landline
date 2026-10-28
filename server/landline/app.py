@@ -78,7 +78,8 @@ def create_app(settings: Settings | None = None, catalogue: Catalogue | None = N
         # The session runtime (O-02): sessions that voice or judge mode start. It persists to Postgres when
         # DATABASE_URL is set, else keeps them in memory. Demo sessions stay in `sessions` until A-06.
         # Its own matrix (with neighbourhoods), and the contact the place lookup identifies itself with.
-        app.state.runtime = SessionRuntime(app.state.catalogue, db, contact=settings.contact_email)
+        app.state.runtime = SessionRuntime(app.state.catalogue, db, contact=settings.contact_email,
+                                           maps_key=settings.google_maps_api_key)
         # Map taps and background re-ranks, to the live Concierge between turns (A-02, voice/line.py).
         app.state.lines = Lines(app.state.runtime)
         app.state.judges = JudgeLines(settings.higgs_max_sessions)
