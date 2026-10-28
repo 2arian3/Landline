@@ -215,7 +215,8 @@ async def test_demo_captions_are_the_whole_script_once_the_calls_end():
     address = {c.listing_id: c.address for c in done.board}
 
     def opener(lid: str) -> tuple[str, str]:
-        return "agent", f"Hi, {DISCLOSURE} about the place at {address[lid]}. Is it still available?"
+        return "agent", (f"Hi, this is Landline. {DISCLOSURE} about the place at {address[lid]}. "
+                         "Is it still available?")
 
     verified, suspect, booked, no_answer = done.plan
     said = [[(t.speaker, t.text) for t in s.turns(c.call_id)] for c in done.calls]

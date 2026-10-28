@@ -73,7 +73,7 @@ What these numbers don't show:
 
 From the `?dev=1` demo, where the listing agents are scripted (`server/landline/api/demo.py`). The renter asked for a one-bedroom under $2,800, picked the top four and hung up. Landline's call to 650 Briar Hill Avenue, as its captions show it:
 
-> **Landline:** Hi, I'm an AI assistant calling for a renter about the place at 650 Briar Hill Avenue. Is it still available?<br>
+> **Landline:** Hi, this is Landline. I'm an AI assistant calling for a renter about the place at 650 Briar Hill Avenue. Is it still available?<br>
 > **Listing agent:** Yes.<br>
 > **Landline:** Are pets okay? My client has a dog.<br>
 > **Listing agent:** Dogs are fine. There are a couple in the building already.<br>
