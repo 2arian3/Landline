@@ -13,7 +13,9 @@ call to the same place can start from them (O-09b) instead of asking cold. The R
   text, which is an inferred summary, not a fact with its quote (hard rule 3).
 - `POST /query` reads. Its body is camelCase: `query`, `lens` (the read's scope, `[[path]]`), and `k` (at
   most 50). The server ignores a field it doesn't know without an error, so a read that sent `scope`
-  instead of `lens` would search everything the key can read.
+  instead of `lens` would search everything the key can read. `includeDuplicates` (default false) leaves
+  near-duplicate passages and stored text out of the ranking; a listing's read sets it, since two calls
+  that heard the same fee write nearly the same sentence and the newer one must come back.
 
 On OutcomeReady, `install`'s subscriber runs as a background task after the commit, so it never holds up
 a call or a turn (hard rule 7). It writes each fact of the call's outcome to landline/listing/<listing_id>
@@ -26,21 +28,28 @@ the rest, so a fact is written only while it still carries its quote and value. 
 after 3 s, and a failure is one log line that never reaches the runtime. Without the three keys,
 `from_settings` and `install` return None and nothing is sent.
 
-O-09b's `listing_knowledge(listing_id)` sits on top of `query`: keep the `memory_chunk` hits, read the
-date, field, value and quote back out of `fact_text`'s sentence, and keep the last 7 days.
+O-09b reads it back. `listing_knowledge(memory, listing_id)` queries the listing's scope and keeps only the
+`memory_chunk` hits that parse as `fact_text`'s sentence (date, field, value, non-empty quote) and were heard
+in the last 7 days, Toronto dates, as `Known` items: one per field, the newest. An inferred record (entity,
+attribute, …) or any other wording is never a fact (hard rule 3). `recall` is that read at dial time, for
+the Caller's brief (agents/caller/brief.py), which turns each item on the renter's checklist into a
+confirm question. It gives up after RECALL_S and never raises: without a client, on a timeout or on an
+error it returns [] with one log line, and the call asks cold.
 
 The live run: `uv run python -m landline.orchestrator.memory` writes a test fact to
 landline/listing/test:o09a and queries it back, and `... memory livrent:100219` only queries that listing.
+Both then print what `listing_knowledge` keeps for the Caller to confirm.
 """
 from __future__ import annotations
 
 import asyncio
 import hashlib
 import logging
+import re
 import sys
 from collections.abc import Iterator
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
@@ -60,6 +69,11 @@ TIMEOUT_S = 3.0
 LISTINGS = "landline/listing"
 K, K_MAX = 10, 50              # the server's default and cap for `k` on /query
 TEST_LISTING = "test:o09a"     # the live run's own scope; no real listing has this id
+RECALL_S = 2.0                 # how long a call about to be dialled waits for what earlier calls heard
+KNOWN_DAYS = 7                 # a fact older than this many days is asked again, cold
+KNOWLEDGE_QUERY = "What did the listing agent say?"
+# fact_text's sentence, read back: date, field, value, quote.
+SENTENCE = re.compile(r'On (\d{4}-\d{2}-\d{2}), the listing agent said ([a-z_]+): (.+?) \("(.*)"\)\.', re.S)
 
 
 class MemoryUnavailable(Exception):
@@ -79,6 +93,16 @@ class Hit:
     score: float = 0.0
     occurred_at: datetime | None = None  # the record's known time (observed_at on Landline's writes)
     id: str = ""
+
+
+@dataclass(frozen=True)
+class Known:
+    """A fact an earlier call heard about a listing, read back word for word from its sentence."""
+    field: str
+    value: str
+    quote: str                           # the listing agent's exact words on that call
+    day: date                            # the Toronto date it was heard on
+    at: datetime | None = None           # the hit's occurredAt: orders two heard the same day
 
 
 class Memory:
@@ -111,9 +135,13 @@ class Memory:
         await self._post("/facts", f"fact write to {scope}", body,
                          headers={"Idempotency-Key": f"landline-{key}"}, tolerate=(409,))
 
-    async def query(self, query: str, scope: str, *, k: int = K) -> list[Hit]:
-        """The hits for `query` inside `scope` (the read's `lens`), best first."""
-        body = {"query": query, "lens": [[scope]], "k": max(1, min(k, K_MAX))}
+    async def query(self, query: str, scope: str, *, k: int = K,
+                    include_duplicates: bool = False) -> list[Hit]:
+        """The hits for `query` inside `scope` (the read's `lens`), best first. `include_duplicates` keeps
+        near-duplicates in the ranking, which the server leaves out by default."""
+        body: dict = {"query": query, "lens": [[scope]], "k": max(1, min(k, K_MAX))}
+        if include_duplicates:
+            body["includeDuplicates"] = True
         answer = await self._post("/query", f"query of {scope}", body)
         hits = answer.get("hits") if isinstance(answer, dict) else None
         return [h for h in (_hit(raw) for raw in hits or []) if h is not None]
@@ -201,6 +229,56 @@ def listing_scope(listing_id: str) -> str:
     return f"{LISTINGS}/{listing_id}"
 
 
+async def listing_knowledge(memory: Memory, listing_id: str, *, now: datetime | None = None) -> list[Known]:
+    """What earlier calls heard about the listing in the last KNOWN_DAYS days (Toronto dates, counted from
+    `now`), one per field, the newest, newest first. Raises MemoryUnavailable; `recall` doesn't."""
+    hits = await memory.query(KNOWLEDGE_QUERY, listing_scope(listing_id), k=K_MAX, include_duplicates=True)
+    today = _utc(now or datetime.now(UTC)).astimezone(TORONTO).date()
+    newest: dict[str, Known] = {}
+    for hit in hits:
+        known = heard(hit)
+        if known is None or not 0 <= (today - known.day).days <= KNOWN_DAYS:
+            continue
+        if known.field not in newest or _order(known) > _order(newest[known.field]):
+            newest[known.field] = known
+    log.info("memory: %d of %d hits on %s kept as known facts", len(newest), len(hits), listing_id)
+    return sorted(newest.values(), key=_order, reverse=True)
+
+
+async def recall(memory: Memory | None, listing_id: str, *, now: datetime | None = None,
+                 timeout_s: float | None = None) -> list[Known]:
+    """`listing_knowledge` for a call about to be dialled: it waits at most RECALL_S and never raises. No
+    client, a timeout or an error is [] with one log line, and the Caller asks cold."""
+    if memory is None:
+        log.info("memory: no Agent Memory keys; the call to %s asks cold", listing_id)
+        return []
+    try:
+        async with asyncio.timeout(RECALL_S if timeout_s is None else timeout_s):
+            return await listing_knowledge(memory, listing_id, now=now)
+    except Exception as e:   # MemoryUnavailable, a timeout, or anything else: never the call's problem
+        log.warning("memory: %s not read (%r); the call asks cold", listing_scope(listing_id), e)
+        return []
+
+
+def heard(hit: Hit) -> Known | None:
+    """A hit as a fact, only when it's a memory chunk in `fact_text`'s sentence with a date and a quote. An
+    inferred record, or any other wording, is never a fact (hard rule 3)."""
+    if hit.source != "memory_chunk" or (m := SENTENCE.fullmatch(hit.text.strip())) is None:
+        return None
+    try:
+        day = date.fromisoformat(m[1])
+    except ValueError:
+        return None
+    value, said = m[3].strip(), m[4].strip()
+    if not value or not said:
+        return None
+    return Known(field=m[2], value=value, quote=said, day=day, at=hit.occurred_at)
+
+
+def _order(known: Known) -> tuple[date, float]:
+    return known.day, _utc(known.at).timestamp() if known.at else 0.0
+
+
 def _lineage(path: str) -> Iterator[str]:
     """"a/b/c" → "a", "a/b", "a/b/c"."""
     parts = [p for p in path.strip("/").split("/") if p]
@@ -256,6 +334,10 @@ async def _check(listing_id: str | None) -> None:
         print(f"{len(hits)} hits in {scope}")
         for hit in hits:
             print(f"  {hit.source:<12} {hit.occurred_at or '-'}  {hit.text}")
+        known = await listing_knowledge(memory, listing_id or TEST_LISTING)
+        print(f"{len(known)} known facts for the Caller to confirm (O-09b)")
+        for k in known:
+            print(f"  {k.day}  {k.field}: {k.value} ({k.quote!r})")
     finally:
         await memory.close()
 
