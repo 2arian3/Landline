@@ -33,7 +33,7 @@ from datetime import UTC, datetime
 
 from psycopg import AsyncConnection
 
-from landline.contracts import AnchorResolved, Event, SessionStarted, SessionView
+from landline.contracts import AnchorResolved, CommuteResolved, Event, SessionStarted, SessionView
 from landline.db.catalogue import Catalogue
 from landline.db.pool import Database
 from landline.orchestrator import board, handlers, narrator
@@ -246,9 +246,14 @@ class SessionRuntime:
                                            lat=point.lat, lng=point.lng))
 
     async def _commute(self, event: Event, view: SessionView) -> None:
-        """The place's TTC minutes into the matrix's cache, off the hot path. The board uses them the next
-        time it's built."""
-        await self.commute.on_anchor(event, view)
+        """The place's TTC minutes into the matrix's cache, off the hot path, then CommuteResolved re-ranks
+        the board with them. Once per AnchorResolved (its idem key), and only when some minutes were new."""
+        if not await self.commute.on_anchor(event, view) or not self.has(event.session_id):
+            return
+        assert isinstance(event, AnchorResolved)
+        await self.emit(CommuteResolved(session_id=event.session_id, at=datetime.now(UTC),
+                                        idem_key=f"{event.idem_key}:commute", label=event.label,
+                                        lat=event.lat, lng=event.lng))
 
     async def _remember(self, event: Event, view: SessionView) -> None:
         if self.profiles is not None and self.has(event.session_id):

@@ -28,7 +28,8 @@ ORDINALS = ("first", "second", "third", "fourth", "fifth", "sixth", "seventh", "
 BEDS = {0: "studios are fine", 1: "one bedroom or more", 2: "two bedrooms or more",
         3: "three bedrooms or more"}
 BEDROOMS = {0: "studio", 1: "one-bedroom", 2: "two-bedroom", 3: "three-bedroom", 4: "four-bedroom"}
-RERANKS = {"PreferencesUpdated", "FeedbackGiven", "AnchorResolved"}   # events whose re-rank is worth saying
+# Events whose re-rank is worth saying.
+RERANKS = {"PreferencesUpdated", "FeedbackGiven", "AnchorResolved", "CommuteResolved"}
 # How a fact's field reads out loud: "parking: $180 a month".
 FIELDS = {
     "available": "still available", "available_from": "free from", "rent": "rent", "fees": "fees",
@@ -77,6 +78,8 @@ def line(before: SessionView | None, after: SessionView, events: Sequence[Event]
         return _fit([f"I'll call {_join(names)} after you hang up."],
                     [f"I'll call these {len(ids)} places after you hang up."])
     ack = acknowledge([e for e in events if isinstance(e, PreferencesUpdated)])
+    if commutes := [e for e in events if e.type == "CommuteResolved"]:   # D-10c: say why the board moved
+        ack = f"Now by TTC time to {commutes[-1].label}."
     said = ([ack] if ack else []) + (_diff(before, after) if kinds & RERANKS else [])
     return _fit(said, ["Got it."]) if said else None
 

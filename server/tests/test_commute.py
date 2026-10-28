@@ -6,11 +6,19 @@ from datetime import UTC, datetime
 import httpx
 import pytest
 
-from landline.contracts import AnchorResolved, Listing, ListingFocused, PreferencesUpdated, SessionStarted
+from landline.contracts import (
+    AnchorResolved,
+    CommuteResolved,
+    Listing,
+    ListingFocused,
+    PreferencesUpdated,
+    SessionStarted,
+)
 from landline.contracts.tools import AnchorRef, PreferenceDelta
 from landline.db.catalogue import Catalogue
-from landline.orchestrator import SessionRuntime, commute
+from landline.orchestrator import SessionRuntime, commute, handlers
 from landline.orchestrator.commute import TORONTO, Commute, departure
+from landline.voice.line import BOARD, Lines
 
 NOW = datetime(2026, 10, 28, 4, 50, tzinfo=UTC)   # Wednesday 00:50 in Toronto
 SID = "s_commute001"
@@ -133,4 +141,67 @@ async def test_the_minutes_land_in_the_background_and_the_next_rebuild_uses_them
     assert by_ttc[0] == "t:2" and by_ttc != by_km
     card = next(c for c in view.board if c.listing_id == "t:2")
     assert "13 min by TTC to King and Bay" in card.reasons
+    await runtime.close()
+
+
+# Option A: CommuteResolved re-ranks as soon as the minutes land.
+
+async def test_commute_resolved_re_ranks_as_soon_as_the_minutes_land():
+    runtime = SessionRuntime(Catalogue(LISTINGS, "test"), maps_key="test-key")
+    _with_fake(runtime, Google())
+    await _session(runtime)
+    version = runtime.get(SID).version
+    await runtime.idle()
+    view = runtime.get(SID)
+    assert view.version == version + 1   # CommuteResolved, with no other event
+    assert view.board[0].listing_id == "t:2"
+    assert "13 min by TTC to King and Bay" in view.board[0].reasons
+    assert view.agent_says.startswith("Now by TTC time to King and Bay.")
+    await runtime.close()
+
+
+async def test_commute_resolved_twice_or_for_a_dropped_anchor_changes_nothing():
+    runtime = SessionRuntime(Catalogue(LISTINGS, "test"))
+    await _session(runtime)
+    event = CommuteResolved(session_id=SID, at=NOW, idem_key=f"{SID}:place:commute", label="King and Bay",
+                            lat=KING_AND_BAY[0], lng=KING_AND_BAY[1])
+    first = await runtime.emit(event)
+    assert (await runtime.emit(event)).version == first.version   # idempotent on idem_key
+    elsewhere = CommuteResolved(session_id=SID, at=NOW, idem_key=f"{SID}:other:commute", label="Union",
+                                lat=43.6453, lng=-79.3806)
+    assert (await runtime.emit(elsewhere)).version == first.version   # not one of this session's anchors
+    await runtime.close()
+
+
+async def test_the_live_concierge_hears_the_ttc_re_rank():
+    runtime = SessionRuntime(Catalogue(LISTINGS, "test"), maps_key="test-key")
+    _with_fake(runtime, Google())
+    lines = Lines(runtime)
+    sent: list[dict] = []
+
+    async def send(event):
+        sent.append(event)
+
+    line = lines.open(SID, send)
+    await _session(runtime)
+    await runtime.idle()
+    # The turn the first note asked for ends, so the waiting note goes in.
+    await line.seen({"type": "response.done", "response": {"output": []}})
+    notes = [e["item"]["content"][0]["text"] for e in sent if e["type"] == "conversation.item.create"]
+    assert notes[-1].startswith(f"{BOARD} Now by TTC time to King and Bay.")
+    await runtime.close()
+
+
+async def test_without_the_event_the_next_commit_still_uses_the_minutes(monkeypatch):
+    # The base behaviour stands on its own: if CommuteResolved changed nothing, the next commit re-ranks.
+    monkeypatch.setitem(handlers.HANDLERS, "CommuteResolved", lambda state, e, known: False)
+    runtime = SessionRuntime(Catalogue(LISTINGS, "test"), maps_key="test-key")
+    _with_fake(runtime, Google())
+    await _session(runtime)
+    version = runtime.get(SID).version
+    await runtime.idle()
+    assert runtime.get(SID).version == version and runtime.matrix.commute_min(*KING_AND_BAY)
+    view = await runtime.emit(ListingFocused(session_id=SID, at=NOW, idem_key=f"{SID}:tap", listing_id="t:3",
+                                             origin="ui"))
+    assert view.board[0].listing_id == "t:2"
     await runtime.close()
