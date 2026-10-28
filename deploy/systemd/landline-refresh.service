@@ -17,6 +17,9 @@ ExecStart=/home/ubuntu/landline/.venv/bin/python -m pipeline run --source livren
 # are cached, so a run only fetches what's new. The "-" lets the refresh carry on if either fails (the
 # City's site down, say): new listings still load and the API still restarts.
 ExecStart=-/home/ubuntu/landline/.venv/bin/python -m pipeline geo --load
+# Google's walking minutes to the TTC (D-10a) replace geo's straight-line estimate, so this runs right after
+# it. Its answers are cached, so only new listings cost anything; without GOOGLE_MAPS_API_KEY it skips.
+ExecStart=-/home/ubuntu/landline/.venv/bin/python -m pipeline maps --load
 ExecStart=-/home/ubuntu/landline/.venv/bin/python -m pipeline light --photos 2 --load
 # The API reads the catalogue at startup; restart it so new listings show up.
 ExecStartPost=+/usr/bin/systemctl try-restart landline-api.service
