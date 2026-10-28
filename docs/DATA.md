@@ -203,6 +203,8 @@ Every feature the ranker or the card uses. "Sources" lists them in order of trus
 | `utilities_included` | list | call › LLM › City separate meters (hint only) | |
 | `elevator`, `step_free` | bool | City › LLM | accessibility filter |
 | `outdoor_space` | balcony / terrace / yard / none | LLM | |
+| `grocery_name`, `grocery_walk_min` | text, minutes | Google Places searchNearby (`grocery_store`, `supermarket`) + Routes walking time | the nearest within 1.5 km, else null; provenance `derived`, "Google Maps" and the fetch date (D-10b, `pipeline/nearby.py`) |
+| `pharmacy_name`, `pharmacy_walk_min` | text, minutes | Google Places searchNearby (`pharmacy`, `drugstore`) + Routes walking time | the same; a Shoppers Drug Mart counts |
 | `furnished`, `available_from`, `lease_months` | | listing › call | move-in fit |
 | `building_eval_score`, `pests_flag` | 0–100, bool | City evaluation | shown with the evaluation date |
 | `year_built` | int | City | |
