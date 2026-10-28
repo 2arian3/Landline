@@ -1,11 +1,15 @@
 # Landline mobile (Expo)
 
 The renter's side of Landline after the call, on their phone (U-13). Sign in with the phone number you call
-Landline from; the app then shows who Landline knows you as. My listings, a push when the calls finish and
-My search come next (U-13b–d). It's a thin client: it calls the same API as the web, directly.
+Landline from. Home then has a Call Landline button (the phone's own dialer) and the latest results: the
+places Landline called in your last session. My listings has every place it called, with how the call went,
+the viewing it booked, what to watch out for and each fact the agent gave. Tap a fact to see the agent's
+words and when they said them, as on the web's `/me`. A push when the calls finish and My search come next
+(U-13c–d). It's a thin client: it calls the same API as the web, directly.
 
 Expo SDK 58 with Expo Router, and Clerk (`@clerk/expo`) for phone sign-in with an SMS code. The app uses
-the same Clerk app as the web (U-11), so the API checks the same session tokens (`GET /api/me`, U-11a).
+the same Clerk app as the web (U-11), so the API checks the same session tokens (`GET /api/me`, U-11a, and
+`GET /api/me/listings`, U-12c). Pull down on either screen to reload it.
 
 ## Run it
 
@@ -16,11 +20,14 @@ cp .env.example .env    # then paste the Clerk publishable key (pk_test_…) int
 npx expo start          # scan the QR code with Expo Go (Android) or the Camera app (iOS)
 ```
 
-- `.env` holds only public values: the Clerk publishable key and, optionally, the API's address. The API
-  defaults to the VM's public URL. Never put a secret key here.
+- `.env` holds only public values: the Clerk publishable key and, optionally, the API's address and the
+  number Call Landline dials. They default to the VM's public URL and production's Landline number. Never
+  put a secret key here.
 - Without a key the app opens on "Landline isn’t set up yet" instead of crashing.
 - Expo Go runs only the newest SDK. If Expo Go says the project is incompatible, update Expo Go.
-- `npm run typecheck` checks the TypeScript. Add packages with `npx expo install <name>`, so they match the
+- `npm run typecheck` checks the TypeScript. `npm test` runs the helpers' tests with Node alone (Node 23.6
+  or newer strips the types), including a check that facts read as the web's `web/lib/heard.ts` writes them.
+  Add packages with `npx expo install <name>`, so they match the
   SDK (see `AGENTS.md` here).
 
 ## Sign in
