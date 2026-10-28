@@ -88,7 +88,8 @@ async def listing_status(args: ListingStatus, ctx: ToolContext, meta: dict) -> s
     state = runtime.state(sid)
     view = runtime.get(sid)
     place = _place_of(runtime.catalogue)
-    history = _this_session(state, view, place, now) + await _earlier(runtime, state, place)
+    db = ctx.history if ctx.history is not None else runtime.db
+    history = _this_session(state, view, place, now) + await _earlier(db, state, place)
     found = resolve(args.listing_ref, view, history, place)
     if isinstance(found, str):
         return found
@@ -116,18 +117,18 @@ def _this_session(state: SessionState, view: SessionView, place: Callable[[str],
                   now: datetime) -> list[MyListing]:
     """This session's settled calls, as rows shaped like the database's, through the same builder."""
     sid = state.session_id
+    settled = {o.call_id: o for o in state.outcomes.values()}
     calls = [{"call_id": c.call_id, "session_id": sid, "listing_id": c.listing_id, "role": "listing",
-              "state": c.state, "end_reason": c.outcome.end_reason, "answered_at": None,
+              "state": c.state, "end_reason": settled[c.call_id].end_reason, "answered_at": None,
               "created_at": c.started_at or now}
-             for c in state.calls.values() if c.outcome is not None]
+             for c in state.calls.values() if c.call_id in settled]
     snapshot = {"state": state.model_dump(mode="json"), "view": view.model_dump(mode="json")}
     return listings([{"session_id": sid, "snapshot": snapshot}], calls, place)
 
 
-async def _earlier(runtime: Any, state: SessionState, place: Callable[[str], Place]) -> list[MyListing]:
+async def _earlier(db: Any, state: SessionState, place: Callable[[str], Place]) -> list[MyListing]:
     """A phone caller's earlier sessions, by the number this call came from. None for a browser or judge
     session, without a database, or when Postgres doesn't answer within HISTORY_WAIT_S."""
-    db = runtime.db
     if state.channel != "phone" or not state.caller_phone or db is None:
         return []
     try:
@@ -177,10 +178,16 @@ def resolve(ref: str, view: SessionView, history: list[MyListing],
     card = refs.match(ref, view.board, view.focus_listing_id).card
     if card is not None and card.listing_id in by_listing:
         return status(card.listing_id)
-    words = {w for w in refs._words(ref) if w not in refs.FILLER and w not in _ASKING}
-    # A place the renter's calls reached wins a tie with an uncalled card: "Markham" asks what happened.
+    words = {w for w in refs._words(ref)
+             if w not in refs.FILLER and w not in _ASKING and w not in refs.ORDINALS and w != "last"}
+    if card is not None and all(w.isdigit() for w in words):
+        words = set()   # a rank on the board ("2", "the second one") is that card
+    # A place the renter's calls reached wins a tie with an uncalled card ("Markham" asks what happened);
+    # what was heard there ("the one with the balcony") is used only when the board matched nothing.
     on_card = len(words & _address_words(place(card.listing_id))) if card is not None else 0
-    for words_of in (lambda calls: _address_words(place(calls[0].listing_id)), _heard_words):
+    passes = [lambda calls: _address_words(place(calls[0].listing_id))] + ([_heard_words] if card is None
+                                                                           else [])
+    for words_of in passes:
         scores = {lid: len(words & words_of(calls)) for lid, calls in by_listing.items()}
         best = max(scores.values(), default=0)
         hits = [lid for lid, s in scores.items() if s == best]
@@ -270,17 +277,21 @@ def _viewing(v: MyViewing, now: datetime) -> str:
 
 
 def _fit_facts(sentence: str, words: int) -> str | None:
-    """A facts sentence cut back to its first facts so it fits in `words`; None when not even one does."""
-    if "; " not in sentence:
+    """A facts sentence ("… said a; b; c." or "… heard a; b.") cut back to its first facts so it fits in
+    `words`; None when not even one does."""
+    m = _FACTS.fullmatch(sentence)
+    if m is None:
         return None
-    lead, _, rest = sentence.partition(" said ")
-    items = rest.rstrip(".").split("; ")
+    items = m[2].split("; ")
     while items:
-        cut = f"{lead} said {'; '.join(items)}."
+        cut = f"{m[1]} {'; '.join(items)}."
         if _count(cut) <= words:
             return cut
         items.pop()
     return None
+
+
+_FACTS = re.compile(r"(.*? (?:said|heard)) (.*)\.")
 
 
 def texted(found: Status, now: datetime) -> str:

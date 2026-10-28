@@ -114,6 +114,9 @@ class ToolContext:
     note: Callable[[str], Awaitable[None]] | None = None
     maps_disclosed: bool = False
     maps_asks: int = 0
+    # listing_status (A-14): where a phone caller's earlier sessions are read. None reads the runtime's
+    # database; the eval's returning callers set an in-memory one (evals/sim/driver.py).
+    history: Any | None = None
 
 
 async def handle(name: str, arguments: str, tool_call_id: str, ctx: ToolContext) -> str:
