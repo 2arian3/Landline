@@ -29,6 +29,9 @@ VERIFIED_BONUS = 7.0     # on the 100-point scale
 SUSPECT_PENALTY = 25.0
 DISLIKED_PENALTY = 10.0  # a card disliked with no reason (O-04): more than a confirming call is worth
 LOCATION_DECAY_KM = 2.5  # feedback "too far" tightens this to 1.8 (O-04)
+# TTC minutes (D-10c): 1 up to 10 minutes, then exp(-(m - 10) / 15), so 25 minutes scores like 2.5 km (0.37);
+# "too far" tightens the decay the way it tightens LOCATION_DECAY_KM.
+COMMUTE_FREE_MIN, COMMUTE_DECAY_MIN = 10.0, 15.0
 NEXT_DOOR = 0.6          # a neighbourhood touching a named one (D-05)
 AREA_DECAY_KM = 2.0      # beyond that, from the named neighbourhood's middle
 BUDGET_SLACK = 1.10      # the budget filter, and where the cost utility reaches 0
@@ -189,7 +192,9 @@ class _Context:
         self.species = u.species(prefs.pets)
         self.wanted = move_in_date(prefs.move_in, today)
         resolved = [a for a in prefs.anchors if a.lat is not None and a.lng is not None]
-        self.anchors = [(a.label, matrix.distances_km(a.lat, a.lng)) for a in resolved]
+        # Each anchor: its label, every listing's km to it, and the TTC minutes known so far (D-10c).
+        self.anchors = [(a.label, matrix.distances_km(a.lat, a.lng), matrix.commute_min(a.lat, a.lng))
+                        for a in resolved]
         self.anchor_key = tuple((round(a.lat, 5), round(a.lng, 5)) for a in resolved)
         self.areas = frozenset(a.strip().lower() for a in prefs.areas)
         self._cols: dict[str, list] = {}
@@ -338,10 +343,13 @@ class _Context:
         return [None] * len(rows)   # building_quality and value have no data until the City join (D-05)
 
     def _location(self, rows) -> list[float | None]:
-        """The mean of the known parts: each resolved anchor's exp(-d / decay), and for named areas 1 inside,
-        0.6 in a neighbourhood next to one, and exp(-d / 2) from the nearest one's middle beyond that."""
-        parts = [[None if d[i] is None else u.distance(d[i], self.decay_km) for i in rows]
-                 for _, d in self.anchors]
+        """The mean of the known parts: each resolved anchor's TTC-minutes curve where the minutes to it are
+        known (D-10c), else exp(-d / decay); and for named areas 1 inside, 0.6 in a neighbourhood next to one,
+        and exp(-d / 2) from the nearest one's middle beyond that."""
+        decay_min = COMMUTE_DECAY_MIN * self.decay_km / LOCATION_DECAY_KM
+        parts = [[u.commute(t[i], decay_min, COMMUTE_FREE_MIN) if i in t else None if d[i] is None
+                  else u.distance(d[i], self.decay_km) for i in rows]
+                 for _, d, t in self.anchors]
         if self.areas:
             parts.append(self._areas(rows))
         if not parts:
@@ -396,7 +404,7 @@ class _Context:
             "elevator": self.col("elevator")[i], "neighbourhood": x.neighbourhood,
         }
         if f == "location" and self.anchors:
-            label, d = min(((lab, dist[i]) for lab, dist in self.anchors if dist[i] is not None),
-                           key=lambda t: t[1], default=(None, None))
-            out.update(anchor=label, anchor_km=d)
+            near = ((lab, dist[i], t) for lab, dist, t in self.anchors if dist[i] is not None)
+            label, d, by_ttc = min(near, key=lambda a: a[1], default=(None, None, {}))
+            out.update(anchor=label, anchor_km=d, anchor_min=by_ttc.get(i))
         return out
