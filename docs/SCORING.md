@@ -25,7 +25,7 @@ A listing is out if any of these hold. The renter can relax any of them by voice
 | Feature | Utility |
 |---|---|
 | Cost | 1 if `monthly_cost ≤ 0.85·budget`; linear to 0.4 at budget; linear to 0 at budget × 1.10 |
-| Location | per anchor: `exp(-d_km / 2.5)`; if neighbourhoods were named: 1 inside, 0.6 adjacent, else `exp(-d_km_to_area / 2)` |
+| Location | per anchor: TTC minutes when Google's are in, `min(1, exp(-(min - 10) / 15))`, else `exp(-d_km / 2.5)`; if neighbourhoods were named: 1 inside, 0.6 adjacent, else `exp(-d_km_to_area / 2)` |
 | Transit | `clamp(1 − (walk_min − 3) / 17)` |
 | Size | rises gently with sqft by beds; after "too small", the same curve centred on `desired_sqft` |
 | Light | `light_score` |
@@ -42,6 +42,7 @@ How v1 (`server/landline/scoring/`) fills the gaps:
 - **Unknown is 0.5.** A value the listing doesn't state scores 0.5 and is never a reason or a watch-out. A column that is 0.5 for every listing (no data yet, as for light and transit before D-05 and D-07) adds a constant and moves nothing.
 - **Size without a desired size:** `clamp(0.5 + sqft / typical − 1)`, with typical 450 / 650 / 900 / 1,200 / 1,500 ft² for studio / 1 / 2 / 3 / 4+ beds. A unit of typical size scores 0.5, one 1.5× as big scores 1. A stated size under 150 ft² is a data error and counts as unknown.
 - **Location** is the mean of the known parts: each resolved anchor's `exp(-d_km / 2.5)`, and 1 inside a named area. Until neighbourhoods and adjacency arrive (D-05), a listing outside the named areas is unknown, not 0.
+- **TTC minutes to a named place (D-10c).** When an anchor resolves, a background task (`orchestrator/commute.py`) asks Google's Routes API for TRANSIT minutes from the top 50 listings on the board it produced to the place, in one request, departing the next weekday at 08:30 Toronto time. The minutes go in the feature matrix's cache per (place, listing), and a `CommuteResolved` event re-ranks the board with them (the Narrator says "Now by TTC time to King and Bay."). For a listing with minutes, that anchor's part is `min(1, exp(-(minutes − 10) / 15))`: up to 10 minutes scores 1 (getting to a stop takes that long anywhere), 25 minutes scores 0.37 like 2.5 km, and 40 minutes 0.14. Every other listing keeps the km curve. The card says "24 min by TTC to King and Bay" (a reason at 17 minutes or less, a watch-out at 24 or more). "Too far" scales the 15 the way it scales the 2.5 km. Without `GOOGLE_MAPS_API_KEY` nothing changes, and the ranking never waits on the network: it reads only the cache.
 - **Amenities are evidence of presence only.** "Insuite Laundry" sets laundry to in-suite, "Parking" sets parking to extra (included isn't known), "Air Conditioning", "Elevator", "Balcony" / "Patio / Deck / Terrace" and "Wheelchair Accessible" set theirs. A missing amenity proves nothing.
 - **Floor** has two modes. "High floor" uses `clamp(floor / 15)`. "Ground floor", "step free" or "no stairs" gives 1 on floor 1 or below, or with an elevator or step-free access, and 0 above that.
 - **Laundry:** in-suite 1, shared 0.5, none 0. **Move-in fit** counts days either way: a place free six weeks early fits as badly as one free six weeks late.

@@ -20,7 +20,14 @@ from landline.contracts.tools import tool_spec
 from landline.db.catalogue import Catalogue
 from landline.voice import twilio
 from landline.voice.audio_codec import Transcoder
-from landline.voice.gemini_live import GeminiLiveSession, LiveEvent, live_config
+from landline.voice.gemini_live import (
+    TEXT_MODEL,
+    GeminiLiveSession,
+    LiveEvent,
+    _FlashTextLink,
+    _text_setup,
+    live_config,
+)
 from landline.voice.higgs import PCM_24K, PCMU, session_config
 
 PUBLIC = "https://landline.test"
@@ -323,6 +330,99 @@ async def test_text_mode_emits_output_text():
         assert done[0]["response"]["output"] == [{"type": "message"}]
     finally:
         await session.close()
+
+
+def test_text_setup_keeps_the_tools_and_skips_temperature():
+    cfg = _text_setup(session_config(
+        instructions="Be brief.", tools=[tool_spec("note", _Note, "Write down a short note.")],
+        modality="text"))
+    assert cfg["system_instruction"] == "Be brief."
+    assert "temperature" not in cfg
+    assert cfg["thinking_config"] == {"thinking_level": "MEDIUM"}
+    decl = cfg["tools"][0]["function_declarations"][0]
+    assert decl["name"] == "note"
+    assert "parameters_json_schema" in decl
+
+
+async def test_a_text_session_speaks_the_flash_lite_reply():
+    from types import SimpleNamespace
+
+    seen: dict = {}
+
+    class _Models:
+        async def generate_content(self, *, model, contents, config):
+            seen["model"], seen["contents"], seen["config"] = model, contents, config
+            content = SimpleNamespace(
+                role="model", parts=[SimpleNamespace(text="pong", thought=False, function_call=None)])
+            return SimpleNamespace(candidates=[SimpleNamespace(content=content)])
+
+    client = SimpleNamespace(aio=SimpleNamespace(models=_Models()))
+    link = _FlashTextLink(client, TEXT_MODEL, _text_setup(session_config(
+        instructions="One word.", tools=[], modality="text")))
+    session = _session(link, modality="text")
+    await session.start()
+    try:
+        await session.send(_note("Reply with the single word pong."))
+        await session.send({"type": "response.create"})
+        events = await asyncio.wait_for(_collect(session, 4), 1)
+    finally:
+        await session.close()
+    assert seen["model"] == "gemini-3.5-flash-lite"
+    assert seen["config"]["system_instruction"] == "One word."
+    assert [e["type"] for e in events] == [
+        "response.created", "response.output_text.delta", "response.output_text.done", "response.done",
+    ]
+    assert events[2]["text"] == "pong"
+
+
+async def test_a_text_tool_call_is_sent_back_with_its_id():
+    from types import SimpleNamespace
+
+    from google.genai import types
+
+    calls: list = []
+
+    class _Models:
+        async def generate_content(self, *, model, contents, config):
+            del model, config
+            calls.append(list(contents))
+            if len(calls) == 1:
+                call = types.FunctionCall(name="note", args={"text": "harbour"})
+                content = types.Content(role="model", parts=[types.Part(function_call=call)])
+            else:
+                content = types.Content(role="model", parts=[types.Part(text="Saved harbour.")])
+            return SimpleNamespace(candidates=[SimpleNamespace(content=content)])
+
+    client = SimpleNamespace(aio=SimpleNamespace(models=_Models()))
+    link = _FlashTextLink(client, TEXT_MODEL, _text_setup(session_config(
+        instructions="Remember words.", tools=[tool_spec("note", _Note, "Write down a short note.")],
+        modality="text")))
+    session = _session(link, modality="text")
+    await session.start()
+    stream = session.events()
+    try:
+        await session.send(_note("Remember the word harbour."))
+        await session.send({"type": "response.create"})
+        call = await asyncio.wait_for(_until(stream, "response.function_call_arguments.done"), 1)
+        await session.send(_tool_out(call["call_id"], "Saved."))
+        await session.send({"type": "response.create"})
+        said = await asyncio.wait_for(_until(stream, "response.output_text.done"), 1)
+    finally:
+        await session.close()
+    assert call["name"] == "note"
+    assert call["arguments"] == '{"text": "harbour"}'
+    reply = calls[1][-1].parts[0].function_response
+    assert reply.id == call["call_id"]
+    assert reply.name == "note"
+    assert reply.response == {"result": "Saved."}
+    assert said["text"] == "Saved harbour."
+
+
+async def _until(stream, kind: str) -> dict:
+    while True:
+        event = await anext(stream)
+        if event.get("type") == kind:
+            return event
 
 
 async def test_browser_audio_is_forwarded_at_24k():

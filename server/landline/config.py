@@ -59,6 +59,9 @@ class Settings:
     # Who to reach about Landline's requests to other sites (the scraper's SCRAPER_CONTACT_EMAIL). The place
     # lookup (D-04) puts it in its User-Agent; without it, only neighbourhoods and stations resolve places.
     contact_email: str | None = None
+    # Google Maps Platform (D-10c): TTC minutes from the top listings to the place a renter names. Unset, the
+    # location score stays on km.
+    google_maps_api_key: str | None = None
     # The admin panel (/admin) and its API need this token as a bearer header. Unset, they answer 404.
     admin_token: str | None = None
     # Still face for the clip made after a call (voice/avatar_clip.py). Landline's voice lip-syncs it.
@@ -73,9 +76,11 @@ class Settings:
     google_oauth_client_id: str | None = None
     google_oauth_client_secret: str | None = None
     google_oauth_refresh_token: str | None = None
-    # Area questions from Google's Maps MCP server, Maps Grounding Lite (O-07a, orchestrator/maps_mcp.py). The
-    # pipeline's maps stage (D-10) reads the same key from the environment. Without it there's no client.
-    google_maps_api_key: str | None = None
+    # Shared listing memory on SurrealDB Agent Memory (O-09a, orchestrator/memory.py): a context's host, its
+    # id and an sp-… API key, from SurrealDB Studio. Without all three, nothing is written or read.
+    spectron_url: str | None = None
+    spectron_context_id: str | None = None
+    spectron_api_key: str | None = None
 
     @classmethod
     def load(cls) -> Settings:
@@ -106,6 +111,7 @@ class Settings:
             call_concurrency=int(os.getenv("CALL_CONCURRENCY") or 0) or None,
             admin_token=os.getenv("ADMIN_TOKEN") or None,
             contact_email=os.getenv("SCRAPER_CONTACT_EMAIL") or None,
+            google_maps_api_key=(os.getenv("GOOGLE_MAPS_API_KEY") or "").strip() or None,
             higgs_avatar_image_url=os.getenv("HIGGS_AVATAR_IMAGE_URL")
             or "https://docs.boson.ai/public/avatar/sample.jpg",
             clerk_secret_key=os.getenv("CLERK_SECRET_KEY") or None,
@@ -113,7 +119,9 @@ class Settings:
             google_oauth_client_id=os.getenv("GOOGLE_OAUTH_CLIENT_ID") or None,
             google_oauth_client_secret=os.getenv("GOOGLE_OAUTH_CLIENT_SECRET") or None,
             google_oauth_refresh_token=os.getenv("GOOGLE_OAUTH_REFRESH_TOKEN") or None,
-            google_maps_api_key=(os.getenv("GOOGLE_MAPS_API_KEY") or "").strip() or None,
+            spectron_url=(os.getenv("SPECTRON_URL") or "").strip().rstrip("/") or None,
+            spectron_context_id=(os.getenv("SPECTRON_CONTEXT_ID") or "").strip() or None,
+            spectron_api_key=(os.getenv("SPECTRON_API_KEY") or "").strip() or None,
         )
 
     def voice_api_key(self) -> str | None:

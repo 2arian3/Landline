@@ -25,6 +25,7 @@ from typing import Any
 
 from landline.contracts import Card, Event, Listing, ListingFocused, SessionView
 from landline.orchestrator import SessionRuntime
+from landline.orchestrator.profiles import is_saved_search
 from landline.scoring.reasons import to_station
 
 log = logging.getLogger(__name__)
@@ -135,6 +136,8 @@ class Lines:
         self.live: dict[str, Line] = {}
         runtime.on("ListingFocused", self.on_focus)
         runtime.on("AnchorResolved", self.on_board)
+        runtime.on("CommuteResolved", self.on_board)   # TTC minutes re-ranked the board (D-10c)
+        runtime.on("PreferencesUpdated", self.on_saved_search)
 
     def open(self, session_id: str, send: Send) -> Line:
         line = self.live[session_id] = Line(send, self.clock)
@@ -167,6 +170,14 @@ class Lines:
         if line is None or not view.agent_says:
             return
         await line.push(Item("board", f"{BOARD} {view.agent_says}", self.clock()))
+
+    async def on_saved_search(self, event: Event, view: SessionView) -> None:
+        """The renter's saved search (U-12d), when it went on after the greeting: the Concierge hears its line
+        between turns. One that was on before the greeting is in the connected note (with_saved_search in
+        voice/bridge.py), and the bridge marks it told, so it isn't said twice. Any other PreferencesUpdated
+        came from a tool, whose reply already said it."""
+        if is_saved_search(event):
+            await self.on_board(event, view)
 
 
 def describe(card: Card, listing: Listing | None = None) -> str:

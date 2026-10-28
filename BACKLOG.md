@@ -51,14 +51,14 @@ Landline is one of ten finalists at Build North's Demo Day: Thursday 29 October,
 | Done (#259) | X-04 | Add every demo-day column and field in one PR (nothing uses them yet) | P0, first | – | the migration applies, `make test` passes, Danial and Mahyar approve | [#236](https://github.com/2arian3/Landline/issues/236) |
 | Built (#263), live run pending the key | D-10a | Walking minutes to the nearest TTC station, from Google Maps | P0 | X-04 | every active listing has them, with their source | [#237](https://github.com/2arian3/Landline/issues/237) |
 | Built (#261), live run pending the key | D-10b | The nearest grocery store and pharmacy, with walking minutes | P0 | X-04 | every active listing has both, or nothing when none is close | [#237](https://github.com/2arian3/Landline/issues/237) |
-| To do | D-10c | TTC minutes to the place the renter names, used in the ranking | P0 | D-10a | "I work at King and Bay" re-sorts the board with "min by TTC" reasons | [#237](https://github.com/2arian3/Landline/issues/237) |
+| Built (#271), live check pending the key | D-10c | TTC minutes to the place the renter names, used in the ranking | P0 | D-10a | "I work at King and Bay" re-sorts the board with "min by TTC" reasons | [#237](https://github.com/2arian3/Landline/issues/237) |
 | Built (#262), live run pending the Google keys | O-08a | A Google Calendar client and a one-time sign-in script | P0 | – | a test event invites a teammate | [#238](https://github.com/2arian3/Landline/issues/238) |
 | To do | O-08b | Text the listing agent a confirm link after a booking | P0 | X-04, A-13a | one SMS per booking, to the number we called | [#238](https://github.com/2arian3/Landline/issues/238) |
 | To do | O-08c | When the agent confirms, send both invites and text the renter | P0 | O-08a, O-08b | a confirm makes one event that invites both people | [#238](https://github.com/2arian3/Landline/issues/238) |
-| To do | U-12d | Start the next call from the saved search, when the renter turns that on | P0 | X-04 | the first board of the next call uses the saved search | [#246](https://github.com/2arian3/Landline/issues/246) |
+| Built (#269): the first board uses the saved search in tests; renters turn it on with U-12a/b, then a VM call | U-12d | Start the next call from the saved search, when the renter turns that on | P0 | X-04 | the first board of the next call uses the saved search | [#246](https://github.com/2arian3/Landline/issues/246) |
 | Built (#275), live run pending the key | O-07a | A client for Google's Maps MCP server | P1 | – | a live run finds a real place near a listing | [#239](https://github.com/2arian3/Landline/issues/239) |
 | To do | O-07b | `ask_maps`: answer questions about the area, and fly the map to the place | P1 | O-07a | "Is there a grocery store near the first one?" gets a real name and minutes | [#239](https://github.com/2arian3/Landline/issues/239) |
-| To do | O-09a | Save each call's facts to SurrealDB Agent Memory | P1 | – | a sim call's facts come back from a memory query | [#240](https://github.com/2arian3/Landline/issues/240) |
+| Built (#270), live run pending the SurrealDB Agent Memory keys | O-09a | Save each call's facts to SurrealDB Agent Memory | P1 | – | a sim call's facts come back from a memory query | [#240](https://github.com/2arian3/Landline/issues/240) |
 | To do | O-09b | The Caller confirms what an earlier call heard instead of asking cold | P1 | O-09a | a second renter's call opens with "Last week they said…" | [#240](https://github.com/2arian3/Landline/issues/240) |
 | To do | O-09c | Remember a renter who agreed to it, and backfill last week's facts | P2 | O-09a | the backfill runs once | [#240](https://github.com/2arian3/Landline/issues/240) |
 
@@ -76,12 +76,12 @@ Landline is one of ten finalists at Build North's Demo Day: Thursday 29 October,
 | Built (#255) | A-12a | Audio converters between our formats and Gemini's | P1 | – | the round-trip tests pass | [#243](https://github.com/2arian3/Landline/issues/243) |
 | In progress | A-12b | The Gemini Live adapter, in text first | P1 | – | a scripted mock call passes on Gemini | [#243](https://github.com/2arian3/Landline/issues/243) |
 | In progress | A-12c | Voice on Gemini: /try and phone calls | P1 | A-12a, A-12b | English and French briefs, a renter call and a listing call all work | [#243](https://github.com/2arian3/Landline/issues/243) |
-| Blocked on a key | A-12d | Gemini and Higgs side by side, then pick the demo voice | P1 | A-12c | the numbers are in the team chat by Wed 20:00 | [#243](https://github.com/2arian3/Landline/issues/243) |
+| In progress | A-12d | Gemini and Higgs side by side, then pick the demo voice | P1 | A-12c | the numbers are in the team chat by Wed 20:00 | [#243](https://github.com/2arian3/Landline/issues/243) |
 | To do | A-15 | The text model on Gemini (the Auditor and translations) | P1 | – | extraction numbers for both providers are in the PR | [#243](https://github.com/2arian3/Landline/issues/243) |
 | To do | E-06a | Make a simulated property manager in Era and save its data | P2 | – | the fixture is committed | [#244](https://github.com/2arian3/Landline/issues/244) |
 | To do | E-06b | An Era landlord persona, five cases and a report table | P2 | E-06a | `--set era` runs and the report has the table | [#244](https://github.com/2arian3/Landline/issues/244) |
 
-*Status, Tue 27 Oct 23:50: A-12a through A-12d were merged in #255 (Tue 23:49). A-12a's phone μ-law and browser 24 kHz round-trip tests pass. A-12b's adapter and text mode pass on a fake socket; a scripted call on live Gemini has not run, because this checkout has no `GEMINI_API_KEY`. A-12c's phone and browser bridges pass on that fake socket; English and French briefs, a real renter call and a listing call have not. A-12d's spike script is in and has not been run, so there are no side-by-side numbers. `VOICE_PROVIDER` still defaults to higgs. Avatar clips stay on Boson. A-15 was not part of this change.*
+*Status, Wed 28 Oct 00:30: A-12a through A-12d were merged in #255. A-12a's round-trip tests pass. Live audio on `gemini-3.8-live` (Aoede): connect 0.422 s, first audio 0.531 s, tool round trip 1.094 s, barge-in, 5 of 5 sessions. Live rejects TEXT, so text sessions (the sim and the evals) call `gemini-3.5-flash-lite`; a one-word probe returned "pong". A scripted mock call, and English and French briefs on a real renter call and a listing call, have not run. The side-by-side numbers are not in the team chat. `VOICE_PROVIDER` still defaults to higgs. Avatar clips stay on Boson. A-15 was not part of this change.*
 
 ### Mahyar
 
@@ -111,7 +111,7 @@ Landline is one of ten finalists at Build North's Demo Day: Thursday 29 October,
 | To do | X-03c | Pause the listing refresh during the event, and keep the logs open | Arian | Thu 12:00 | [#248](https://github.com/2arian3/Landline/issues/248) |
 | To do | X-03d | Demo accounts: the renter's phone off the allowlist with an email on its profile, old test sessions cleared, and one rehearsal call so memory has a fact to confirm | Arian | Thu morning | [#248](https://github.com/2arian3/Landline/issues/248) |
 | To do | X-03e | Who holds which phone on stage, and what each person says | Danial | Wed | [#248](https://github.com/2arian3/Landline/issues/248) |
-| To do | X-03f | Numbers for the pitch: calls placed, facts heard with quotes, viewings booked, cost per search, eval results | Arian, Danial | Wed | [#248](https://github.com/2arian3/Landline/issues/248) |
+| Built (#272), Danial to add his | X-03f | Numbers for the pitch: calls placed, facts heard with quotes, viewings booked, cost per search, eval results | Arian, Danial | Wed | [#248](https://github.com/2arian3/Landline/issues/248) |
 | To do | X-03g | The venue: Wi-Fi and a hotspot tested, the phones mirrored on screen, the backup video ready offline | Mahyar | Thu | [#248](https://github.com/2arian3/Landline/issues/248) |
 | To do | X-03h | A 3-minute pitch around the demo | All (Arian leads) | Wed | [#248](https://github.com/2arian3/Landline/issues/248) |
 | To do | X-03i | Short answers to the judges' likely questions | All | Thu | [#248](https://github.com/2arian3/Landline/issues/248) |

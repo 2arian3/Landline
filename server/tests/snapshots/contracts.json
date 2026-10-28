@@ -545,6 +545,52 @@
         "title": "CallsScheduled",
         "type": "object"
       },
+      "CommuteResolved": {
+        "description": "TTC minutes from the top listings to an anchor are in the feature matrix's cache (D-10c): re-rank.\nEmitted in the background after AnchorResolved; it changes no session state, only the board built from it.\nThe anchor is named as AnchorResolved named it.",
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "idem_key": {
+            "title": "Idem Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "lat": {
+            "title": "Lat",
+            "type": "number"
+          },
+          "lng": {
+            "title": "Lng",
+            "type": "number"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "CommuteResolved",
+            "default": "CommuteResolved",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "at",
+          "idem_key",
+          "label",
+          "lat",
+          "lng"
+        ],
+        "title": "CommuteResolved",
+        "type": "object"
+      },
       "Conflict": {
         "description": "A call said something different from the listing or the City record.",
         "properties": {
@@ -1341,6 +1387,7 @@
         "CallsCompleted": "#/$defs/CallsCompleted",
         "CallsRequested": "#/$defs/CallsRequested",
         "CallsScheduled": "#/$defs/CallsScheduled",
+        "CommuteResolved": "#/$defs/CommuteResolved",
         "FactRecorded": "#/$defs/FactRecorded",
         "FeedbackGiven": "#/$defs/FeedbackGiven",
         "ListingFocused": "#/$defs/ListingFocused",
@@ -1371,6 +1418,9 @@
       },
       {
         "$ref": "#/$defs/AnchorResolved"
+      },
+      {
+        "$ref": "#/$defs/CommuteResolved"
       },
       {
         "$ref": "#/$defs/CallsRequested"

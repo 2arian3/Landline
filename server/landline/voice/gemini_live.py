@@ -4,7 +4,9 @@ The Concierge, Caller, sim and line send `session.update`, `input_audio_buffer.a
 `conversation.item.create` and `response.create`, and read `response.output_audio.delta`,
 `response.function_call_arguments.done` and the rest. This session translates that to the Gemini
 Live WebSocket (`google-genai`) and back. Audio formats stay the transport's: μ-law 8 kHz on the
-phone, PCM16 24 kHz in the browser. See .claude/skills/gemini-live/SKILL.md.
+phone, PCM16 24 kHz in the browser. A text session (the sim and the evals) does not open Live:
+Live rejects a text modality. It calls `gemini-3.5-flash-lite` through `generateContent` and emits
+the same text events. See .claude/skills/gemini-live/SKILL.md.
 
 `connect(api_key, session)` matches `higgs.connect`, so `app.state.connect_higgs` can point here
 without the bridge changing. Setup cannot be updated on an open socket; the session dict is applied
@@ -26,6 +28,9 @@ from landline.voice.audio_codec import Transcoder
 log = logging.getLogger(__name__)
 
 DEFAULT_MODEL = "gemini-3.8-live"
+# Live's model refuses TEXT. There is no gemini-3.6-flash-lite; the Flash-Lite from that release
+# is gemini-3.5-flash-lite, and that is what a text session uses.
+TEXT_MODEL = "gemini-3.5-flash-lite"
 DEFAULT_VOICE = "Aoede"
 CONNECT_TIMEOUT_S = 20
 
@@ -457,6 +462,126 @@ def events_of(msg: Any) -> list[LiveEvent]:
     return out
 
 
+def _text_setup(session: dict[str, Any]) -> dict[str, Any]:
+    """generateContent config for a text session. Gemini 3 rejects temperature, and Flash-Lite's
+    default thinking drops a tool call before it is made, so the Caller asks for a medium level."""
+    body = session.get("session") or session
+    config: dict[str, Any] = {
+        "system_instruction": body.get("instructions") or "",
+        "automatic_function_calling": {"disable": True},
+        "thinking_config": {"thinking_level": "MEDIUM"},
+    }
+    decls = [_declaration(tool) for tool in body.get("tools") or [] if tool.get("type") == "function"]
+    if decls:
+        config["tools"] = [{"function_declarations": decls}]
+    return config
+
+
+class _FlashTextLink:
+    """`generateContent` on the text model, shaped like the Live link the session already reads.
+
+    The model's own content is kept, including thought signatures, and each function response carries
+    the call id Gemini sent. An empty reply still opens a turn, or the sim waits forever for one."""
+
+    def __init__(self, client: Any, model: str, setup: dict[str, Any]) -> None:
+        self._client, self._model, self._setup = client, model, setup
+        self._history: list[Any] = []
+        self._queue: asyncio.Queue[LiveEvent | None] = asyncio.Queue()
+        self._closed = False
+        self._ids = 0
+
+    async def send_audio(self, pcm: bytes, rate: int) -> None:
+        del pcm, rate
+
+    async def send_text(self, text: str, turn_complete: bool = True) -> None:
+        del turn_complete
+        from google.genai import types
+        self._history.append(types.Content(role="user", parts=[types.Part(text=text)]))
+        await self._reply()
+
+    async def send_tools(self, responses: list[tuple[str, str, str]]) -> None:
+        from google.genai import types
+        parts = [types.Part(function_response=types.FunctionResponse(
+            id=cid, name=name, response={"result": output})) for cid, name, output in responses]
+        self._history.append(types.Content(role="user", parts=parts))
+        await self._reply()
+
+    async def _reply(self) -> None:
+        if self._closed:
+            return
+        try:
+            response = await self._client.aio.models.generate_content(
+                model=self._model, contents=self._history, config=self._setup)
+        except Exception as exc:
+            await self._queue.put(LiveEvent(error=str(exc)))
+            await self._queue.put(LiveEvent(text=" "))
+            await self._queue.put(LiveEvent(turn_complete=True))
+            return
+        content = _model_content(response)
+        if content is None:
+            await self._queue.put(LiveEvent(error="Gemini returned no text"))
+            await self._queue.put(LiveEvent(text=" "))
+            await self._queue.put(LiveEvent(turn_complete=True))
+            return
+        self._history.append(content)
+        for ev in _events_of_content(content, self._next_id):
+            await self._queue.put(ev)
+
+    def _next_id(self) -> str:
+        self._ids += 1
+        return f"t{self._ids}"
+
+    async def incoming(self) -> AsyncIterator[LiveEvent]:
+        while not self._closed:
+            ev = await self._queue.get()
+            if ev is None or self._closed:
+                return
+            yield ev
+
+    async def close(self) -> None:
+        self._closed = True
+        self._queue.put_nowait(None)
+
+
+def _model_content(response: Any) -> Any:
+    candidates = getattr(response, "candidates", None) or []
+    if not candidates:
+        return None
+    return getattr(candidates[0], "content", None)
+
+
+def _events_of_content(content: Any, new_id: Any) -> list[LiveEvent]:
+    texts: list[str] = []
+    tools: list[tuple[str, str, Any]] = []
+    for part in getattr(content, "parts", None) or []:
+        if getattr(part, "thought", False):
+            continue
+        call = getattr(part, "function_call", None)
+        if call is not None:
+            cid = str(getattr(call, "id", "") or "") or new_id()
+            if not getattr(call, "id", None):
+                call.id = cid
+            tools.append((cid, str(getattr(call, "name", "") or ""), getattr(call, "args", None)))
+            continue
+        text = getattr(part, "text", None)
+        if text:
+            texts.append(str(text))
+    events: list[LiveEvent] = []
+    if texts:
+        events.append(LiveEvent(text="".join(texts)))
+    if tools:
+        events.append(LiveEvent(tool_calls=tools))
+    if not events:
+        events.append(LiveEvent(text=" "))
+    events.append(LiveEvent(turn_complete=True))
+    return events
+
+
+def _open_text(api_key: str, session: dict[str, Any]) -> _FlashTextLink:
+    from google import genai
+    return _FlashTextLink(genai.Client(api_key=api_key), TEXT_MODEL, _text_setup(session))
+
+
 class _GenaiLink:
     """The `google-genai` Live socket. Imported here so tests of the dialect don't need a key."""
 
@@ -519,11 +644,18 @@ def _modality_of(session: dict[str, Any]) -> str:
 
 async def connect(api_key: str, session: dict[str, Any], *, model: str = DEFAULT_MODEL,
                   voice: str = DEFAULT_VOICE) -> GeminiLiveSession:
-    """Opens a Live session from a Higgs `session.update` and returns it ready to `send`."""
+    """Opens a session from a Higgs `session.update` and returns it ready to `send`.
+
+    Audio uses Live. Text uses `TEXT_MODEL` through `generateContent`, because Live closes the
+    socket when asked for a text modality."""
     if not api_key:
         raise GeminiError("GEMINI_API_KEY is not set")
-    link = await _open(api_key, model, live_config(session, voice))
-    live = GeminiLiveSession(link, _format_of(session), _modality_of(session))
+    modality = _modality_of(session)
+    if modality == "text":
+        link: Any = _open_text(api_key, session)
+    else:
+        link = await _open(api_key, model, live_config(session, voice))
+    live = GeminiLiveSession(link, _format_of(session), modality)
     await live.start()
     return live
 
