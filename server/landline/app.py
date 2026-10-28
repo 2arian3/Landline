@@ -19,10 +19,11 @@ from landline.config import Settings
 from landline.db.catalogue import Catalogue
 from landline.db.pool import Database
 from landline.orchestrator import SessionRuntime
-from landline.voice import higgs, outbound
+from landline.voice import outbound
 from landline.voice.avatar_clip import Clips, gender_of_voice
 from landline.voice.calls import RenterCalls
 from landline.voice.dispatch import Dispatcher
+from landline.voice.gemini_live import session_connect
 from landline.voice.line import Lines
 from landline.voice.routing import ByChannel
 from landline.voice.sim import SimRunner
@@ -84,10 +85,10 @@ def create_app(settings: Settings | None = None, catalogue: Catalogue | None = N
         app.state.judge_limit = StartLimit(settings.judge_starts_per_ip, settings.judge_start_window_s)
         # For /health. The renter's call bridge sets "ok" or "error: …" each time it opens a Higgs session;
         # until then, a key means ready, not broken.
-        app.state.higgs = "ready (no call since restart)" if settings.boson_api_key else "not configured"
+        app.state.higgs = "ready (no call since restart)" if settings.voice_api_key() else "not configured"
         # The renter's phone calls (A-02, A-04). Tests swap connect_higgs for a fake.
         app.state.calls = RenterCalls(settings.higgs_max_sessions)
-        app.state.connect_higgs = higgs.connect
+        app.state.connect_higgs = session_connect(settings)
         # Texts the phone renter their board link. Tests swap it for a fake.
         app.state.texter = Texter(settings.twilio_account_sid, settings.twilio_auth_token)
         # The hand-off (A-06): a brief that ends with a plan has its calls queued and run. A judge's calls
@@ -102,7 +103,7 @@ def create_app(settings: Settings | None = None, catalogue: Catalogue | None = N
         # Hard rule 6: a judge's (or any browser brief's) calls always go to the sim landlords; only a phone
         # renter's go over Twilio, and only with TRANSPORT=voice (voice/routing.py).
         sim = SimRunner(app.state.runtime, lambda key, cfg: app.state.connect_higgs(key, cfg),
-                        settings.boson_api_key or "", extractor=extractor, clips=app.state.clips,
+                        settings.voice_api_key() or "", extractor=extractor, clips=app.state.clips,
                         agent_gender=gender_of_voice(settings.higgs_voice_renter))
         runner = ByChannel(app.state.runtime, phone=app.state.outbound.runner, sim=sim,
                            sim_for_phone=settings.transport == "sim")
