@@ -9,6 +9,10 @@ export type CallState = "queued" | "blocked" | "dialing" | "ringing" | "live" | 
 
 export type Fact = { field: string; value: string; quote: string; speaker: string; at?: string | null };
 
+// A viewing booked on a listing call, as its card shows it. "booked" waits for the listing agent to confirm.
+export type CardViewingStatus = "booked" | "confirmed" | "declined";
+export type CardViewing = { starts_at: string; slot_text: string; status: CardViewingStatus };
+
 export type Card = {
   listing_id: string;
   address: string;
@@ -34,6 +38,7 @@ export type Card = {
   reaction?: string | null;
   facts: Fact[];
   red_flags: string[];
+  viewing?: CardViewing | null;
 };
 
 export type Anchor = { label: string; lat?: number | null; lng?: number | null };
@@ -135,6 +140,10 @@ export type ListingDetail = {
   laundry: string;
   utilities_included: string[];
   amenities: string[];
+  grocery_name?: string | null;        // the nearest grocery store and pharmacy, with walking minutes (D-10b)
+  grocery_walk_min?: number | null;
+  pharmacy_name?: string | null;
+  pharmacy_walk_min?: number | null;
   photos: string[];
   last_seen: string;
   provenance: Record<string, Provenance>;

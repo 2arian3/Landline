@@ -79,6 +79,10 @@ class Listing(BaseModel):
     light_score: float | None = None
     transit_station: str | None = None
     transit_walk_min: float | None = None
+    grocery_name: str | None = None        # the nearest grocery store and pharmacy, walking minutes (D-10b)
+    grocery_walk_min: float | None = None
+    pharmacy_name: str | None = None
+    pharmacy_walk_min: float | None = None
     red_flags: list[str] = Field(default_factory=list)
 
     title: str | None = None

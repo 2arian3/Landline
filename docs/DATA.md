@@ -99,6 +99,13 @@ create table call_audio (call_id text references calls on delete cascade, track 
 -- 0003: one Higgs Avatar MP4 of Landline's voice per call, rendered after the call
 create table call_avatar (call_id text primary key references calls on delete cascade, status text not null,
   boson_video_id text, error text, video bytea, updated_at timestamptz not null default now());
+-- 0004 (X-04, demo day): users.email (U-12, O-08), users.use_saved_search (U-12d), users.push_token (U-13c),
+-- calls.to_e164, the number a listing call dialled (A-13, O-08b), listings.grocery_name, grocery_walk_min,
+-- pharmacy_name, pharmacy_walk_min (D-10b), and a viewing waiting for the listing agent's confirm (O-08)
+create table viewing_confirmations (token text primary key, call_id text not null unique references calls,
+  session_id text not null references sessions, listing_id text not null references listings,
+  starts_at timestamptz not null, status text not null default 'pending',   -- pending | confirmed | declined
+  agent_email text, calendar_event_id text, created_at timestamptz not null default now(), decided_at timestamptz);
 create table facts (fact_id bigserial primary key, call_id text references calls, listing_id text references listings,
   field text not null, value jsonb not null, quote text not null, turn_idx int, confirmed boolean not null default false,
   source text not null, created_at timestamptz not null default now());

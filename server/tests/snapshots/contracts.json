@@ -2018,6 +2018,36 @@
     },
     "Card": {
       "$defs": {
+        "CardViewing": {
+          "description": "A viewing booked on a listing call, as its card shows it (O-08b, O-08e). \"booked\" means waiting for\nthe listing agent to confirm it.",
+          "properties": {
+            "slot_text": {
+              "title": "Slot Text",
+              "type": "string"
+            },
+            "starts_at": {
+              "format": "date-time",
+              "title": "Starts At",
+              "type": "string"
+            },
+            "status": {
+              "default": "booked",
+              "enum": [
+                "booked",
+                "confirmed",
+                "declined"
+              ],
+              "title": "Status",
+              "type": "string"
+            }
+          },
+          "required": [
+            "starts_at",
+            "slot_text"
+          ],
+          "title": "CardViewing",
+          "type": "object"
+        },
         "Fact": {
           "properties": {
             "at": {
@@ -2259,6 +2289,17 @@
         "url": {
           "title": "Url",
           "type": "string"
+        },
+        "viewing": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CardViewing"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "watch_out": {
           "anyOf": [
@@ -2643,6 +2684,30 @@
           "title": "Geocode Precision",
           "type": "string"
         },
+        "grocery_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Grocery Name"
+        },
+        "grocery_walk_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Grocery Walk Min"
+        },
         "last_seen": {
           "format": "date-time",
           "title": "Last Seen",
@@ -2751,6 +2816,30 @@
           ],
           "title": "Pets",
           "type": "string"
+        },
+        "pharmacy_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pharmacy Name"
+        },
+        "pharmacy_walk_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pharmacy Walk Min"
         },
         "photos": {
           "items": {
@@ -3512,6 +3601,17 @@
               "title": "Url",
               "type": "string"
             },
+            "viewing": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/CardViewing"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
             "watch_out": {
               "anyOf": [
                 {
@@ -3536,6 +3636,36 @@
             "rank"
           ],
           "title": "Card",
+          "type": "object"
+        },
+        "CardViewing": {
+          "description": "A viewing booked on a listing call, as its card shows it (O-08b, O-08e). \"booked\" means waiting for\nthe listing agent to confirm it.",
+          "properties": {
+            "slot_text": {
+              "title": "Slot Text",
+              "type": "string"
+            },
+            "starts_at": {
+              "format": "date-time",
+              "title": "Starts At",
+              "type": "string"
+            },
+            "status": {
+              "default": "booked",
+              "enum": [
+                "booked",
+                "confirmed",
+                "declined"
+              ],
+              "title": "Status",
+              "type": "string"
+            }
+          },
+          "required": [
+            "starts_at",
+            "slot_text"
+          ],
+          "title": "CardViewing",
           "type": "object"
         },
         "Conflict": {
