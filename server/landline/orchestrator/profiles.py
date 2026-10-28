@@ -17,7 +17,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from landline.contracts import Anchor, Preferences, as_e164
+from landline.contracts import Anchor, Event, PreferenceDelta, Preferences, as_e164
+from landline.contracts.tools import AnchorRef
 from landline.db.pool import Database
 from landline.db.rows import InteractionRow, ProfileRow, SessionRow
 from landline.orchestrator.state import Said, SessionState
@@ -26,6 +27,9 @@ log = logging.getLogger(__name__)
 
 TORONTO = ZoneInfo("America/Toronto")
 MAX_OPENING_WORDS = 120
+# The idem_key suffix of the PreferencesUpdated a call starts from when the renter turned on "Start my next
+# call from this search" (U-12d), so the Narrator and the Concierge's Line can tell it from what was said.
+SAVED_SEARCH = "saved-search"
 # From the session's start: the brief ends within its 15-minute deadline, and a plan's calls (at most 5,
 # each with a 5-minute deadline) within half an hour after that. Past this, `calling` means stuck.
 CALLS_STALE_AFTER = timedelta(minutes=45)
@@ -108,6 +112,35 @@ class Profiles:
     async def forget(self, user_id: int) -> bool:
         """forget_me: the user, their profile and interactions go; their sessions stay, unlinked."""
         return await self.db.users.forget(user_id)
+
+    async def saved_search(self, phone: str) -> Preferences | None:
+        """The search this number saved, when its renter turned on "Start my next call from this search"
+        (users.use_saved_search, U-12d); None with the switch off, or nothing saved. Only reads: a new number
+        still gets its user when its brief ends."""
+        user = await self.db.users.by_phone(as_e164(phone) or phone)
+        if user is None or not user.use_saved_search:
+            return None
+        profile = await self.db.profiles.get(user.user_id)
+        if profile is None:
+            return None
+        # The search, not the language: Higgs hears that on this call.
+        saved = preferences_of(profile).model_copy(update={"language": None})
+        return saved if delta_of(saved) is not None else None
+
+
+def delta_of(p: Preferences) -> PreferenceDelta | None:
+    """A saved search as one PreferencesUpdated delta: only the fields it has. None when it has none."""
+    delta = PreferenceDelta(
+        max_monthly=p.max_monthly, min_beds=p.min_beds, areas=p.areas or None,
+        anchors=[AnchorRef(label=a.label) for a in p.anchors] or None, pets=p.pets or None,
+        must_have=p.must_have or None, priorities=p.priorities or None, move_in=p.move_in,
+        occupants=p.occupants)
+    return delta if delta.model_dump(exclude_none=True) else None
+
+
+def is_saved_search(event: Event) -> bool:
+    """The PreferencesUpdated a call started from the renter's saved search, not from anything they said."""
+    return event.type == "PreferencesUpdated" and event.idem_key.endswith(f":{SAVED_SEARCH}")
 
 
 def calls_running(last: SessionRow | None, now: datetime) -> bool:

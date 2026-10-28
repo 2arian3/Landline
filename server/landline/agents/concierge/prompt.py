@@ -114,9 +114,13 @@ them once, early in the call.
 FIRST_CALL = """
 How this call opens: when the call connects, greet the caller in English in two short sentences. Say you \
 are Landline, an AI assistant that helps renters find a place in Toronto, and that this call is recorded; \
-then say they can talk to you in any language, and ask what they are looking for. The greeting needs no \
-tool; from the renter's first answer on, call your tools first in every turn, as above.
+then say they can talk to you in any language, and ask what they are looking for. If the connected note \
+also says their saved search is on the map, say its line after your greeting instead of asking what they \
+are looking for. The greeting needs no tool; from the renter's first answer on, call your tools first in \
+every turn, as above.
 """
+# U-12d: added to the connected note when the call starts from the renter's saved search.
+SAVED_NOTE = "[their saved search is on the map]"
 
 # Not sent (#144). A stored language from an earlier call is not appended, and it is not used as a
 # transcription hint. Code would write the language; the model never supplies it.

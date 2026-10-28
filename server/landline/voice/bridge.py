@@ -32,6 +32,7 @@ from landline.agents.concierge.prompt import (
     FIRST_CALL,
     INSTRUCTIONS,
     LINK_SENT,
+    SAVED_NOTE,
 )
 from landline.config import Settings
 from landline.contracts import SessionEnded, SessionStarted
@@ -40,7 +41,7 @@ from landline.voice import twilio
 from landline.voice.avatar_clip import Clips, gender_of_voice
 from landline.voice.calls import RenterCall, RenterCalls
 from landline.voice.higgs import PCMU, ConnectHiggs, session_config
-from landline.voice.line import Item, Line, Lines
+from landline.voice.line import BOARD, Item, Line, Lines
 from landline.voice.recorder import CallRecorder, Chunk, Placed, format_of
 from landline.voice.sms import Texter
 
@@ -161,6 +162,14 @@ def _reader() -> Any | None:
     return _READER[0]
 
 
+def with_saved_search(start: list[dict[str, Any]], saved: str) -> list[dict[str, Any]]:
+    """The call's start events, with the connected note also giving the saved search's line (U-12d), so the
+    greeting says it. Code wrote the line from the stored profile; the model only says it."""
+    text = f"{CALL_CONNECTED} {SAVED_NOTE} {saved}"
+    note = {"type": "message", "role": "user", "content": [{"type": "input_text", "text": text}]}
+    return [{"type": "conversation.item.create", "item": note}, *start[1:]]
+
+
 def hint(remembered: str | None, language: str | None) -> str | None:
     """No transcription hint from an earlier call. Higgs detects the language of this one (#144)."""
     del remembered, language
@@ -192,6 +201,11 @@ async def _talk(transport: Transport, call: RenterCall, runtime: SessionRuntime,
     pumps: set[asyncio.Task[str]] = set()
     keeper = asyncio.create_task(_keep_every(runtime, call.call_id, recorder, settings.record_audio))
     line = lines.open(call.session_id, higgs.send) if lines is not None else None
+    saved = runtime.state(call.session_id).saved_search   # U-12d: already on the map as the call opens
+    if saved:
+        start = with_saved_search(start, saved)
+        if line is not None:
+            line.board_told = f"{BOARD} {saved}"   # so the Line doesn't say it a second time
     try:
         for event in start:
             await higgs.send(event)

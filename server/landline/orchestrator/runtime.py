@@ -33,13 +33,20 @@ from datetime import UTC, datetime
 
 from psycopg import AsyncConnection
 
-from landline.contracts import AnchorResolved, Event, SessionStarted, SessionView
+from landline.contracts import (
+    AnchorResolved,
+    Event,
+    Preferences,
+    PreferencesUpdated,
+    SessionStarted,
+    SessionView,
+)
 from landline.db.catalogue import Catalogue
 from landline.db.pool import Database
 from landline.orchestrator import board, handlers, narrator
 from landline.orchestrator.calllog import CallLog
 from landline.orchestrator.places import Places
-from landline.orchestrator.profiles import Profiles
+from landline.orchestrator.profiles import SAVED_SEARCH, Profiles, delta_of, is_saved_search
 from landline.orchestrator.state import SessionState
 from landline.scoring import FeatureMatrix
 
@@ -47,6 +54,7 @@ log = logging.getLogger(__name__)
 
 Subscriber = Callable[[Event, SessionView], Awaitable[None]]
 PLACE_TIMEOUT_S = 20.0   # a place lookup off the hot path; past this the place stays unresolved
+SAVED_SEARCH_TIMEOUT_S = 2.0   # reading a saved search (U-12d); past this the call goes on fresh
 
 
 class UnknownSession(KeyError):
@@ -107,6 +115,7 @@ class SessionRuntime:
         if self.profiles is not None:
             self.on("SessionEnded", self._remember)
             self.on("CallsCompleted", self._remember)
+            self.on("SessionStarted", self._start_from_saved_search)
         # Places the renter names become points in the background, then AnchorResolved re-ranks (D-04).
         self.places = places or Places(self.matrix.named, contact=contact)
         self.on("PreferencesUpdated", self._resolve_places)
@@ -212,10 +221,41 @@ class SessionRuntime:
         if state.phase == "done" and state.results is None:
             state.results = narrator.results(state, view, self.catalogue)
         says = narrator.line(before, view, events, state, self.catalogue)
+        if says is not None and any(is_saved_search(e) for e in events):
+            state.saved_search = says   # what the Concierge's greeting or Line says about it (U-12d)
         if says is None and before is not None:
             says = before.agent_says
         return view.model_copy(update={"agent_says": says or view.agent_says, "results": state.results,
                                        "returning": state.returning, "user_name": state.user_name})
+
+    async def _start_from_saved_search(self, event: Event, view: SessionView) -> None:
+        """U-12d: a phone renter who turned on "Start my next call from this search" starts from it. After
+        the start's commit, so the greeting waits on nothing (#149): the stored search goes on as one
+        PreferencesUpdated, its places with their stored points (AnchorResolved, so none is looked up again),
+        and only while the renter hasn't changed anything yet. With the switch off, nothing happens."""
+        if self.profiles is None or not isinstance(event, SessionStarted) or event.channel != "phone" \
+                or not event.caller_phone:
+            return
+        try:
+            async with asyncio.timeout(SAVED_SEARCH_TIMEOUT_S):
+                saved = await self.profiles.saved_search(event.caller_phone)
+        except Exception:
+            log.exception("could not read the saved search for %s; the call starts fresh", event.session_id)
+            return
+        delta = delta_of(saved) if saved is not None else None
+        if saved is None or delta is None:
+            return
+        sid, at = event.session_id, datetime.now(UTC)
+        async with self.session_tx(sid) as tx:
+            if tx.state.preferences != Preferences():
+                return   # the renter already said something: their words win over the saved search
+            await tx.apply(PreferencesUpdated(session_id=sid, at=at, idem_key=f"{sid}:{SAVED_SEARCH}",
+                                              delta=delta))
+            for anchor in saved.anchors:
+                if anchor.lat is not None and anchor.lng is not None:
+                    key = " ".join(anchor.label.lower().split())   # the same key as _resolve_places
+                    await tx.apply(AnchorResolved(session_id=sid, at=at, idem_key=f"{sid}:place:{key}",
+                                                  label=anchor.label, lat=anchor.lat, lng=anchor.lng))
 
     async def _resolve_places(self, event: Event, view: SessionView) -> None:
         for anchor in view.preferences.anchors:
