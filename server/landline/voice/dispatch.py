@@ -207,7 +207,14 @@ class Dispatcher:
         return cid
 
     async def _answer(self, dial: Dial, runner: CallRunner, held: str | None) -> None:
+        """Runs the callback to its end. One that never got on the line (the stream never came) ends
+        without an outcome: the card keeps what the missed call said, and the agent's next try is still a
+        callback."""
+        live = False
+
         async def report(state: CallState) -> None:
+            nonlocal live
+            live = live or state == "live"
             await self._state(dial.session_id, dial.call_id, state)
 
         try:
@@ -221,7 +228,7 @@ class Dispatcher:
         finally:
             if held is not None:
                 self._phones.put_nowait(held)
-        await self._finish(dial.plan, dial.call_id, dial.listing_id, result)
+        await self._finish(dial.plan, dial.call_id, dial.listing_id, result, settle=live)
 
     def _hold_phone(self, number: str | None) -> str | None:
         """Takes an allowlisted phone out of the free ones while its owner is on a callback; returns it if it
@@ -287,13 +294,17 @@ class Dispatcher:
         if self.runtime.db is not None:
             await self.runtime.db.calls.set_state(call_id, state, to_e164=to, answered=state == "live")
 
-    async def _finish(self, plan: CallPlan, call_id: str, listing_id: str, result: CallResult) -> None:
-        """End the call once, then record its outcome, then complete the plan if this was the last one."""
+    async def _finish(self, plan: CallPlan, call_id: str, listing_id: str, result: CallResult, *,
+                      settle: bool = True) -> None:
+        """End the call once, then record its outcome, then complete the plan if this was the last one.
+        `settle=False`: end it only (a callback that never got on the line), leaving the outcome as it was."""
         sid, now, reason = plan.session_id, self.clock(), result.end_reason
         await self._emit(CallEnded(session_id=sid, at=now, idem_key=f"{call_id}:ended", call_id=call_id,
                                    reason=reason))
         if self.runtime.db is not None:
             await self.runtime.db.calls.finalize(call_id, reason)   # the first end wins
+        if not settle:
+            return
         outcome = result.outcome or CallOutcome(call_id=call_id, listing_id=listing_id, end_reason=reason)
         await self._emit(OutcomeReady(session_id=sid, at=now, idem_key=f"{call_id}:outcome", outcome=outcome))
         state = self.runtime.state(sid)

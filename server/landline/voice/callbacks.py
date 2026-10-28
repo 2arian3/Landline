@@ -2,8 +2,11 @@
 call back (A-13a), and the number it dialled is stored on the call (calls.to_e164).
 
 When a call comes in, code looks its From number up: a listing call to that number in the last WITHIN whose
-latest try reached no one (voicemail, no answer or busy) makes it a callback, and the Caller for that listing
-answers with the same plan (Dispatcher.callback). With more than one such listing, the agent is asked which,
+latest try reached no one (voicemail, no answer or busy, or never answered at all, like a callback whose
+line dropped) makes it a callback, and the Caller for that listing answers with the same plan
+(Dispatcher.callback).
+A renter calling about their own session's calls is the renter, whatever was dialled: in rehearsals one phone
+can be both. With more than one such listing, the agent is asked which,
 from a list code gives, and code matches the key they press or the address they say: the model never picks
 the listing or the session (hard rule 2). Anything else goes to the Concierge, as before, and so does every
 call while the lookup fails or takes longer than LOOKUP_S: the renter's call never waits on it.
@@ -27,6 +30,8 @@ WITHIN = timedelta(days=2)
 LOOKUP_S = 2.0
 START_S = 3.0     # joining the session and storing the call; slower, and the Concierge takes it
 MAX_CHOICES = 4   # listings read out when a number has several; the newest first
+KEYS = {"one": 1, "two": 2, "three": 3, "four": 4}   # a key said rather than pressed
+SAID_WITH_KEY = frozenset({"number", "press", "option", "the", "um", "uh"})
 TRIES = 2         # times the agent is asked which listing before the Concierge takes the call
 
 OPENING = "Hi, this is Landline. I'm an AI assistant calling for a renter. Thanks for calling back."
@@ -65,15 +70,17 @@ async def lookup(runtime: SessionRuntime, phone: str | None, now: datetime) -> l
         return []
     out: list[Missed] = []
     for row in await runtime.db.calls.latest_to(e164, now - WITHIN):
-        if row.end_reason not in MISSED or not row.session_id or not row.listing_id:
+        missed = row.ended_at is not None and (row.end_reason in MISSED or row.answered_at is None)
+        if not missed or not row.session_id or not row.listing_id or not runtime.has(row.session_id):
             continue
-        if not runtime.has(row.session_id):
-            continue
-        view = runtime.get(row.session_id)   # the plan's listings, without copying the whole state
+        state = runtime.state(row.session_id)
         listing = runtime.catalogue.by_id.get(row.listing_id)
-        if view.phase not in ("calling", "done") or row.listing_id not in view.plan or listing is None:
+        if state.phase not in ("calling", "done") or state.plan is None or listing is None:
             continue
-        out.append(Missed(row.call_id, row.session_id, row.listing_id, listing.address or "the listing"))
+        if row.listing_id not in state.plan.listing_ids or as_e164(state.caller_phone or "") == e164:
+            continue   # not this plan's, or the renter calling about their own calls
+        out.append(Missed(row.call_id, row.session_id, row.listing_id, _place(listing.address,
+                                                                              listing.unit_label)))
     return out[:MAX_CHOICES]
 
 
@@ -90,6 +97,9 @@ def pick(choices: Sequence[Missed | None], digits: str = "", speech: str = "") -
     address they said, matched in code on its house number and street name. None when it names none of
     them, or can't tell two apart."""
     key = digits.strip()
+    if not key:   # "two", or "number 2": a key said, not a house number
+        spoken = [w for w in _words(speech) if w not in SAID_WITH_KEY]
+        key = str(KEYS.get(spoken[0], spoken[0])) if len(spoken) == 1 else ""
     if key.isdigit() and 1 <= int(key) <= len(choices):
         return choices[int(key) - 1]
     said = set(_words(speech))
@@ -107,6 +117,12 @@ def _score(address: str, said: set[str]) -> int:
     number = next((w for w in words if w.isdigit()), None)
     names = {w for w in words if not w.isdigit() and len(w) > 2}
     return (2 if number is not None and number in said else 0) + len(names & said)
+
+
+def _place(address: str | None, unit: str | None) -> str:
+    """The address as the Caller says it (brief._place), so two units in one building sound different."""
+    where = address or "the listing"
+    return f"{where}, {unit}" if unit else where
 
 
 def _words(text: str) -> list[str]:
