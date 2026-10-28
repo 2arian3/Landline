@@ -1,5 +1,5 @@
 import { useAuth } from "@clerk/expo";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";
 
 import { ApiError } from "./api";
@@ -11,13 +11,21 @@ import { latestWins, type Loaded } from "./loads";
  * (pull to refresh). `fetcher` must be a module-level function, so it doesn't refetch on every render.
  */
 export function useLoad<T>(fetcher: (token: string | null) => Promise<T>) {
-  const { isSignedIn, getToken } = useAuth();
+  const { isSignedIn, userId, getToken } = useAuth();
   const [{ data, error }, setState] = useState<Loaded<T>>({ data: null, error: null });
   const [run] = useState(() => latestWins<T>(setState, (e) =>
     e instanceof ApiError ? e.message : "Something went wrong. Try again."));
   const [refreshing, setRefreshing] = useState(false);
 
-  const load = useCallback(() => run(async () => fetcher(await getToken())), [run, fetcher, getToken]);
+  // @clerk/expo's useAuth returns a new getToken on every render, and every load sets state, so a load that
+  // depended on getToken would re-render, reload and loop. Keep the latest one in a ref, and key the loads
+  // on who is signed in instead.
+  const token = useRef(getToken);
+  useEffect(() => {
+    token.current = getToken;
+  });
+
+  const load = useCallback(() => run(async () => fetcher(await token.current())), [run, fetcher]);
 
   useEffect(() => {
     if (!isSignedIn) return;
@@ -26,7 +34,7 @@ export function useLoad<T>(fetcher: (token: string | null) => Promise<T>) {
       if (now === "active") void load();
     });
     return () => back.remove();
-  }, [isSignedIn, load]);
+  }, [isSignedIn, userId, load]);
 
   const refresh = useCallback(async () => {
     setRefreshing(true);
