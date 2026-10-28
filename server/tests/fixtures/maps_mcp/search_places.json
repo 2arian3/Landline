@@ -1,0 +1,77 @@
+{
+  "_note": "Shaped from the live server's tools/list output schema (28 Oct 2026), not recorded: no key yet. scripts/maps_mcp_probe.py --live records real answers as recorded_*.json next to this.",
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"summary\": \"Here are a few Shoppers Drug Mart locations near you:\\n\\n*   **Shoppers Drug Mart** [0] is a pharmacy and convenience store on Bloor Street West, open until midnight.\\n*   **Shoppers Drug Mart** [1] near Christie Station also has a post office.\\n*   **Shoppers Drug Mart** [2] on College Street has a larger beauty department.\", \"places\": [{\"place\": \"places/ChIJshaped0ShoppersBloorWest\", \"id\": \"ChIJshaped0ShoppersBloorWest\", \"location\": {\"latitude\": 43.6652, \"longitude\": -79.4078}, \"googleMapsLinks\": {\"placeUrl\": \"https://maps.google.com/?cid=ChIJshaped0ShoppersBloorWest\", \"directionsUrl\": \"https://www.google.com/maps/dir/?api=1&destination_place_id=ChIJshaped0ShoppersBloorWest\", \"reviewsUrl\": \"https://maps.google.com/?cid=ChIJshaped0ShoppersBloorWest&reviews=1\", \"photosUrl\": \"https://maps.google.com/?cid=ChIJshaped0ShoppersBloorWest&photos=1\", \"writeAReviewUrl\": \"https://maps.google.com/?cid=ChIJshaped0ShoppersBloorWest&review=1\"}, \"attribution\": {\"title\": \"Google Maps\", \"url\": \"https://maps.google.com/?cid=ChIJshaped0ShoppersBloorWest\"}}, {\"place\": \"places/ChIJshaped1ShoppersChristie\", \"id\": \"ChIJshaped1ShoppersChristie\", \"location\": {\"latitude\": 43.6735, \"longitude\": -79.427}, \"googleMapsLinks\": {\"placeUrl\": \"https://maps.google.com/?cid=ChIJshaped1ShoppersChristie\", \"directionsUrl\": \"https://www.google.com/maps/dir/?api=1&destination_place_id=ChIJshaped1ShoppersChristie\", \"reviewsUrl\": \"https://maps.google.com/?cid=ChIJshaped1ShoppersChristie&reviews=1\", \"photosUrl\": \"https://maps.google.com/?cid=ChIJshaped1ShoppersChristie&photos=1\", \"writeAReviewUrl\": \"https://maps.google.com/?cid=ChIJshaped1ShoppersChristie&review=1\"}, \"attribution\": {\"title\": \"Google Maps\", \"url\": \"https://maps.google.com/?cid=ChIJshaped1ShoppersChristie\"}}, {\"place\": \"places/ChIJshaped2ShoppersCollege\", \"id\": \"ChIJshaped2ShoppersCollege\", \"location\": {\"latitude\": 43.661, \"longitude\": -79.404}, \"googleMapsLinks\": {\"placeUrl\": \"https://maps.google.com/?cid=ChIJshaped2ShoppersCollege\", \"directionsUrl\": \"https://www.google.com/maps/dir/?api=1&destination_place_id=ChIJshaped2ShoppersCollege\", \"reviewsUrl\": \"https://maps.google.com/?cid=ChIJshaped2ShoppersCollege&reviews=1\", \"photosUrl\": \"https://maps.google.com/?cid=ChIJshaped2ShoppersCollege&photos=1\", \"writeAReviewUrl\": \"https://maps.google.com/?cid=ChIJshaped2ShoppersCollege&review=1\"}, \"attribution\": {\"title\": \"Google Maps\", \"url\": \"https://maps.google.com/?cid=ChIJshaped2ShoppersCollege\"}}], \"contentToken\": \"shaped-content-token\"}"
+      }
+    ],
+    "structuredContent": {
+      "summary": "Here are a few Shoppers Drug Mart locations near you:\n\n*   **Shoppers Drug Mart** [0] is a pharmacy and convenience store on Bloor Street West, open until midnight.\n*   **Shoppers Drug Mart** [1] near Christie Station also has a post office.\n*   **Shoppers Drug Mart** [2] on College Street has a larger beauty department.",
+      "places": [
+        {
+          "place": "places/ChIJshaped0ShoppersBloorWest",
+          "id": "ChIJshaped0ShoppersBloorWest",
+          "location": {
+            "latitude": 43.6652,
+            "longitude": -79.4078
+          },
+          "googleMapsLinks": {
+            "placeUrl": "https://maps.google.com/?cid=ChIJshaped0ShoppersBloorWest",
+            "directionsUrl": "https://www.google.com/maps/dir/?api=1&destination_place_id=ChIJshaped0ShoppersBloorWest",
+            "reviewsUrl": "https://maps.google.com/?cid=ChIJshaped0ShoppersBloorWest&reviews=1",
+            "photosUrl": "https://maps.google.com/?cid=ChIJshaped0ShoppersBloorWest&photos=1",
+            "writeAReviewUrl": "https://maps.google.com/?cid=ChIJshaped0ShoppersBloorWest&review=1"
+          },
+          "attribution": {
+            "title": "Google Maps",
+            "url": "https://maps.google.com/?cid=ChIJshaped0ShoppersBloorWest"
+          }
+        },
+        {
+          "place": "places/ChIJshaped1ShoppersChristie",
+          "id": "ChIJshaped1ShoppersChristie",
+          "location": {
+            "latitude": 43.6735,
+            "longitude": -79.427
+          },
+          "googleMapsLinks": {
+            "placeUrl": "https://maps.google.com/?cid=ChIJshaped1ShoppersChristie",
+            "directionsUrl": "https://www.google.com/maps/dir/?api=1&destination_place_id=ChIJshaped1ShoppersChristie",
+            "reviewsUrl": "https://maps.google.com/?cid=ChIJshaped1ShoppersChristie&reviews=1",
+            "photosUrl": "https://maps.google.com/?cid=ChIJshaped1ShoppersChristie&photos=1",
+            "writeAReviewUrl": "https://maps.google.com/?cid=ChIJshaped1ShoppersChristie&review=1"
+          },
+          "attribution": {
+            "title": "Google Maps",
+            "url": "https://maps.google.com/?cid=ChIJshaped1ShoppersChristie"
+          }
+        },
+        {
+          "place": "places/ChIJshaped2ShoppersCollege",
+          "id": "ChIJshaped2ShoppersCollege",
+          "location": {
+            "latitude": 43.661,
+            "longitude": -79.404
+          },
+          "googleMapsLinks": {
+            "placeUrl": "https://maps.google.com/?cid=ChIJshaped2ShoppersCollege",
+            "directionsUrl": "https://www.google.com/maps/dir/?api=1&destination_place_id=ChIJshaped2ShoppersCollege",
+            "reviewsUrl": "https://maps.google.com/?cid=ChIJshaped2ShoppersCollege&reviews=1",
+            "photosUrl": "https://maps.google.com/?cid=ChIJshaped2ShoppersCollege&photos=1",
+            "writeAReviewUrl": "https://maps.google.com/?cid=ChIJshaped2ShoppersCollege&review=1"
+          },
+          "attribution": {
+            "title": "Google Maps",
+            "url": "https://maps.google.com/?cid=ChIJshaped2ShoppersCollege"
+          }
+        }
+      ],
+      "contentToken": "shaped-content-token"
+    },
+    "isError": false
+  }
+}
