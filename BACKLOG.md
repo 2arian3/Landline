@@ -59,7 +59,7 @@ Landline is one of ten finalists at Build North's Demo Day: Thursday 29 October,
 | Built (#275), live run pending the key | O-07a | A client for Google's Maps MCP server | P1 | – | a live run finds a real place near a listing | [#239](https://github.com/2arian3/Landline/issues/239) |
 | To do | O-07b | `ask_maps`: answer questions about the area, and fly the map to the place | P1 | O-07a | "Is there a grocery store near the first one?" gets a real name and minutes | [#239](https://github.com/2arian3/Landline/issues/239) |
 | Built (#270), live run pending the SurrealDB Agent Memory keys | O-09a | Save each call's facts to SurrealDB Agent Memory | P1 | – | a sim call's facts come back from a memory query | [#240](https://github.com/2arian3/Landline/issues/240) |
-| To do | O-09b | The Caller confirms what an earlier call heard instead of asking cold | P1 | O-09a | a second renter's call opens with "Last week they said…" | [#240](https://github.com/2arian3/Landline/issues/240) |
+| Built (#278), live run pending the SurrealDB Agent Memory keys | O-09b | The Caller confirms what an earlier call heard instead of asking cold | P1 | O-09a | a second renter's call opens with "Last week they said…" | [#240](https://github.com/2arian3/Landline/issues/240) |
 | To do | O-09c | Remember a renter who agreed to it, and backfill last week's facts | P2 | O-09a | the backfill runs once | [#240](https://github.com/2arian3/Landline/issues/240) |
 
 *Status, Wed 28 Oct 00:40: X-04 is merged (#259), at Arian's call before review; Danial and Mahyar are asked to look it over. In progress: D-10a (`data/D-10a-ttc-walk`), D-10b (`data/D-10b-nearby`) and O-08a (`data/O-08a-calendar-client`). Their live runs need keys: D-10a and D-10b a `GOOGLE_MAPS_API_KEY` with Places API (New) and Routes API, and O-08a the Google OAuth client and refresh token. O-07b waits on a decision about Google's terms for showing Places results on our own map (#239). Shipped at 00:23: `ae3ef77` on release, which is main through #258 plus the fix that lets the API start on the VM's Python 3.14 (`audioop`). #260 keeps Intel Macs on cryptography 48, so `uv sync` works there again.*
@@ -113,7 +113,7 @@ Landline is one of ten finalists at Build North's Demo Day: Thursday 29 October,
 | To do | X-03e | Who holds which phone on stage, and what each person says | Danial | Wed | [#248](https://github.com/2arian3/Landline/issues/248) |
 | Built (#272), Danial to add his | X-03f | Numbers for the pitch: calls placed, facts heard with quotes, viewings booked, cost per search, eval results | Arian, Danial | Wed | [#248](https://github.com/2arian3/Landline/issues/248) |
 | To do | X-03g | The venue: Wi-Fi and a hotspot tested, the phones mirrored on screen, the backup video ready offline | Mahyar | Thu | [#248](https://github.com/2arian3/Landline/issues/248) |
-| To do | X-03h | A 3-minute pitch around the demo | All (Arian leads) | Wed | [#248](https://github.com/2arian3/Landline/issues/248) |
+| Draft (#277), Arian to edit | X-03h | A 3-minute pitch around the demo | All (Arian leads) | Wed | [#248](https://github.com/2arian3/Landline/issues/248) |
 | Draft (#276), for the team to rehearse | X-03i | Short answers to the judges' likely questions | All | Thu | [#248](https://github.com/2arian3/Landline/issues/248) |
 | To do | X-03j | The run of show, twice in a row with no failures | All | Wed 19:00, Thu 15:00 | [#248](https://github.com/2arian3/Landline/issues/248) |
 
