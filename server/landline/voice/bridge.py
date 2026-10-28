@@ -32,6 +32,7 @@ from landline.agents.concierge.prompt import (
     FIRST_CALL,
     INSTRUCTIONS,
     LINK_SENT,
+    MAPS_RULE,
     SAVED_NOTE,
 )
 from landline.config import Settings
@@ -112,7 +113,8 @@ async def converse(transport: Transport, call: RenterCall, *, calls: RenterCalls
                           deadline_at=datetime.now(UTC) + timedelta(seconds=settings.renter_call_max_s))
     try:
         reason = await _talk(transport, call, runtime, connect_higgs, settings, set_status,
-                             _link_texter(texter, call, settings), recorder, lines)
+                             _link_texter(texter, call, settings), recorder, lines,
+                             text=_texter(texter, call, settings))
     finally:
         calls.finalize(call.call_id, reason)
         try:   # before it ends, and never in the way of ending it
@@ -125,6 +127,15 @@ async def converse(transport: Transport, call: RenterCall, *, calls: RenterCalls
             clips.schedule(call.call_id, agent_gender=gender_of_voice(settings.higgs_voice_renter))
         await _end_session(runtime, call.session_id, reason)
     return reason
+
+
+def _texter(texter: Texter | None, call: RenterCall, settings: Settings) -> Callable[[str], None] | None:
+    """For a phone call: texts the renter a message in the background (ask_maps's answer with its Google Maps
+    link, O-07b). None when there's no one to text or no way to send."""
+    sender = call.called or settings.twilio_phone_number
+    if texter is None or not texter.ready or not call.caller or not sender:
+        return None
+    return lambda body: texter.send_soon(call.caller, sender, body)
 
 
 def _link_texter(texter: Texter | None, call: RenterCall, settings: Settings) -> Callable[[], bool] | None:
@@ -179,13 +190,15 @@ def hint(remembered: str | None, language: str | None) -> str | None:
 async def _talk(transport: Transport, call: RenterCall, runtime: SessionRuntime, connect_higgs: ConnectHiggs,
                 settings: Settings, set_status: Callable[[str], None],
                 text_link: Callable[[], bool] | None, recorder: CallRecorder,
-                lines: Lines | None = None) -> str:
+                lines: Lines | None = None, text: Callable[[str], None] | None = None) -> str:
     instructions, start = opening(None)
     if text_link is not None:
         instructions += LINK_SENT   # so the Concierge tells them; the text goes once Higgs is up
+    if runtime.maps is not None:
+        instructions += MAPS_RULE   # ask_maps is offered only with Google's Maps client (O-07b)
     try:
         higgs = await connect_higgs(settings.voice_api_key() or "", session_config(
-            instructions=instructions, tools=tools.TOOLS, voice=settings.live_voice(),
+            instructions=instructions, tools=tools.offered(runtime), voice=settings.live_voice(),
             audio_format=transport.audio_format, language=hint(None, None)))
     except Exception as exc:
         log.exception("Higgs session failed for call %s", call.call_id)
@@ -195,12 +208,14 @@ async def _talk(transport: Transport, call: RenterCall, runtime: SessionRuntime,
     if text_link is not None:
         text_link()
 
-    ctx = tools.ToolContext(session_id=call.session_id, call_id=call.call_id, runtime=runtime)
+    ctx = tools.ToolContext(session_id=call.session_id, call_id=call.call_id, runtime=runtime, text=text)
     playback = Playback(transport.bytes_per_second)
     wrap = WrapUp()
     pumps: set[asyncio.Task[str]] = set()
     keeper = asyncio.create_task(_keep_every(runtime, call.call_id, recorder, settings.record_audio))
     line = lines.open(call.session_id, higgs.send) if lines is not None else None
+    if line is not None:   # a slow ask_maps answer comes between turns, like a map tap (O-07b)
+        ctx.note = lambda said: line.push(Item("maps", said, line.clock()))
     saved = runtime.state(call.session_id).saved_search   # U-12d: already on the map as the call opens
     if saved:
         start = with_saved_search(start, saved)
