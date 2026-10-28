@@ -10,6 +10,7 @@
     "postinstall": "node scripts/copy-maplibre-worker.mjs"
   },
   "dependencies": {
+    "@clerk/nextjs": "7.9.14",
     "@number-flow/react": "^0.6.2",
     "maplibre-gl": "^6.15.0",
     "motion": "^14.6.0",
