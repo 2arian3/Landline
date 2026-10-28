@@ -5,7 +5,7 @@ import Link from "next/link";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { duration, phoneLabel, type CallRow, type ChosenPlace, type SessionRow, type UserDetail, when } from "@/lib/admin";
 import { bedsLabel, heardLine, money } from "@/lib/format";
-import { VIEWING, WENT, factLine } from "@/lib/heard";
+import { WENT, factLine, viewingLine } from "@/lib/heard";
 import { isMeRefusal, loadMe, loadMyListings, loadSignedIn, type MeRefusal, type MyListing } from "@/lib/me";
 import { MySearch } from "./MySearch";
 
@@ -435,8 +435,7 @@ function ListingItem({ listing: x }: { listing: MyListing }) {
           className="mt-2 text-support"
           style={{ color: x.viewing.status === "declined" ? "var(--color-dead)" : "var(--color-real)" }}
         >
-          {VIEWING[x.viewing.status] ?? `Viewing ${x.viewing.status}`}: {x.viewing.slot_text} (
-          {when(x.viewing.starts_at)})
+          {viewingLine(x.viewing)}
         </p>
       )}
       {x.red_flags.map((f) => (
