@@ -27,3 +27,27 @@ export const VIEWING: Record<string, string> = {
   confirmed: "Viewing confirmed",
   declined: "Viewing declined",
 };
+
+/** A viewing in one line, with its time once: "Viewing booked: Thu, Oct 29, 6:30 p.m.". The time is the code's
+ *  (starts_at, in Toronto time); the agent's own words (slot_text) only when there's no time to show. */
+export function viewingLine(v: { starts_at?: string | null; slot_text?: string | null; status: string }): string {
+  const word = VIEWING[v.status] ?? `Viewing ${v.status}`;
+  const at = (v.starts_at && torontoTime(v.starts_at)) || v.slot_text?.trim();
+  return at ? `${word}: ${at}` : word;
+}
+
+const AT = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "America/Toronto",
+  weekday: "short",
+  day: "numeric",
+  month: "short",
+  hour: "numeric",
+  minute: "2-digit",
+});
+
+/** As admin.ts's when() writes it, or "" for a time that doesn't parse. Kept here, not imported, so this file
+ *  loads on its own in the app's tests (mobile/tests/lib.test.mjs). */
+function torontoTime(iso: string): string {
+  const at = new Date(iso);
+  return Number.isNaN(at.getTime()) ? "" : AT.format(at);
+}

@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import * as web from "../../web/lib/heard.ts";
-import { factLine, phoneLabel, VIEWING, WENT, when } from "../src/lib/heard.ts";
+import { factLine, phoneLabel, VIEWING, viewingLine, WENT, when } from "../src/lib/heard.ts";
 import { latest } from "../src/lib/listings.ts";
 import { latestWins } from "../src/lib/loads.ts";
 import { toE164 } from "../src/lib/phone.ts";
@@ -21,6 +21,20 @@ test("a heard fact reads as it does on the web's /me", () => {
   assert.equal(factLine("move_in_fee", "$200"), "move in fee: $200");
   assert.deepEqual(WENT, web.WENT);
   assert.deepEqual(VIEWING, web.VIEWING);
+});
+
+test("a viewing shows its time once, the code's, and reads as it does on the web's /me", () => {
+  const at = "2026-10-29T22:30:00Z";   // 6:30 p.m. in Toronto (EDT)
+  assert.match(viewingLine({ starts_at: at, slot_text: "Thu 29 Oct, 6:30 p.m.", status: "booked" }),
+    /^Viewing booked: Thu, Oct 29, 6:30\sp\.m\.$/);
+  assert.match(viewingLine({ starts_at: at, slot_text: "", status: "confirmed" }), /^Viewing confirmed: Thu, Oct 29, 6:30\sp\.m\.$/);
+  assert.equal(viewingLine({ starts_at: null, slot_text: "Saturday at 2 pm", status: "booked" }), "Viewing booked: Saturday at 2 pm");
+  const cases = [
+    { starts_at: at, slot_text: "Thu 29 Oct, 6:30 p.m.", status: "booked" }, { starts_at: at, slot_text: "", status: "declined" },
+    { starts_at: null, slot_text: "Saturday at 2 pm", status: "confirmed" }, { starts_at: "soon", slot_text: "Sunday", status: "booked" },
+    { slot_text: " ", status: "booked" },
+  ];
+  for (const v of cases) assert.equal(viewingLine(v), web.viewingLine(v), JSON.stringify(v));
 });
 
 test("times are Toronto's", () => {
