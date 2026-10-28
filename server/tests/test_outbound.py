@@ -20,6 +20,7 @@ from landline.voice import twilio
 from landline.voice.dispatch import CallResult, Dial, Dispatcher
 from landline.voice.outbound import (
     DISCLOSURE,
+    RECORDED,
     NotAllowed,
     Outbound,
     OutboundCalls,
@@ -178,6 +179,7 @@ async def test_a_machine_gets_the_voicemail_and_the_call_ends_once_as_voicemail(
         twiml = calls.runner.answered_twiml(cid, "machine_end_beep", "wss://x")
         await calls.set_state(cid, "voicemail")
         assert "<Say>" in twiml and DISCLOSURE.split(".")[0] in twiml and "1 Dial St" in twiml
+        assert "Hi, this is Landline." in twiml and "call us back" not in twiml   # no call-back number yet
         for _ in range(2):
             calls.finalize(cid, calls.end_reason(cid, "completed"))
     rt, ended, twilio_api, calls = await _run_plan(machine)
@@ -305,8 +307,12 @@ async def test_a_conversation_ends_once_and_a_late_completed_status_changes_noth
 
 def test_the_opening_says_the_disclosure_first_and_keeps_the_instructions():
     text, start = opening("Ask about parking.")
-    assert text.startswith("Ask about parking.") and f'exactly: "{DISCLOSURE}"' in text
-    assert DISCLOSURE == "I'm an AI assistant calling for a renter."
+    assert text.startswith("Ask about parking.") and f'exactly: "Hi, this is Landline. {DISCLOSURE}"' in text
+    assert DISCLOSURE == "I'm an AI assistant calling for a renter."   # hard rule 6's words, whole
+    # With the brief's own line (the address in it) and the audio stored, those are the first words.
+    line = "Hi, this is Landline. I'm an AI assistant calling for a renter about 1 Dial St."
+    named, _ = opening("Ask about parking.", recorded=True, first=line)
+    assert f'exactly: "{line} {RECORDED}" Then ask if they have a minute.' in named
     # A quoted note, then a plain response.create: no response object, whose instructions would replace
     # the session's, disclosure and all (#129).
     assert start[0]["item"]["content"][0]["text"] == "[The call was just answered.]"
