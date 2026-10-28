@@ -74,12 +74,12 @@ Landline is one of ten finalists at Build North's Demo Day: Thursday 29 October,
 | Built (gemini-refactor) | A-12a | Audio converters between our formats and Gemini's | P1 | – | the round-trip tests pass | [#243](https://github.com/2arian3/Landline/issues/243) |
 | In progress | A-12b | The Gemini Live adapter, in text first | P1 | – | a scripted mock call passes on Gemini | [#243](https://github.com/2arian3/Landline/issues/243) |
 | In progress | A-12c | Voice on Gemini: /try and phone calls | P1 | A-12a, A-12b | English and French briefs, a renter call and a listing call all work | [#243](https://github.com/2arian3/Landline/issues/243) |
-| Blocked on a key | A-12d | Gemini and Higgs side by side, then pick the demo voice | P1 | A-12c | the numbers are in the team chat by Wed 20:00 | [#243](https://github.com/2arian3/Landline/issues/243) |
+| In progress | A-12d | Gemini and Higgs side by side, then pick the demo voice | P1 | A-12c | the numbers are in the team chat by Wed 20:00 | [#243](https://github.com/2arian3/Landline/issues/243) |
 | To do | A-15 | The text model on Gemini (the Auditor and translations) | P1 | – | extraction numbers for both providers are in the PR | [#243](https://github.com/2arian3/Landline/issues/243) |
 | To do | E-06a | Make a simulated property manager in Era and save its data | P2 | – | the fixture is committed | [#244](https://github.com/2arian3/Landline/issues/244) |
 | To do | E-06b | An Era landlord persona, five cases and a report table | P2 | E-06a | `--set era` runs and the report has the table | [#244](https://github.com/2arian3/Landline/issues/244) |
 
-*Status, Tue 27 Oct 23:50: A-12a through A-12d are on `gemini-refactor`, not pushed. A-12a's phone μ-law and browser 24 kHz round-trip tests pass. A-12b's adapter and text mode pass on a fake socket; a scripted call on live Gemini has not run, because this checkout has no `GEMINI_API_KEY`. A-12c's phone and browser bridges pass on that fake socket; English and French briefs, a real renter call and a listing call have not. A-12d's spike script is in and has not been run, so there are no side-by-side numbers. `VOICE_PROVIDER` still defaults to higgs. Avatar clips stay on Boson. A-15 was not part of this change.*
+*Status, Wed 28 Oct 00:30: A-12a through A-12d are on `gemini-refactor`, not pushed. A-12a's round-trip tests pass. Live audio on `gemini-3.8-live` (Aoede): connect 0.422 s, first audio 0.531 s, tool round trip 1.094 s, barge-in, 5 of 5 sessions. Live rejects TEXT, so text sessions (the sim and the evals) call `gemini-3.5-flash-lite`; a one-word probe returned "pong". A scripted mock call, and English and French briefs on a real renter call and a listing call, have not run. The side-by-side numbers are not in the team chat. `VOICE_PROVIDER` still defaults to higgs. Avatar clips stay on Boson. A-15 was not part of this change.*
 
 ### Mahyar
 

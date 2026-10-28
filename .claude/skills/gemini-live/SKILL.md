@@ -35,11 +35,11 @@ Avatar clips stay on Boson (`BOSON_API_KEY`, `voice/avatar_clip.py`). The phone 
 
 Live audio, transcripts, tool calls and `turnComplete` become `response.created`, `response.output_audio.delta`, `response.output_audio_transcript.done`, `response.function_call_arguments.done`, and `response.done`. `response.done`'s `response.output` lists each `function_call`, which `response_settles` reads. `interrupted` becomes `input_audio_buffer.speech_started` (the bridge already clears the phone on that). `speech_stopped` is synthesized from bytes heard; Gemini does not send Higgs's `audio_start_ms`.
 
-`modality="text"` (the eval simulator) sends `responseModalities: ["TEXT"]` and emits `response.output_text.delta` / `.done`. If the model rejects TEXT, evals stay on Higgs. `make eval` follows `VOICE_PROVIDER`.
+`modality="text"` (the sim and the evals) does not open Live. Live closes the socket on `responseModalities: ["TEXT"]`. Those sessions call `generateContent` on `gemini-3.5-flash-lite` (there is no `gemini-3.6-flash-lite`; that release's Flash-Lite is 3.5) and emit `response.output_text.delta` / `.done`. The model's content, including thought signatures, is sent back with each tool result. `make eval` follows `VOICE_PROVIDER`.
 
 ## Spike
 
-`uv run python scripts/spike_gemini_live.py` prints time to first audio, one tool round trip, whether a clip barges in, whether TEXT mode answers, and how many sessions open before rejection. It does not dial. Re-measure `HIGGS_MAX_SESSIONS` from that concurrency number before setting `VOICE_PROVIDER=gemini`. The migration checkout had no `GEMINI_API_KEY`, so those numbers are not filled in yet.
+`uv run python scripts/spike_gemini_live.py` prints time to first audio, one tool round trip, whether a clip barges in, whether TEXT mode answers, and how many sessions open before rejection. It does not dial. Re-measure `HIGGS_MAX_SESSIONS` from that concurrency number before setting `VOICE_PROVIDER=gemini`. Measured 28 Oct on `gemini-3.8-live`, voice Aoede: connect 0.422 s, first audio 0.531 s, tool round trip 1.094 s, barge-in `speech_started` at 0.016 s, 5 of 5 sessions opened. Live rejected TEXT. A text probe on `gemini-3.5-flash-lite` returned "pong". The production budget can still open 8 sessions, and that number is not measured.
 
 ## Playback
 
