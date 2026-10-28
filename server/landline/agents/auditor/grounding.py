@@ -72,7 +72,10 @@ def tokens(text: str) -> list[str]:
 def find(quote: str, sources: Sequence[str], threshold: float = FUZZY) -> Match | None:
     """The best source that contains `quote`, or None. Exact matches win over fuzzy ones."""
     q = tokens(quote)
-    if len(q) < MIN_TOKENS:
+    # The length rule counts the words as said, before amounts become digits: "一千七" or "seventeen hundred"
+    # is a spoken answer, not the lone "1700" it matches as. Counting after made those one token, and a
+    # Mandarin rent was dropped as ungrounded.
+    if len(_TOKEN.findall(normalize(quote))) < MIN_TOKENS:
         # One word inside a longer text proves nothing, but a whole turn of one word ("Yes.") is exactly what
         # was said. What it answers is for the caller to decide (values.settle's question, #139).
         whole = next((i for i, source in enumerate(sources) if q and tokens(source) == q), None)
