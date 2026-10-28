@@ -5,11 +5,11 @@
 | Time | On screen and in audio | Shows |
 |---|---|---|
 | 0:00 | One line: Toronto listings say things that aren't true, and newcomers get it worst | The problem |
-| 0:10 | A renter calls, mixing Farsi and English. The SMS link opens. Hundreds of dots fade to six numbered pins while they talk | Higgs Realtime, language switching, live map |
+| 0:10 | A renter calls, mixing Farsi and English. The SMS link opens. Hundreds of dots fade to six numbered pins while they talk | Gemini Live or Higgs Realtime, language switching, live map |
 | 0:40 | "Natural light matters most." The pins renumber before the sentence ends. They tap a pin, and the agent says "That's the corner unit on the 14th floor" | Voice and screen in sync |
 | 0:55 | "That one's too dark." The card shows *You: too dark*, and darker units sink | Feedback changes ranking |
 | 1:05 | "Call the top three. I'm free Saturday afternoon, book one if you can." The agent reads the three addresses back: "I'll call them as soon as we hang up and text you." The renter hangs up | The brief becomes a plan |
-| 1:15 | Three pins pulse. We listen in: one landlord switches to Mandarin, one adds $180 parking, one asks for an e-transfer deposit (flagged). The Caller answers the move-in date from the brief, and for a question it can't answer says "I'll check with my client" | Parallel Higgs calls, each on its own; scam check |
+| 1:15 | Three pins pulse. We listen in: one landlord switches to Mandarin, one adds $180 parking, one asks for an e-transfer deposit (flagged). The Caller answers the move-in date from the brief, and for a question it can't answer says "I'll check with my client" | Parallel live calls, each on its own; scam check |
 | 1:45 | Results land on the pins. Markham is booked for Saturday at 2, inside the renter's window. An SMS arrives in Farsi with the results | Agents that act on their own |
 | 2:00 | The renter calls again: "Welcome back, Sara. I booked 412 Markham for Saturday at two. Dupont is really $3,470 with parking, and 88 Erskine asked for a deposit before viewing, so I'd skip it." | Results and memory by phone number |
 | 2:20 | Numbers: extraction accuracy, zero ungrounded facts, time to first audio, listings and sources | How well it works |
@@ -20,7 +20,7 @@ Record the phone parts on real phones, with teammates as landlords. Use sim land
 
 - [ ] `FORCE_BUSINESS_HOURS=1` on the VM, or business hours in Toronto time
 - [ ] `DEMO_AGENT_PHONES` holds teammates only; the allowlist test passes
-- [ ] Higgs concurrency ≥ 5 confirmed; enough credits for rehearsals and demos
+- [ ] Voice concurrency ≥ 5 confirmed (`HIGGS_MAX_SESSIONS`, from the provider spike); enough credits for rehearsals and demos
 - [ ] A switch from `TRANSPORT=voice` to `sim` is one env change and one restart
 - [ ] A backup recording plays offline on a laptop
 - [ ] `/health` green over cellular; no tunnels

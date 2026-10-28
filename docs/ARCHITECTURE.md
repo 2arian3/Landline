@@ -5,14 +5,14 @@ Landline runs as **two flows that never overlap for the same renter**, joined by
 1. **The brief.** The renter talks to the Concierge, and the live map re-ranks while they talk. They pick the listings they want checked, say when they can view, and hang up.
 2. **The calls.** Code turns the brief into one call per picked listing. Each Caller phones one listing agent on its own, records what it hears, and books a viewing if the renter allowed it. When the last call is done, the renter gets the results by text, on the map, and at the start of their next call.
 
-Only three parts use a model, and only those are called agents: the Concierge and the Caller speak (Higgs Realtime), and the Auditor reads transcripts (a text LLM). Everything else is plain code: system services that rank, dial, remember and write messages for the session. **Code decides what runs next; models never route.** The calls read nothing from the brief except the `CallPlan`, so each flow can be built, tested and replayed on its own: a brief test ends by checking the `CallPlan` it produced, and a call test starts from a `CallPlan` fixture.
+Only three parts use a model, and only those are called agents: the Concierge and the Caller speak (Gemini Live when `VOICE_PROVIDER=gemini`, otherwise Higgs Realtime), and the Auditor reads transcripts (a text LLM). Everything else is plain code: system services that rank, dial, remember and write messages for the session. **Code decides what runs next; models never route.** The calls read nothing from the brief except the `CallPlan`, so each flow can be built, tested and replayed on its own: a brief test ends by checking the `CallPlan` it produced, and a call test starts from a `CallPlan` fixture.
 
 ## Agents (they use a model)
 
 | Agent | Flow | Model | Job | Input → output |
 |---|---|---|---|---|
-| **Concierge** | Brief | Higgs Realtime (phone via Twilio, or browser) | Talks to the renter in their language and turns what they say into tool calls with structured arguments: preferences, feedback, the places to call, when the renter can view | Speech → `update_preferences`, `give_feedback`, `focus_listing`, `focus_area`, `call_listings`, `remember_me`, `forget_me`, `end_session` |
-| **Caller** (one per listing) | Calls | Higgs Realtime (Twilio outbound, or sim) | Phones one listing agent, works through its checklist, reads numbers back, records facts with quotes, books a viewing inside the renter's times | Brief for one listing → `record_fact`, `note_question`, `book_viewing`, `end_call` |
+| **Concierge** | Brief | Gemini Live or Higgs Realtime (phone via Twilio, or browser) | Talks to the renter in their language and turns what they say into tool calls with structured arguments: preferences, feedback, the places to call, when the renter can view | Speech → `update_preferences`, `give_feedback`, `focus_listing`, `focus_area`, `call_listings`, `remember_me`, `forget_me`, `end_session` |
+| **Caller** (one per listing) | Calls | Gemini Live or Higgs Realtime (Twilio outbound, or sim) | Phones one listing agent, works through its checklist, reads numbers back, records facts with quotes, books a viewing inside the renter's times | Brief for one listing → `record_fact`, `note_question`, `book_viewing`, `end_call` |
 | **Auditor** | Calls | Text LLM + rules | Turns each call's transcript into grounded facts, reconciles them with the listing and City records, flags scams | Tagged turns + listing → `CallOutcome` |
 
 A model's job is language: understanding speech, choosing a tool and its arguments, reading a transcript. Anything that must be right every time (ids, numbers, dates, ranking, who gets called) is done by a system service.
@@ -41,10 +41,10 @@ flowchart TB
   landlord([Listing agents])
   web[Web: map, list, detail, judge mode]
   subgraph brief[Agent · flow 1, the brief]
-    conc[Concierge · Higgs Realtime]
+    conc[Concierge · Gemini Live or Higgs]
   end
   subgraph calls[Agents · flow 2, the calls]
-    call[Callers x N · Higgs Realtime]
+    call[Callers x N · Gemini Live or Higgs]
     aud[Auditor · text LLM]
   end
   subgraph sys[System services · plain code]
@@ -196,7 +196,7 @@ The three agents never import each other. They share only `contracts/`, where `C
 | Web | Vercel, deployed from `release` by `.github/workflows/deploy-web.yml` when `web/` changes. The browser calls the API's public URL directly (`NEXT_PUBLIC_API_URL`, CORS) |
 | Database | Postgres 17 with PostGIS and pgvector in Docker on the same VM, localhost only |
 | CI/CD | Work lands on `main`; shipping is `git push origin main:release`. Every push to `release` that passes CI is rsynced to the VM through the gateway (SSH jump host), migrated and restarted. The VM's own timer re-scrapes every 6 h. See [deploy/README.md](../deploy/README.md) |
-| Models | Boson Higgs Realtime and Higgs TTS; a text LLM for the Auditor and the pipeline's feature extractor, behind one provider interface |
+| Models | Gemini Live (`VOICE_PROVIDER=gemini`) or Boson Higgs Realtime; Higgs TTS and Higgs Avatar stay on Boson; a text LLM for the Auditor and the pipeline's feature extractor, behind one provider interface |
 
 No tunnels in the demo path.
 

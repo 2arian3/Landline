@@ -32,8 +32,8 @@ from landline.contracts import CallsRequested, PreferencesUpdated, SessionEnded,
 from landline.contracts.tools import PreferenceDelta
 from landline.db.catalogue import Catalogue, _from_fixture
 from landline.orchestrator import SessionRuntime
-from landline.voice import higgs
 from landline.voice.dispatch import Dispatcher
+from landline.voice.gemini_live import session_connect
 from landline.voice.sim import SimRunner
 
 CALL_WAIT_S = 240
@@ -42,7 +42,8 @@ CALL_WAIT_S = 240
 async def one_call(case: CallCase, n: int, catalogue: Catalogue, settings: Settings, out) -> CallScore:
     runtime = SessionRuntime(catalogue)
     persona = case.as_persona()
-    runner = SimRunner(runtime, higgs.connect, settings.boson_api_key or "", persona_for=lambda d, x: persona)
+    runner = SimRunner(runtime, session_connect(settings), settings.voice_api_key() or "",
+                       persona_for=lambda d, x: persona)
     Dispatcher(runtime, replace(settings, call_concurrency=1), runner=runner)
     sid, now, p = f"s_call_{case.id}_{n}", datetime.now(UTC), case.plan
     await runtime.start(SessionStarted(session_id=sid, at=now, idem_key=f"{sid}:started", channel="judge"))
@@ -81,8 +82,9 @@ async def one_call(case: CallCase, n: int, catalogue: Catalogue, settings: Setti
 
 async def run(sets: list[str], runs: int, concurrency: int, only: set[str], keep_report: bool) -> int:
     settings = Settings.load()
-    if not settings.boson_api_key:
-        print("BOSON_API_KEY is not set: skipping the live listing calls.")
+    if not settings.voice_api_key():
+        which = "GEMINI_API_KEY" if settings.voice_provider == "gemini" else "BOSON_API_KEY"
+        print(f"{which} is not set: skipping the live listing calls.")
         report.write()
         return 0
     catalogue = Catalogue(_from_fixture(CATALOGUE_PATH), "eval")
