@@ -54,6 +54,7 @@ class CallRow:
     ended_at: datetime | None
     deadline_at: datetime | None
     attempt: int
+    to_e164: str | None = None  # 0004: the number a listing call dialled (A-13, O-08b)
 
 
 @dataclass(frozen=True)
@@ -154,6 +155,9 @@ class UserRow:
     consent_memory: bool
     created_at: datetime
     last_seen_at: datetime | None
+    email: str | None = None           # 0004: U-12, O-08 (invites go to it)
+    use_saved_search: bool = False     # 0004: U-12d
+    push_token: str | None = None      # 0004: U-13c
 
 
 @dataclass(frozen=True)
