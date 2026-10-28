@@ -176,7 +176,7 @@ class Dispatcher:
                 await self._wait_for_hours()
             dial = Dial(call_id=call_id, session_id=plan.session_id, listing_id=listing_id, to=to, plan=plan,
                         deadline=self.clock() + timedelta(seconds=self.settings.listing_call_max_s))
-            await self._state(plan.session_id, call_id, "dialing")
+            await self._state(plan.session_id, call_id, "dialing", to=to)   # calls.to_e164 (A-13a)
 
             async def report(state: CallState) -> None:
                 await self._state(plan.session_id, call_id, state)
@@ -198,11 +198,11 @@ class Dispatcher:
                 return
             await self.sleep(wait)
 
-    async def _state(self, sid: str, call_id: str, state: CallState) -> None:
+    async def _state(self, sid: str, call_id: str, state: CallState, to: str | None = None) -> None:
         await self._emit(CallStateChanged(session_id=sid, at=self.clock(), idem_key=f"{call_id}:{state}",
                                           call_id=call_id, state=state))
         if self.runtime.db is not None:
-            await self.runtime.db.calls.set_state(call_id, state, answered=state == "live")
+            await self.runtime.db.calls.set_state(call_id, state, to_e164=to, answered=state == "live")
 
     async def _finish(self, plan: CallPlan, call_id: str, listing_id: str, result: CallResult) -> None:
         """End the call once, then record its outcome, then complete the plan if this was the last one."""
