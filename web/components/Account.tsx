@@ -7,6 +7,7 @@ import { duration, phoneLabel, type CallRow, type ChosenPlace, type SessionRow, 
 import { bedsLabel, heardLine, money } from "@/lib/format";
 import { VIEWING, WENT, factLine } from "@/lib/heard";
 import { isMeRefusal, loadMe, loadMyListings, loadSignedIn, type MeRefusal, type MyListing } from "@/lib/me";
+import { MySearch } from "./MySearch";
 
 const PHONE_KEY = "landline-me-phone"; // this tab only: sessionStorage, never the URL
 // Set on Vercel (X-03a): /me signs in with an SMS code. Unset (local dev, CI): the typed number, as before.
@@ -90,7 +91,15 @@ function SignedInAccount() {
   if (!isLoaded || (isSignedIn && !user && !refusal)) return <Loading />;
   if (!isSignedIn) return <PhoneSignIn />;
   if (!user) return <Refused refusal={refusal ?? "unreachable"} onSignOut={() => void signOut()} />;
-  return <History user={user} listings={listings} leave="Sign out" onLeave={() => void signOut()} />;
+  return (
+    <History
+      user={user}
+      listings={listings}
+      search={<MySearch getToken={() => getToken()} />}
+      leave="Sign out"
+      onLeave={() => void signOut()}
+    />
+  );
 }
 
 function Loading() {
@@ -292,11 +301,13 @@ const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 function History({
   user,
   listings,
+  search,
   leave,
   onLeave,
 }: {
   user: UserDetail;
   listings?: MyListing[] | MeRefusal | null; // signed in only: the route needs a Clerk session
+  search?: ReactNode; // signed in only: the "My search" form takes the read-only "What you want"
   leave: string;
   onLeave: () => void;
 }) {
@@ -333,14 +344,22 @@ function History({
           </p>
         </header>
 
-        <Section title="What you want">
-          {wants.length ? (
-            <p className="text-fact">{capital(wants.join(" · "))}</p>
-          ) : (
-            <p className="text-support text-ink-2">Nothing saved yet.</p>
-          )}
-          {user.summary && <p className="mt-2 text-support text-ink-2">{user.summary}</p>}
-        </Section>
+        {search ? (
+          <Section title="My search">
+            <div className={`${card} p-4`} style={hairline}>
+              {search}
+            </div>
+          </Section>
+        ) : (
+          <Section title="What you want">
+            {wants.length ? (
+              <p className="text-fact">{capital(wants.join(" · "))}</p>
+            ) : (
+              <p className="text-support text-ink-2">Nothing saved yet.</p>
+            )}
+            {user.summary && <p className="mt-2 text-support text-ink-2">{user.summary}</p>}
+          </Section>
+        )}
 
         {listings !== undefined && (
           <Section title="My listings">
