@@ -21,6 +21,7 @@ from typing import Any
 from pydantic import BaseModel, ValidationError
 
 from landline.agents.concierge import refs
+from landline.agents.concierge.status import listing_status
 from landline.contracts import (
     AnchorResolved,
     AreaFocused,
@@ -53,8 +54,7 @@ from landline.voice.dispatch import TORONTO, until_open
 log = logging.getLogger(__name__)
 
 # remember_me / forget_me wait for profiles (O-05): until then there is nothing for them to change.
-# listing_status waits for its handler (A-14).
-DEFERRED = {"remember_me", "forget_me", "listing_status"}
+DEFERRED = {"remember_me", "forget_me"}
 # ask_maps (O-07b) is offered only when the runtime has Google's Maps MCP client (GOOGLE_MAPS_API_KEY).
 MAPS_TOOL = "ask_maps"
 TOOLS: list[dict[str, Any]] = [t for t in concierge_tools() if t["name"] not in DEFERRED | {MAPS_TOOL}]
@@ -764,6 +764,7 @@ HANDLERS: dict[str, Callable[[Any, ToolContext, dict], Awaitable[str]]] = {
     "focus_area": focus_area,
     MAPS_TOOL: ask_maps,
     "call_listings": call_listings,
+    "listing_status": listing_status,   # A-14: agents/concierge/status.py
     "end_session": end_session,
 }
 
