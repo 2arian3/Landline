@@ -70,6 +70,7 @@ class FakeMemory:
         self.scopes: list[str] = []
         self.facts: list[dict] = []
         self.inferred: list[dict] = []   # hits the server made up from what it was told (entity, attribute)
+        self.now = T0   # the server's own time for a record it stores, which it returns as occurredAt
 
     def sent(self, route: str) -> list[dict]:
         return [json.loads(r.content) for r in self.requests if r.url.path == BASE + route]
@@ -81,6 +82,8 @@ class FakeMemory:
         failure = self.fail.get(route)
         if failure == "slow":
             await asyncio.sleep(5)
+        elif isinstance(failure, float):   # answers after this many seconds (the live server's ~6 s reads)
+            await asyncio.sleep(failure)
         elif isinstance(failure, Exception):
             raise failure
         elif isinstance(failure, int):
@@ -94,14 +97,17 @@ class FakeMemory:
         if route == "/facts":
             for path in (p for clause in body["scopes"] for p in clause):
                 assert path in self.scopes, f"{path} written before it was registered"
-            self.facts.append(body)
+            if "observed_at" in body:   # the live server's answer to a literal write with a time
+                refused = "observed_at is only supported for fact-producing writes (infer = full or triples)"
+                return httpx.Response(400, json={"message": refused})
+            self.facts.append({**body, "occurredAt": self.now.isoformat()})
             n = len(self.facts)
             return httpx.Response(200, json={"chunkId": f"memory_chunk:{n}", "sessionId": "sess_1",
                                              "turnId": f"turn_{n}", "mode": "none"})
         if route == "/query":
             lens = {p for clause in body["lens"] for p in clause}
             hits = [{"id": f"memory_chunk:{i}", "score": 0.91, "source": "memory_chunk", "text": f["text"],
-                     "occurredAt": f.get("observed_at")}
+                     "occurredAt": f["occurredAt"]}
                     for i, f in enumerate(self.facts, 1) if lens & {p for c in f["scopes"] for p in c}]
             hits += self.inferred
             return httpx.Response(200, json={"tier": "hybrid", "hits": hits, "queryMs": 14,
@@ -161,12 +167,11 @@ async def test_each_grounded_fact_is_one_write_with_its_date_quote_and_listing_s
     await _calling(rt)
     await _outcome(rt, 0, _parking(), _fact("pets", "dogs allowed", "Dogs are fine, cats too.",
                                             at=datetime(2026, 10, 24, 4, 5, tzinfo=UTC)))
-    assert fake.sent("/facts") == [
-        {"text": PARKING, "infer": "none", "scopes": [["landline/listing/t:1"]],
-         "observed_at": "2026-10-24T02:00:00+00:00"},
-        # 00:05 on Saturday in Toronto: the date is Toronto's, not UTC's
+    assert fake.sent("/facts") == [   # no observed_at: the server refuses it on a literal write
+        {"text": PARKING, "infer": "none", "scopes": [["landline/listing/t:1"]]},
+        # 00:05 on Saturday in Toronto: the date is Toronto's, not UTC's, and it's in the sentence
         {"text": 'On 2026-10-24, the listing agent said pets: dogs allowed ("Dogs are fine, cats too.").',
-         "infer": "none", "scopes": [["landline/listing/t:1"]], "observed_at": "2026-10-24T04:05:00+00:00"},
+         "infer": "none", "scopes": [["landline/listing/t:1"]]},
     ]
     writes = [r for r in fake.requests if r.url.path.endswith("/facts")]
     assert {str(r.url) for r in writes} == {f"{URL}/api/v1/{CTX}/facts"}
@@ -248,7 +253,8 @@ async def test_a_5xx_or_timeout_is_one_log_line_and_never_reaches_the_runtime(rt
     view_before = rt.get(SID).version
     await _outcome(rt, 0, _parking(), _fact("pets", "dogs allowed", "Dogs are fine, cats too."))
     assert rt.get(SID).version == view_before + 1   # the outcome committed; the write failed after it
-    mine = [r for r in caplog.records if r.name == "landline.orchestrator.memory"]
+    mine = [r for r in caplog.records if r.name == "landline.orchestrator.memory"
+            and "facts from call" in r.getMessage()]   # the plan's prefetch logs its own reads
     assert [r.levelno for r in mine] == [logging.WARNING]
     assert "2 of 2 facts from call c_memory00001 not saved to landline/listing/t:1" in mine[0].getMessage()
     assert not [r for r in caplog.records if r.levelno >= logging.ERROR]   # no subscriber traceback
@@ -259,10 +265,12 @@ async def test_a_5xx_or_timeout_is_one_log_line_and_never_reaches_the_runtime(rt
 
 async def test_every_request_gives_up_after_its_own_timeout():
     default = Memory(URL, CTX, KEY)
-    assert TIMEOUT_S == 3.0 and default.timeout_s == 3.0
+    assert (TIMEOUT_S, default.timeout_s, default.query_timeout_s) == (5.0, 5.0, 12.0)   # reads take ~6 s
     await default.close()
-    fake = FakeMemory({"/query": "slow"})
-    memory = Memory(URL, CTX, KEY, client=_client(fake), timeout_s=0.05)
+    fake = FakeMemory({"/query": "slow", "/facts": "slow"})
+    memory = Memory(URL, CTX, KEY, client=_client(fake), timeout_s=0.05, query_timeout_s=0.05)
+    with pytest.raises(MemoryUnavailable, match="fact write"):
+        await memory.write("x", listing_scope("t:1"))
     started = asyncio.get_running_loop().time()
     with pytest.raises(MemoryUnavailable) as caught:
         await memory.query("parking", listing_scope("t:1"))
@@ -280,7 +288,7 @@ async def test_a_query_returns_what_a_call_wrote_on_that_listing_only(rt):
     hits = await memory.query("How much is parking?", listing_scope("t:1"))
     assert fake.sent("/query")[-1] == {"query": "How much is parking?", "lens": [["landline/listing/t:1"]],
                                        "k": 10}
-    assert [(h.text, h.source, h.occurred_at) for h in hits] == [(PARKING, "memory_chunk", T0)]
+    assert [(h.text, h.source, h.occurred_at) for h in hits] == [(PARKING, "memory_chunk", fake.now)]
     assert await memory.query("pets", listing_scope("t:9"), k=500) == []
     assert fake.sent("/query")[-1]["k"] == 50   # the server's cap
     await memory.close()
@@ -334,7 +342,8 @@ async def test_listing_knowledge_keeps_our_own_sentences_from_the_last_week_newe
         ("The listing agent mentioned the parking is about $150.", _at(28, 20)),  # not our sentence
         (_said("2026-13-40", "ac", "air conditioning", "There's central air."), _at(28, 20)),   # no such date
     ]:
-        await memory.write(text, scope, observed_at=at)
+        fake.now = at   # when the server stored it, which it returns as occurredAt
+        await memory.write(text, scope)
     await memory.write(_said("2026-10-28", "pets", "no pets", "No pets here."), listing_scope("t:2"))
     # What the server inferred is never a fact (hard rule 3), even in the same words.
     fake.inferred = [
@@ -379,7 +388,7 @@ async def test_recall_at_dial_time_gives_up_fast_never_raises_and_logs_one_line(
     assert clock() - started < 1
     mine = [r for r in caplog.records if r.name == "landline.orchestrator.memory"]
     assert [r.levelno for r in mine] == [logging.WARNING]
-    assert "landline/listing/t:1 not read" in mine[0].getMessage() and "asks cold" in mine[0].getMessage()
+    assert "landline/listing/t:1" in mine[0].getMessage() and "asks cold" in mine[0].getMessage()
     assert KEY not in caplog.text
     await memory.close()
 
@@ -486,3 +495,62 @@ async def test_only_a_renter_who_agreed_is_remembered_and_only_in_their_own_scop
          "On 2026-10-23, the renter said they want up to $2,600 a month; 2 bedrooms or more.")]
     assert all(renter_scope(declined) not in s for f in fake.facts for c in f["scopes"] for s in c)
     await runtime.close()
+
+
+# ── Live fixes: reads take ~6 s, so the plan prefetches them for the dial ─────────────────────────────────
+
+async def _known_parking(fake: FakeMemory) -> Memory:
+    memory = Memory(URL, CTX, KEY, client=_client(fake), now=lambda: THU)
+    await memory.register(listing_scope("t:1"))
+    await memory.write(PARKING, listing_scope("t:1"))
+    return memory
+
+
+async def test_the_plan_starts_a_prefetch_and_the_dial_uses_it(rt):
+    fake = FakeMemory()
+    memory = install(rt, _settings(), client=_client(fake))
+    memory.now = lambda: THU
+    await memory.register(listing_scope("t:1"))
+    await memory.write(PARKING, listing_scope("t:1"))
+    await _calling(rt)   # CallsRequested for t:1 and t:2
+    await rt.idle()
+    await asyncio.gather(*(task for _, task in memory._prefetched.values()))
+    assert sorted(memory._prefetched) == ["t:1", "t:2"] and len(fake.sent("/query")) == 2
+    known = await recall(memory, "t:1", timeout_s=0.05)
+    assert [(k.field, k.value) for k in known] == [("parking_cost", "$150 a month")]
+    assert len(fake.sent("/query")) == 2   # the dial asked nothing new
+    await memory.close()
+
+
+async def test_a_slow_read_lands_before_the_dial_with_a_prefetch_and_asks_cold_without():
+    fake = FakeMemory({"/query": 0.3})   # the live server's ~6 s, scaled down
+    memory = await _known_parking(fake)
+    memory.prefetch("t:1")   # when the plan was recorded
+    await asyncio.sleep(0.4)   # the rest of the renter's call, then the dial
+    assert [k.field for k in await recall(memory, "t:1", timeout_s=0.05)] == ["parking_cost"]
+    cold = await _known_parking(FakeMemory({"/query": 0.3}))   # no plan prefetched it
+    assert await recall(cold, "t:1", timeout_s=0.05) == []   # the dial never waits on it
+    await asyncio.sleep(0.4)   # ...but the read carries on, for the next call to that listing
+    assert [k.field for k in await recall(cold, "t:1", timeout_s=0.05)] == ["parking_cost"]
+    await memory.close()
+    await cold.close()
+
+
+async def test_a_prefetch_is_kept_15_minutes_and_a_failed_one_is_tried_again():
+    ticks = [0.0]
+    fake = FakeMemory()
+    memory = await _known_parking(fake)
+    memory.clock = lambda: ticks[0]
+    first = memory.prefetch("t:1")
+    await first
+    assert memory.prefetch("t:1") is first and len(fake.sent("/query")) == 1
+    ticks[0] = 15 * 60 + 1   # past PREFETCH_TTL_S
+    await memory.prefetch("t:1")
+    assert len(fake.sent("/query")) == 2
+    fake.fail["/query"] = 503
+    failed = memory.prefetch("t:2")
+    with pytest.raises(MemoryUnavailable):
+        await failed
+    fake.fail.clear()
+    assert memory.prefetch("t:2") is not failed   # a failed read isn't kept
+    await memory.close()
