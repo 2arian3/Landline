@@ -116,7 +116,8 @@ function PhoneSignIn() {
           Sign in with the number you call Landline from. We text it a code, so only you see its calls.
         </p>
         <div className="mt-4">
-          <SignIn routing="hash" withSignUp appearance={CLERK_LOOK} />
+          {/* Back to /me once signed in: Clerk otherwise goes to the home page. */}
+          <SignIn routing="hash" withSignUp forceRedirectUrl="/me" signUpForceRedirectUrl="/me" appearance={CLERK_LOOK} />
         </div>
       </div>
     </div>
@@ -133,11 +134,16 @@ const CLERK_LOOK = {
     fontSize: "15px",
     borderRadius: "12px",
   },
+  // Style objects, not class names: Clerk's own CSS outranks Tailwind's layered utilities.
   elements: {
-    rootBox: "w-full",
-    cardBox: "w-full shadow-none border-0",
-    card: "w-full p-0 shadow-none border-0 bg-transparent",
-    header: "hidden",
+    rootBox: { width: "100%" },
+    cardBox: { width: "100%", maxWidth: "100%", boxShadow: "none", border: "none", borderRadius: 0 },
+    card: { width: "100%", padding: "2px", boxShadow: "none", border: "none", background: "transparent" },
+    // Our card says what this is; Clerk's own title would repeat it. Its number-and-edit line on the code
+    // step stays.
+    headerTitle: { display: "none" },
+    headerSubtitle: { display: "none" },
+    footer: { background: "transparent" },
   },
 };
 
