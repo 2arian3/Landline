@@ -1,17 +1,21 @@
 "use client";
 
+import { SignIn, useAuth } from "@clerk/nextjs";
 import Link from "next/link";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { duration, phoneLabel, type CallRow, type ChosenPlace, type SessionRow, type UserDetail, when } from "@/lib/admin";
 import { bedsLabel, heardLine, money } from "@/lib/format";
-import { isMeRefusal, loadMe, type MeRefusal } from "@/lib/me";
+import { isMeRefusal, loadMe, loadSignedIn, type MeRefusal } from "@/lib/me";
 
 const PHONE_KEY = "landline-me-phone"; // this tab only: sessionStorage, never the URL
+// Set on Vercel (X-03a): /me signs in with an SMS code. Unset (local dev, CI): the typed number, as before.
+const CLERK = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 
 const REFUSED: Record<MeRefusal, string> = {
   phone: "That isn't a phone number. Use the number you call from, like 416 555 0123.",
   unknown: "No profile is saved for that number yet. Call Landline from it once, then come back.",
   off: "Call history isn't available on this server.",
+  signin: "Your sign-in has ended. Sign in again.",
   unreachable: "Can't reach Landline right now.",
 };
 
@@ -42,8 +46,112 @@ const ENDED: Record<string, string> = {
 const card = "rounded-[var(--radius-card)] bg-surface";
 const hairline = { boxShadow: "0 0 0 1px var(--color-hair)" };
 
-/** /me: enter the number you call from, then the calls and places saved for it. */
+/** /me: sign in with the phone you call from (an SMS code proves it's yours), then its calls and places. */
 export function Account() {
+  return CLERK ? <SignedInAccount /> : <TypedAccount />;
+}
+
+/** Signed in with Clerk (U-11b): the history of the number the session proves, from GET /api/me. */
+function SignedInAccount() {
+  const { isLoaded, isSignedIn, userId, getToken, signOut } = useAuth();
+  const [user, setUser] = useState<UserDetail | null>(null);
+  const [refusal, setRefusal] = useState<MeRefusal | null>(null);
+
+  useEffect(() => {
+    setUser(null);
+    setRefusal(null);
+    if (!isLoaded || !isSignedIn) return;
+    const ctl = new AbortController();
+    void (async () => {
+      let got: UserDetail | MeRefusal;
+      try {
+        const token = await getToken();
+        got = token ? await loadSignedIn(token, ctl.signal) : "signin";
+      } catch {
+        return; // the lookup was cancelled
+      }
+      if (isMeRefusal(got)) setRefusal(got);
+      else setUser(got);
+    })();
+    return () => ctl.abort();
+    // getToken comes from the session; a new user id is a new session
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoaded, isSignedIn, userId]);
+
+  if (!isLoaded || (isSignedIn && !user && !refusal)) return <Loading />;
+  if (!isSignedIn) return <PhoneSignIn />;
+  if (!user) return <Refused refusal={refusal ?? "unreachable"} onSignOut={() => void signOut()} />;
+  return <History user={user} leave="Sign out" onLeave={() => void signOut()} />;
+}
+
+function Loading() {
+  return (
+    <div className="fixed inset-0 grid place-items-center bg-ground">
+      <p className="text-support text-ink-3">Loading…</p>
+    </div>
+  );
+}
+
+/** Clerk's phone sign-in, in the page's own card: a number, then the code texted to it. */
+function PhoneSignIn() {
+  return (
+    <div className="fixed inset-0 grid place-items-center overflow-y-auto bg-ground px-4 py-6">
+      <div className={`${card} w-full max-w-sm p-5`} style={hairline}>
+        <p className="text-fact font-strong tracking-[-0.01em]">
+          <Link href="/" className="focus-visible:outline-2 focus-visible:outline-ink">
+            Landline
+          </Link>
+        </p>
+        <h1 className="mt-3 text-title font-strong">Your calls</h1>
+        <p className="mt-1 text-support text-ink-2">
+          Sign in with the number you call Landline from. We text it a code, so only you see its calls.
+        </p>
+        <div className="mt-4">
+          <SignIn routing="hash" withSignUp appearance={CLERK_LOOK} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Clerk's form in the page's look: no card of its own, the ink as the accent, the page's type and radius. */
+const CLERK_LOOK = {
+  variables: {
+    colorPrimary: "#1a1815",
+    colorText: "#1a1815",
+    colorBackground: "#ffffff",
+    fontFamily: "inherit",
+    fontSize: "15px",
+    borderRadius: "12px",
+  },
+  elements: {
+    rootBox: "w-full",
+    cardBox: "w-full shadow-none border-0",
+    card: "w-full p-0 shadow-none border-0 bg-transparent",
+    header: "hidden",
+  },
+};
+
+function Refused({ refusal, onSignOut }: { refusal: MeRefusal; onSignOut: () => void }) {
+  return (
+    <div className="fixed inset-0 grid place-items-center bg-ground px-4">
+      <div className={`${card} w-full max-w-sm p-5`} style={hairline}>
+        <h1 className="text-title font-strong">Your calls</h1>
+        <p className="mt-2 text-support text-ink-2">{REFUSED[refusal]}</p>
+        <button
+          type="button"
+          onClick={onSignOut}
+          className="mt-4 min-h-11 w-full rounded-[var(--radius-control)] bg-ink px-4 text-support font-label text-white"
+        >
+          Sign out
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** Without Clerk (local dev, CI): enter the number you call from, as the API still accepts there. */
+function TypedAccount() {
   const [ready, setReady] = useState(false);
   const [phone, setPhone] = useState<string | null>(null);
   const [user, setUser] = useState<UserDetail | null>(null);
@@ -88,13 +196,7 @@ export function Account() {
   }, [open]);
 
   if (!ready) return null;
-  if (phone && !user && !refusal) {
-    return (
-      <div className="fixed inset-0 grid place-items-center bg-ground">
-        <p className="text-support text-ink-3">Loading…</p>
-      </div>
-    );
-  }
+  if (phone && !user && !refusal) return <Loading />;
   if (!user) {
     return (
       <Login
@@ -108,7 +210,7 @@ export function Account() {
     );
   }
 
-  return <History user={user} onLeave={() => forget(setPhone, setUser)} />;
+  return <History user={user} leave="Different number" onLeave={() => forget(setPhone, setUser)} />;
 }
 
 function forget(setPhone: (p: string | null) => void, setUser?: (u: UserDetail | null) => void) {
@@ -172,7 +274,7 @@ function Login({ refusal, onPhone }: { refusal: MeRefusal | null; onPhone: (phon
 
 const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
-function History({ user, onLeave }: { user: UserDetail; onLeave: () => void }) {
+function History({ user, leave, onLeave }: { user: UserDetail; leave: string; onLeave: () => void }) {
   const wants = user.preferences ? heardLine(user.preferences) : [];
   return (
     <div className="fixed inset-0 overflow-y-auto bg-ground">
@@ -192,7 +294,7 @@ function History({ user, onLeave }: { user: UserDetail; onLeave: () => void }) {
             onClick={onLeave}
             className="inline-flex min-h-11 items-center rounded-[var(--radius-control)] px-2 text-support text-ink-2 hover:bg-press focus-visible:outline-2 focus-visible:outline-ink"
           >
-            Different number
+            {leave}
           </button>
         </div>
 
