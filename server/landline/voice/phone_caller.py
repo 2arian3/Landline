@@ -88,12 +88,25 @@ class PhoneCaller:
                 self._known.popitem(last=False)
         return task
 
+    async def _texts_confirm(self, dial: Dial) -> bool:
+        """A booking on this call texts the number it dialled a confirm link (O-08b): only once that number
+        is stored on the call (calls.to_e164, which A-13a fills), so the Caller never promises a text."""
+        db = self.runtime.db
+        if db is None:
+            return False
+        try:
+            row = await db.calls.get(dial.call_id)
+        except Exception:
+            log.exception("call %s: could not read its dialled number", dial.call_id)
+            return False
+        return bool(row and row.to_e164)
+
     async def _setup(self, dial: Dial) -> tuple[Listing, Any, dict[str, Any], list[dict[str, Any]]]:
         """The call's listing, its brief, its Higgs session config and the events that open it."""
         known = await asyncio.shield(self.recall(dial))   # a prepare cut short never cancels the read
         listing = self.runtime.catalogue.by_id[dial.listing_id]
         b = brief(listing, dial.plan, wants(self._preferences(dial.session_id)), known=known,
-                  now=self.clock())
+                  now=self.clock(), texts_confirm=await self._texts_confirm(dial))
         text, start = opening(instructions(b), recorded=self.record_audio, first=disclosure(b))
         config = session_config(instructions=text, tools=caller_tools.TOOLS, voice=self.voice,
                                 audio_format=PCMU)
