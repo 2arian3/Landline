@@ -111,7 +111,7 @@ Landline is one of ten finalists at Build North's Demo Day: Thursday 29 October,
 | To do | X-03c | Pause the listing refresh during the event, and keep the logs open | Arian | Thu 12:00 | [#248](https://github.com/2arian3/Landline/issues/248) |
 | To do | X-03d | Demo accounts: the renter's phone off the allowlist with an email on its profile, old test sessions cleared, and one rehearsal call so memory has a fact to confirm | Arian | Thu morning | [#248](https://github.com/2arian3/Landline/issues/248) |
 | To do | X-03e | Who holds which phone on stage, and what each person says | Danial | Wed | [#248](https://github.com/2arian3/Landline/issues/248) |
-| To do | X-03f | Numbers for the pitch: calls placed, facts heard with quotes, viewings booked, cost per search, eval results | Arian, Danial | Wed | [#248](https://github.com/2arian3/Landline/issues/248) |
+| Built (#272), Danial to add his | X-03f | Numbers for the pitch: calls placed, facts heard with quotes, viewings booked, cost per search, eval results | Arian, Danial | Wed | [#248](https://github.com/2arian3/Landline/issues/248) |
 | To do | X-03g | The venue: Wi-Fi and a hotspot tested, the phones mirrored on screen, the backup video ready offline | Mahyar | Thu | [#248](https://github.com/2arian3/Landline/issues/248) |
 | To do | X-03h | A 3-minute pitch around the demo | All (Arian leads) | Wed | [#248](https://github.com/2arian3/Landline/issues/248) |
 | To do | X-03i | Short answers to the judges' likely questions | All | Thu | [#248](https://github.com/2arian3/Landline/issues/248) |
