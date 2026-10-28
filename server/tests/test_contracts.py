@@ -26,6 +26,7 @@ from landline.contracts import (
     Card,
     CardStatus,
     CataloguePoint,
+    CommuteResolved,
     Event,
     Fact,
     FactRecorded,
@@ -108,6 +109,7 @@ SAMPLE_EVENTS = [
     _event(CallEnded, call_id=CID, reason="done"),
     _event(OutcomeReady, outcome=CallOutcome(call_id=CID, listing_id=LID, end_reason="done")),
     _event(CallsCompleted, call_ids=[CID]),
+    _event(CommuteResolved, label="King and Bay", lat=43.6487, lng=-79.3817),
 ]
 
 

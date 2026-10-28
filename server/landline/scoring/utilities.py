@@ -25,6 +25,12 @@ def distance(d_km: float, decay_km: float) -> float:
     return exp(-d_km / decay_km)
 
 
+def commute(minutes: float, decay_min: float, free_min: float) -> float:
+    """TTC minutes to a place the renter named (D-10c): 1 up to `free_min` (getting to a stop and boarding
+    take that long anywhere), then falling like `distance`."""
+    return clamp(exp(-(minutes - free_min) / decay_min))
+
+
 def transit(walk_min: float | None) -> float | None:
     return None if walk_min is None else clamp(1 - (walk_min - 3) / 17)
 

@@ -35,6 +35,7 @@ from psycopg import AsyncConnection
 
 from landline.contracts import (
     AnchorResolved,
+    CommuteResolved,
     Event,
     Preferences,
     PreferencesUpdated,
@@ -45,6 +46,7 @@ from landline.db.catalogue import Catalogue
 from landline.db.pool import Database
 from landline.orchestrator import board, handlers, narrator
 from landline.orchestrator.calllog import CallLog
+from landline.orchestrator.commute import Commute
 from landline.orchestrator.places import Places
 from landline.orchestrator.profiles import SAVED_SEARCH, Profiles, delta_of, is_saved_search
 from landline.orchestrator.state import SessionState
@@ -101,7 +103,7 @@ class Tx:
 class SessionRuntime:
     def __init__(self, catalogue: Catalogue, db: Database | None = None, *,
                  matrix: FeatureMatrix | None = None, places: Places | None = None,
-                 contact: str | None = None):
+                 contact: str | None = None, maps_key: str | None = None):
         self.catalogue = catalogue
         self.matrix = matrix or FeatureMatrix.build(catalogue.listings, catalogue.hoods)   # once, at boot
         self.db = db
@@ -120,6 +122,10 @@ class SessionRuntime:
         self.places = places or Places(self.matrix.named, contact=contact)
         self.on("PreferencesUpdated", self._resolve_places)
         self.on("SessionStarted", self._resolve_places)
+        # TTC minutes from the top listings to each place that resolves (D-10c), with GOOGLE_MAPS_API_KEY.
+        self.commute = Commute(self.matrix, maps_key) if maps_key else None
+        if self.commute is not None:
+            self.on("AnchorResolved", self._commute)
 
     def __len__(self) -> int:
         return len(self._live)
@@ -205,6 +211,8 @@ class SessionRuntime:
         for task in list(self._tasks):
             task.cancel()
         await asyncio.gather(*self._tasks, return_exceptions=True)
+        if self.commute is not None:
+            await self.commute.close()
 
     def _get(self, session_id: str) -> _Live:
         live = self._live.get(session_id)
@@ -277,6 +285,16 @@ class SessionRuntime:
             await self.emit(AnchorResolved(session_id=event.session_id, at=datetime.now(UTC),
                                            idem_key=f"{event.session_id}:place:{key}", label=anchor.label,
                                            lat=point.lat, lng=point.lng))
+
+    async def _commute(self, event: Event, view: SessionView) -> None:
+        """The place's TTC minutes into the matrix's cache, off the hot path, then CommuteResolved re-ranks
+        the board with them. Once per AnchorResolved (its idem key), and only when some minutes were new."""
+        if not await self.commute.on_anchor(event, view) or not self.has(event.session_id):
+            return
+        assert isinstance(event, AnchorResolved)
+        await self.emit(CommuteResolved(session_id=event.session_id, at=datetime.now(UTC),
+                                        idem_key=f"{event.idem_key}:commute", label=event.label,
+                                        lat=event.lat, lng=event.lng))
 
     async def _remember(self, event: Event, view: SessionView) -> None:
         if self.profiles is not None and self.has(event.session_id):

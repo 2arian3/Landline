@@ -258,3 +258,40 @@ def test_ranking_two_thousand_listings_takes_under_five_ms():
         runs.append(time.perf_counter() - t)
     print(f"ranking 2,000 listings: best of 20 = {min(runs) * 1000:.2f} ms")
     assert min(runs) < 0.005
+
+
+# D-10c: TTC minutes to a place the renter named, when Google's are in the matrix's cache
+
+
+def test_ttc_minutes_beat_km_where_known_and_km_stays_elsewhere():
+    # The same distance from King and Bay; one is 12 minutes by TTC, the other 38.
+    near, far = _l("a", lat=43.6587, lng=-79.3817), _l("b", lat=43.6387, lng=-79.3817)
+    third = _l("c", lat=43.6550, lng=-79.3817)   # no minutes yet: scored by km
+    matrix = FeatureMatrix.build([far, near, third])
+    prefs = _prefs(anchors=[KING_AND_BAY], priorities=["location"])
+    before = rank(matrix, prefs)
+    assert "1.1 km from King and Bay" in before.explain("t:a").reasons
+    assert matrix.use_commute(KING_AND_BAY.lat, KING_AND_BAY.lng, {"t:a": 12.0, "t:b": 38.0}) == 2
+    after = rank(matrix, prefs)
+    assert after.order.index("t:a") < after.order.index("t:b")
+    assert "12 min by TTC to King and Bay" in after.explain("t:a").reasons
+    assert "0.7 km from King and Bay" in after.explain("t:c").reasons   # the km fallback
+    loc = after.explain("t:a").contributions["location"] / weights_for(prefs)["location"]
+    assert loc == pytest.approx(u.commute(12.0, 15.0, 10.0))
+    assert after.explain("t:b").watch_out == "38 min by TTC to King and Bay"
+    assert matrix.use_commute(KING_AND_BAY.lat, KING_AND_BAY.lng, {"t:a": 12.0}) == 0   # nothing new
+
+
+def test_ranking_two_thousand_listings_with_ttc_minutes_takes_under_five_ms():
+    matrix = FeatureMatrix.build(_catalogue(2000))
+    prefs = _prefs(min_beds=1, anchors=[KING_AND_BAY], priorities=["location", "cost", "light"])
+    top = rank(matrix, prefs).order[:50]
+    matrix.use_commute(KING_AND_BAY.lat, KING_AND_BAY.lng, {lid: 10 + i for i, lid in enumerate(top)})
+    rank(matrix, prefs)   # the location column is worked out again once, with the minutes
+    runs = []
+    for _ in range(20):
+        t = time.perf_counter()
+        rank(matrix, prefs)
+        runs.append(time.perf_counter() - t)
+    print(f"ranking 2,000 listings with TTC minutes: best of 20 = {min(runs) * 1000:.2f} ms")
+    assert min(runs) < 0.005
