@@ -48,11 +48,11 @@ Landline is one of ten finalists at Build North's Demo Day: Thursday 29 October,
 
 | Status | ID | Task | Priority | Needs | Done when | Issue |
 |---|---|---|---|---|---|---|
-| To do | X-04 | Add every demo-day column and field in one PR (nothing uses them yet) | P0, first | – | the migration applies, `make test` passes, Danial and Mahyar approve | [#236](https://github.com/2arian3/Landline/issues/236) |
-| To do | D-10a | Walking minutes to the nearest TTC station, from Google Maps | P0 | X-04 | every active listing has them, with their source | [#237](https://github.com/2arian3/Landline/issues/237) |
-| To do | D-10b | The nearest grocery store and pharmacy, with walking minutes | P0 | X-04 | every active listing has both, or nothing when none is close | [#237](https://github.com/2arian3/Landline/issues/237) |
+| Done (#259) | X-04 | Add every demo-day column and field in one PR (nothing uses them yet) | P0, first | – | the migration applies, `make test` passes, Danial and Mahyar approve | [#236](https://github.com/2arian3/Landline/issues/236) |
+| Built (#263), live run pending the key | D-10a | Walking minutes to the nearest TTC station, from Google Maps | P0 | X-04 | every active listing has them, with their source | [#237](https://github.com/2arian3/Landline/issues/237) |
+| Built (#261), live run pending the key | D-10b | The nearest grocery store and pharmacy, with walking minutes | P0 | X-04 | every active listing has both, or nothing when none is close | [#237](https://github.com/2arian3/Landline/issues/237) |
 | To do | D-10c | TTC minutes to the place the renter names, used in the ranking | P0 | D-10a | "I work at King and Bay" re-sorts the board with "min by TTC" reasons | [#237](https://github.com/2arian3/Landline/issues/237) |
-| To do | O-08a | A Google Calendar client and a one-time sign-in script | P0 | – | a test event invites a teammate | [#238](https://github.com/2arian3/Landline/issues/238) |
+| Built (#262), live run pending the Google keys | O-08a | A Google Calendar client and a one-time sign-in script | P0 | – | a test event invites a teammate | [#238](https://github.com/2arian3/Landline/issues/238) |
 | To do | O-08b | Text the listing agent a confirm link after a booking | P0 | X-04, A-13a | one SMS per booking, to the number we called | [#238](https://github.com/2arian3/Landline/issues/238) |
 | To do | O-08c | When the agent confirms, send both invites and text the renter | P0 | O-08a, O-08b | a confirm makes one event that invites both people | [#238](https://github.com/2arian3/Landline/issues/238) |
 | To do | U-12d | Start the next call from the saved search, when the renter turns that on | P0 | X-04 | the first board of the next call uses the saved search | [#246](https://github.com/2arian3/Landline/issues/246) |
@@ -61,6 +61,8 @@ Landline is one of ten finalists at Build North's Demo Day: Thursday 29 October,
 | To do | O-09a | Save each call's facts to SurrealDB Agent Memory | P1 | – | a sim call's facts come back from a memory query | [#240](https://github.com/2arian3/Landline/issues/240) |
 | To do | O-09b | The Caller confirms what an earlier call heard instead of asking cold | P1 | O-09a | a second renter's call opens with "Last week they said…" | [#240](https://github.com/2arian3/Landline/issues/240) |
 | To do | O-09c | Remember a renter who agreed to it, and backfill last week's facts | P2 | O-09a | the backfill runs once | [#240](https://github.com/2arian3/Landline/issues/240) |
+
+*Status, Wed 28 Oct 00:40: X-04 is merged (#259), at Arian's call before review; Danial and Mahyar are asked to look it over. In progress: D-10a (`data/D-10a-ttc-walk`), D-10b (`data/D-10b-nearby`) and O-08a (`data/O-08a-calendar-client`). Their live runs need keys: D-10a and D-10b a `GOOGLE_MAPS_API_KEY` with Places API (New) and Routes API, and O-08a the Google OAuth client and refresh token. O-07b waits on a decision about Google's terms for showing Places results on our own map (#239). Shipped at 00:23: `ae3ef77` on release, which is main through #258 plus the fix that lets the API start on the VM's Python 3.14 (`audioop`). #260 keeps Intel Macs on cryptography 48, so `uv sync` works there again.*
 
 ### Danial
 
@@ -71,7 +73,7 @@ Landline is one of ten finalists at Build North's Demo Day: Thursday 29 October,
 | To do | A-13c | Text the renter what a callback learned | P0 | A-13b | the renter gets one update SMS | [#241](https://github.com/2arian3/Landline/issues/241) |
 | To do | A-14 | `listing_status`: answer "What happened with Markham?" | P0 | – | a second call gets that listing's facts and viewing in one reply | [#242](https://github.com/2arian3/Landline/issues/242) |
 | To do | A-13d | Write down who answers which call | P1 | A-13b | the table is in `docs/ARCHITECTURE.md` | [#241](https://github.com/2arian3/Landline/issues/241) |
-| Built (gemini-refactor) | A-12a | Audio converters between our formats and Gemini's | P1 | – | the round-trip tests pass | [#243](https://github.com/2arian3/Landline/issues/243) |
+| Built (#255) | A-12a | Audio converters between our formats and Gemini's | P1 | – | the round-trip tests pass | [#243](https://github.com/2arian3/Landline/issues/243) |
 | In progress | A-12b | The Gemini Live adapter, in text first | P1 | – | a scripted mock call passes on Gemini | [#243](https://github.com/2arian3/Landline/issues/243) |
 | In progress | A-12c | Voice on Gemini: /try and phone calls | P1 | A-12a, A-12b | English and French briefs, a renter call and a listing call all work | [#243](https://github.com/2arian3/Landline/issues/243) |
 | In progress | A-12d | Gemini and Higgs side by side, then pick the demo voice | P1 | A-12c | the numbers are in the team chat by Wed 20:00 | [#243](https://github.com/2arian3/Landline/issues/243) |
@@ -79,7 +81,7 @@ Landline is one of ten finalists at Build North's Demo Day: Thursday 29 October,
 | To do | E-06a | Make a simulated property manager in Era and save its data | P2 | – | the fixture is committed | [#244](https://github.com/2arian3/Landline/issues/244) |
 | To do | E-06b | An Era landlord persona, five cases and a report table | P2 | E-06a | `--set era` runs and the report has the table | [#244](https://github.com/2arian3/Landline/issues/244) |
 
-*Status, Wed 28 Oct 00:30: A-12a through A-12d are on `gemini-refactor`, not pushed. A-12a's round-trip tests pass. Live audio on `gemini-3.8-live` (Aoede): connect 0.422 s, first audio 0.531 s, tool round trip 1.094 s, barge-in, 5 of 5 sessions. Live rejects TEXT, so text sessions (the sim and the evals) call `gemini-3.5-flash-lite`; a one-word probe returned "pong". A scripted mock call, and English and French briefs on a real renter call and a listing call, have not run. The side-by-side numbers are not in the team chat. `VOICE_PROVIDER` still defaults to higgs. Avatar clips stay on Boson. A-15 was not part of this change.*
+*Status, Wed 28 Oct 00:30: A-12a through A-12d were merged in #255. A-12a's round-trip tests pass. Live audio on `gemini-3.8-live` (Aoede): connect 0.422 s, first audio 0.531 s, tool round trip 1.094 s, barge-in, 5 of 5 sessions. Live rejects TEXT, so text sessions (the sim and the evals) call `gemini-3.5-flash-lite`; a one-word probe returned "pong". A scripted mock call, and English and French briefs on a real renter call and a listing call, have not run. The side-by-side numbers are not in the team chat. `VOICE_PROVIDER` still defaults to higgs. Avatar clips stay on Boson. A-15 was not part of this change.*
 
 ### Mahyar
 
@@ -87,24 +89,24 @@ Landline is one of ten finalists at Build North's Demo Day: Thursday 29 October,
 |---|---|---|---|---|---|---|
 | Done (#250, #252) | U-11a | Check Clerk sign-ins on the API | P0 | – | a bare phone number gets 401 once Clerk is on | [#245](https://github.com/2arian3/Landline/issues/245) |
 | Built (#249): verified with a Clerk test number; real-phone check at the Wednesday rehearsal | U-11b | Phone sign-in on /me | P0 | U-11a | a teammate signs in with their phone and sees only their history | [#245](https://github.com/2arian3/Landline/issues/245) |
-| To do | U-12a | Save profile changes (`PATCH /api/me/profile`) | P0 | X-04, U-11a | every field is checked in code | [#246](https://github.com/2arian3/Landline/issues/246) |
-| To do | U-12b | The "My search" form on /me | P0 | U-12a, U-11b | a budget change sticks | [#246](https://github.com/2arian3/Landline/issues/246) |
+| Done | U-12a | Save profile changes (`PATCH /api/me/profile`) | P0 | X-04, U-11a | every field is checked in code | [#246](https://github.com/2arian3/Landline/issues/246) |
+| Built (#266): real route checked locally with a Clerk test user (sign-in, 422s); a budget change seen to stick needs the Mac mini's database | U-12b | The "My search" form on /me | P0 | U-12a, U-11b | a budget change sticks | [#246](https://github.com/2arian3/Landline/issues/246) |
 | Built (#253): needs a deploy with the Clerk keys to check a renter's listings on the site | U-12c | "My listings" on /me | P0 | U-11a | each called listing shows its facts with their sources | [#246](https://github.com/2arian3/Landline/issues/246) |
 | To do | O-08d | The confirm page listing agents open from the SMS | P0 | O-08c | an agent confirms from their phone | [#238](https://github.com/2arian3/Landline/issues/238) |
-| To do | O-08e | The card shows the viewing and whether it's confirmed | P0 | X-04 | the card flips to confirmed without a reload | [#238](https://github.com/2arian3/Landline/issues/238) |
-| To do | D-10d | Show the walk to the subway, the stores and the commute on each listing | P0 | X-04 | screenshots at 375 px and on desktop | [#237](https://github.com/2arian3/Landline/issues/237) |
+| Built (#268): the live flip needs a real confirm from O-08c | O-08e | The card shows the viewing and whether it's confirmed | P0 | X-04 | the card flips to confirmed without a reload | [#238](https://github.com/2arian3/Landline/issues/238) |
+| Done | D-10d | Show the walk to the subway, the stores and the commute on each listing | P0 | X-04 | screenshots at 375 px and on desktop | [#237](https://github.com/2arian3/Landline/issues/237) |
 | Built (#251): needs the Clerk key to test | U-13a | The Expo app, with phone sign-in | P1 | U-11a | a teammate signs in on their phone | [#247](https://github.com/2arian3/Landline/issues/247) |
 | Built (#256): phone check with a real history at the Wednesday rehearsal | U-13b | Home and My listings in the app | P1 | U-13a, U-12c | they see their listings and can call Landline from the app | [#247](https://github.com/2arian3/Landline/issues/247) |
 | To do | U-13c | A push when the calls finish | P1 | U-13a | the push arrives after a sim plan | [#247](https://github.com/2arian3/Landline/issues/247) |
 | To do | U-13d | My search in the app | P2 | U-13a, U-12a | a budget change saves | [#247](https://github.com/2arian3/Landline/issues/247) |
 
-*Status, Tue 27 Oct 22:50: U-11a is merged. U-11b and U-13a are merged but untested until Mahyar's Clerk development keys exist. U-12c is in review. U-12a, O-08e and D-10d wait for X-04 (Wed 10:00), and O-08d waits for O-08c.*
+*Status, Tue 27 Oct 22:50: U-11a is merged. U-11b and U-13a are merged but untested until Mahyar's Clerk development keys exist. U-12c is merged (#253). U-12a, O-08e and D-10d wait for X-04 (Wed 10:00), and O-08d waits for O-08c.*
 
 ### All three: getting ready (X-03)
 
 | Status | ID | Task | Who | When | Issue |
 |---|---|---|---|---|---|
-| To do | X-03a | Every new key on the VM and on Vercel; Twilio's balance and SMS checked | Arian (Vercel: Mahyar) | Wed | [#248](https://github.com/2arian3/Landline/issues/248) |
+| In progress: `CLERK_SECRET_KEY` is on the VM (#258); Vercel's Clerk keys, the Google keys and the Twilio check are left | X-03a | Every new key on the VM and on Vercel; Twilio's balance and SMS checked | Arian (Vercel: Mahyar) | Wed | [#248](https://github.com/2arian3/Landline/issues/248) |
 | To do | X-03b | Ship on Wed at 18:00 for the rehearsal, then the final ship on Thu at 12:00, tagged `demo-day`, with the rollback steps at hand | Arian | Wed, Thu | [#248](https://github.com/2arian3/Landline/issues/248) |
 | To do | X-03c | Pause the listing refresh during the event, and keep the logs open | Arian | Thu 12:00 | [#248](https://github.com/2arian3/Landline/issues/248) |
 | To do | X-03d | Demo accounts: the renter's phone off the allowlist with an email on its profile, old test sessions cleared, and one rehearsal call so memory has a fact to confirm | Arian | Thu morning | [#248](https://github.com/2arian3/Landline/issues/248) |

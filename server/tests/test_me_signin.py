@@ -71,3 +71,51 @@ def test_anything_but_a_valid_token_gets_401(clerk, why, token):
 def test_no_token_gets_401(clerk):
     with _client(clerk) as c:
         assert c.get("/api/me").status_code == 401
+
+
+# PATCH /api/me/profile (U-12a): every field is checked in code before anything is saved. A bad field is a
+# 422 that names it, whatever the token. The saved edits are in test_admin.py (Postgres).
+@pytest.mark.parametrize(("body", "field"), [
+    ({"email": "sara@example"}, "email"),                     # a bad email
+    ({"email": "not an email"}, "email"),
+    ({"max_monthly": "2600"}, "max_monthly"),                 # a budget sent as text
+    ({"max_monthly": 2600.5}, "max_monthly"),                 # money in whole dollars
+    ({"max_monthly": -1}, "max_monthly"),
+    ({"min_beds": 6}, "min_beds"),                            # beds from 0 to 5
+    ({"min_beds": 1.25}, "min_beds"),
+    ({"min_beds": "two"}, "min_beds"),
+    ({"move_in": "2026-02-30"}, "move_in"),                   # a real date
+    ({"move_in": "December 1"}, "move_in"),
+    ({"move_in": 1764547200}, "move_in"),
+    ({"shareable": ["phone"]}, "shareable"),                  # an unknown shareable field
+    ({"shareable": ["pets", "pets"]}, "shareable"),
+    ({"use_saved_search": "yes"}, "use_saved_search"),
+    ({"areas": None}, "areas"),
+    ({"areas": [""]}, "areas"),
+    ({"areas": ["x" * 81]}, "areas"),
+    ({"pets": [3]}, "pets"),
+    ({"must_have": ["laundry"] * 21}, "must_have"),
+    ({"budget": 2600}, "budget"),                             # an unknown field
+])
+def test_a_bad_profile_field_is_a_422_naming_it(clerk, body, field):
+    with _client(clerk) as c:
+        r = c.patch("/api/me/profile", headers=_bearer(clerk.token()), json=body)
+        assert r.status_code == 422, body
+        assert [e["loc"][1] for e in r.json()["detail"]] == [field], r.json()
+
+
+def test_a_good_profile_edit_needs_a_token_and_a_database(clerk):
+    edit = {"max_monthly": 2400, "min_beds": 1.5, "areas": [" Annex "], "pets": ["cat"], "must_have": [],
+            "move_in": "2026-12-01", "email": " sara@example.com ", "shareable": ["name", "pets"],
+            "use_saved_search": True}
+    with _client(clerk) as c:
+        assert c.patch("/api/me/profile", json=edit).status_code == 401
+        r = c.patch("/api/me/profile", headers=_bearer(clerk.token()), json=edit)
+        assert (r.status_code, r.json()["detail"]) == (404, "history is off")
+        assert c.get("/api/me/profile", headers=_bearer(clerk.token())).json()["detail"] == "history is off"
+        preflight = c.options("/api/me/profile", headers={
+            "Origin": "http://localhost:3000", "Access-Control-Request-Method": "PATCH",
+            "Access-Control-Request-Headers": "authorization,content-type"})
+        assert preflight.status_code == 200 and "PATCH" in preflight.headers["access-control-allow-methods"]
+    with _client() as c:   # sign-in off
+        assert c.patch("/api/me/profile", json=edit).json()["detail"] == "sign-in is off"

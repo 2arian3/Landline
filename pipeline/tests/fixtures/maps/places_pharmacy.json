@@ -1,0 +1,9 @@
+{
+  "places": [
+    {
+      "id": "ChIJfixture-pharmacy-1",
+      "location": {"latitude": 43.65288, "longitude": -79.40974},
+      "displayName": {"text": "Shoppers Drug Mart", "languageCode": "en"}
+    }
+  ]
+}
