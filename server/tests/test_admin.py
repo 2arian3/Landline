@@ -7,6 +7,7 @@ import struct
 import wave
 from datetime import UTC, datetime, timedelta
 
+import psycopg
 import pytest
 from fastapi.testclient import TestClient
 
@@ -176,6 +177,45 @@ def test_a_clerk_sign_in_opens_only_that_renters_history(url, clerk):
         r = c.get("/api/me", headers={"Authorization": f"Bearer {clerk.token(phone='+14165550999')}"})
         assert (r.status_code, r.json()["detail"]) == (404, "unknown number")
         assert c.post("/api/me", json={"phone": "(416) 555-0123"}).status_code == 401   # no proof, no history
+
+
+def test_a_renter_edits_only_their_own_profile(url, clerk):
+    """U-12a: PATCH /api/me/profile saves what it sends and only that, for the token's renter alone."""
+    neighbour = "+14165550177"
+    with psycopg.connect(url, autocommit=True) as conn:
+        conn.execute("insert into users (phone_e164) values (%s)", (neighbour,))
+    settings = Settings(database_url=url, web_url="http://localhost:3000", transport="stub",
+                        clerk_secret_key="sk_test_throwaway", clerk_jwt_key=clerk.pem)
+    me = {"Authorization": f"Bearer {clerk.token(phone=PHONE)}"}
+    them = {"Authorization": f"Bearer {clerk.token(phone=neighbour)}"}
+    with TestClient(create_app(settings, Catalogue(LISTINGS, "test"))) as c:
+        edit = {"max_monthly": 2400, "min_beds": 1.5, "areas": [" Annex ", "Leslieville"], "pets": ["cat"],
+                "must_have": ["laundry"], "move_in": "2026-12-01", "email": " sara@example.com ",
+                "shareable": ["name", "pets"], "use_saved_search": True}
+        p = c.patch("/api/me/profile", headers=me, json=edit).json()
+        assert (p["phone"], p["email"], p["use_saved_search"], p["shareable"]) == (
+            PHONE, "sara@example.com", True, ["name", "pets"])
+        assert {k: p["preferences"][k] for k in ("max_monthly", "min_beds", "areas", "pets", "must_have",
+                                                 "move_in")} == {
+            "max_monthly": 2400, "min_beds": 1.5, "areas": ["Annex", "Leslieville"], "pets": ["cat"],
+            "must_have": ["laundry"], "move_in": "2026-12-01"}
+        assert c.get("/api/me/profile", headers=me).json() == p   # stored
+        # A field left out stays; null clears; [] empties a list.
+        cleared = {"max_monthly": None, "email": None, "pets": []}
+        p2 = c.patch("/api/me/profile", headers=me, json=cleared).json()
+        assert p2["preferences"]["max_monthly"] is None and p2["preferences"]["pets"] == []
+        assert p2["email"] is None
+        assert p2["preferences"]["areas"] == ["Annex", "Leslieville"] and p2["use_saved_search"] is True
+        # A bad field saves nothing, not even the good ones beside it.
+        bad = c.patch("/api/me/profile", headers=me, json={"max_monthly": 1000, "email": "nope"})
+        assert bad.status_code == 422 and c.get("/api/me/profile", headers=me).json() == p2
+        # Another renter's token edits their profile, never this one.
+        theirs = c.patch("/api/me/profile", headers=them, json={"max_monthly": 9999}).json()
+        assert (theirs["phone"], theirs["preferences"]["max_monthly"]) == (neighbour, 9999)
+        assert c.get("/api/me/profile", headers=me).json() == p2
+        stranger = {"Authorization": f"Bearer {clerk.token(phone='+14165550888')}"}
+        r = c.patch("/api/me/profile", headers=stranger, json={"max_monthly": 1})
+        assert (r.status_code, r.json()["detail"]) == (404, "unknown number")
 
 
 OTHER = "+14165550199"
