@@ -51,12 +51,12 @@ Landline is one of ten finalists at Build North's Demo Day: Thursday 29 October,
 | Done (#259) | X-04 | Add every demo-day column and field in one PR (nothing uses them yet) | P0, first | – | the migration applies, `make test` passes, Danial and Mahyar approve | [#236](https://github.com/2arian3/Landline/issues/236) |
 | Built (#263), live run pending the key | D-10a | Walking minutes to the nearest TTC station, from Google Maps | P0 | X-04 | every active listing has them, with their source | [#237](https://github.com/2arian3/Landline/issues/237) |
 | Built (#261), live run pending the key | D-10b | The nearest grocery store and pharmacy, with walking minutes | P0 | X-04 | every active listing has both, or nothing when none is close | [#237](https://github.com/2arian3/Landline/issues/237) |
-| To do | D-10c | TTC minutes to the place the renter names, used in the ranking | P0 | D-10a | "I work at King and Bay" re-sorts the board with "min by TTC" reasons | [#237](https://github.com/2arian3/Landline/issues/237) |
+| Built (#271), live check pending the key | D-10c | TTC minutes to the place the renter names, used in the ranking | P0 | D-10a | "I work at King and Bay" re-sorts the board with "min by TTC" reasons | [#237](https://github.com/2arian3/Landline/issues/237) |
 | Built (#262), live run pending the Google keys | O-08a | A Google Calendar client and a one-time sign-in script | P0 | – | a test event invites a teammate | [#238](https://github.com/2arian3/Landline/issues/238) |
 | To do | O-08b | Text the listing agent a confirm link after a booking | P0 | X-04, A-13a | one SMS per booking, to the number we called | [#238](https://github.com/2arian3/Landline/issues/238) |
 | To do | O-08c | When the agent confirms, send both invites and text the renter | P0 | O-08a, O-08b | a confirm makes one event that invites both people | [#238](https://github.com/2arian3/Landline/issues/238) |
 | Built (#269): the first board uses the saved search in tests; renters turn it on with U-12a/b, then a VM call | U-12d | Start the next call from the saved search, when the renter turns that on | P0 | X-04 | the first board of the next call uses the saved search | [#246](https://github.com/2arian3/Landline/issues/246) |
-| To do | O-07a | A client for Google's Maps MCP server | P1 | – | a live run finds a real place near a listing | [#239](https://github.com/2arian3/Landline/issues/239) |
+| Built (#275), live run pending the key | O-07a | A client for Google's Maps MCP server | P1 | – | a live run finds a real place near a listing | [#239](https://github.com/2arian3/Landline/issues/239) |
 | To do | O-07b | `ask_maps`: answer questions about the area, and fly the map to the place | P1 | O-07a | "Is there a grocery store near the first one?" gets a real name and minutes | [#239](https://github.com/2arian3/Landline/issues/239) |
 | Built (#270), live run pending the SurrealDB Agent Memory keys | O-09a | Save each call's facts to SurrealDB Agent Memory | P1 | – | a sim call's facts come back from a memory query | [#240](https://github.com/2arian3/Landline/issues/240) |
 | Built (#278), live run pending the SurrealDB Agent Memory keys | O-09b | The Caller confirms what an earlier call heard instead of asking cold | P1 | O-09a | a second renter's call opens with "Last week they said…" | [#240](https://github.com/2arian3/Landline/issues/240) |
@@ -111,10 +111,10 @@ Landline is one of ten finalists at Build North's Demo Day: Thursday 29 October,
 | To do | X-03c | Pause the listing refresh during the event, and keep the logs open | Arian | Thu 12:00 | [#248](https://github.com/2arian3/Landline/issues/248) |
 | To do | X-03d | Demo accounts: the renter's phone off the allowlist with an email on its profile, old test sessions cleared, and one rehearsal call so memory has a fact to confirm | Arian | Thu morning | [#248](https://github.com/2arian3/Landline/issues/248) |
 | To do | X-03e | Who holds which phone on stage, and what each person says | Danial | Wed | [#248](https://github.com/2arian3/Landline/issues/248) |
-| To do | X-03f | Numbers for the pitch: calls placed, facts heard with quotes, viewings booked, cost per search, eval results | Arian, Danial | Wed | [#248](https://github.com/2arian3/Landline/issues/248) |
+| Built (#272), Danial to add his | X-03f | Numbers for the pitch: calls placed, facts heard with quotes, viewings booked, cost per search, eval results | Arian, Danial | Wed | [#248](https://github.com/2arian3/Landline/issues/248) |
 | To do | X-03g | The venue: Wi-Fi and a hotspot tested, the phones mirrored on screen, the backup video ready offline | Mahyar | Thu | [#248](https://github.com/2arian3/Landline/issues/248) |
 | To do | X-03h | A 3-minute pitch around the demo | All (Arian leads) | Wed | [#248](https://github.com/2arian3/Landline/issues/248) |
-| To do | X-03i | Short answers to the judges' likely questions | All | Thu | [#248](https://github.com/2arian3/Landline/issues/248) |
+| Draft (#276), for the team to rehearse | X-03i | Short answers to the judges' likely questions | All | Thu | [#248](https://github.com/2arian3/Landline/issues/248) |
 | To do | X-03j | The run of show, twice in a row with no failures | All | Wed 19:00, Thu 15:00 | [#248](https://github.com/2arian3/Landline/issues/248) |
 
 ## Setup

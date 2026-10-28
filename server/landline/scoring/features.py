@@ -62,6 +62,8 @@ class FeatureMatrix:
     hoods: dict[int, Hood] = field(default_factory=dict)   # the City's neighbourhoods, by id (D-05)
     _distances: dict[tuple[float, float], list[float | None]] = field(default_factory=dict, repr=False)
     lines: set[tuple[float, float]] = field(default_factory=set)   # anchors that stand for a street (#102)
+    # TTC minutes to an anchor by row (D-10c), filled in the background for the listings near the top.
+    _commute: dict[tuple[float, float], dict[int, float]] = field(default_factory=dict, repr=False)
     # Utility columns by (feature, the preference values it depends on); filled by rank.py.
     _utilities: dict[tuple, tuple[list, list, float | None]] = field(default_factory=dict, repr=False)
 
@@ -155,6 +157,23 @@ class FeatureMatrix:
     def has_line(self, lat: float, lng: float) -> bool:
         return (round(lat, 5), round(lng, 5)) in self.lines
 
+    def use_commute(self, lat: float, lng: float, minutes: dict[str, float]) -> int:
+        """Adds TTC minutes by listing id to the anchor at (lat, lng). The ranking reads them from here, never
+        from the network. Returns how many were new."""
+        known = self._commute.setdefault((round(lat, 5), round(lng, 5)), {})
+        new = 0
+        for listing_id, m in minutes.items():
+            i = self.index.get(listing_id)
+            if i is not None and known.get(i) != m:
+                known[i], new = m, new + 1
+        if new:
+            self._utilities.clear()   # location columns worked out without these minutes are stale
+        return new
+
+    def commute_min(self, lat: float, lng: float) -> dict[int, float]:
+        """The TTC minutes known so far to the anchor at (lat, lng), by row."""
+        return self._commute.get((round(lat, 5), round(lng, 5)), {})
+
 
 def haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
     p1, p2 = radians(lat1), radians(lat2)
@@ -210,7 +229,7 @@ ALIASES = {
         "Kensington-Chinatown", "University", "Moss Park", "Regent Park", "North St.James Town",
         "Cabbagetown-South St.James Town")),
 }
-_DERIVED = {"index", "strong_rows", "hoods", "_distances", "_utilities", "lines"}
+_DERIVED = {"index", "strong_rows", "hoods", "_distances", "_utilities", "lines", "_commute"}
 _PARKING = {"parking", "secured underground parking", "underground parking"}
 _IN_SUITE = {"insuite laundry", "in-suite laundry", "in suite laundry", "ensuite laundry"}
 _OUTDOOR = {"balcony", "patio / deck / terrace", "terrace", "patio", "yard", "deck"}
