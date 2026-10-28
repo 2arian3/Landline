@@ -80,8 +80,8 @@ def create_app(settings: Settings | None = None, catalogue: Catalogue | None = N
         # Its own matrix (with neighbourhoods), and the contact the place lookup identifies itself with.
         app.state.runtime = SessionRuntime(app.state.catalogue, db, contact=settings.contact_email,
                                            maps_key=settings.google_maps_api_key)
-        # Each listing call's facts, mirrored to SurrealDB Agent Memory after its outcome commits (O-09a).
-        # None without the SPECTRON_* keys.
+        # Each listing call's facts, mirrored to SurrealDB Agent Memory after its outcome commits (O-09a), and
+        # read back as a call is dialled, for the Caller to confirm (O-09b). None without the SPECTRON_* keys.
         app.state.memory = memory.install(app.state.runtime, settings)
         # Map taps and background re-ranks, to the live Concierge between turns (A-02, voice/line.py).
         app.state.lines = Lines(app.state.runtime)
@@ -108,7 +108,7 @@ def create_app(settings: Settings | None = None, catalogue: Catalogue | None = N
         # renter's go over Twilio, and only with TRANSPORT=voice (voice/routing.py).
         sim = SimRunner(app.state.runtime, lambda key, cfg: app.state.connect_higgs(key, cfg),
                         settings.voice_api_key() or "", extractor=extractor, clips=app.state.clips,
-                        agent_gender=gender_of_voice(settings.higgs_voice_renter))
+                        agent_gender=gender_of_voice(settings.higgs_voice_renter), memory=app.state.memory)
         runner = ByChannel(app.state.runtime, phone=app.state.outbound.runner, sim=sim,
                            sim_for_phone=settings.transport == "sim")
         app.state.dispatcher = Dispatcher(app.state.runtime, settings, runner=runner, texter=app.state.texter,

@@ -14,6 +14,7 @@ from landline.config import Settings
 from landline.contracts import CallPlan, CallsRequested, Listing, SessionEnded, SessionStarted
 from landline.db.catalogue import Catalogue
 from landline.orchestrator import SessionRuntime
+from landline.orchestrator.memory import Memory
 from landline.voice import phone_caller
 from landline.voice.bridge import Playback
 from landline.voice.dispatch import Dial, Dispatcher
@@ -129,7 +130,7 @@ class ClockedHiggs(FakeHiggs):
         await asyncio.sleep(60)
 
 
-async def _call(script, line, higgs=None):
+async def _call(script, line, higgs=None, memory=None):
     """One brief with one picked place, ended; its call runs to the end. Returns the runtime, the
     CallEnded events and fake Higgs."""
     rt, settings, calls = _runtime(), _settings(), OutboundCalls()
@@ -139,8 +140,8 @@ async def _call(script, line, higgs=None):
         ended.append(event)
     rt.on("CallEnded", on_ended)
     higgs, twilio_api = higgs or FakeHiggs(script), FakeTwilio(calls, line)
-    runner = TwilioRunner(settings, calls, runtime=rt, converse=PhoneCaller(rt, higgs.connect, "k",
-                                                                             clock=lambda: NOW),
+    caller = PhoneCaller(rt, higgs.connect, "k", clock=lambda: NOW, memory=memory)
+    runner = TwilioRunner(settings, calls, runtime=rt, converse=caller,
                           client=httpx.AsyncClient(transport=httpx.MockTransport(twilio_api.handle)))
     d = Dispatcher(rt, settings, runner=runner, clock=lambda: NOW)
     await rt.start(SessionStarted(session_id=SID, at=NOW, idem_key=f"{SID}:start", channel="phone",
@@ -243,6 +244,25 @@ async def test_a_hang_up_that_fails_still_ends_the_call_once_with_its_outcome(mo
     facts = rt.state(SID).outcomes["t:1"].facts
     assert [(f.field, f.quote) for f in facts] == [("parking_cost", "Parking is 150 a month")]
     assert any("hanging up failed (ConnectError" in r.getMessage() for r in caplog.records)
+
+
+async def test_a_phone_call_confirms_what_an_earlier_call_heard_read_once_as_it_dials(monkeypatch):
+    """O-09b: the read starts as Twilio dials, and the call's brief uses it, in the Higgs session it opens."""
+    monkeypatch.setattr(phone_caller, "HANG_UP_GRACE_S", 0)
+    asked = []
+
+    async def memory_api(request):
+        asked.append(json.loads(request.content)["lens"])
+        text = 'On 2026-10-23, the listing agent said fees: parking $150 a month ("It\'s 150 for parking.").'
+        return httpx.Response(200, json={"hits": [{"source": "memory_chunk", "text": text}]})
+    memory = Memory("https://ctx.test", "landline_demo", "sp-test",
+                    client=httpx.AsyncClient(transport=httpx.MockTransport(memory_api)))
+    rt, ended, higgs, _ = await _call(REFUSED, FakeLine(["/w=="]), memory=memory)
+    confirm = "Yesterday they said parking is $150 a month. Is that still right?"
+    assert f'in these words: "{confirm}"' in higgs.session["session"]["instructions"]
+    assert asked == [[["landline/listing/t:1"]]]   # once for the call, shared by the dial and the brief
+    assert [e.reason for e in ended] == ["refused"]
+    await memory.close()
 
 
 class BrokenRecorder:

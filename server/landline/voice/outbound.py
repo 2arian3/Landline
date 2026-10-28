@@ -162,6 +162,8 @@ class TwilioRunner:
         call = Outbound(dial=dial, report=report)
         self.calls.live[dial.call_id] = call
         warm: asyncio.Task | None = None   # the Higgs session opened once a person answered (#148)
+        if (recall := getattr(self.converse, "recall", None)) is not None:
+            recall(dial)   # what earlier calls heard about the place (O-09b), read while it rings
         try:
             try:
                 call.twilio_sid = await self.dial(dial)
@@ -442,7 +444,7 @@ def _caller(state: Any, settings: Settings, extractor: Any) -> Converse:
     return PhoneCaller(state.runtime, lambda key, cfg: state.connect_higgs(key, cfg),
                        settings.voice_api_key() or "", voice=settings.live_voice(),
                        extractor=extractor, record_audio=settings.record_audio,
-                       clips=getattr(state, "clips", None))
+                       clips=getattr(state, "clips", None), memory=getattr(state, "memory", None))
 
 
 async def uninstall(calls: OutboundCalls) -> None:

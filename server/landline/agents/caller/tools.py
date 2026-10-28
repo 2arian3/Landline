@@ -29,6 +29,7 @@ from pydantic import ValidationError
 
 from landline.agents.auditor import grounding
 from landline.agents.auditor.flags import red_flags
+from landline.agents.auditor.numbers import amounts
 from landline.agents.auditor.values import bare, call_day, fee_name, free_from, from_parts, spoken_day
 from landline.agents.caller import slots
 from landline.agents.caller.brief import Brief, disclosure
@@ -197,7 +198,7 @@ def _fees(args: RecordFact, ctx: CallerContext) -> RecordFact | str | None:
     if bare(latest) is not None and not grounding.verify(args.quote, [latest]):
         return FEES_LATEST
     said = bare(args.quote)
-    if said == "yes":
+    if said == "yes" and not any(n >= 10 for n in amounts(args.quote)):   # "Yes, still $150" says how much
         return FEES_WHICH
     if said == "no":
         return args.model_copy(update={"value": "none"})
