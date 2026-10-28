@@ -43,7 +43,8 @@
     "livrent:100744",
     "livrent:100745",
     "livrent:100746",
-    "livrent:100747"
+    "livrent:100747",
+    "livrent:100804"
   ],
   "board": [
     {
@@ -89,7 +90,12 @@
           "at": "2026-10-24T18:30:00Z"
         }
       ],
-      "red_flags": []
+      "red_flags": [],
+      "viewing": {
+        "starts_at": "2026-10-31T14:00:00-04:00",
+        "slot_text": "Saturday at 2 pm",
+        "status": "booked"
+      }
     },
     {
       "listing_id": "livrent:100362",
@@ -278,6 +284,48 @@
       "reaction": null,
       "facts": [],
       "red_flags": []
+    },
+    {
+      "listing_id": "livrent:100804",
+      "address": "7 Walmer Rd",
+      "unit_label": null,
+      "neighbourhood": null,
+      "lat": 43.66685,
+      "lng": -79.40543,
+      "rent": 1899,
+      "monthly_cost": 1899,
+      "beds": 0.0,
+      "baths": 1.0,
+      "sqft": 388,
+      "floor": null,
+      "unit_type": "condo",
+      "photo": "https://cdn.liv.rent/800x/filters:quality(70)/static_files/unit/100925/unit_100925_6a9b9c6c3d786",
+      "light_score": null,
+      "source": "livrent",
+      "url": "https://liv.rent/building/22284/bloor-annex-residences-apartment-building-7-walmer-rd-toronto-on",
+      "rank": 8,
+      "status": "booked",
+      "reasons": [
+        "$1,301 under budget",
+        "4 min walk to the subway"
+      ],
+      "watch_out": null,
+      "reaction": null,
+      "facts": [
+        {
+          "field": "available",
+          "value": "yes",
+          "quote": "It's available from November first.",
+          "speaker": "Agent heard",
+          "at": "2026-10-24T18:34:00Z"
+        }
+      ],
+      "red_flags": [],
+      "viewing": {
+        "starts_at": "2026-11-01T11:00:00-05:00",
+        "slot_text": "Sunday at 11 am",
+        "status": "confirmed"
+      }
     }
   ],
   "agent_says": "I'm calling your five picks now. I'll text you what they say.",
