@@ -68,6 +68,11 @@ class Settings:
     # public key) verifies tokens with no network call; without it the SDK fetches Clerk's JWKS.
     clerk_secret_key: str | None = None
     clerk_jwt_key: str | None = None
+    # Viewing invites from Landline's Google account (O-08a, orchestrator/calendar.py). The refresh token
+    # comes from scripts/google_oauth.py. Without all three, no invite is sent.
+    google_oauth_client_id: str | None = None
+    google_oauth_client_secret: str | None = None
+    google_oauth_refresh_token: str | None = None
 
     @classmethod
     def load(cls) -> Settings:
@@ -102,6 +107,9 @@ class Settings:
             or "https://docs.boson.ai/public/avatar/sample.jpg",
             clerk_secret_key=os.getenv("CLERK_SECRET_KEY") or None,
             clerk_jwt_key=os.getenv("CLERK_JWT_KEY") or None,
+            google_oauth_client_id=os.getenv("GOOGLE_OAUTH_CLIENT_ID") or None,
+            google_oauth_client_secret=os.getenv("GOOGLE_OAUTH_CLIENT_SECRET") or None,
+            google_oauth_refresh_token=os.getenv("GOOGLE_OAUTH_REFRESH_TOKEN") or None,
         )
 
     def voice_api_key(self) -> str | None:
