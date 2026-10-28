@@ -4,6 +4,7 @@ import { Money } from "./Money";
 import { money, photoAt, specLine } from "@/lib/format";
 import type { Unheard } from "@/lib/outcome";
 import type { Card } from "@/lib/types";
+import { viewingStatus } from "@/lib/viewing";
 
 export const STATUS: Partial<Record<Card["status"], { word: string; color: string }>> = {
   calling: { word: "On the phone", color: "var(--color-live)" },
@@ -46,7 +47,14 @@ export function ListingCard({
   onSelect: (id: string) => void;
   onHover: (id: string | null) => void;
 }) {
-  const status = mark ? MARK[mark] : ended ? { word: ended.word, color: "var(--color-ink-3)" } : STATUS[card.status];
+  // A viewing says more than "Viewing booked": when, and whether the agent has confirmed it (O-08e).
+  const status = mark
+    ? MARK[mark]
+    : card.viewing
+      ? viewingStatus(card.viewing)
+      : ended
+        ? { word: ended.word, color: "var(--color-ink-3)" }
+        : STATUS[card.status];
   const dead = card.status === "dead";
   const flag = card.red_flags[0];
   // What a person said on the phone. A red flag outranks it here; the detail shows both.
@@ -130,10 +138,14 @@ export function ListingCard({
           </span>
         )}
         {status && (
-          <span className="mt-1 flex items-center gap-1.5 text-meta font-label" style={{ color: status.color }}>
+          <span
+            className="mt-1 flex items-start gap-1.5 text-meta font-label transition-colors duration-300 motion-reduce:transition-none"
+            style={{ color: status.color }}
+          >
+            {/* Beside the first line when a viewing wraps to two. */}
             <span
               aria-hidden
-              className={`h-1.5 w-1.5 rounded-full ${card.status === "calling" || mark === "ringing" ? "live-dot" : ""}`}
+              className={`mt-[6px] h-1.5 w-1.5 shrink-0 rounded-full ${card.status === "calling" || mark === "ringing" ? "live-dot" : ""}`}
               style={{ background: status.color }}
             />
             {status.word}
