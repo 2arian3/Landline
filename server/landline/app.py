@@ -18,7 +18,7 @@ from landline.api.routes import router
 from landline.config import Settings
 from landline.db.catalogue import Catalogue
 from landline.db.pool import Database
-from landline.orchestrator import SessionRuntime, memory
+from landline.orchestrator import SessionRuntime, memory, viewings
 from landline.voice import outbound
 from landline.voice.avatar_clip import Clips, gender_of_voice
 from landline.voice.calls import RenterCalls
@@ -95,6 +95,9 @@ def create_app(settings: Settings | None = None, catalogue: Catalogue | None = N
         app.state.connect_higgs = session_connect(settings)
         # Texts the phone renter their board link. Tests swap it for a fake.
         app.state.texter = Texter(settings.twilio_account_sid, settings.twilio_auth_token)
+        # A booked viewing: its confirmation row, and the confirm link texted to the number the call dialled
+        # (O-08b).
+        app.state.confirm_links = viewings.ConfirmLinks(app.state.runtime, settings, app.state.texter)
         # The hand-off (A-06): a brief that ends with a plan has its calls queued and run. A judge's calls
         # always go to the Caller talking to landlord personas in text (A-03), with no phone. A phone renter's
         # go over Twilio with TRANSPORT=voice (A-02), to the personas with TRANSPORT=sim, and otherwise stay

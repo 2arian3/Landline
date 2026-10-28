@@ -47,6 +47,7 @@ class Brief:
     listing: Listing
     plan: CallPlan
     items: list[Item] = field(default_factory=list)
+    texts_confirm: bool = False   # O-08b: this call has a number to text the confirm link to (calls.to_e164)
 
     def missing(self) -> list[Item]:
         return [i for i in self.items if not i.done]
@@ -76,10 +77,11 @@ class Brief:
 
 
 def brief(listing: Listing, plan: CallPlan, wants: frozenset[str] = frozenset(), known: Sequence[Known] = (),
-          now: datetime | None = None) -> Brief:
+          now: datetime | None = None, texts_confirm: bool = False) -> Brief:
     """`wants`: what the renter asked for that a call can check (`wants()`); the plan doesn't carry it.
     `known`: what earlier calls heard about the place (`memory.recall`), confirmed instead of asked cold;
-    `now` dates them in words."""
+    `now` dates them in words. `texts_confirm`: a booking texts this call's number a confirm link (O-08b),
+    so the Caller can say so; never set without a number to text, so it's never promised falsely."""
     items = [Item("available", "whether it's still available, and from when",
                   ["available", "available_from"])]
     gaps: list[Item] = []
@@ -115,7 +117,7 @@ def brief(listing: Listing, plan: CallPlan, wants: frozenset[str] = frozenset(),
                           "book_viewing (it notes the time for the renter and books nothing)", ["other"]))
     if known:
         _confirm(items, known, (now or datetime.now(UTC)).astimezone(slots.TORONTO).date())
-    return Brief(listing, plan, items)
+    return Brief(listing, plan, items, texts_confirm=texts_confirm)
 
 
 def _confirm(items: list[Item], known: Sequence[Known], today: date) -> None:
@@ -240,6 +242,9 @@ def instructions(b: Brief) -> str:
     return CALLER.format(address=_place(x), listing=_listing(x), checklist=checklist, windows=windows,
                          share=share, booking=booking)
 
+
+# Said once at booking, only on a call whose number the confirm link is texted to (O-08b).
+CONFIRM_LINE = "I'll text you a link to confirm, and you'll get a calendar invite."
 
 # Who is calling, said before hard rule 6's words, which stay whole ("I'm an AI assistant calling for a
 # renter").
