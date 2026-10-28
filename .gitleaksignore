@@ -1,2 +1,5 @@
 # False positive: BOSON_API_KEY is empty in .env.example; generic-api-key ran on into the next line.
 6f098abd60a622323a384d06b68f3384f06604d6:.env.example:generic-api-key:4
+# Not a secret: Clerk's publishable key (pk_test_…) is public by design and ships in every page's JavaScript.
+# web/.env.production builds it into the web app (U-11b); the secret key never goes there.
+dbea463ea6d21be72baf68e2d384145647158d30:web/.env.production:generic-api-key:6
