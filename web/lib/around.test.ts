@@ -51,3 +51,23 @@ test("today's straight-line minutes say they're estimated; an unlabelled record 
   assert.equal(sourceOf({ source: "scraped" }), null);
   assert.equal(sourceOf(undefined), null);
 });
+
+test("production's record, dated with no time zone, reads the day it says wherever the browser is", () => {
+  // As the API serves it (D-10a): {"at": "2026-10-28T00:00:00", "source": "derived", "version": "google-maps-v1"}.
+  assert.equal(sourceOf({ source: "derived", at: "2026-10-28T00:00:00", version: "google-maps-v1" }), "Google Maps, 28 Oct");
+  assert.equal(sourceOf({ source: "derived", at: "not a date", version: "google-maps-v1" }), "Google Maps");
+});
+
+test("a walk of an hour or more reads in hours, as a third of listings are that far from the subway", () => {
+  const far = (m: number) => gettingAround(listing({ transit_station: "Kipling", transit_walk_min: m }))[0].text;
+  assert.equal(far(139.8), "2 h 20 min walk to Kipling station");
+  assert.equal(far(59.6), "1 h walk to Kipling station");
+  assert.equal(far(59.4), "59 min walk to Kipling station");
+});
+
+test("long store names are kept whole, and one store can show without the other", () => {
+  const lines = gettingAround(
+    listing({ pharmacy_name: "Shoppers Drug Mart Bloor & Spadina Pharmacy", pharmacy_walk_min: 3.4, grocery_name: null }),
+  );
+  assert.deepEqual(lines.map((l) => l.text), ["Shoppers Drug Mart Bloor & Spadina Pharmacy, 3 min walk"]);
+});

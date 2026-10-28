@@ -71,13 +71,15 @@ function SignedInAccount() {
       let mine: MyListing[] | MeRefusal;
       try {
         const token = await getToken();
+        if (ctl.signal.aborted) return; // signed out or switched number meanwhile
         if (!token) {
           setRefusal("signin");
           return;
         }
         [got, mine] = await Promise.all([loadSignedIn(token, ctl.signal), loadMyListings(token, ctl.signal)]);
       } catch {
-        return; // the lookup was cancelled
+        if (!ctl.signal.aborted) setRefusal("unreachable"); // Clerk couldn't give a token
+        return; // or the lookup was cancelled
       }
       if (isMeRefusal(got)) setRefusal(got);
       else setUser(got);

@@ -49,15 +49,28 @@ export function gettingAround(d: WithTransit | null, card?: Card): AroundLine[] 
 export function sourceOf(p?: Provenance | null): string | null {
   if (!p) return null;
   if (/google/i.test(JSON.stringify(p))) {
-    if (!p.at) return "Google Maps";
-    const day = new Date(p.at).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "America/Toronto" });
-    return `Google Maps, ${day}`;
+    const day = p.at ? fetchDay(p.at) : null;
+    return day ? `Google Maps, ${day}` : "Google Maps";
   }
   return p.source === "derived" || p.source === "synthetic" ? "Estimated" : null;
 }
 
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** "28 Oct" from the record's own date. The pipeline writes it with no time zone ("2026-10-28T00:00:00"),
+ * so it is read as written: parsed as a time, a browser east of Toronto would show the day before. */
+function fetchDay(at: string): string | null {
+  const m = /^\d{4}-(\d{2})-(\d{2})/.exec(at);
+  return m ? `${Number(m[2])} ${MONTHS[Number(m[1]) - 1]}` : null;
+}
+
+/** "6 min walk"; an hour or more in hours ("2 h 20 min walk"), since a third of listings are that far from
+ * the subway and "140 min" is hard to take in. */
 function walk(minutes: number): string {
-  return `${Math.max(1, Math.round(minutes))} min walk`;
+  const total = Math.max(1, Math.round(minutes));
+  if (total < 60) return `${total} min walk`;
+  const rest = total % 60;
+  return `${Math.floor(total / 60)} h${rest ? ` ${rest} min` : ""} walk`;
 }
 
 function upper(s: string): string {
