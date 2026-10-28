@@ -20,9 +20,9 @@ Caller may tell listing agents, and whether the next call starts from the saved 
 the fields it sends (null clears one), and every field is checked in code first (ProfileEdit): a bad one is
 a 422 naming it, and nothing is saved.
 
-Read only. The page shows that profile's saved search, places, sessions and calls; transcripts and
-recordings stay on the admin routes. Off without a database (404). A number that isn't stored is 404. A
-string that isn't a phone number is 422.
+The history routes are read only: the page shows that profile's saved search, places, sessions and calls;
+transcripts and recordings stay on the admin routes. PATCH /api/me/profile is the one write. Off without
+a database (404). A number that isn't stored is 404. A string that isn't a phone number is 422.
 """
 from __future__ import annotations
 
@@ -207,6 +207,7 @@ async def _history(e164: str, request: Request) -> UserDetail:
 # ── The renter's own profile (U-12a) ─────────────────────────────────────────
 
 SHARED_BY_DEFAULT = ("move_in", "occupants", "pets")   # user_profiles.shareable's default
+PROFILE_FIELDS = {"max_monthly", "min_beds", "areas", "pets", "must_have", "move_in", "shareable"}
 ShareKey = Literal["name", "move_in", "occupants", "pets"]
 EMAIL = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
 ISO_DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
@@ -222,7 +223,7 @@ class ProfileEdit(BaseModel):
     empty, and [] empties a list. Each is checked here, before anything is saved."""
     model_config = ConfigDict(extra="forbid")
 
-    max_monthly: Annotated[int, Field(strict=True, ge=0, le=20_000)] | None = None   # whole dollars
+    max_monthly: Annotated[int, Field(strict=True, ge=1, le=20_000)] | None = None   # whole dollars
     min_beds: Annotated[float, Field(strict=True, ge=0, le=5, multiple_of=0.5)] | None = None   # 0: a studio
     areas: Annotated[list[_words(80)], Field(max_length=10)] = None
     pets: Annotated[list[_words(40)], Field(max_length=10)] = None
@@ -280,22 +281,28 @@ async def edit_profile(edit: ProfileEdit, request: Request) -> MyProfile:
     if not changed:
         return _profile_of(user, await db.profiles.get(user.user_id))
     async with db.transaction() as conn:
-        profile = await db.profiles.get(user.user_id, conn)
-        hard = dict(profile.hard) if profile else {}   # where profiles.py keeps the search, areas included
-        for key in ("max_monthly", "min_beds", "areas", "pets", "must_have"):
-            if key in changed:
-                _put(hard, key, getattr(edit, key))
-        move_in = profile.move_in if profile else None
-        if "move_in" in changed:
-            move_in = edit.move_in
-            _put(hard, "move_in", move_in.isoformat() if move_in else None)
-        profile = await db.profiles.upsert(
-            user.user_id, hard=hard, priorities=profile.priorities if profile else [],
-            anchors=profile.anchors if profile else [], move_in=move_in,
-            occupants=profile.occupants if profile else None,
-            shareable=edit.shareable if "shareable" in changed else
-            (profile.shareable if profile else SHARED_BY_DEFAULT),
-            memory_summary=profile.memory_summary if profile else None, conn=conn)
+        # Both rows are read again and held: two edits at once, or a call ending meanwhile (profiles.py
+        # remember), never undo each other.
+        user = await db.users.get(user.user_id, conn, lock=True)
+        if user is None:   # forgotten meanwhile
+            raise HTTPException(404, "unknown number")
+        profile = await db.profiles.get(user.user_id, conn, lock=True)
+        if changed & PROFILE_FIELDS:   # an email-only edit leaves the saved search, and its updated_at, alone
+            hard = dict(profile.hard) if profile else {}   # where profiles.py keeps the search, areas too
+            for key in ("max_monthly", "min_beds", "areas", "pets", "must_have"):
+                if key in changed:
+                    _put(hard, key, getattr(edit, key))
+            move_in = profile.move_in if profile else None
+            if "move_in" in changed:
+                move_in = edit.move_in
+                _put(hard, "move_in", move_in.isoformat() if move_in else None)
+            profile = await db.profiles.upsert(
+                user.user_id, hard=hard, priorities=profile.priorities if profile else [],
+                anchors=profile.anchors if profile else [], move_in=move_in,
+                occupants=profile.occupants if profile else None,
+                shareable=edit.shareable if "shareable" in changed else
+                (profile.shareable if profile else SHARED_BY_DEFAULT),
+                memory_summary=profile.memory_summary if profile else None, conn=conn)
         if {"email", "use_saved_search"} & changed:
             saved = edit.use_saved_search if "use_saved_search" in changed else user.use_saved_search
             await db.users.set_settings(user.user_id, email=edit.email if "email" in changed else user.email,

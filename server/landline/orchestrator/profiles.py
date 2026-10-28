@@ -86,11 +86,21 @@ class Profiles:
             return
         async with db.transaction() as conn:
             if event_type == "SessionEnded":
+                # The call adds to the profile; what it didn't mention stays, and so do the renter's own
+                # edits on /me (U-12a): what Landline may share is never a call's to change, nor the move-in
+                # date.
+                stored = await db.profiles.get(uid, conn, lock=True)
                 hard, priorities, anchors = stored_fields(state.preferences)
+                occupants = state.preferences.occupants
+                if stored is not None:
+                    hard = {**stored.hard, **hard}
+                    priorities, anchors = priorities or stored.priorities, anchors or stored.anchors
+                    occupants = stored.occupants if occupants is None else occupants
+                kept = {} if stored is None else {"move_in": stored.move_in, "shareable": stored.shareable}
                 await db.profiles.upsert(uid, hard=hard, priorities=priorities, anchors=anchors,
-                                         occupants=state.preferences.occupants,
+                                         occupants=occupants,
                                          memory_summary=summary(state.preferences, state.reactions, address),
-                                         conn=conn)
+                                         conn=conn, **kept)
                 new = {lid: s for lid, s in state.reactions.items() if state.recalled.get(lid) != s}
                 for lid, said in new.items():
                     await db.interactions.add(uid, lid, ACTION[said.reaction], session_id=state.session_id,
