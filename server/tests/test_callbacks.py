@@ -211,14 +211,14 @@ def test_on_a_callback_the_caller_answers_with_thanks_and_knows_they_called_back
 
 
 class AnsweringRunner:
-    """Answers a callback (place with answered=) and settles the listing with a fact."""
+    """Answers a callback (dial.callback) and settles the listing with a fact."""
     transport, uses_phone, answers_callbacks = "voice", True, True
 
     def __init__(self):
         self.placed: list[tuple] = []
 
-    async def place(self, dial, report, *, answered=None):
-        self.placed.append((dial, answered))
+    async def place(self, dial, report):
+        self.placed.append(dial)
         await report("live")
         fact = Fact(field="pets", value="dogs ok", quote="Dogs are fine.", speaker="Agent heard", at=NOW)
         return CallResult("done", CallOutcome(call_id=dial.call_id, listing_id=dial.listing_id,
@@ -247,8 +247,9 @@ async def test_a_callback_reaches_the_caller_for_the_right_listing_as_a_new_call
     d = _dispatcher(rt, runner, texter)   # after the plan's calls, which it would otherwise place itself
     cid = await d.callback(Missed(c2, SID, "t:2", "88 Bloor St W"), "(647) 555-0101", "CA42")
     await d.idle()
-    [(dial, answered)] = runner.placed
-    assert (dial.call_id, dial.listing_id, dial.to, answered) == (cid, "t:2", AGENT, "CA42") and dial.callback
+    [dial] = runner.placed
+    assert (dial.call_id, dial.listing_id, dial.to, dial.twilio_sid) == (cid, "t:2", AGENT, "CA42")
+    assert dial.callback
     assert dial.plan == rt.state(SID).plan and dial.deadline == NOW + timedelta(seconds=5)
     assert cid not in (c1, c2) and cid.startswith("c_")   # a new call, its id minted by code
     view = rt.get(SID)
@@ -257,6 +258,23 @@ async def test_a_callback_reaches_the_caller_for_the_right_listing_as_a_new_call
     assert view.phase == "done" and texter.sent == []   # the results aren't texted again (A-13c updates)
     card = next(c for c in view.board if c.listing_id == "t:2")
     assert [f.quote for f in card.facts] == ["Dogs are fine."]
+
+
+async def test_the_agents_phone_rings_for_no_listing_call_while_they_are_on_the_callback():
+    rt = SessionRuntime(_catalogue())
+    await _done(rt)
+    free_during = []
+
+    class Watches(AnsweringRunner):
+        async def place(self, dial, report):
+            free_during.append(list(d._phones._queue))
+            return await super().place(dial, report)
+
+    d = _dispatcher(rt, Watches())
+    assert list(d._phones._queue) == [AGENT]
+    await d.callback(Missed("c_x", SID, "t:1", "412 Markham St"), AGENT, "CA1")
+    await d.idle()
+    assert free_during == [[]] and list(d._phones._queue) == [AGENT]   # held, then free again
 
 
 async def test_a_callback_nothing_here_can_answer_goes_to_the_concierge():
@@ -276,7 +294,7 @@ async def test_a_callback_nothing_here_can_answer_goes_to_the_concierge():
 
 async def test_a_callback_that_runs_past_its_deadline_ends_once_as_timeout():
     class Hangs(AnsweringRunner):
-        async def place(self, dial, report, *, answered=None):
+        async def place(self, dial, report):
             await asyncio.sleep(60)
 
     rt = SessionRuntime(_catalogue())

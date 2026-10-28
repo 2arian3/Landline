@@ -49,24 +49,31 @@ async def twiml_renter(request: Request) -> Response:
 @router.post(CALLBACK_PATH)
 async def twiml_callback(request: Request) -> Response:
     """Which listing a callback is about (A-13b): Twilio posts the key pressed or the words said, or nothing.
-    Code matches it to the list it read out; after TRIES without a match, the call ends politely."""
+    Code matches it against the list that was read out, whose call ids come back in the URL Twilio signed.
+    With no match after TRIES, or nothing left to match, the Concierge takes the call, as for anyone else."""
     params = await _signed_params(request)
+    if not request.app.state.settings.voice_api_key():
+        return _xml(twilio.twiml_say_hangup(NOT_READY))
+    if request.app.state.drain.draining:
+        return _xml(twilio.twiml_say_hangup(BUSY))
     try:
         tries = max(1, int(request.query_params.get("try", "1")))
     except ValueError:
         tries = 1
-    choices = await _callback_choices(request, params)
-    if not choices:   # the lookup failed meanwhile, or the session went: the renter's Concierge, as before
+    found = {c.call_id: c for c in await _callback_choices(request, params)}
+    shown = [found.get(cid) for cid in request.query_params.get("calls", "").split(",") if cid]
+    still = [c for c in shown if c is not None]
+    if not still:   # the lookup failed meanwhile, or those sessions went
         return _renter(request, params)
-    picked = choices[0] if len(choices) == 1 else callbacks.pick(
-        choices, params.get("Digits", ""), params.get("SpeechResult", ""))
+    picked = callbacks.pick(shown, params.get("Digits", ""), params.get("SpeechResult", ""))
     if picked is not None:
         answered = await _answer_callback(request, picked, params)
         return answered if answered is not None else _renter(request, params)
     if tries < callbacks.TRIES:
-        return _ask_which(choices, tries=tries + 1)
-    log.info("callback from %s: no listing picked after %d tries", _tail(params.get("From")), tries)
-    return _xml(twilio.twiml_say_hangup(callbacks.GIVE_UP))
+        return _ask_which(still, tries=tries + 1)
+    log.info("callback from %s: no listing picked after %d tries; the Concierge takes it",
+             _tail(params.get("From")), tries)
+    return _renter(request, params)
 
 
 def _renter(request: Request, params: dict[str, str]) -> Response:
@@ -80,10 +87,11 @@ def _renter(request: Request, params: dict[str, str]) -> Response:
 
 async def _callback_choices(request: Request, params: dict[str, str]) -> list[callbacks.Missed]:
     """The missed listing calls this caller may be calling back about, that a runner here can answer; [] for
-    a renter, and whenever the lookup fails or is slow (logged), so the Concierge takes the call."""
+    a renter, and whenever the lookup fails or is slow (logged), so the Concierge takes the call. With no
+    runner that answers callbacks, nothing is looked up at all."""
     state = request.app.state
     dispatcher = getattr(state, "dispatcher", None)
-    if dispatcher is None:
+    if dispatcher is None or not dispatcher.takes_callbacks:
         return []
     choices = await callbacks.find(state.runtime, params.get("From"), dispatcher.clock())
     return [c for c in choices if dispatcher.callback_runner(c.session_id) is not None]
@@ -91,10 +99,12 @@ async def _callback_choices(request: Request, params: dict[str, str]) -> list[ca
 
 async def _answer_callback(request: Request, missed: callbacks.Missed,
                            params: dict[str, str]) -> Response | None:
-    """The Caller for `missed`'s listing takes the call on the listing calls' stream; None if it can't."""
+    """The Caller for `missed`'s listing takes the call on the listing calls' stream; None if it can't, or
+    can't start within START_S (logged), and the Concierge takes it."""
     dispatcher = request.app.state.dispatcher
     try:
-        call_id = await dispatcher.callback(missed, params.get("From"), params.get("CallSid"))
+        async with asyncio.timeout(callbacks.START_S):
+            call_id = await dispatcher.callback(missed, params.get("From"), params.get("CallSid"))
     except Exception:
         log.exception("callback about %s couldn't start; the call goes to the Concierge", missed.call_id)
         return None
@@ -104,7 +114,9 @@ async def _answer_callback(request: Request, missed: callbacks.Missed,
 
 
 def _ask_which(choices: list[callbacks.Missed], tries: int) -> Response:
-    return _xml(twilio.twiml_gather(callbacks.ask(choices, again=tries > 1), f"{CALLBACK_PATH}?try={tries}",
+    """Asks which listing; the action URL carries the ids read out, so a key means what the agent heard."""
+    action = f"{CALLBACK_PATH}?try={tries}&calls={','.join(c.call_id for c in choices)}"
+    return _xml(twilio.twiml_gather(callbacks.ask(choices, again=tries > 1), action,
                                     hints=[c.address for c in choices]))
 
 

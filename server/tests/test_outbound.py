@@ -1,6 +1,7 @@
 """Listing calls over Twilio (A-02, outbound), with a fake Twilio and no network: the allowlist inside dial(),
 every way a call ends going through finalize once, and the webhooks refusing what Twilio didn't sign."""
 import asyncio
+import html
 import re
 import time
 from dataclasses import replace
@@ -538,8 +539,8 @@ def _session_in_app(c: TestClient) -> None:
 def _missed(monkeypatch, listings) -> None:
     """The lookup finds these listings' calls missed, for the agent's number only."""
     async def lookup(runtime, phone, now):
-        return [callbacks.Missed(f"c_missed{n}", SID, lid, address)
-                for n, (lid, address) in enumerate(listings) if phone == AGENT]
+        return [callbacks.Missed(f"c_missed{lid[2:]}", SID, lid, address) for lid, address in listings
+                if phone == AGENT]
     monkeypatch.setattr(callbacks, "lookup", lookup)
 
 
@@ -572,6 +573,10 @@ def test_a_listing_agent_calling_back_reaches_the_caller_for_that_listing(monkey
         assert (back.listing_id, back.state, back.outcome.end_reason) == ("t:1", "ended", "done")
 
 
+def _action(r) -> str:
+    return html.unescape(re.search(r'action="([^"]+)"', r.text).group(1))
+
+
 def test_two_missed_listings_ask_which_and_code_picks_by_key_or_address(monkeypatch):
     with _client() as c:
         _session_in_app(c)
@@ -584,17 +589,22 @@ def test_two_missed_listings_ask_which_and_code_picks_by_key_or_address(monkeypa
         c.app.state.dispatcher.callback = callback
         params = {"CallSid": "CA9", "From": AGENT, "To": OURS}
         r = _post(c, "/twiml/renter", params)
-        assert "<Gather" in r.text and 'action="/twiml/callback?try=1"' in r.text and started == []
+        assert "<Gather" in r.text and started == []
         assert "I'm an AI assistant calling for a renter." in r.text
         assert "press 1 for 1 Dial St, 2 for 2 Dial St." in r.text
-        r = _post(c, "/twiml/callback?try=1", {**params, "Digits": "2"})
+        action = _action(r)
+        assert action == "/twiml/callback?try=1&calls=c_missed1,c_missed2"   # what was read out, signed
+        r = _post(c, action, {**params, "Digits": "2"})
         assert started == ["t:2"] and 'value="c_back000001"' in r.text and "/twilio/outbound/media" in r.text
-        _post(c, "/twiml/callback?try=1", {**params, "SpeechResult": "The one at 1 Dial Street."})
+        _post(c, action, {**params, "SpeechResult": "The one at 1 Dial Street."})
         assert started == ["t:2", "t:1"]
-        r = _post(c, "/twiml/callback?try=1", params)   # nothing pressed or said: asked once more
-        assert "<Gather" in r.text and "Sorry, I didn't catch that." in r.text and "try=2" in r.text
-        r = _post(c, "/twiml/callback?try=2", {**params, "Digits": "7"})   # still none of them: a polite end
-        assert "<Hangup/>" in r.text and "couldn" in r.text and len(started) == 2
+        _missed(monkeypatch, [("t:2", "2 Dial St"), ("t:1", "1 Dial St")])   # found in another order now
+        _post(c, action, {**params, "Digits": "1"})
+        assert started == ["t:2", "t:1", "t:1"]   # 1 is still what they heard first
+        r = _post(c, action, params)   # nothing pressed or said: asked once more
+        assert "<Gather" in r.text and "Sorry, I didn't catch that." in r.text and "try=2" in _action(r)
+        r = _post(c, _action(r), {**params, "Digits": "7"})   # still none: the Concierge, as for anyone
+        assert "wss://landline.test/twilio/media" in r.text and len(started) == 3
 
 
 def test_a_renter_and_a_failed_lookup_both_get_the_concierge(monkeypatch):
@@ -617,3 +627,24 @@ def test_a_callback_webhook_twilio_didnt_sign_is_refused():
         params = {"CallSid": "CA1", "From": AGENT, "Digits": "1"}
         r = _post(c, "/twiml/callback?try=1", params, token="wrong")
         assert r.status_code == 403
+
+
+def test_without_a_runner_that_answers_callbacks_no_call_waits_on_the_lookup(monkeypatch):
+    looked = []
+
+    async def lookup(runtime, phone, now):
+        looked.append(phone)
+        return []
+    monkeypatch.setattr(callbacks, "lookup", lookup)
+    with _client(transport="sim") as c:   # no phone runner: nothing could answer a callback
+        r = _post(c, "/twiml/renter", {"CallSid": "CA1", "From": AGENT, "To": OURS})
+        assert "wss://landline.test/twilio/media" in r.text and looked == []
+
+
+async def test_a_callback_whose_stream_never_comes_ends_failed_and_is_put_down(monkeypatch):
+    monkeypatch.setattr("landline.voice.outbound.STREAM_WITHIN_S", 0.05)
+    calls, twilio_api = OutboundCalls(), FakeTwilio()
+    runner = TwilioRunner(_settings(), calls, client=twilio_api.client())
+    dial = replace(_dial(), callback=True, twilio_sid="CA5")
+    result = await asyncio.wait_for(runner.place(dial, _nothing), 2)
+    assert result.end_reason == "failed" and twilio_api.created == [] and twilio_api.hung_up == ["CA5"]

@@ -25,13 +25,12 @@ log = logging.getLogger(__name__)
 MISSED = frozenset({"voicemail", "no_answer", "busy"})   # the calls that reached no one
 WITHIN = timedelta(days=2)
 LOOKUP_S = 2.0
+START_S = 3.0     # joining the session and storing the call; slower, and the Concierge takes it
 MAX_CHOICES = 4   # listings read out when a number has several; the newest first
-TRIES = 2         # times the agent is asked which listing before the call ends
+TRIES = 2         # times the agent is asked which listing before the Concierge takes the call
 
 OPENING = "Hi, this is Landline. I'm an AI assistant calling for a renter. Thanks for calling back."
 AGAIN = "Sorry, I didn't catch that."
-GIVE_UP = ("Sorry, I couldn't tell which place you're calling about. Please call again and press its number. "
-           "Goodbye.")
 # Said around an address, never part of telling one from another.
 NOT_NAMES = frozenset({"st", "street", "ave", "avenue", "rd", "road", "blvd", "boulevard", "dr", "drive",
                        "cres", "crescent", "ln", "lane", "ct", "court", "pl", "place", "unit", "apt", "suite",
@@ -70,9 +69,9 @@ async def lookup(runtime: SessionRuntime, phone: str | None, now: datetime) -> l
             continue
         if not runtime.has(row.session_id):
             continue
-        plan = runtime.state(row.session_id).plan
+        view = runtime.get(row.session_id)   # the plan's listings, without copying the whole state
         listing = runtime.catalogue.by_id.get(row.listing_id)
-        if plan is None or row.listing_id not in plan.listing_ids or listing is None:
+        if view.phase not in ("calling", "done") or row.listing_id not in view.plan or listing is None:
             continue
         out.append(Missed(row.call_id, row.session_id, row.listing_id, listing.address or "the listing"))
     return out[:MAX_CHOICES]
@@ -86,16 +85,17 @@ def ask(choices: Sequence[Missed], again: bool = False) -> str:
     return f"{first} Which place are you calling about? Say the address, or press {keys}."
 
 
-def pick(choices: Sequence[Missed], digits: str = "", speech: str = "") -> Missed | None:
-    """The listing the agent chose: the key they pressed, else the address they said, matched in code on its
-    house number and street name. None when it names none of them, or can't tell two apart."""
+def pick(choices: Sequence[Missed | None], digits: str = "", speech: str = "") -> Missed | None:
+    """The listing the agent chose from those read out (None: one gone since): the key they pressed, else the
+    address they said, matched in code on its house number and street name. None when it names none of
+    them, or can't tell two apart."""
     key = digits.strip()
     if key.isdigit() and 1 <= int(key) <= len(choices):
         return choices[int(key) - 1]
     said = set(_words(speech))
-    if not said:
+    scored = [(_score(c.address, said), c) for c in choices if c is not None]
+    if not said or not scored:
         return None
-    scored = [(_score(c.address, said), c) for c in choices]
     best = max(score for score, _ in scored)
     top = [c for score, c in scored if score == best]
     return top[0] if best > 0 and len(top) == 1 else None

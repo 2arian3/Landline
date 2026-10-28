@@ -72,6 +72,7 @@ class Dial:
     plan: CallPlan
     deadline: datetime
     callback: bool = False  # the listing agent called us back (A-13b): the Caller answers, it dials nothing
+    twilio_sid: str | None = None   # a callback's own call, already on the line
 
 
 @dataclass(frozen=True)
@@ -158,6 +159,13 @@ class Dispatcher:
 
     # A listing agent calling back (A-13b)
 
+    @property
+    def takes_callbacks(self) -> bool:
+        """Whether any runner here can answer a listing agent's call back: without one, an incoming call never
+        waits on the lookup."""
+        phone = getattr(self.runner, "phone", self.runner)   # ByChannel's phone runner, or the only one
+        return bool(getattr(phone, "answers_callbacks", False))
+
     def callback_runner(self, session_id: str) -> CallRunner | None:
         """The runner that can answer a callback about this session's calls: one that took its calls over the
         phone and can pick up a call that's already on the line. None: the call goes to the Concierge."""
@@ -178,6 +186,7 @@ class Dispatcher:
             return None
         now, cid, to = self.clock(), mint("c_"), as_e164(phone) if phone else None
         dial = Dial(call_id=cid, session_id=sid, listing_id=lid, to=to, plan=plan, callback=True,
+                    twilio_sid=twilio_sid or None,
                     deadline=now + timedelta(seconds=self.settings.listing_call_max_s))
         try:
             async with self.runtime.session_tx(sid) as tx:
@@ -192,23 +201,38 @@ class Dispatcher:
             log.warning("callback about %s refused by session %s: %s", missed.call_id, sid, e)
             return None
         log.info("callback %s about missed call %s (%s, session %s)", cid, missed.call_id, lid, sid)
-        self._spawn(self._answer(dial, runner, twilio_sid))
-        await asyncio.sleep(0)   # the runner holds the call before Twilio opens its stream
+        held = self._hold_phone(to)   # their phone is busy with us: no listing call rings it meanwhile
+        self._spawn(self._answer(dial, runner, held))
+        await asyncio.sleep(0)   # place() holds the call (OutboundCalls) before Twilio opens its stream
         return cid
 
-    async def _answer(self, dial: Dial, runner: CallRunner, twilio_sid: str | None) -> None:
+    async def _answer(self, dial: Dial, runner: CallRunner, held: str | None) -> None:
         async def report(state: CallState) -> None:
             await self._state(dial.session_id, dial.call_id, state)
 
         try:
             async with asyncio.timeout(self.settings.listing_call_max_s):
-                result = await runner.place(dial, report, answered=twilio_sid or "")  # type: ignore[call-arg]
+                result = await runner.place(dial, report)
         except TimeoutError:
             result = CallResult("timeout")
         except Exception:
             log.exception("callback %s about %s failed", dial.call_id, dial.listing_id)
             result = CallResult("failed")
+        finally:
+            if held is not None:
+                self._phones.put_nowait(held)
         await self._finish(dial.plan, dial.call_id, dial.listing_id, result)
+
+    def _hold_phone(self, number: str | None) -> str | None:
+        """Takes an allowlisted phone out of the free ones while its owner is on a callback; returns it if it
+        was free, so `_answer` gives it back. One already ringing for a listing call stays with that call."""
+        if number not in self.allowlist:
+            return None
+        free = [self._phones.get_nowait() for _ in range(self._phones.qsize())]
+        for n in free:
+            if n != number:
+                self._phones.put_nowait(n)
+        return number if number in free else None
 
     # One call
 
