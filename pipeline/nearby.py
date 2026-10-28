@@ -3,9 +3,9 @@
 A step of the `maps` stage (pipeline/maps.py, D-10a), on its Google client. For each located active listing,
 Places API (New) searchNearby finds the nearest grocery store and the nearest pharmacy (a Shoppers Drug Mart
 counts) within 1.5 km, ranked by distance; one Routes matrix call then gives the walk to both. The names and
-minutes go in listings.grocery_* and pharmacy_* (X-04), with provenance `derived`, "Google Maps" and the fetch
-date. Nothing within 1.5 km, or no walking route to it, leaves that store's two fields null: never a made-up
-value. Every answer is cached, so a rerun sends nothing.
+minutes go in listings.grocery_* and pharmacy_* (X-04), with the stage's provenance: `derived`, via "Google
+Maps", the fetch date and maps.VERSION. Nothing within 1.5 km, or no walking route to it, leaves that store's
+two fields null: never a made-up value. Every answer is cached, so a rerun sends nothing.
 """
 from __future__ import annotations
 
@@ -15,12 +15,14 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
+from pipeline.maps import VERSION
+
 SEARCH_NEARBY = "https://places.googleapis.com/v1/places:searchNearby"
 FIELD_MASK = "places.id,places.displayName,places.location"   # only what we read (and are billed for)
 RADIUS_M = 1500.0
 KINDS = {"grocery": ("grocery_store", "supermarket"), "pharmacy": ("pharmacy", "drugstore")}
 FIELDS = ("grocery_name", "grocery_walk_min", "pharmacy_name", "pharmacy_walk_min")
-VERSION = "Google Maps"
+VIA = "Google Maps"
 
 
 @dataclass(frozen=True)
@@ -95,28 +97,31 @@ def row(listing_id: str, near: dict[str, Nearby | None]) -> dict:
         values[f"{kind}_walk_min"] = n.minutes if n else None
         if n is not None:
             for field in (f"{kind}_name", f"{kind}_walk_min"):
-                provenance[field] = {"source": "derived", "at": n.at, "version": VERSION}
+                provenance[field] = {"source": "derived", "via": VIA, "at": n.at, "version": VERSION}
     values["provenance"] = json.dumps(provenance)
     return values
 
 
 def run(conn: Any, client: Any, listings: Iterable[tuple[str, float, float]], load: bool,
-        today: Callable[[], date] = date.today) -> dict:
+        today: Callable[[], date] | None = None) -> dict:
     """The `maps` stage's D-10b step: `listings` are (listing_id, lat, lng) of the located active ones.
-    With `load`, each listing's four fields are written (and cleared where nothing is close). Returns counts
-    for the stage's report."""
+    With `load`, each listing's four fields are written (and cleared where nothing is close) in one
+    transaction, once every answer is in, so no transaction stays open across requests. The fetch date is the
+    client's day unless `today` says otherwise. Returns counts for the stage's report."""
+    today = today or (lambda: date.fromisoformat(client.today()))
     counts = {"listings": 0, "grocery": 0, "pharmacy": 0, "neither": 0}
+    rows = []
     for listing_id, lat, lng in listings:
         near = find(client, lat, lng, today)
         counts["listings"] += 1
         for kind, n in near.items():
             counts[kind] += n is not None
         counts["neither"] += all(n is None for n in near.values())
-        if load:
-            conn.execute(UPDATE, row(listing_id, near))
+        rows.append(row(listing_id, near))
     client.places_cache.save()
-    if load:
-        conn.commit()
+    if load and rows:
+        with conn.transaction(), conn.cursor() as cur:
+            cur.executemany(UPDATE, rows)
     return counts
 
 
