@@ -6,11 +6,14 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from landline.agents.caller.brief import brief, instructions
 from landline.config import Settings
 from landline.contracts import (
     CallOutcome,
     CallsRequested,
     Listing,
+    PreferenceDelta,
+    PreferencesUpdated,
     SessionEnded,
     SessionStarted,
     Viewing,
@@ -18,7 +21,16 @@ from landline.contracts import (
 from landline.contracts.tools import Availability
 from landline.db.catalogue import Catalogue
 from landline.orchestrator import SessionRuntime
-from landline.voice.dispatch import TORONTO, CallResult, Dial, Dispatcher, results_text, until_open, window
+from landline.voice.dispatch import (
+    TORONTO,
+    CallResult,
+    Dial,
+    Dispatcher,
+    freeze,
+    results_text,
+    until_open,
+    window,
+)
 from landline.voice.routing import ByChannel
 
 # Saturday 24 Oct 2026, 11:00 in Toronto: inside business hours.
@@ -183,6 +195,59 @@ async def test_the_plan_is_frozen_with_toronto_windows_and_only_shareable_answer
     assert starts == ["Sat 24 13:00", "Sat 31 09:00"]
     assert plan.shareable.model_dump() == {"name": None, "move_in": None, "occupants": None, "pets": []}
     assert [c.state for c in state.calls.values()] == ["ended", "ended"]
+
+
+# What the renter shares (user_profiles.shareable, ticked on /me): the Dispatcher looks it up, freeze() masks.
+
+
+async def _answered(rt: SessionRuntime):
+    """A briefed session: the renter said when they move in, how many they are and that they have a dog."""
+    await _brief(rt, ["t:1"])
+    await rt.emit(PreferencesUpdated(session_id=SID, at=NOW, idem_key=f"{SID}:prefs", delta=PreferenceDelta(
+        move_in="December 1", occupants=2, pets=["dog"])))
+    return rt.state(SID)
+
+
+async def test_by_default_the_renter_shares_move_in_occupants_and_pets_and_never_their_name():
+    rt = _runtime()
+    state = await _answered(rt)
+    shared = {"name": None, "move_in": "December 1", "occupants": 2, "pets": ["dog"]}
+    assert freeze(state, NOW).shareable.model_dump() == shared
+    assert freeze(state, NOW, name="Sara").shareable.model_dump() == shared   # a known name isn't ticked
+    allowed, name = await _dispatcher(rt)._shareable(state)   # no database: the default
+    assert (allowed, name) == ({"move_in", "occupants", "pets"}, None)
+
+
+async def test_unticked_pets_never_reach_the_caller():
+    rt = _runtime()
+    state = await _answered(rt)
+    plan = freeze(state, NOW, allowed={"move_in", "occupants"})
+    assert plan.shareable.model_dump() == {"name": None, "move_in": "December 1", "occupants": 2, "pets": []}
+    said = instructions(brief(rt.catalogue.by_id["t:1"], plan, now=NOW))
+    assert "dog" not in said and "pets" not in said   # not told to the landlord, and not asked
+
+
+async def test_a_ticked_name_is_shared_only_when_it_is_known():
+    rt = _runtime()
+    state = await _answered(rt)
+    assert freeze(state, NOW, allowed={"name"}).shareable.model_dump() == {
+        "name": None, "move_in": None, "occupants": None, "pets": []}
+    plan = freeze(state, NOW, allowed={"name", "pets"}, name="Sara")
+    assert plan.shareable.model_dump() == {
+        "name": "Sara", "move_in": None, "occupants": None, "pets": ["dog"]}
+    said = instructions(brief(rt.catalogue.by_id["t:1"], plan, now=NOW))
+    assert "Their name is Sara and they have a dog." in said
+
+
+async def test_if_what_the_renter_shares_cant_be_read_nothing_is_shared():
+    class Down:
+        async def by_phone(self, phone):
+            raise ConnectionError("the database is down")
+
+    rt = _runtime()
+    state = await _answered(rt)
+    rt.db = type("Db", (), {"users": Down()})()   # only the lookup sees it; the session is already stored
+    assert await _dispatcher(rt)._shareable(state) == (frozenset(), None)
 
 
 async def test_a_phone_session_with_no_caller_ends_its_calls_and_never_says_they_are_running():

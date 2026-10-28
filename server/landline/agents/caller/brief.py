@@ -357,7 +357,8 @@ def _listing(x: Listing) -> str:
 
 def _shareable(plan: CallPlan) -> str:
     s = plan.shareable
-    said = [f"they want to move in {s.move_in}" if s.move_in else None,
+    said = [f"their name is {s.name}" if s.name else None,   # only when they ticked it on /me (Dispatcher)
+            f"they want to move in {s.move_in}" if s.move_in else None,
             (f"{s.occupants} {'person' if s.occupants == 1 else 'people'} would live there"
              if s.occupants else None),
             f"they have {_pets(s.pets)}" if s.pets else None]
