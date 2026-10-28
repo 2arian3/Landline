@@ -48,7 +48,7 @@ Landline is one of ten finalists at Build North's Demo Day: Thursday 29 October,
 
 | Status | ID | Task | Priority | Needs | Done when | Issue |
 |---|---|---|---|---|---|---|
-| To do | X-04 | Add every demo-day column and field in one PR (nothing uses them yet) | P0, first | – | the migration applies, `make test` passes, Danial and Mahyar approve | [#236](https://github.com/2arian3/Landline/issues/236) |
+| Done | X-04 | Add every demo-day column and field in one PR (nothing uses them yet) | P0, first | – | the migration applies, `make test` passes, Danial and Mahyar approve | [#236](https://github.com/2arian3/Landline/issues/236) |
 | To do | D-10a | Walking minutes to the nearest TTC station, from Google Maps | P0 | X-04 | every active listing has them, with their source | [#237](https://github.com/2arian3/Landline/issues/237) |
 | To do | D-10b | The nearest grocery store and pharmacy, with walking minutes | P0 | X-04 | every active listing has both, or nothing when none is close | [#237](https://github.com/2arian3/Landline/issues/237) |
 | To do | D-10c | TTC minutes to the place the renter names, used in the ranking | P0 | D-10a | "I work at King and Bay" re-sorts the board with "min by TTC" reasons | [#237](https://github.com/2arian3/Landline/issues/237) |
