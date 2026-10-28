@@ -14,6 +14,7 @@ import pytest
 from landline.agents.auditor import CallRecord, ListingContext, ToolFact, Turn, build
 from landline.config import Settings
 from landline.contracts import (
+    Anchor,
     CallOutcome,
     CallPlan,
     CallsRequested,
@@ -21,9 +22,12 @@ from landline.contracts import (
     Fact,
     Listing,
     OutcomeReady,
+    Preferences,
+    PreferencesUpdated,
     SessionEnded,
     SessionStarted,
 )
+from landline.contracts.tools import PreferenceDelta
 from landline.db.catalogue import Catalogue
 from landline.orchestrator import SessionRuntime
 from landline.orchestrator.memory import (
@@ -32,12 +36,19 @@ from landline.orchestrator.memory import (
     Known,
     Memory,
     MemoryUnavailable,
+    backfill,
     from_settings,
     install,
     listing_knowledge,
     listing_scope,
     recall,
+    recent_outcomes,
+    renter_scope,
+    renter_texts,
 )
+from landline.orchestrator.state import Said
+from scripts.memory_backfill import SKIP as BACKFILL_SKIP
+from scripts.memory_backfill import run as run_backfill
 
 URL, CTX, KEY = "https://ctx-123.aws-use1.surreal.cloud", "landline_demo", "sp-test-secret-key"
 BASE = f"/api/v1/{CTX}"
@@ -378,3 +389,100 @@ async def test_recall_without_the_keys_is_nothing_with_one_line(caplog):
     assert await recall(None, "t:1") == []
     assert [r.getMessage() for r in caplog.records] == [
         "memory: no Agent Memory keys; the call to t:1 asks cold"]
+
+
+# ── O-09c: the backfill, and a renter's own memory with consent ─────────────────────────────────────────
+
+def _outcomes() -> list[tuple[CallOutcome, datetime]]:
+    unquoted = _fact("pets", "dogs ok", "")   # no quote: never written (hard rule 3)
+    deposit = _fact("deposit", "$2,600", "First and last, so twenty-six hundred.")
+    first = CallOutcome(call_id=CALLS[0], listing_id="t:1", end_reason="done", facts=[_parking(), unquoted])
+    second = CallOutcome(call_id=CALLS[1], listing_id="t:2", end_reason="done", facts=[deposit])
+    return [(first, T0), (second, T0)]
+
+
+async def test_the_backfill_writes_each_grounded_fact_once_and_a_second_run_writes_nothing():
+    fake = FakeMemory()
+    first = await backfill(Memory(URL, CTX, KEY, client=_client(fake)), _outcomes())
+    assert first == {"listings": 2, "facts": 2, "written": 2, "already": 0, "failed": 0}
+    deposit = ('On 2026-10-23, the listing agent said deposit: $2,600 '
+               '("First and last, so twenty-six hundred.").')
+    assert [f["text"] for f in fake.facts] == [PARKING, deposit]
+    assert [f["scopes"] for f in fake.facts] == [[[listing_scope("t:1")]], [[listing_scope("t:2")]]]
+    again = await backfill(Memory(URL, CTX, KEY, client=_client(fake)), _outcomes())   # a fresh process
+    assert again == {"listings": 2, "facts": 2, "written": 0, "already": 2, "failed": 0}
+    assert len(fake.facts) == 2
+
+
+async def test_the_backfill_skips_what_the_live_writer_already_saved(rt):
+    fake = FakeMemory()
+    install(rt, _settings(), client=_client(fake))
+    await _calling(rt)
+    await _outcome(rt, 0, _parking())   # the live write after OutcomeReady
+    counts = await backfill(Memory(URL, CTX, KEY, client=_client(fake)), _outcomes())
+    assert (counts["written"], counts["already"]) == (1, 1)   # only the deposit was missing
+    assert len(fake.facts) == 2
+
+
+async def test_a_failing_memory_server_is_counted_per_listing_and_never_raises():
+    fake = FakeMemory(fail={"/query": 503})
+    counts = await backfill(Memory(URL, CTX, KEY, client=_client(fake)), _outcomes())
+    assert (counts["failed"], counts["written"]) == (2, 0)
+
+
+async def test_recent_outcomes_come_from_postgres_s_event_log(db):
+    now = datetime.now(UTC)
+    async with db.transaction() as conn:
+        await conn.execute("truncate events")
+        for n, days in ((1, 10), (2, 1)):
+            out = CallOutcome(call_id=f"c_memory0000{n}", listing_id=f"t:{n}", end_reason="done",
+                              facts=[_parking()])
+            await db.events.append(OutcomeReady(session_id=SID, at=now - timedelta(days=days),
+                                                idem_key=f"backfill:{n}", outcome=out), conn=conn)
+        recent = await recent_outcomes(conn, now - timedelta(days=7))
+    assert [(o.listing_id, o.facts[0].quote) for o, _ in recent] == [("t:2", "It's 150 a month for parking.")]
+
+
+async def test_the_backfill_command_without_the_keys_says_so_and_sends_nothing(capsys):
+    assert await run_backfill([], settings=_settings(spectron_api_key=None)) == 0
+    assert capsys.readouterr().out.strip() == BACKFILL_SKIP
+
+
+def test_a_renter_s_words_in_sentences_with_nothing_inferred():
+    prefs = Preferences(max_monthly=2600, min_beds=2, anchors=[Anchor(label="King and Bay")],
+                        pets=["dog"], priorities=["transit"], occupants=2)
+    reactions = {"t:1": Said(reaction="dislike", reason="too dark"), "t:2": Said(reaction="like")}
+    texts = renter_texts(prefs, reactions, lambda lid: {"t:1": "1 Test St", "t:2": "2 Test St"}[lid], T0)
+    assert texts == [
+        "On 2026-10-23, the renter said they want up to $2,600 a month; 2 bedrooms or more; "
+        "near King and Bay; with dog; most important: transit; for 2 people.",
+        "On 2026-10-23, the renter's reaction to 1 Test St was dislike (too dark).",
+        "On 2026-10-23, the renter's reaction to 2 Test St was like.",
+    ]
+    assert renter_texts(Preferences(), {}, str, T0) == []
+
+
+async def test_only_a_renter_who_agreed_is_remembered_and_only_in_their_own_scope(db):
+    async with db.transaction() as conn:
+        await conn.execute("truncate sessions, events, users cascade")
+    runtime = SessionRuntime(Catalogue([_listing(1), _listing(2)], "test"), db)
+    fake = FakeMemory()
+    install(runtime, _settings(), client=_client(fake))
+    for sid, phone in (("s_memoryyes01", "+14165550101"), ("s_memoryno001", "+14165550102")):
+        await runtime.start(SessionStarted(session_id=sid, at=T0, idem_key=f"{sid}:start", channel="phone",
+                                           caller_phone=phone))
+        await runtime.emit(PreferencesUpdated(session_id=sid, at=T0, idem_key=f"{sid}:prefs",
+                                              delta=PreferenceDelta(max_monthly=2600, min_beds=2)))
+    agreed = (await db.users.upsert("+14165550101")).user_id   # both renters are on file by number
+    declined = (await db.users.upsert("+14165550102")).user_id
+    async with db.transaction() as conn:   # what "remember me" will set once it's switched on
+        await conn.execute("update users set consent_memory = true where user_id = %s", (agreed,))
+    for sid in ("s_memoryyes01", "s_memoryno001"):
+        await runtime.emit(SessionEnded(session_id=sid, at=T0, idem_key=f"{sid}:ended", reason="hangup"))
+    await runtime.idle()
+    renters = [f for f in fake.facts if f["scopes"][0][0].startswith("landline/renter/")]
+    assert [(f["scopes"], f["text"]) for f in renters] == [
+        ([[renter_scope(agreed)]],
+         "On 2026-10-23, the renter said they want up to $2,600 a month; 2 bedrooms or more.")]
+    assert all(renter_scope(declined) not in s for f in fake.facts for c in f["scopes"] for s in c)
+    await runtime.close()

@@ -47,7 +47,7 @@ import hashlib
 import logging
 import re
 import sys
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING
@@ -57,7 +57,7 @@ from zoneinfo import ZoneInfo
 import httpx
 
 from landline.config import Settings
-from landline.contracts import CallOutcome, Event, Fact, OutcomeReady, SessionView
+from landline.contracts import CallOutcome, Event, Fact, OutcomeReady, SessionEnded, SessionView, as_e164
 
 if TYPE_CHECKING:
     from landline.orchestrator.runtime import SessionRuntime
@@ -67,6 +67,8 @@ log = logging.getLogger(__name__)
 TORONTO = ZoneInfo("America/Toronto")
 TIMEOUT_S = 3.0
 LISTINGS = "landline/listing"
+RENTERS = "landline/renter"     # O-09c: one scope per consenting renter, never read for anyone else
+BACKFILL_DAYS = 7
 K, K_MAX = 10, 50              # the server's default and cap for `k` on /query
 TEST_LISTING = "test:o09a"     # the live run's own scope; no real listing has this id
 RECALL_S = 2.0                 # how long a call about to be dialled waits for what earlier calls heard
@@ -187,7 +189,12 @@ def install(runtime: SessionRuntime, settings: Settings,
         if isinstance(event, OutcomeReady):
             await remember_outcome(memory, event.outcome, event.at)
 
+    async def on_ended(event: Event, view: SessionView) -> None:
+        if isinstance(event, SessionEnded):
+            await remember_renter(memory, runtime, event.session_id, event.at)
+
     runtime.on("OutcomeReady", on_outcome)
+    runtime.on("SessionEnded", on_ended)
     return memory
 
 
@@ -212,6 +219,125 @@ async def remember_outcome(memory: Memory, outcome: CallOutcome, at: datetime) -
         return saved
     log.info("memory: %d facts from call %s saved to %s", saved, outcome.call_id, scope)
     return saved
+
+
+# ── O-09c: a renter who agreed to be remembered, and the backfill ───────────────────────────────────────────
+#
+# A renter's stated search and reactions go to landline/renter/<user_id> when their session ends, only when
+# users.consent_memory is true; nothing about anyone else is ever written, and nothing reads the scope yet.
+# The flag is set by the Concierge's remember_me, which is off until after the demo (agents/concierge/tools.py
+# DEFERRED), so today this writes nothing. The backfill replays the last week's listing-call facts from
+# Postgres (the system of record), so facts a failed write missed reach Agent Memory.
+
+async def remember_renter(memory: Memory, runtime: SessionRuntime, session_id: str, at: datetime) -> int:
+    """Writes a consenting renter's stated search and reactions to their own scope. Returns how many were
+    saved: 0 for a renter who didn't agree, without a database, or for a session with no known renter. Never
+    raises for Agent Memory."""
+    if runtime.db is None or not runtime.has(session_id):
+        return 0
+    state = runtime.state(session_id)
+    if state.user_id is not None:
+        user = await runtime.db.users.get(state.user_id)
+    elif state.caller_phone:   # a phone renter is known by their number, as profiles.remember finds them
+        user = await runtime.db.users.by_phone(as_e164(state.caller_phone) or state.caller_phone)
+    else:
+        return 0   # a browser or judge session has no renter to remember
+    if user is None or not user.consent_memory:
+        return 0   # never written without "remember me"
+    texts = renter_texts(state.preferences, state.reactions, _addresses(runtime), at)
+    if not texts:
+        return 0
+    scope, saved = renter_scope(user.user_id), 0
+    try:
+        await memory.register(scope)
+        for text in texts:
+            await memory.write(text, scope, observed_at=at)
+            saved += 1
+    except MemoryUnavailable as e:
+        log.warning("memory: %d of %d lines about renter %s not saved: %s", len(texts) - saved, len(texts),
+                    user.user_id, e)
+    return saved
+
+
+def renter_texts(prefs, reactions: dict, address, at: datetime) -> list[str]:
+    """What the renter told us, in sentences dated in Toronto: their search, and each listing they reacted to.
+    Only their own words and choices: nothing inferred."""
+    day = _utc(at).astimezone(TORONTO).date().isoformat()
+    wants = []
+    if prefs.max_monthly:
+        wants.append(f"up to ${prefs.max_monthly:,} a month")
+    if prefs.min_beds is not None:
+        wants.append("a studio or bigger" if prefs.min_beds == 0 else f"{prefs.min_beds:g} bedrooms or more")
+    if prefs.areas:
+        wants.append("in " + ", ".join(prefs.areas))
+    if prefs.anchors:
+        wants.append("near " + ", ".join(a.label for a in prefs.anchors))
+    if prefs.pets:
+        wants.append("with " + ", ".join(prefs.pets))
+    if prefs.must_have:
+        wants.append("must have " + ", ".join(prefs.must_have))
+    if prefs.priorities:
+        wants.append("most important: " + ", ".join(prefs.priorities))
+    if prefs.move_in:
+        wants.append(f"moving in {prefs.move_in}")
+    if prefs.occupants:
+        wants.append(f"for {prefs.occupants} " + ("person" if prefs.occupants == 1 else "people"))
+    out = [f"On {day}, the renter said they want {'; '.join(wants)}."] if wants else []
+    for listing_id, said in sorted(reactions.items()):
+        why = f" ({said.reason})" if said.reason else ""
+        out.append(f"On {day}, the renter's reaction to {address(listing_id)} was {said.reaction}{why}.")
+    return out
+
+
+def renter_scope(user_id: int) -> str:
+    return f"{RENTERS}/{user_id}"
+
+
+def _addresses(runtime: SessionRuntime):
+    by_id = runtime.catalogue.by_id
+    return lambda listing_id: by_id[listing_id].address if listing_id in by_id else listing_id
+
+
+RECENT_OUTCOMES = "select payload, at from events where type = 'OutcomeReady' and at >= %s order by seq"
+
+
+async def recent_outcomes(conn, since: datetime) -> list[tuple[CallOutcome, datetime]]:
+    """Every listing call's outcome committed since `since`, with when, from Postgres's event log."""
+    cur = await conn.execute(RECENT_OUTCOMES, (since,))
+    return [(OutcomeReady.model_validate(payload).outcome, at) for payload, at in await cur.fetchall()]
+
+
+async def backfill(memory: Memory, outcomes: Iterable[tuple[CallOutcome, datetime]]) -> dict[str, int]:
+    """Replays outcomes' facts into their listing scopes, in the same sentences as the live writer. Safe to
+    run twice: each listing's scope is read first, and a sentence already in it is skipped (the write's
+    Idempotency-Key covers only the server's 24 hours). A listing whose requests fail is counted and skipped;
+    the rest carry on. Returns counts for the report."""
+    by_listing: dict[str, list[tuple[str, datetime]]] = {}
+    for outcome, at in outcomes:
+        for fact in outcome.facts:
+            if rememberable(fact):
+                when = fact.at or at
+                by_listing.setdefault(outcome.listing_id, []).append((fact_text(fact, when), when))
+    counts = {"listings": 0, "facts": 0, "written": 0, "already": 0, "failed": 0}
+    for listing_id, texts in sorted(by_listing.items()):
+        scope = listing_scope(listing_id)
+        counts["listings"] += 1
+        counts["facts"] += len(texts)
+        try:
+            await memory.register(scope)
+            hits = await memory.query(KNOWLEDGE_QUERY, scope, k=K_MAX, include_duplicates=True)
+            there = {h.text for h in hits}
+            for text, when in texts:
+                if text in there:
+                    counts["already"] += 1
+                    continue
+                await memory.write(text, scope, observed_at=when)
+                there.add(text)
+                counts["written"] += 1
+        except MemoryUnavailable as e:
+            counts["failed"] += 1
+            log.warning("memory backfill: %s skipped: %s", scope, e)
+    return counts
 
 
 def rememberable(fact: Fact) -> bool:
