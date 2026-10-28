@@ -5,6 +5,7 @@ import { Captions } from "./Captions";
 import { Feedback, type Reaction } from "./Feedback";
 import { MARK, type Mark, STATUS } from "./ListingCard";
 import { Money } from "./Money";
+import { type WithTransit, gettingAround } from "@/lib/around";
 import { bathsLabel, bedsLabel, sizeLabel, sourceName, unitLabel } from "@/lib/format";
 import { api } from "@/lib/live";
 import { type Unheard, callNotes, unheard } from "@/lib/outcome";
@@ -83,6 +84,7 @@ export function ListingDetail({
   // A finished call carries what it settled (CallView.outcome); the results text is the fallback.
   const notes = callNotes(card, results, call ? [call] : []);
   const asked = notes.questions.length > 0;
+  const around = gettingAround(detail as WithTransit | null, card);
 
   return (
     <article className="flex min-h-full flex-col gap-6 pb-8">
@@ -254,6 +256,23 @@ export function ListingDetail({
           </div>
         )}
       </section>
+
+      {/* Last, so lines that arrive with the listing never push what the renter is reading. */}
+      {around.length > 0 && (
+        <section className="px-4" aria-labelledby="around-heading">
+          <h3 id="around-heading" className="text-meta font-label text-ink-3">
+            Getting around
+          </h3>
+          <ul className="mt-2 space-y-3">
+            {around.map((line) => (
+              <li key={line.key}>
+                <p className="text-fact">{line.text}</p>
+                {line.source && <p className="text-meta text-ink-3">{line.source}</p>}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
     </article>
   );
 }
