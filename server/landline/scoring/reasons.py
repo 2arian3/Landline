@@ -26,6 +26,8 @@ def _cost(good: bool, r: dict[str, Any]) -> str | None:
 
 
 def _location(good: bool, r: dict[str, Any]) -> str | None:
+    if r.get("anchor_min") is not None:   # TTC minutes from Google (D-10c), when they're in
+        return f"{round(r['anchor_min'])} min by TTC to {r['anchor']}"
     if r.get("anchor_km") is not None:
         km = r["anchor_km"]
         return f"right by {r['anchor']}" if km < 0.1 else f"{km:.1f} km from {r['anchor']}"
