@@ -9,7 +9,7 @@ import httpx
 import pytest
 
 from pipeline import __main__ as cli
-from pipeline import geo, maps
+from pipeline import geo, maps, nearby
 from pipeline.tests.test_geo import HOODS, STATIONS, conn  # noqa: F401  (conn is a fixture)
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "maps"
@@ -32,11 +32,13 @@ class Google:
         body = json.loads(request.content)
         self.seen.append((request, body))
         if request.url.host == "places.googleapis.com":   # D-10b's searchNearby: nothing close by default
-            return httpx.Response(200, json=self.places(body) if self.places else {})
+            answer = self.places(body) if self.places else {}
+            return answer if isinstance(answer, httpx.Response) else httpx.Response(200, json=answer)
         if self.status != 200:
             error = {"code": self.status, "status": "RESOURCE_EXHAUSTED"}
             return httpx.Response(self.status, json={"error": error})
-        return httpx.Response(200, json=self.reply(body) if self.reply else [])
+        answer = self.reply(body) if self.reply else []
+        return answer if isinstance(answer, httpx.Response) else httpx.Response(200, json=answer)
 
 
 def _fixture(body: dict) -> list:
@@ -170,8 +172,9 @@ def test_load_sets_the_station_the_walk_and_their_source(conn, tmp_path):  # noq
     client = _client(tmp_path, Google(_by_distance))
     counts = maps.run(conn, client, STATIONS, load=True)
     # 2 route matrices for the stations, then D-10b's two searchNearby per listing (nothing close here).
-    assert counts == {"listings": 3, "walks": 3, "updated": 3, "requests": 8, "elements": 6,
-                      "nearby": {"listings": 3, "grocery": 0, "pharmacy": 0, "neither": 3}}
+    assert counts == {"listings": 3, "walks": 3, "updated": 3, "walks_pending": 0, "requests": 8,
+                      "elements": 6, "throttled": 0, "stopped": None,
+                      "nearby": {"listings": 3, "grocery": 0, "pharmacy": 0, "neither": 3, "pending": 0}}
     assert maps.report(counts).splitlines()[1].startswith("nearby: 3 listings")
     row = conn.execute("select s.name, l.transit_walk_min, l.provenance from listings l join stations s "
                        "on s.id = l.transit_station_id where l.listing_id = 't:next'").fetchone()
@@ -199,7 +202,7 @@ def test_the_stores_step_runs_on_the_same_client_and_cache(conn, tmp_path):  # n
 
     client = _client(tmp_path, Google(_by_distance, places=places))
     counts = maps.run(conn, client, STATIONS, load=True)
-    assert counts["nearby"] == {"listings": 3, "grocery": 3, "pharmacy": 3, "neither": 0}
+    assert counts["nearby"] == {"listings": 3, "grocery": 3, "pharmacy": 3, "neither": 0, "pending": 0}
     grocery, pharmacy, minutes, source = conn.execute(
         "select grocery_name, pharmacy_name, grocery_walk_min, provenance->'grocery_name' from listings "
         "where listing_id = 't:in'").fetchone()
@@ -208,3 +211,97 @@ def test_the_stores_step_runs_on_the_same_client_and_cache(conn, tmp_path):  # n
     cached = Google(lambda body: pytest.fail("walk not cached"),
                     places=lambda body: pytest.fail("store not cached"))
     assert maps.run(conn, _client(tmp_path, cached), STATIONS, load=True)["requests"] == 0
+
+
+# Google's per-minute quotas, and a 429
+
+THROTTLED = {"error": {"code": 429, "status": "RESOURCE_EXHAUSTED",
+                       "message": "Quota exceeded for quota metric 'SearchNearbyRequest'"}}
+
+
+def _stores(body: dict) -> dict:
+    name = "places_grocery" if "grocery_store" in body["includedTypes"] else "places_pharmacy"
+    return json.loads((FIXTURES / f"{name}.json").read_text())
+
+
+def _clock():
+    now, slept = [0.0], []
+
+    def sleep(s):
+        slept.append(s)
+        now[0] += s
+    return now, slept, (lambda: now[0]), sleep
+
+
+def test_searchnearby_stays_under_its_per_minute_quota(tmp_path, monkeypatch):
+    monkeypatch.setattr(maps, "NEARBY_PER_MIN", 4)
+    now, slept, clock, sleep = _clock()
+    sent = []
+
+    def places(body):
+        sent.append(now[0])
+        return {}
+    client = _client(tmp_path, Google(places=places), clock=clock, sleep=sleep)
+    for i in range(10):
+        nearby.nearest(client, "grocery", 43.6 + i / 1000, -79.4)
+    assert len(sent) == 10 and slept   # it waited instead of going over
+    assert max(sum(1 for t in sent if start <= t < start + 60) for start in sent) <= 4
+
+
+def test_a_429_waits_for_retry_after_or_a_minute_and_goes_again(tmp_path):
+    now, slept, clock, sleep = _clock()
+    answers = [httpx.Response(429, headers={"Retry-After": "7"}, json=THROTTLED),
+               httpx.Response(429, json=THROTTLED)]
+
+    def places(body):
+        return answers.pop(0) if answers else _stores(body)
+    client = _client(tmp_path, Google(places=places), clock=clock, sleep=sleep)
+    place = nearby.nearest(client, "grocery", 43.65, -79.41)
+    assert place.name == "No Frills" and slept == [7.0, maps.RETRY_WAIT_S]
+    assert (client.requests, client.throttled) == (1, 2)   # only the answered request is billed
+    # The route matrix retries the same way.
+    first = [httpx.Response(429, json=THROTTLED)]
+    walks = _client(tmp_path / "w", Google(lambda body: first.pop(0) if first else _by_distance(body)),
+                    clock=clock, sleep=sleep).walk([(43.66, -79.416)], [(43.6643, -79.4185)])
+    assert walks[(0, 0)] is not None and slept[-1] == maps.RETRY_WAIT_S
+
+
+def test_a_quota_that_stays_used_up_loads_what_is_done_and_leaves_the_rest(conn, tmp_path):  # noqa: F811
+    geo.load(conn, HOODS, STATIONS)
+    served = [0]
+
+    def places(body):   # the first listing's two searches go through, then the quota stays used up
+        served[0] += 1
+        return _stores(body) if served[0] <= 2 else httpx.Response(429, json=THROTTLED)
+    counts = maps.run(conn, _client(tmp_path, Google(_by_distance, places=places)), STATIONS, load=True)
+    assert "429" in counts["stopped"] and counts["updated"] == 3   # every walk to the TTC is in
+    assert (counts["nearby"]["listings"], counts["nearby"]["pending"]) == (1, 2)
+    assert "2 listing steps pending, rerun to finish" in maps.report(counts)
+    stores = dict(conn.execute("select listing_id, grocery_name from listings "
+                               "where geom is not null").fetchall())
+    assert stores == {"t:far": "No Frills", "t:in": None, "t:next": None}   # only the finished one is written
+    # The rerun asks only for what's missing: 2 listings × 2 searches, and their 2 walks to the stores.
+    again = maps.run(conn, _client(tmp_path, Google(_by_distance, places=_stores)), STATIONS, load=True)
+    assert again["stopped"] is None and again["nearby"]["pending"] == 0 and again["requests"] == 6
+    assert conn.execute("select count(*) from listings where grocery_name is not null").fetchone() == (3,)
+    cached = Google(lambda body: pytest.fail("walk not cached"),
+                    places=lambda body: pytest.fail("store not cached"))
+    assert maps.run(conn, _client(tmp_path, cached), STATIONS, load=True)["requests"] == 0
+
+
+@pytest.mark.parametrize(("stopped", "code"), [(None, 0), ("HTTP 429 after 3 retries", 1)])
+def test_the_stage_exits_nonzero_when_it_stopped_part_way(monkeypatch, tmp_path, stopped, code):
+    import contextlib
+
+    import psycopg
+    client = _client(tmp_path, Google())
+    counts = {"listings": 1, "walks": 1, "updated": 1, "walks_pending": 0, "requests": 0, "elements": 0,
+              "throttled": 0, "stopped": stopped,
+              "nearby": {"listings": 0, "grocery": 0, "pharmacy": 0, "neither": 0,
+                         "pending": 1 if stopped else 0}}
+    monkeypatch.setattr(cli, "load_dotenv", lambda: None)
+    monkeypatch.setenv("DATABASE_URL", "postgresql://unused")
+    monkeypatch.setattr(maps, "from_env", lambda: client)
+    monkeypatch.setattr(maps, "run", lambda *a, **kw: counts)
+    monkeypatch.setattr(psycopg, "connect", lambda url: contextlib.nullcontext(None))
+    assert cli.main(["maps", "--load"]) == code

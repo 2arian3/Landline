@@ -194,14 +194,15 @@ def _maps(args) -> int:
 
     try:
         with psycopg.connect(url) as conn:
-            print(maps.report(maps.run(conn, client, geo.stations(), load=args.load, limit=args.limit)))
+            counts = maps.run(conn, client, geo.stations(), load=args.load, limit=args.limit)
+            print(maps.report(counts))
     except maps.MapsError as e:
         print(f"maps: stopped, nothing loaded ({client.requests} requests, {client.elements} elements "
               f"billed before it; those are cached): {e}", file=sys.stderr)
         return 1
     finally:
         client.close()
-    return 0
+    return 1 if counts.get("stopped") else 0   # a partial load: rerun to finish
 
 
 def _no_cache(client: PoliteClient, max_pages: int, started):
