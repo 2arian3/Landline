@@ -118,7 +118,8 @@ def test_provenance_goes_only_on_the_values_that_were_found():
         "No Frills", 6.3, None, None)
     prov = json.loads(r["provenance"])
     assert set(prov) == {"grocery_name", "grocery_walk_min"}
-    assert prov["grocery_name"] == {"source": "derived", "at": "2026-10-28", "version": "Google Maps"}
+    assert prov["grocery_name"] == {"source": "derived", "via": "Google Maps", "at": "2026-10-28",
+                                    "version": "google-maps-v1"}
 
 
 @pytest.fixture
@@ -159,7 +160,8 @@ def test_the_step_writes_both_stores_and_clears_them_when_none_is_close(conn):
     assert counts == {"listings": 1, "grocery": 1, "pharmacy": 1, "neither": 0}
     gname, gmin, pname, pmin, prov = _stores(conn, "t:near")
     assert (gname, gmin, pname, pmin) == ("No Frills", 6.3, "Shoppers Drug Mart", 4.0)
-    assert prov["pharmacy_walk_min"] == {"source": "derived", "at": "2026-10-28", "version": "Google Maps"}
+    assert prov["pharmacy_walk_min"] == {"source": "derived", "via": "Google Maps", "at": "2026-10-28",
+                                         "version": "google-maps-v1"}
     assert prov["rent"] == {"source": "scraped"}   # other fields' provenance is kept
     # A later run that finds nothing close clears the four fields and their provenance.
     empty = FakeMaps(grocery="places_none", pharmacy="places_none")
