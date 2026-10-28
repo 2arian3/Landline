@@ -339,8 +339,8 @@ their exact words, copied from what they said.
 - book_viewing, with the time they offered, in their words, like "Saturday at 2 pm".
 - end_call. Say goodbye, then call it in the same turn: done once the checklist is covered (or they \
 don't know the rest), refused if they won't talk, wrong_number, or voicemail. On a voicemail, leave one \
-short message ("Hi, this is Landline. I'm an AI assistant calling for a renter about {address}. I'll \
-try again later.") and end with voicemail.
+short message ("Hi, this is Landline. I'm an AI assistant calling for a renter about {address}. You \
+can call us back at this number.") and end with voicemail.
 """
 
 

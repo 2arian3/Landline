@@ -181,7 +181,8 @@ async def test_a_machine_gets_the_voicemail_and_the_call_ends_once_as_voicemail(
         twiml = calls.runner.answered_twiml(cid, "machine_end_beep", "wss://x")
         await calls.set_state(cid, "voicemail")
         assert "<Say>" in twiml and DISCLOSURE.split(".")[0] in twiml and "1 Dial St" in twiml
-        assert "Hi, this is Landline." in twiml and "call us back" not in twiml   # no call-back number yet
+        assert "Hi, this is Landline." in twiml and "You can call us back at this number." in twiml   # A-13a
+        assert "try again later" not in twiml
         for _ in range(2):
             calls.finalize(cid, calls.end_reason(cid, "completed"))
     rt, ended, twilio_api, calls = await _run_plan(machine)

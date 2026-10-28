@@ -105,6 +105,15 @@ test("the form keeps to U-12a's limits", () => {
   assert.ok(problems({ ...form, pets: "a".repeat(41) }).pets);
 });
 
+test("a budget runs from 1 to 20,000 dollars, so 0 is refused here instead of reaching the API's 422", () => {
+  const form = formFrom(SAVED);
+  const said = (budget: string) => problems({ ...form, budget }, touched({ ...form, budget }, SAVED)).budget;
+  for (const refused of ["0", "$0", "20001", "lots"]) {
+    assert.equal(said(refused), "Use a whole number of dollars, from 1 to 20,000.", refused);
+  }
+  for (const fine of ["1", "20000", "$20,000", ""]) assert.equal(said(fine), undefined, fine);
+});
+
 test("a 422 lands on the field it's about", () => {
   const body = {
     detail: [

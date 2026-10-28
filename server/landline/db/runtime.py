@@ -125,14 +125,17 @@ class Calls(Repo):
         return await self._one(CallRow, "select * from calls where call_id = %s", (call_id,), conn)
 
     async def set_state(self, call_id: str, state: str, *, twilio_sid: str | None = None,
-                        answered: bool = False, conn: Conn = None) -> CallRow | None:
-        """Move a call that hasn't ended. None if it has: an ended call never changes again."""
+                        to_e164: str | None = None, answered: bool = False,
+                        conn: Conn = None) -> CallRow | None:
+        """Move a call that hasn't ended. None if it has: an ended call never changes again. `to_e164` is the
+        number a listing call dialled (A-13a), stored as it starts dialling."""
         return await self._one(
             CallRow,
             "update calls set state = %s, twilio_sid = coalesce(%s, twilio_sid), "
+            "to_e164 = coalesce(%s, to_e164), "
             "answered_at = case when %s then coalesce(answered_at, now()) else answered_at end "
             "where call_id = %s and ended_at is null returning *",
-            (state, twilio_sid, answered, call_id), conn,
+            (state, twilio_sid, to_e164, answered, call_id), conn,
         )
 
     async def finalize(self, call_id: str, reason: str, conn: Conn = None) -> bool:

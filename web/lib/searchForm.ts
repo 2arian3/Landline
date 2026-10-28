@@ -125,8 +125,8 @@ const LISTS: [Field, number, number][] = [["areas", 10, 80], ["pets", 10, 40], [
 export function problems(form: Form, only?: readonly Field[]): Problems {
   const out: Problems = {};
   const budget = parseBudget(form.budget);
-  if (budget === undefined || (budget != null && budget > 20000)) {
-    out.budget = "Use a whole number of dollars, up to 20,000.";
+  if (budget === undefined || (budget != null && (budget < 1 || budget > 20000))) {
+    out.budget = "Use a whole number of dollars, from 1 to 20,000.";
   }
   for (const [field, most, longest] of LISTS) {
     const items = splitList(form[field] as string);
