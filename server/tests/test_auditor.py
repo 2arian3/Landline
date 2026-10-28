@@ -229,6 +229,21 @@ def test_a_yes_does_not_keep_a_number_the_landlord_never_said():
     assert build(c, []).outcome.facts == []
 
 
+@pytest.mark.parametrize("field", ["fees", "parking_cost"])
+def test_a_short_yes_that_says_its_amount_keeps_the_landlords_words(field):
+    """O-09b: a confirm question carries what an earlier call heard. "Yes, still $150" says the amount
+    itself, so it is the fact's quote, not the Caller's question."""
+    confirm = "Yesterday they said parking is $150 a month. Is that still right?"
+    c = call([("agent", confirm), ("landlord", "Yes, still $150.")],
+             tool_facts=[ToolFact(field, "$150 a month for parking", "Yes, still $150")])
+    a = build(c, [])
+    assert [(f.field, f.quote) for f in a.outcome.facts] == [(field, "Yes, still $150")]
+    assert a.heard[0].value.amount == 150 and a.heard[0].turn == 1
+    # A bare yes to the same question keeps nothing: $150 is only the earlier call's (PORTING #15).
+    c = call([("agent", confirm), ("landlord", "Yes.")], tool_facts=[ToolFact(field, "$150 a month", "Yes.")])
+    assert build(c, []).outcome.facts == []
+
+
 def test_live_facts_from_agent_turns_are_dropped():
     """PORTING #15: a read-back the landlord only agrees to is the agent's words, not a fact."""
     c = call([("agent", "So it's listed at $2,690 with parking, right?"),
