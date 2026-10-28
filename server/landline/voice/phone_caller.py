@@ -26,7 +26,7 @@ from typing import Any
 from landline.agents import auditor
 from landline.agents.auditor.extract import Complete
 from landline.agents.caller import tools as caller_tools
-from landline.agents.caller.brief import brief, instructions, wants
+from landline.agents.caller.brief import brief, disclosure, instructions, wants
 from landline.contracts import CallOutcome, Listing, Preferences, Viewing
 from landline.orchestrator import SessionRuntime
 from landline.orchestrator.memory import Known, Memory, recall
@@ -94,7 +94,7 @@ class PhoneCaller:
         listing = self.runtime.catalogue.by_id[dial.listing_id]
         b = brief(listing, dial.plan, wants(self._preferences(dial.session_id)), known=known,
                   now=self.clock())
-        text, start = opening(instructions(b), recorded=self.record_audio)
+        text, start = opening(instructions(b), recorded=self.record_audio, first=disclosure(b))
         config = session_config(instructions=text, tools=caller_tools.TOOLS, voice=self.voice,
                                 audio_format=PCMU)
         return listing, b, config, start
