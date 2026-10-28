@@ -1,0 +1,52 @@
+{
+  "id": "returning-asks-what-happened",
+  "about": "A caller whose earlier calls are done asks what happened with one place: the agent calls listing_status and says its facts and viewing, inventing nothing",
+  "returning": {
+    "opening": "Not sent (#144): a second call opens like a first one.",
+    "calls": [
+      {
+        "listing_id": "livrent:137483",
+        "days_ago": 2,
+        "facts": [
+          {"field": "parking_cost", "value": "$150 a month", "quote": "Parking is a hundred and fifty a month."},
+          {"field": "pets", "value": "dogs allowed", "quote": "Dogs are fine, we have a park out back."}
+        ],
+        "viewing_in_days": 2,
+        "viewing_status": "confirmed"
+      },
+      {
+        "listing_id": "livrent:137224",
+        "days_ago": 2,
+        "end_reason": "voicemail"
+      }
+    ]
+  },
+  "lines": [
+    {
+      "say": "Hi, I called the other day. What happened with the place on Logan?",
+      "expect": {
+        "tools": [
+          "listing_status"
+        ],
+        "says_any": [
+          "parking",
+          "150",
+          "hundred and fifty"
+        ],
+        "says_none": [
+          "Danforth"
+        ]
+      }
+    },
+    {
+      "say": "Great, that's all I needed. Bye!"
+    }
+  ],
+  "final": {
+    "no_request": true,
+    "replies_avoid": [
+      "livrent"
+    ],
+    "ended": true
+  }
+}
