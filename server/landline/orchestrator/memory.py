@@ -8,9 +8,11 @@ call to the same place can start from them (O-09b) instead of asking cold. The R
 - `POST /scopes {"path"}` registers a scope path. Paths are registered before their first write, parents
   first (landline, landline/listing, landline/listing/<id>), once per process.
 - `POST /facts` writes one fact. Its body is snake_case: `text`, `scopes` (a DNF selector, `[[path]]`),
-  `observed_at`, and `infer: "none"`, which stores the sentence as written (a `memory_chunk`), so the quote
-  and the date come back word for word. The default, `full`, has a model extract attributes from the
-  text, which is an inferred summary, not a fact with its quote (hard rule 3).
+  and `infer: "none"`, which stores the sentence as written (a `memory_chunk`), so the quote and the date
+  come back word for word. The server refuses `observed_at` on such a write (400: it's "only supported for
+  fact-producing writes"), so the date lives in the sentence only, where `heard` reads it. The default,
+  `full`, has a model extract attributes from the text, which is an inferred summary, not a fact with its
+  quote (hard rule 3).
 - `POST /query` reads. Its body is camelCase: `query`, `lens` (the read's scope, `[[path]]`), and `k` (at
   most 50). The server ignores a field it doesn't know without an error, so a read that sent `scope`
   instead of `lens` would search everything the key can read. `includeDuplicates` (default false) leaves
@@ -24,8 +26,9 @@ as one sentence, dated in Toronto:
     On 2026-10-28, the listing agent said parking_cost: $150 a month ("It's 150 a month for parking.").
 
 The Auditor has already grounded every fact in an outcome (its quote is in a landlord turn) and dropped
-the rest, so a fact is written only while it still carries its quote and value. Each request times out
-after 3 s, and a failure is one log line that never reaches the runtime. Without the three keys,
+the rest, so a fact is written only while it still carries its quote and value. A write or a scope
+registration times out after WRITE_TIMEOUT_S, a query after QUERY_TIMEOUT_S (reads took 5.6–6.5 s on the
+live server), and a failure is one log line that never reaches the runtime. Without the three keys,
 `from_settings` and `install` return None and nothing is sent.
 
 O-09b reads it back. `listing_knowledge(memory, listing_id)` queries the listing's scope and keeps only the
@@ -33,8 +36,11 @@ O-09b reads it back. `listing_knowledge(memory, listing_id)` queries the listing
 in the last 7 days, Toronto dates, as `Known` items: one per field, the newest. An inferred record (entity,
 attribute, …) or any other wording is never a fact (hard rule 3). `recall` is that read at dial time, for
 the Caller's brief (agents/caller/brief.py), which turns each item on the renter's checklist into a
-confirm question. It gives up after RECALL_S and never raises: without a client, on a timeout or on an
-error it returns [] with one log line, and the call asks cold.
+confirm question. A read takes seconds, so it starts early: when the renter's plan is recorded
+(CallsRequested), `Memory.prefetch` starts reading each planned listing in the background, usually minutes
+before the dial, and keeps the read for PREFETCH_TTL_S. `recall` at dial time uses it, or waits at most
+RECALL_S for the one in flight, and never raises: without a client, on a timeout or on an error it returns
+[] with one log line, and the call asks cold. It never delays a dial.
 
 The live run: `uv run python -m landline.orchestrator.memory` writes a test fact to
 landline/listing/test:o09a and queries it back, and `... memory livrent:100219` only queries that listing.
@@ -47,7 +53,8 @@ import hashlib
 import logging
 import re
 import sys
-from collections.abc import Iterable, Iterator
+import time
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING
@@ -57,7 +64,16 @@ from zoneinfo import ZoneInfo
 import httpx
 
 from landline.config import Settings
-from landline.contracts import CallOutcome, Event, Fact, OutcomeReady, SessionEnded, SessionView, as_e164
+from landline.contracts import (
+    CallOutcome,
+    CallsRequested,
+    Event,
+    Fact,
+    OutcomeReady,
+    SessionEnded,
+    SessionView,
+    as_e164,
+)
 
 if TYPE_CHECKING:
     from landline.orchestrator.runtime import SessionRuntime
@@ -65,7 +81,10 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 TORONTO = ZoneInfo("America/Toronto")
-TIMEOUT_S = 3.0
+WRITE_TIMEOUT_S = 5.0          # a write or a scope registration (about 1 s on the live server)
+QUERY_TIMEOUT_S = 12.0         # a query (5.6-6.5 s on the live server)
+TIMEOUT_S = WRITE_TIMEOUT_S
+PREFETCH_TTL_S = 15 * 60       # how long a listing's prefetched read is kept for its dial
 LISTINGS = "landline/listing"
 RENTERS = "landline/renter"     # O-09c: one scope per consenting renter, never read for anyone else
 BACKFILL_DAYS = 7
@@ -93,7 +112,7 @@ class Hit:
     text: str
     source: str                          # memory_chunk for what Landline wrote; else entity, attribute, …
     score: float = 0.0
-    occurred_at: datetime | None = None  # the record's known time (observed_at on Landline's writes)
+    occurred_at: datetime | None = None  # the server's time for the record; our date is in the text
     id: str = ""
 
 
@@ -111,12 +130,17 @@ class Memory:
     """The Agent Memory REST client: register a scope, write a fact, query."""
 
     def __init__(self, url: str, context_id: str, api_key: str, client: httpx.AsyncClient | None = None,
-                 timeout_s: float = TIMEOUT_S) -> None:
+                 timeout_s: float = WRITE_TIMEOUT_S, query_timeout_s: float = QUERY_TIMEOUT_S,
+                 clock: Callable[[], float] = time.monotonic,
+                 now: Callable[[], datetime] = lambda: datetime.now(UTC)) -> None:
         self.base = f"{url.rstrip('/')}/api/v1/{quote(context_id, safe='')}"
-        self.client = client or httpx.AsyncClient(timeout=timeout_s)
-        self.timeout_s = timeout_s
+        self.client = client or httpx.AsyncClient(timeout=max(timeout_s, query_timeout_s))
+        self.timeout_s, self.query_timeout_s = timeout_s, query_timeout_s
+        self.clock, self.now = clock, now   # the TTL's clock, and the day "the last week" counts from
         self._auth = {"Authorization": f"Bearer {api_key}"}
         self._registered: set[str] = set()
+        # What earlier calls heard, read ahead for the dial: listing id -> (expires at, the read).
+        self._prefetched: dict[str, tuple[float, asyncio.Task[list[Known]]]] = {}
 
     async def register(self, path: str) -> None:
         """Registers `path` and every parent above it, each once per process. A path that is already
@@ -126,12 +150,11 @@ class Memory:
                 await self._post("/scopes", f"scope {p} register", {"path": p}, tolerate=(409,))
                 self._registered.add(p)
 
-    async def write(self, text: str, scope: str, *, observed_at: datetime | None = None) -> None:
+    async def write(self, text: str, scope: str) -> None:
         """Stores `text` as written in `scope`. The same sentence in the same scope is one memory: its
-        Idempotency-Key comes from both, so a retry within the server's 24 hours is a no-op."""
+        Idempotency-Key comes from both, so a retry within the server's 24 hours is a no-op. No
+        `observed_at`: the server refuses it on an `infer: "none"` write, and the date is in the text."""
         body: dict = {"text": text, "infer": "none", "scopes": [[scope]]}
-        if observed_at is not None:
-            body["observed_at"] = _utc(observed_at).isoformat(timespec="seconds")
         key = hashlib.sha256(f"{scope}\n{text}".encode()).hexdigest()[:32]
         # 409 is the same key still in flight, or already stored: the fact is there either way.
         await self._post("/facts", f"fact write to {scope}", body,
@@ -144,14 +167,15 @@ class Memory:
         body: dict = {"query": query, "lens": [[scope]], "k": max(1, min(k, K_MAX))}
         if include_duplicates:
             body["includeDuplicates"] = True
-        answer = await self._post("/query", f"query of {scope}", body)
+        answer = await self._post("/query", f"query of {scope}", body, timeout_s=self.query_timeout_s)
         hits = answer.get("hits") if isinstance(answer, dict) else None
         return [h for h in (_hit(raw) for raw in hits or []) if h is not None]
 
     async def _post(self, path: str, what: str, body: dict, *, headers: dict[str, str] | None = None,
-                    tolerate: tuple[int, ...] = ()) -> dict:
+                    tolerate: tuple[int, ...] = (), timeout_s: float | None = None) -> dict:
         try:
-            async with asyncio.timeout(self.timeout_s):   # the whole request, connect to last byte
+            # The whole request, connect to last byte.
+            async with asyncio.timeout(timeout_s or self.timeout_s):
                 r = await self.client.post(f"{self.base}{path}", json=body,
                                            headers={**self._auth, **(headers or {})})
         except (httpx.HTTPError, TimeoutError) as e:   # a timeout's message is empty, so its repr says what
@@ -165,8 +189,31 @@ class Memory:
         except ValueError:
             raise MemoryUnavailable(f"{what} answered with no JSON", r.status_code) from None
 
+    def prefetch(self, listing_id: str, *, now: datetime | None = None) -> asyncio.Task[list[Known]]:
+        """Starts reading what earlier calls heard about the listing, unless a fresh read is already under way
+        or done, and keeps it for PREFETCH_TTL_S. Returns that read. A failed read isn't kept, so the next
+        prefetch tries again."""
+        entry = self._prefetched.get(listing_id)
+        if entry is not None:
+            expires, task = entry
+            failed = task.done() and (task.cancelled() or task.exception() is not None)
+            if self.clock() < expires and not failed:
+                return task
+        task = asyncio.ensure_future(listing_knowledge(self, listing_id, now=now or self.now()))
+        task.add_done_callback(lambda t, lid=listing_id: _settled(t, lid))
+        self._prefetched[listing_id] = (self.clock() + PREFETCH_TTL_S, task)
+        return task
+
     async def close(self) -> None:
+        for _, task in self._prefetched.values():
+            task.cancel()
         await self.client.aclose()
+
+
+def _settled(task: asyncio.Task, listing_id: str) -> None:
+    """A finished prefetch: a failure is one log line (and retrieved, so asyncio doesn't warn at exit)."""
+    if not task.cancelled() and (e := task.exception()) is not None:
+        log.warning("memory: prefetch of %s failed (%r); its call asks cold", listing_scope(listing_id), e)
 
 
 def from_settings(settings: Settings, client: httpx.AsyncClient | None = None) -> Memory | None:
@@ -193,8 +240,14 @@ def install(runtime: SessionRuntime, settings: Settings,
         if isinstance(event, SessionEnded):
             await remember_renter(memory, runtime, event.session_id, event.at)
 
+    async def on_plan(event: Event, view: SessionView) -> None:
+        if isinstance(event, CallsRequested):   # read ahead, minutes before the dial (O-09b)
+            for listing_id in dict.fromkeys(event.listing_ids):
+                memory.prefetch(listing_id)
+
     runtime.on("OutcomeReady", on_outcome)
     runtime.on("SessionEnded", on_ended)
+    runtime.on("CallsRequested", on_plan)
     return memory
 
 
@@ -211,7 +264,7 @@ async def remember_outcome(memory: Memory, outcome: CallOutcome, at: datetime) -
         await memory.register(scope)
         for fact in facts:
             when = fact.at or at
-            await memory.write(fact_text(fact, when), scope, observed_at=when)
+            await memory.write(fact_text(fact, when), scope)
             saved += 1
     except MemoryUnavailable as e:
         log.warning("memory: %d of %d facts from call %s not saved to %s: %s", len(facts) - saved, len(facts),
@@ -251,7 +304,7 @@ async def remember_renter(memory: Memory, runtime: SessionRuntime, session_id: s
     try:
         await memory.register(scope)
         for text in texts:
-            await memory.write(text, scope, observed_at=at)
+            await memory.write(text, scope)
             saved += 1
     except MemoryUnavailable as e:
         log.warning("memory: %d of %d lines about renter %s not saved: %s", len(texts) - saved, len(texts),
@@ -312,12 +365,11 @@ async def backfill(memory: Memory, outcomes: Iterable[tuple[CallOutcome, datetim
     run twice: each listing's scope is read first, and a sentence already in it is skipped (the write's
     Idempotency-Key covers only the server's 24 hours). A listing whose requests fail is counted and skipped;
     the rest carry on. Returns counts for the report."""
-    by_listing: dict[str, list[tuple[str, datetime]]] = {}
+    by_listing: dict[str, list[str]] = {}
     for outcome, at in outcomes:
         for fact in outcome.facts:
             if rememberable(fact):
-                when = fact.at or at
-                by_listing.setdefault(outcome.listing_id, []).append((fact_text(fact, when), when))
+                by_listing.setdefault(outcome.listing_id, []).append(fact_text(fact, fact.at or at))
     counts = {"listings": 0, "facts": 0, "written": 0, "already": 0, "failed": 0}
     for listing_id, texts in sorted(by_listing.items()):
         scope = listing_scope(listing_id)
@@ -327,11 +379,11 @@ async def backfill(memory: Memory, outcomes: Iterable[tuple[CallOutcome, datetim
             await memory.register(scope)
             hits = await memory.query(KNOWLEDGE_QUERY, scope, k=K_MAX, include_duplicates=True)
             there = {h.text for h in hits}
-            for text, when in texts:
+            for text in texts:
                 if text in there:
                     counts["already"] += 1
                     continue
-                await memory.write(text, scope, observed_at=when)
+                await memory.write(text, scope)
                 there.add(text)
                 counts["written"] += 1
         except MemoryUnavailable as e:
@@ -373,16 +425,21 @@ async def listing_knowledge(memory: Memory, listing_id: str, *, now: datetime | 
 
 async def recall(memory: Memory | None, listing_id: str, *, now: datetime | None = None,
                  timeout_s: float | None = None) -> list[Known]:
-    """`listing_knowledge` for a call about to be dialled: it waits at most RECALL_S and never raises. No
-    client, a timeout or an error is [] with one log line, and the Caller asks cold."""
+    """`listing_knowledge` for a call about to be dialled: the read prefetched when the plan was recorded, or
+    the one in flight, waited on for at most RECALL_S; it never raises. No client, a timeout or an error is []
+    with one log line, and the Caller asks cold. A read cut short carries on, for the next call."""
     if memory is None:
         log.info("memory: no Agent Memory keys; the call to %s asks cold", listing_id)
         return []
+    read = memory.prefetch(listing_id, now=now)
     try:
         async with asyncio.timeout(RECALL_S if timeout_s is None else timeout_s):
-            return await listing_knowledge(memory, listing_id, now=now)
-    except Exception as e:   # MemoryUnavailable, a timeout, or anything else: never the call's problem
-        log.warning("memory: %s not read (%r); the call asks cold", listing_scope(listing_id), e)
+            return await asyncio.shield(read)
+    except TimeoutError:   # still reading: it carries on for the next call, and this one asks cold
+        log.warning("memory: %s not read in time (TimeoutError); the call asks cold",
+                    listing_scope(listing_id))
+        return []
+    except Exception:   # the read failed, and its own callback logged it once (_settled)
         return []
 
 
