@@ -17,6 +17,9 @@ One call goes like this:
 
 What is said on the line is `converse`: the Caller (A-05) on Higgs, in voice/phone_caller.py. Its first
 words are the disclosure, from `opening()` here, and that the call is recorded when its audio is (A-10).
+
+A listing agent calling back (A-13b) goes the same way from step 2: the call is already on the line, so
+`place(..., answered=)` dials nothing, and the stream api/twilio.py hands it is claimed like any other.
 """
 from __future__ import annotations
 
@@ -144,6 +147,7 @@ class TwilioRunner:
     """Places listing calls through Twilio's Calls API, without the SDK."""
     transport = "voice"
     uses_phone = True
+    answers_callbacks = True   # place(answered=): a listing agent calling back (A-13b)
 
     def __init__(self, settings: Settings, calls: OutboundCalls, *, runtime: SessionRuntime | None = None,
                  converse: Converse = no_caller, client: httpx.AsyncClient | None = None):
@@ -158,21 +162,28 @@ class TwilioRunner:
 
     # Placing one call
 
-    async def place(self, dial: Dial, report: Report) -> CallResult:
+    async def place(self, dial: Dial, report: Report, *, answered: str | None = None) -> CallResult:
+        """Places the call and returns once it has ended. `answered`: Twilio's sid of a listing agent's call
+        back (A-13b), already on the line, so nothing is dialled and the Caller takes it from the stream."""
         call = Outbound(dial=dial, report=report)
         self.calls.live[dial.call_id] = call
         warm: asyncio.Task | None = None   # the Higgs session opened once a person answered (#148)
         if (recall := getattr(self.converse, "recall", None)) is not None:
             recall(dial)   # what earlier calls heard about the place (O-09b), read while it rings
         try:
-            try:
-                call.twilio_sid = await self.dial(dial)
-            except NotAllowed:
-                log.error("call %s: %s is not on the allowlist; not dialled", dial.call_id, _tail(dial.to))
-                self.calls.finalize(dial.call_id, "blocked")
-            except Exception:
-                log.exception("call %s: Twilio would not place it", dial.call_id)
-                self.calls.finalize(dial.call_id, "failed")
+            if answered is not None:
+                call.twilio_sid = answered or None
+                call.answered.set()
+            else:
+                try:
+                    call.twilio_sid = await self.dial(dial)
+                except NotAllowed:
+                    log.error("call %s: %s is not on the allowlist; not dialled", dial.call_id,
+                              _tail(dial.to))
+                    self.calls.finalize(dial.call_id, "blocked")
+                except Exception:
+                    log.exception("call %s: Twilio would not place it", dial.call_id)
+                    self.calls.finalize(dial.call_id, "failed")
             # A person answered: open Higgs while Twilio connects the stream, when the Caller can. It runs in
             # this call's line, so it counts against the Dispatcher's limit like the call itself.
             prepare = getattr(self.converse, "prepare", None)

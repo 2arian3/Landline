@@ -1,5 +1,7 @@
 """Twilio webhooks for the renter's call (owner: Danial). The TwiML webhook mints the call and hands it to
-our media stream; the stream runs the Concierge bridge (landline/voice/bridge.py)."""
+our media stream; the stream runs the Concierge bridge (landline/voice/bridge.py). A listing agent calling
+back about a call that reached no one goes to the Caller for that listing instead (A-13b,
+voice/callbacks.py)."""
 from __future__ import annotations
 
 import asyncio
@@ -9,7 +11,7 @@ from urllib.parse import parse_qsl
 from fastapi import APIRouter, HTTPException, Request, WebSocket
 from fastapi.responses import Response
 
-from landline.voice import twilio
+from landline.voice import callbacks, twilio
 from landline.voice.bridge import POLICY_VIOLATION, TwilioTransport, _wait_for_start, close_socket, run_bridge
 from landline.voice.outbound import MACHINE
 
@@ -20,6 +22,7 @@ NOT_READY = "Sorry, Landline isn't taking calls right now. Please try again late
 BUSY = "All our lines are busy. Please call again in a minute."
 MEDIA_PATH = "/twilio/media"
 OUTBOUND_MEDIA_PATH = "/twilio/outbound/media"
+CALLBACK_PATH = "/twiml/callback"
 
 
 @router.post("/twiml/renter")
@@ -35,11 +38,74 @@ async def twiml_renter(request: Request) -> Response:
         return _xml(twilio.twiml_say_hangup(NOT_READY))
     if request.app.state.drain.draining:   # restarting (#167): a call taken now would be cut
         return _xml(twilio.twiml_say_hangup(BUSY))
+    choices = await _callback_choices(request, params)
+    if len(choices) == 1 and (answered := await _answer_callback(request, choices[0], params)) is not None:
+        return answered
+    if len(choices) > 1:
+        return _ask_which(choices, tries=1)
+    return _renter(request, params)
+
+
+@router.post(CALLBACK_PATH)
+async def twiml_callback(request: Request) -> Response:
+    """Which listing a callback is about (A-13b): Twilio posts the key pressed or the words said, or nothing.
+    Code matches it to the list it read out; after TRIES without a match, the call ends politely."""
+    params = await _signed_params(request)
+    try:
+        tries = max(1, int(request.query_params.get("try", "1")))
+    except ValueError:
+        tries = 1
+    choices = await _callback_choices(request, params)
+    if not choices:   # the lookup failed meanwhile, or the session went: the renter's Concierge, as before
+        return _renter(request, params)
+    picked = choices[0] if len(choices) == 1 else callbacks.pick(
+        choices, params.get("Digits", ""), params.get("SpeechResult", ""))
+    if picked is not None:
+        answered = await _answer_callback(request, picked, params)
+        return answered if answered is not None else _renter(request, params)
+    if tries < callbacks.TRIES:
+        return _ask_which(choices, tries=tries + 1)
+    log.info("callback from %s: no listing picked after %d tries", _tail(params.get("From")), tries)
+    return _xml(twilio.twiml_say_hangup(callbacks.GIVE_UP))
+
+
+def _renter(request: Request, params: dict[str, str]) -> Response:
+    """A renter's call: a new session, streamed to the Concierge."""
     call = request.app.state.calls.open(caller=params.get("From"), called=params.get("To"))
     if call is None:
         return _xml(twilio.twiml_say_hangup(BUSY))
     log.info("renter call %s opened session %s", call.call_id, call.session_id)
     return _xml(twilio.twiml_stream(_ws_base(request) + MEDIA_PATH, call.call_id))
+
+
+async def _callback_choices(request: Request, params: dict[str, str]) -> list[callbacks.Missed]:
+    """The missed listing calls this caller may be calling back about, that a runner here can answer; [] for
+    a renter, and whenever the lookup fails or is slow (logged), so the Concierge takes the call."""
+    state = request.app.state
+    dispatcher = getattr(state, "dispatcher", None)
+    if dispatcher is None:
+        return []
+    choices = await callbacks.find(state.runtime, params.get("From"), dispatcher.clock())
+    return [c for c in choices if dispatcher.callback_runner(c.session_id) is not None]
+
+
+async def _answer_callback(request: Request, missed: callbacks.Missed,
+                           params: dict[str, str]) -> Response | None:
+    """The Caller for `missed`'s listing takes the call on the listing calls' stream; None if it can't."""
+    dispatcher = request.app.state.dispatcher
+    try:
+        call_id = await dispatcher.callback(missed, params.get("From"), params.get("CallSid"))
+    except Exception:
+        log.exception("callback about %s couldn't start; the call goes to the Concierge", missed.call_id)
+        return None
+    if call_id is None:
+        return None
+    return _xml(twilio.twiml_stream(_ws_base(request) + OUTBOUND_MEDIA_PATH, call_id))
+
+
+def _ask_which(choices: list[callbacks.Missed], tries: int) -> Response:
+    return _xml(twilio.twiml_gather(callbacks.ask(choices, again=tries > 1), f"{CALLBACK_PATH}?try={tries}",
+                                    hints=[c.address for c in choices]))
 
 
 @router.websocket(MEDIA_PATH)
@@ -144,3 +210,7 @@ def _ws_base(request: Request) -> str:
 
 def _xml(body: str) -> Response:
     return Response(content=body, media_type="application/xml")
+
+
+def _tail(number: str | None) -> str:
+    return f"…{(number or '')[-4:]}"

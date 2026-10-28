@@ -13,6 +13,9 @@ datetimes, whether Landline may book, and only what they agreed to share: user_p
 Each call ends once (`CallEnded`, keyed on the call) and its outcome follows (`OutcomeReady`). When every
 call in the plan has an outcome, it emits `CallsCompleted`, and the renter is texted the results once.
 
+A listing agent who calls back about a call that reached no one (A-13b, voice/callbacks.py) gets the same:
+`callback()` makes it a new call in that session, for that listing and plan, with a deadline and one end.
+
 Placing one call is a `CallRunner`'s job: the Caller over Twilio (A-05), the sim landlord (A-03), or a fake
 in tests. With no runner, the plan is still frozen and its calls end `blocked` at once: nothing is made up,
 and the session doesn't wait in `calling` for calls nobody will place.
@@ -46,6 +49,7 @@ from landline.contracts import (
 )
 from landline.contracts.tools import Availability
 from landline.orchestrator import Refused, SessionRuntime, SessionState
+from landline.voice.callbacks import Missed
 from landline.voice.calls import mint
 from landline.voice.sms import Texter
 
@@ -67,6 +71,7 @@ class Dial:
     to: str | None          # an allowlisted number for a phone call; None off the phone network
     plan: CallPlan
     deadline: datetime
+    callback: bool = False  # the listing agent called us back (A-13b): the Caller answers, it dials nothing
 
 
 @dataclass(frozen=True)
@@ -150,6 +155,60 @@ class Dispatcher:
         judge's calls never reach the phone network; any other runner takes every session's calls."""
         pick = getattr(self.runner, "for_session", None)
         return pick(session_id) if pick is not None else self.runner
+
+    # A listing agent calling back (A-13b)
+
+    def callback_runner(self, session_id: str) -> CallRunner | None:
+        """The runner that can answer a callback about this session's calls: one that took its calls over the
+        phone and can pick up a call that's already on the line. None: the call goes to the Concierge."""
+        runner = self.runner_for(session_id)
+        return runner if runner is not None and getattr(runner, "answers_callbacks", False) else None
+
+    async def callback(self, missed: Missed, phone: str | None, twilio_sid: str | None) -> str | None:
+        """A listing agent calling back about `missed`, a call that reached no one (voice/callbacks.py).
+        It's a new listing call, its id minted here, that joins the missed call's session for the same
+        listing and plan (CallStateChanged with its listing_id), so its facts, booking and outcome land like
+        any listing call's. The runner answers it with the Caller once Twilio opens the stream; like any
+        listing call it has a deadline and ends once (_finish). Returns its call id, or None when it can't be
+        taken here (no runner for it, or the session refuses it), and the call goes to the Concierge."""
+        sid, lid = missed.session_id, missed.listing_id
+        runner = self.callback_runner(sid)
+        plan = self.runtime.state(sid).plan if runner is not None else None
+        if runner is None or plan is None or lid not in plan.listing_ids:
+            return None
+        now, cid, to = self.clock(), mint("c_"), as_e164(phone) if phone else None
+        dial = Dial(call_id=cid, session_id=sid, listing_id=lid, to=to, plan=plan, callback=True,
+                    deadline=now + timedelta(seconds=self.settings.listing_call_max_s))
+        try:
+            async with self.runtime.session_tx(sid) as tx:
+                joined = await tx.apply(CallStateChanged(session_id=sid, at=now, idem_key=f"{cid}:joined",
+                                                         call_id=cid, state="queued", listing_id=lid))
+                db = self.runtime.db
+                if joined and tx.conn is not None and db is not None:
+                    await db.calls.create(cid, session_id=sid, role="listing", transport=runner.transport,
+                                          state="queued", listing_id=lid, deadline_at=dial.deadline,
+                                          to_e164=to, conn=tx.conn)
+        except Refused as e:
+            log.warning("callback about %s refused by session %s: %s", missed.call_id, sid, e)
+            return None
+        log.info("callback %s about missed call %s (%s, session %s)", cid, missed.call_id, lid, sid)
+        self._spawn(self._answer(dial, runner, twilio_sid))
+        await asyncio.sleep(0)   # the runner holds the call before Twilio opens its stream
+        return cid
+
+    async def _answer(self, dial: Dial, runner: CallRunner, twilio_sid: str | None) -> None:
+        async def report(state: CallState) -> None:
+            await self._state(dial.session_id, dial.call_id, state)
+
+        try:
+            async with asyncio.timeout(self.settings.listing_call_max_s):
+                result = await runner.place(dial, report, answered=twilio_sid or "")  # type: ignore[call-arg]
+        except TimeoutError:
+            result = CallResult("timeout")
+        except Exception:
+            log.exception("callback %s about %s failed", dial.call_id, dial.listing_id)
+            result = CallResult("failed")
+        await self._finish(dial.plan, dial.call_id, dial.listing_id, result)
 
     # One call
 
