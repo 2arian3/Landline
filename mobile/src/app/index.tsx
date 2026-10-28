@@ -80,6 +80,7 @@ export default function Home() {
         </>
       ) : null}
 
+      <Button label="My search" onPress={() => router.push("/search")} quiet />
       <View style={styles.spacer} />
       <Button label="Sign out" onPress={() => void signOut()} quiet />
     </Screen>
