@@ -175,8 +175,8 @@ async def _talk(transport: Transport, call: RenterCall, runtime: SessionRuntime,
     if text_link is not None:
         instructions += LINK_SENT   # so the Concierge tells them; the text goes once Higgs is up
     try:
-        higgs = await connect_higgs(settings.boson_api_key or "", session_config(
-            instructions=instructions, tools=tools.TOOLS, voice=settings.higgs_voice_renter,
+        higgs = await connect_higgs(settings.voice_api_key() or "", session_config(
+            instructions=instructions, tools=tools.TOOLS, voice=settings.live_voice(),
             audio_format=transport.audio_format, language=hint(None, None)))
     except Exception as exc:
         log.exception("Higgs session failed for call %s", call.call_id)

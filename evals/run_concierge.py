@@ -30,7 +30,7 @@ from evals.sim.score_concierge import Result, score
 from landline.agents.auditor import llm as auditor_llm
 from landline.config import ROOT, Settings
 from landline.db.catalogue import Catalogue, _from_fixture
-from landline.voice import higgs
+from landline.voice.gemini_live import session_connect
 
 RUNS_DIR = ROOT / "evals" / "runs"
 CATALOGUE_PATH = FIXTURES / "listings.json"   # frozen, so a new scrape can't move the boards
@@ -39,8 +39,9 @@ CATALOGUE_PATH = FIXTURES / "listings.json"   # frozen, so a new scrape can't mo
 async def run(sets: list[str], runs: int, concurrency: int, only: set[str], use_replay: bool,
               keep_report: bool = False) -> int:
     settings = Settings.load()
-    if not use_replay and not settings.boson_api_key:
-        print("BOSON_API_KEY is not set: skipping the live Concierge runs.")
+    if not use_replay and not settings.voice_api_key():
+        which = "GEMINI_API_KEY" if settings.voice_provider == "gemini" else "BOSON_API_KEY"
+        print(f"{which} is not set: skipping the live Concierge runs.")
         report.write()
         return 0
     catalogue = Catalogue(_from_fixture(CATALOGUE_PATH), "eval")
@@ -54,7 +55,7 @@ async def run(sets: list[str], runs: int, concurrency: int, only: set[str], use_
             fake = replay.ReplayHiggs(replay.load(FIXTURES / "recordings" / f"{case.id}.jsonl"))
             connect, key = fake.connect, ""
         else:
-            connect, key = higgs.connect, settings.boson_api_key or ""
+            connect, key = session_connect(settings), settings.voice_api_key() or ""
         back = case.returning
         async with gate:
             trace = await simulate(case.id, n, ScriptedRenter([line.say for line in case.lines]),

@@ -36,10 +36,10 @@ from landline.contracts import CallsRequested, PreferencesUpdated, SessionEnded,
 from landline.contracts.tools import PreferenceDelta
 from landline.db.catalogue import Catalogue, _from_fixture
 from landline.orchestrator import SessionRuntime
-from landline.voice import higgs
 from landline.voice.bridge import converse
 from landline.voice.calls import RenterCalls
 from landline.voice.dispatch import Dial, Dispatcher
+from landline.voice.gemini_live import session_connect
 from landline.voice.phone_caller import PhoneCaller
 
 SUMMARY = report.REPORTS / "audio.json"
@@ -52,9 +52,9 @@ def clip(name: str, fmt: audio.Format, text: str, keyword: str = "") -> audio.Cl
     return audio.Clip.load(CLIPS / f"{name}.wav", fmt, text, keyword)
 
 
-def tapped(timeline: audio.Timeline, played=None):
+def tapped(timeline: audio.Timeline, connect_voice, played=None):
     async def connect(key: str, cfg: dict[str, Any]):
-        return audio.Tap(await higgs.connect(key, cfg), timeline, played)
+        return audio.Tap(await connect_voice(key, cfg), timeline, played)
     return connect
 
 
@@ -72,7 +72,7 @@ async def concierge(
     await runtime.start(SessionStarted(session_id=call.session_id, at=datetime.now(UTC),
                                        idem_key=f"{call.session_id}:started", channel="browser"))
     started = time.monotonic()
-    connect = tapped(timeline, ear.played_ms if truncate else None)
+    connect = tapped(timeline, session_connect(settings), ear.played_ms if truncate else None)
     reason = await converse(ear, call, calls=calls, runtime=runtime, connect_higgs=connect, settings=settings)
     await runtime.close()
     name = f"concierge-{brief}{'-barge' if barges else ''}{'-truncate' if truncate else ''}"
@@ -107,7 +107,8 @@ async def caller(persona: str, settings: Settings, catalogue: Catalogue) -> dict
     dial = Dial(call_id=next(iter(state.calls)), session_id=sid, listing_id=case.listing_id, to=None,
                 plan=state.plan, deadline=datetime.now(UTC) + timedelta(seconds=settings.listing_call_max_s))
     started = time.monotonic()
-    result = await PhoneCaller(runtime, tapped(timeline), settings.boson_api_key or "")(dial, ear)
+    result = await PhoneCaller(runtime, tapped(timeline, session_connect(settings)),
+                               settings.voice_api_key() or "", voice=settings.live_voice())(dial, ear)
     seconds = round(time.monotonic() - started, 1)
     await runtime.close()
     out = result.outcome
@@ -170,8 +171,9 @@ def measure(runs: list[dict[str, Any]]) -> dict[str, Any]:
 
 async def run(keep_report: bool) -> int:
     settings = Settings.load()
-    if not settings.boson_api_key:
-        print("BOSON_API_KEY is not set: skipping the audio sim.")
+    if not settings.voice_api_key():
+        which = "GEMINI_API_KEY" if settings.voice_provider == "gemini" else "BOSON_API_KEY"
+        print(f"{which} is not set: skipping the audio sim.")
         return 0
     settings = replace(settings, database_url=None, record_audio=False)
     catalogue = Catalogue(_from_fixture(CATALOGUE_PATH), "eval")
