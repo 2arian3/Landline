@@ -135,6 +135,7 @@ class Lines:
         self.live: dict[str, Line] = {}
         runtime.on("ListingFocused", self.on_focus)
         runtime.on("AnchorResolved", self.on_board)
+        runtime.on("CommuteResolved", self.on_board)   # TTC minutes re-ranked the board (D-10c)
 
     def open(self, session_id: str, send: Send) -> Line:
         line = self.live[session_id] = Line(send, self.clock)

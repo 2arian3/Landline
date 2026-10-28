@@ -27,6 +27,7 @@ Every event has `type`, `session_id`, `at`, `idem_key` and a payload. Handlers a
 | `ListingFocused` | `listing_id`, `origin` (ui / voice) | UI tap, Concierge tool |
 | `AreaFocused` | `label`, `lat`, `lng`, `zoom` | Concierge tool |
 | `AnchorResolved` | `label`, `lat`, `lng` | Profiles, via the geocoder (background) |
+| `CommuteResolved` | `label`, `lat`, `lng` (the anchor, as `AnchorResolved` named it) | The commute step (background, D-10c), once Google's TTC minutes from the top listings to that anchor are cached. Changes no state; the commit re-ranks |
 | `CallsRequested` | `listing_ids[]`, `extra_questions[]`, `availability[]` (`{day, from, to}` as the Concierge passed them), `may_book` | Concierge `call_listings`. Records the plan; dials nothing |
 | `SessionEnded` | `reason` (hangup / end_session / closed / timeout) | voice / timeout |
 
