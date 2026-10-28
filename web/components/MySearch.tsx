@@ -2,7 +2,7 @@
 
 import { type ReactNode, useEffect, useId, useState } from "react";
 import { isMeRefusal, type MeRefusal } from "@/lib/me";
-import { loadProfile, saveProfile } from "@/lib/profile";
+import { loadProfile, type SaveResult, saveProfile } from "@/lib/profile";
 import {
   edit,
   type Field,
@@ -14,6 +14,7 @@ import {
   savedFrom,
   type Shareable,
   SHAREABLE,
+  touched,
 } from "@/lib/searchForm";
 
 const SHARE_LABEL: Record<Shareable, string> = {
@@ -46,16 +47,18 @@ export function MySearch({ getToken }: { getToken: () => Promise<string | null> 
   const [form, setForm] = useState<Form | null>(null);
   const [wrong, setWrong] = useState<Problems>({});
   const [status, setStatus] = useState<"idle" | "saving" | "saved" | "failed">("idle");
+  const [signedOut, setSignedOut] = useState(false); // the last save was refused for sign-in
 
   useEffect(() => {
     const ctl = new AbortController();
     void (async () => {
-      const token = await getToken();
       let got: MyProfile | MeRefusal;
       try {
+        const token = await getToken();
         got = token ? await loadProfile(token, ctl.signal) : "signin";
       } catch {
-        return; // left the page
+        if (ctl.signal.aborted) return; // left the page
+        got = "unreachable"; // Clerk couldn't give a token
       }
       setSaved(got);
       if (!isMeRefusal(got)) setForm(formFrom(savedFrom(got)));
@@ -70,8 +73,10 @@ export function MySearch({ getToken }: { getToken: () => Promise<string | null> 
     return <p className="text-support text-ink-2">Can&rsquo;t load your search right now.</p>;
   }
 
-  const change = edit(form, savedFrom(saved));
-  const dirty = Object.keys(change).length > 0;
+  const base = savedFrom(saved);
+  const change = edit(form, base);
+  const found = problems(form, touched(form, base)); // shown on Save, so a typo there never goes unnoticed
+  const dirty = Object.keys(change).length > 0 || Object.keys(found).length > 0;
   const set = (patch: Partial<Form>) => {
     setForm({ ...form, ...patch });
     setWrong((w) => {
@@ -83,29 +88,42 @@ export function MySearch({ getToken }: { getToken: () => Promise<string | null> 
   };
 
   const save = async () => {
-    const found = problems(form);
     if (Object.keys(found).length) {
       setWrong(found);
       setStatus("failed");
       return;
     }
     setStatus("saving");
-    const token = await getToken();
-    const result = token ? await saveProfile(token, change) : { refused: "signin" as const };
+    const sent = form;
+    let result: SaveResult;
+    try {
+      const token = await getToken();
+      result = token ? await saveProfile(token, change) : { refused: "signin" };
+    } catch {
+      result = { refused: "unreachable" }; // Clerk couldn't give a token
+    }
     if ("profile" in result) {
       setSaved(result.profile);
-      setForm(formFrom(savedFrom(result.profile)));
+      // What the renter typed while it saved stays, and is still a change from the new saved values.
+      setForm((now) => (now === sent ? formFrom(savedFrom(result.profile)) : now));
       setWrong({});
       setStatus("saved");
     } else {
       setWrong("problems" in result ? result.problems : {});
+      setSignedOut("refused" in result && result.refused === "signin");
       setStatus("failed");
     }
   };
 
   const failedWhy = Object.keys(wrong).length
     ? "Check the fields marked above."
-    : "Couldn't save. Try again in a moment.";
+    : signedOut
+      ? "Your sign-in has ended. Sign out, then sign in again."
+      : "Couldn't save. Try again in a moment.";
+  // A bedroom count a call saved that the list doesn't have (1.5, 6) is shown as it is, not as "Any".
+  const beds: readonly (readonly [string, string])[] = BEDS.some(([v]) => v === form.beds)
+    ? BEDS
+    : [...BEDS, [form.beds, `${form.beds}+ bedrooms`]];
 
   return (
     <form
@@ -142,7 +160,7 @@ export function MySearch({ getToken }: { getToken: () => Promise<string | null> 
               className={control}
               style={hairline}
             >
-              {BEDS.map(([v, words]) => (
+              {beds.map(([v, words]) => (
                 <option key={v} value={v}>
                   {words}
                 </option>
