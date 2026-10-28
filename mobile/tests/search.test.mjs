@@ -50,6 +50,13 @@ test("the form refuses what the API would, before sending", () => {
   assert.deepEqual(splitList("Annex, Leslieville ,"), ["Annex", "Leslieville"]);
 });
 
+test("a budget runs from 1 to 20,000 dollars, so 0 is refused here instead of reaching the API's 422", () => {
+  for (const refused of ["0", "$0", "20001", "lots"]) {
+    assert.equal(problems(form({ budget: refused })).budget, "Use a whole number of dollars, from 1 to 20,000.", refused);
+  }
+  for (const fine of ["1", "20000", "$20,000", ""]) assert.equal(problems(form({ budget: fine })).budget, undefined, fine);
+});
+
 test("a 422 marks the fields it names", () => {
   const body = { detail: [
     { loc: ["body", "max_monthly"], msg: "Input should be less than or equal to 20000" },
@@ -69,7 +76,7 @@ const WEB = new URL("../../web/lib/searchForm.ts", import.meta.url);
 test("the app's form answers as the web's does", { skip: !existsSync(WEB) && "web/lib/searchForm.ts isn't on main yet" },
   async () => {
     const web = await import(WEB.href);
-    const forms = [form(), form({ budget: "$2,800", beds: "0" }), form({ budget: "20001", email: "x@y" }),
+    const forms = [form(), form({ budget: "$2,800", beds: "0" }), form({ budget: "20001", email: "x@y" }), form({ budget: "0" }),
       form({ areas: "", pets: "cat, dog", move_in: "2026-12-01", shareable: ["name"], use_saved_search: true })];
     for (const f of forms) {
       assert.deepEqual(problems(f), web.problems(f));

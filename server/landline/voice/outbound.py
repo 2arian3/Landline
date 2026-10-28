@@ -46,7 +46,7 @@ DISCLOSURE = "I'm an AI assistant calling for a renter."
 RECORDED = "This call is recorded."   # said right after the disclosure when the call's audio is stored
 VOICEMAIL = ("Hi, this is Landline. I'm an AI assistant calling for a renter about your listing at "
              "{address}. They'd like to know if it's still available and to book a viewing. "
-             "We'll try again later. Thank you.")
+             "You can call us back at this number. Thank you.")
 # Twilio's AnsweredBy with MachineDetection=DetectMessageEnd: a machine waits for the beep. Detection runs
 # alongside the call (AsyncAmd), so nobody waits on it and its waits keep Twilio's defaults, which tell
 # machines from people best.

@@ -8,7 +8,8 @@
     "scheme": "landline",
     "userInterfaceStyle": "light",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/expo.icon",
+      "bundleIdentifier": "ca.aamel.landline"
     },
     "android": {
       "adaptiveIcon": {
@@ -33,7 +34,7 @@
           "imageWidth": 76
         }
       ],
-      "@clerk/expo",
+      ["@clerk/expo", { "appleSignIn": false }],
       "expo-secure-store"
     ],
     "experiments": {
