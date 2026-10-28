@@ -1,11 +1,12 @@
 """Shared listing memory (O-09a): each listing call's facts go to SurrealDB Agent Memory after OutcomeReady.
+O-09b: they're read back, as known facts from the last week, when the next call is dialled.
 
 Against a fake Agent Memory context (httpx.MockTransport). Nothing leaves the machine.
 """
 import asyncio
 import json
 import logging
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import httpx
 import pytest
@@ -26,12 +27,16 @@ from landline.contracts import (
 from landline.db.catalogue import Catalogue
 from landline.orchestrator import SessionRuntime
 from landline.orchestrator.memory import (
+    RECALL_S,
     TIMEOUT_S,
+    Known,
     Memory,
     MemoryUnavailable,
     from_settings,
     install,
+    listing_knowledge,
     listing_scope,
+    recall,
 )
 
 URL, CTX, KEY = "https://ctx-123.aws-use1.surreal.cloud", "landline_demo", "sp-test-secret-key"
@@ -53,6 +58,7 @@ class FakeMemory:
         self.requests: list[httpx.Request] = []
         self.scopes: list[str] = []
         self.facts: list[dict] = []
+        self.inferred: list[dict] = []   # hits the server made up from what it was told (entity, attribute)
 
     def sent(self, route: str) -> list[dict]:
         return [json.loads(r.content) for r in self.requests if r.url.path == BASE + route]
@@ -86,6 +92,7 @@ class FakeMemory:
             hits = [{"id": f"memory_chunk:{i}", "score": 0.91, "source": "memory_chunk", "text": f["text"],
                      "occurredAt": f.get("observed_at")}
                     for i, f in enumerate(self.facts, 1) if lens & {p for c in f["scopes"] for p in c}]
+            hits += self.inferred
             return httpx.Response(200, json={"tier": "hybrid", "hits": hits, "queryMs": 14,
                                              "trace": {"traceId": "trace_1"}})
         return httpx.Response(404, json={"message": "no such route"})
@@ -284,3 +291,90 @@ async def test_the_keys_load_from_the_environment(monkeypatch):
     memory = from_settings(Settings.load())
     assert memory is not None and memory.base == f"{URL}/api/v1/{CTX}"
     await memory.close()
+
+
+# ── O-09b: reading a listing's facts back ───────────────────────────────────
+
+THU = datetime(2026, 10, 29, 22, 0, tzinfo=UTC)   # Thursday 29 October, 18:00 in Toronto
+
+
+def _said(day: str, field: str, value: str, quote: str) -> str:
+    return f'On {day}, the listing agent said {field}: {value} ("{quote}").'
+
+
+def _at(day: int, hour: int) -> datetime:
+    return datetime(2026, 10, day, hour, tzinfo=UTC)
+
+
+async def test_listing_knowledge_keeps_our_own_sentences_from_the_last_week_newest_per_field():
+    fake = FakeMemory()
+    memory = Memory(URL, CTX, KEY, client=_client(fake))
+    scope = listing_scope("t:1")
+    for s in (scope, listing_scope("t:2")):
+        await memory.register(s)
+    for text, at in [
+        (_said("2026-10-28", "fees", "parking $140 a month", "Parking's 140."), _at(28, 15)),
+        (_said("2026-10-28", "fees", "parking $150 a month", "It's 150 a month for parking."), _at(28, 20)),
+        (_said("2026-10-23", "pets", "no pets", "Sorry, no pets."), _at(23, 18)),
+        (_said("2026-10-27", "pets", "pets allowed", "Dogs and cats are fine now."), _at(27, 18)),
+        (_said("2026-10-22", "available", "still available", "Yes, it's still available."), _at(22, 18)),
+        (_said("2026-10-20", "laundry", "laundry in the unit", "It's in the unit."), _at(20, 18)),   # 9 days
+        (_said("2026-10-28", "rent", "$2,400 a month", ""), _at(28, 20)),         # no quote: never a fact
+        ("The listing agent mentioned the parking is about $150.", _at(28, 20)),  # not our sentence
+        (_said("2026-13-40", "ac", "air conditioning", "There's central air."), _at(28, 20)),   # no such date
+    ]:
+        await memory.write(text, scope, observed_at=at)
+    await memory.write(_said("2026-10-28", "pets", "no pets", "No pets here."), listing_scope("t:2"))
+    # What the server inferred is never a fact (hard rule 3), even in the same words.
+    fake.inferred = [
+        {"source": "attribute", "score": 0.99, "text": _said("2026-10-28", "laundry", "no laundry", "None.")},
+        {"source": "entity", "score": 0.95, "text": "1 Test St charges $150 a month for parking."},
+    ]
+    known = await listing_knowledge(memory, "t:1", now=THU)
+    assert fake.sent("/query")[-1] == {"query": "What did the listing agent say?",
+                                       "lens": [["landline/listing/t:1"]], "k": 50, "includeDuplicates": True}
+    assert [(k.field, k.value, k.quote, k.day, k.at) for k in known] == [   # newest first; same day: later
+        ("fees", "parking $150 a month", "It's 150 a month for parking.", date(2026, 10, 28), _at(28, 20)),
+        ("pets", "pets allowed", "Dogs and cats are fine now.", date(2026, 10, 27), _at(27, 18)),
+        ("available", "still available", "Yes, it's still available.", date(2026, 10, 22), _at(22, 18)),
+    ]
+    assert all(isinstance(k, Known) for k in known)
+    assert await listing_knowledge(memory, "t:9", now=THU) == []   # nothing heard there: only the inferred
+    await memory.close()
+
+
+async def test_a_fact_is_dated_by_its_toronto_day_and_the_week_counts_from_now():
+    fake = FakeMemory()
+    memory = Memory(URL, CTX, KEY, client=_client(fake))
+    await memory.register(listing_scope("t:1"))
+    await memory.write(_said("2026-10-22", "fees", "parking $150 a month", "150 for parking."),
+                       listing_scope("t:1"))
+    assert [k.day for k in await listing_knowledge(memory, "t:1", now=THU)] == [date(2026, 10, 22)]
+    # 00:30 on Friday in UTC is still Thursday the 29th in Toronto: 7 days, kept. A day later, 8: dropped.
+    assert len(await listing_knowledge(memory, "t:1", now=datetime(2026, 10, 30, 0, 30, tzinfo=UTC))) == 1
+    assert await listing_knowledge(memory, "t:1", now=datetime(2026, 10, 31, 0, 30, tzinfo=UTC)) == []
+    await memory.close()
+
+
+@pytest.mark.parametrize("fail", [{"/query": "slow"}, {"/query": 503},
+                                  {"/query": httpx.ConnectError("connection refused")}])
+async def test_recall_at_dial_time_gives_up_fast_never_raises_and_logs_one_line(fail, caplog):
+    caplog.set_level(logging.INFO, logger="landline.orchestrator.memory")
+    assert RECALL_S <= 2
+    memory = Memory(URL, CTX, KEY, client=_client(FakeMemory(fail)))
+    clock = asyncio.get_running_loop().time
+    started = clock()
+    assert await recall(memory, "t:1", now=THU, timeout_s=0.05) == []
+    assert clock() - started < 1
+    mine = [r for r in caplog.records if r.name == "landline.orchestrator.memory"]
+    assert [r.levelno for r in mine] == [logging.WARNING]
+    assert "landline/listing/t:1 not read" in mine[0].getMessage() and "asks cold" in mine[0].getMessage()
+    assert KEY not in caplog.text
+    await memory.close()
+
+
+async def test_recall_without_the_keys_is_nothing_with_one_line(caplog):
+    caplog.set_level(logging.INFO, logger="landline.orchestrator.memory")
+    assert await recall(None, "t:1") == []
+    assert [r.getMessage() for r in caplog.records] == [
+        "memory: no Agent Memory keys; the call to t:1 asks cold"]

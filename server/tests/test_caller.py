@@ -2,9 +2,11 @@
 checklist, each tool's rules, and one whole sim call through the Dispatcher with two scripted sessions."""
 import asyncio
 import json
+import logging
 import time
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
+import httpx
 import pytest
 
 from landline.agents import auditor
@@ -29,7 +31,9 @@ from landline.contracts import (
 from landline.contracts.tools import Availability
 from landline.db.catalogue import Catalogue
 from landline.orchestrator import SessionRuntime, narrator
+from landline.orchestrator import memory as listing_memory
 from landline.orchestrator.board import build as board_build
+from landline.orchestrator.memory import Known, Memory
 from landline.voice import bridge
 from landline.voice.dispatch import Dispatcher
 from landline.voice.personas import Persona
@@ -199,6 +203,81 @@ def test_the_instructions_share_only_what_the_renter_allowed():
     assert "I'm an AI assistant calling for a renter about 1 Dial St" in text
     assert "They want to move in December 1 and they have a dog." in text
     assert "Saturday at 12 pm to 4 pm" in text
+
+
+# ── what an earlier call heard (O-09b) ──────────────────────────────────────
+
+def _known(field: str, value: str, day: int = 23, quote: str = "their words") -> Known:
+    return Known(field=field, value=value, quote=quote, day=date(2026, 10, day))
+
+
+CONFIRM = "Yesterday they said parking is $150 a month. Is that still right?"
+
+
+def test_a_fee_an_earlier_call_heard_is_asked_as_a_confirm_question_on_the_same_checklist():
+    plan = _plan()
+    cold = brief(_listing(), plan)
+    b = brief(_listing(), plan, known=[_known("fees", "parking $150 a month", quote="It's 150 for parking.")],
+              now=NOW)
+    assert [(i.key, i.fields) for i in b.items] == [(i.key, i.fields) for i in cold.items]
+    assert [(i.key, i.confirm) for i in b.items if i.confirm] == [("fees", CONFIRM)]
+    text = instructions(b)
+    assert ("2. Find out any monthly fees on top of the rent, confirming what an earlier call heard, in "
+            f'these words: "{CONFIRM}".') in text
+    assert "It's 150 for parking." not in text   # their old words are never put to them as this call's
+    b.covered("fees")                             # answered with record_fact as usual
+    assert [i.key for i in b.missing()] == ["available", "viewing"]
+
+
+@pytest.mark.parametrize(("day", "when"), [
+    (24, "Earlier today"), (23, "Yesterday"), (21, "On Wednesday"), (19, "On Monday"),   # NOW is a Saturday
+    (18, "Last week"), (17, "Last week"),
+])
+def test_the_day_it_was_heard_is_said_in_words_from_toronto_time(day, when):
+    b = brief(_listing(), _plan(), known=[_known("fees", "parking $150 a month", day=day)], now=NOW)
+    assert next(i for i in b.items if i.key == "fees").confirm.startswith(f"{when} they said parking is $150")
+    # 01:00 UTC on Sunday is still Saturday in Toronto.
+    late = brief(_listing(), _plan(), known=[_known("fees", "parking $150 a month", day=24)],
+                 now=datetime(2026, 10, 25, 1, 0, tzinfo=UTC))
+    assert late.items[1].confirm.startswith("Earlier today")
+
+
+def test_only_what_the_renter_needs_is_confirmed_and_a_parking_fee_only_once():
+    plan = _plan(questions=["Is there a gym?"])
+    renter = wants(Preferences(must_have=["parking"]))
+    known = [_known("parking_cost", "$150 a month per spot"), _known("parking", "parking available"),
+             _known("fees", "parking $150 a month"), _known("laundry", "laundry in the unit"),
+             _known("pets", "no pets"), _known("other", "Is there a gym? yes, in the basement")]
+    b = brief(_listing(), plan, renter, known=known, now=NOW)
+    assert [i.key for i in b.items] == [i.key for i in brief(_listing(), plan, renter).items]
+    assert [(i.key, i.confirm) for i in b.items if i.confirm] == [
+        ("parking", "Yesterday they said parking is $150 a month per spot. Is that still right?")]
+    assert next(i for i in b.items if i.key == "fees").ask == "any monthly fees on top of the rent"
+
+
+def test_each_kind_of_fact_reads_back_plainly_and_one_with_no_plain_words_is_asked_cold():
+    plan = _plan(pets=["dog"])
+    every = wants(Preferences(must_have=["utilities included", "in-suite laundry"]))
+    known = [_known("available", "still available", day=22),
+             _known("available_from", "Sunday, November 1", day=22),
+             _known("pets", "pets allowed, $300 pet fee, one time"),     # no plain way to say it: cold
+             _known("utilities_included", "heat, water included"),
+             _known("fees", "pet fee $300 one time, required", day=20)]
+    b = brief(_listing(), plan, every, known=known, now=NOW)
+    assert {i.key: i.confirm.removesuffix(" Is that still right?") for i in b.items if i.confirm} == {
+        "available": "On Thursday they said it's available from Sunday, November 1.",
+        "utilities": "Yesterday they said heat and water are included.",
+        "fees": "On Tuesday they said the pet fee is a one-time $300, and it's required.",
+    }
+    assert next(i for i in b.items if i.key == "pets").ask.startswith("whether pets are allowed; tell them")
+
+
+def test_with_nothing_known_the_brief_is_todays():
+    plan = _plan(questions=["Is it quiet?"], pets=["cat"])
+    renter = wants(Preferences(must_have=["parking"]))
+    today = instructions(brief(_listing(), plan, renter))
+    assert instructions(brief(_listing(), plan, renter, known=[], now=NOW)) == today
+    assert "earlier call" not in today
 
 
 # ── the tools ───────────────────────────────────────────────────────────────
@@ -385,6 +464,16 @@ async def test_a_bare_yes_to_the_fees_question_asks_which_and_a_bare_no_records_
     ctx.said.append("No.")
     reply = await _say(ctx, "record_fact", {"field": "fees", "value": "no fees", "quote": "No."}, 2)
     assert reply.startswith("Recorded fees: none")
+
+
+async def test_a_short_yes_with_its_amount_to_a_confirmed_fee_is_recorded():
+    """O-09b: "Yes, still $150" to "Yesterday they said parking is $150 a month. Is that still right?" says
+    how much, so it isn't the bare yes that asks which fees."""
+    ctx = await _ctx(_plan(may_book=False), said=["Hi, it's available.", "Yes, still $150."])
+    reply = await _say(ctx, "record_fact", {"field": "fees", "value": "$150 a month for parking",
+                                            "quote": "Yes, still $150"})
+    assert reply.startswith("Recorded fees: $150 a month for parking.")
+    assert [(f.field, f.quote) for f in ctx.facts] == [("fees", "Yes, still $150")]
 
 
 async def test_a_fees_answer_is_quoted_from_their_latest_turn():
@@ -744,6 +833,105 @@ async def test_a_sim_call_on_a_bare_yeah_records_nothing_and_asks_the_next_item(
 
 def test_the_sim_runner_never_touches_the_phone_network():
     assert SimRunner.uses_phone is False and SimRunner.transport == "sim"
+
+
+# ── a sim call that confirms what an earlier call heard (O-09b) ─────────────
+
+EARLIER = ('On 2026-10-23, the listing agent said fees: parking $150 a month '
+           '("It\'s 150 a month for parking.").')
+
+
+def _memory(*texts: str, delay: float = 0.0) -> tuple[Memory, list[dict]]:
+    """A fake Agent Memory context whose every query answers with `texts`, as memory chunks."""
+    asked: list[dict] = []
+
+    async def handle(request: httpx.Request) -> httpx.Response:
+        asked.append(json.loads(request.content))
+        await asyncio.sleep(delay)
+        return httpx.Response(200, json={"hits": [{"source": "memory_chunk", "text": t} for t in texts]})
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handle))
+    return Memory("https://ctx.test", "landline_demo", "sp-test", client=client), asked
+
+
+def _confirming_call() -> tuple[TurnFake, TurnFake]:
+    """The demo's first listing call (#248): the Caller confirms the parking fee, then books Saturday at 2."""
+    landlord = TurnFake([_text("l1", "Hello, Linda speaking."),
+                         _text("l2", "Yes, it's still available."),
+                         _text("l3", "Yes, still $150."),
+                         _text("l4", "Saturday at 2 pm works."),
+                         _text("l5", "Bye! [hang up]")])
+    caller = TurnFake([
+        _text("c1", "Hi, I'm an AI assistant calling for a renter about 1 Dial St. Is it still available?"),
+        _tool("c2", "record_fact", {"field": "available", "value": "yes",
+                                    "quote": "Yes, it's still available"}),
+        _text("c3", CONFIRM),
+        _tool("c4", "record_fact", {"field": "fees", "value": "$150 a month for parking",
+                                    "quote": "Yes, still $150"}),
+        _text("c5", "So parking is $150 a month. Could we see it Saturday at 2?"),
+        _tool("c6", "book_viewing", {"slot": "Saturday at 2 pm"}),
+        _text("c7", "Booked for Saturday at 2 pm."),
+        _tool("c8", "end_call", {"reason": "done"}),
+        _text("c9", "Thanks, Linda. Goodbye!")])
+    return caller, landlord
+
+
+async def _sim(caller: TurnFake, landlord: TurnFake, memory: Memory | None):
+    sessions = iter([caller, landlord])
+
+    async def connect(key, session):
+        return next(sessions)
+
+    runtime = SessionRuntime(Catalogue([_listing(1)], "test"))
+    runner = SimRunner(runtime, connect, "test-key", clock=lambda: NOW, memory=memory,
+                       persona_for=lambda d, x: Persona(id="linda", name="Linda"))
+    settings = Settings(database_url=None, web_url="https://landline.example", transport="sim",
+                        higgs_max_sessions=3, listing_call_max_s=30)
+    Dispatcher(runtime, settings, runner=runner, clock=lambda: NOW)
+    sid = "s_confirm0001"
+    await runtime.start(SessionStarted(session_id=sid, at=NOW, idem_key=f"{sid}:s", channel="judge"))
+    await runtime.emit(CallsRequested(session_id=sid, at=NOW, idem_key=f"{sid}:r", listing_ids=["t:1"],
+                                      availability=[Availability(day="saturday", **{"from": "13:00"},
+                                                                 to="17:00")],
+                                      may_book=True))
+    await runtime.emit(SessionEnded(session_id=sid, at=NOW, idem_key=f"{sid}:e", reason="hangup"))
+    for _ in range(300):
+        if runtime.state(sid).phase == "done":
+            break
+        await asyncio.sleep(0.01)
+    state, trace = runtime.state(sid), next(iter(runner.traces.values()))
+    await runtime.close()
+    return state, trace
+
+
+async def test_a_sim_call_confirms_the_fee_an_earlier_call_heard_and_keeps_this_calls_answer():
+    memory, asked = _memory(EARLIER)
+    state, trace = await _sim(*_confirming_call(), memory)
+    assert [q["lens"] for q in asked] == [[["landline/listing/t:1"]]]   # read once, before the call opened
+    assert f'in these words: "{CONFIRM}"' in trace.instructions
+    assert state.phase == "done" and state.status("t:1") == "booked"
+    out = state.outcomes["t:1"]
+    # The fee is this call's: the listing agent's "Yes, still $150", never the earlier call's words.
+    assert [(f.field, f.value, f.quote) for f in out.facts] == [
+        ("available", "still available", "Yes, it's still available"),
+        ("fees", "parking $150 a month", "Yes, still $150")]
+    assert out.viewing.starts_at == _at(24, 14)
+    await memory.close()
+
+
+async def test_a_memory_that_doesnt_answer_in_time_leaves_todays_brief_and_the_call_goes_on(monkeypatch,
+                                                                                           caplog):
+    monkeypatch.setattr(listing_memory, "RECALL_S", 0.05)
+    caplog.set_level(logging.INFO, logger=listing_memory.__name__)
+    memory, asked = _memory(EARLIER, delay=5)
+    started = time.monotonic()
+    state, trace = await _sim(*_confirming_call(), memory)
+    assert time.monotonic() - started < 2 and len(asked) == 1
+    assert "earlier call" not in trace.instructions
+    assert "2. Find out any monthly fees on top of the rent.\n" in trace.instructions   # asked cold
+    assert state.phase == "done" and state.status("t:1") == "booked"
+    warned = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warned) == 1 and "TimeoutError" in warned[0] and "asks cold" in warned[0]
+    await memory.close()
 
 
 async def test_every_read_back_of_a_turn_rides_on_its_last_tool_reply():

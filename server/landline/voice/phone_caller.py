@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+from collections import OrderedDict
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Any
@@ -28,6 +29,7 @@ from landline.agents.caller import tools as caller_tools
 from landline.agents.caller.brief import brief, instructions, wants
 from landline.contracts import CallOutcome, Listing, Preferences, Viewing
 from landline.orchestrator import SessionRuntime
+from landline.orchestrator.memory import Known, Memory, recall
 from landline.voice import bridge
 from landline.voice.avatar_clip import Clips, gender_of_voice
 from landline.voice.bridge import (
@@ -53,6 +55,7 @@ END_AFTER_S = 3.0       # once a call is over (caller_tools.over), how long its 
 WRAP_UP_S = 3.0         # once the Caller has what it came for, how long a quiet line waits for it to wrap up
 QUIET_EVERY_S = 0.25    # how often the line is checked for quiet
 WRAP_UP = "[Wrap up now: thank them in one short sentence, say goodbye, and call end_call.]"
+KEEP_KNOWN = 32         # calls whose memory read is kept; one never answered is dropped as newer ones come
 
 
 class PhoneCaller:
@@ -60,21 +63,37 @@ class PhoneCaller:
 
     def __init__(self, runtime: SessionRuntime, connect_higgs: ConnectHiggs, api_key: str,
                  voice: str = "default", clock=lambda: datetime.now(UTC), extractor: Complete | None = None,
-                 record_audio: bool = True, clips: Clips | None = None):
+                 record_audio: bool = True, clips: Clips | None = None, memory: Memory | None = None):
         self.runtime, self.connect, self.api_key, self.voice, self.clock = (
             runtime, connect_higgs, api_key, voice, clock)
         self.extractor = extractor   # the Auditor's text LLM (A-07); None: rules and the live record only
         self.record_audio = record_audio   # Settings.record_audio: store both sides' audio (A-10)
         self.clips = clips             # the face clip, rendered after this call's audio is stored
+        self.memory = memory           # what earlier calls heard, to confirm (O-09b); None: asks cold
+        self._known: OrderedDict[str, asyncio.Task[list[Known]]] = OrderedDict()
 
     def _preferences(self, session_id: str) -> Preferences | None:
         """The renter's preferences, for what the checklist asks; None once the session is gone."""
         return self.runtime.state(session_id).preferences if self.runtime.has(session_id) else None
 
-    def _setup(self, dial: Dial) -> tuple[Listing, Any, dict[str, Any], list[dict[str, Any]]]:
+    def recall(self, dial: Dial) -> asyncio.Task[list[Known]]:
+        """What earlier calls heard about the place (O-09b), read once per call. The runner starts it as it
+        dials, so it's in before anyone answers; it gives up after RECALL_S and never raises, and the brief
+        then asks cold. `prepare` and the call share it."""
+        task = self._known.get(dial.call_id)
+        if task is None:
+            task = asyncio.ensure_future(recall(self.memory, dial.listing_id, now=self.clock()))
+            self._known[dial.call_id] = task
+            while len(self._known) > KEEP_KNOWN:
+                self._known.popitem(last=False)
+        return task
+
+    async def _setup(self, dial: Dial) -> tuple[Listing, Any, dict[str, Any], list[dict[str, Any]]]:
         """The call's listing, its brief, its Higgs session config and the events that open it."""
+        known = await asyncio.shield(self.recall(dial))   # a prepare cut short never cancels the read
         listing = self.runtime.catalogue.by_id[dial.listing_id]
-        b = brief(listing, dial.plan, wants(self._preferences(dial.session_id)))
+        b = brief(listing, dial.plan, wants(self._preferences(dial.session_id)), known=known,
+                  now=self.clock())
         text, start = opening(instructions(b), recorded=self.record_audio)
         config = session_config(instructions=text, tools=caller_tools.TOOLS, voice=self.voice,
                                 audio_format=PCMU)
@@ -84,14 +103,15 @@ class PhoneCaller:
         """Opens the call's Higgs session once a person has answered, while Twilio still connects the stream,
         so the connect and session.update no longer wait for it (#148). The runner hands it to the call, or
         closes it if no stream comes."""
-        return await self.connect(self.api_key, self._setup(dial)[2])
+        return await self.connect(self.api_key, (await self._setup(dial))[2])
 
     async def __call__(self, dial: Dial, transport: Any, higgs: Any = None,
                        hang_up: Callable[[str], Awaitable[None]] | None = None) -> CallResult:
         """Talks the call through; `higgs` is a session `prepare` opened for it, else one opens now. The
         call closes it either way. `hang_up` ends the call and puts the line down as soon as the talk is
         over, so the listing agent never waits on the Auditor, which needs only what was said."""
-        listing, b, config, start = self._setup(dial)
+        listing, b, config, start = await self._setup(dial)
+        self._known.pop(dial.call_id, None)
         ctx = caller_tools.CallerContext(session_id=dial.session_id, call_id=dial.call_id,
                                          listing_id=dial.listing_id, brief=b, runtime=self.runtime,
                                          clock=self.clock)

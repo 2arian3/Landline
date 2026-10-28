@@ -29,6 +29,7 @@ from landline.agents.caller import tools as caller_tools
 from landline.agents.caller.brief import brief, instructions, wants
 from landline.contracts import Listing, Preferences, Viewing
 from landline.orchestrator import SessionRuntime
+from landline.orchestrator.memory import Memory, recall
 from landline.voice.avatar_clip import Clips
 from landline.voice.bridge import (
     discard_tool,
@@ -96,8 +97,9 @@ class SimRunner:
                  clock: Callable[[], datetime] = lambda: datetime.now(UTC),
                  max_turns: int = MAX_TURNS, turn_timeout_s: float = TURN_TIMEOUT_S,
                  extractor: Complete | None = None, clips: Clips | None = None,
-                 agent_gender: str = "female"):
+                 agent_gender: str = "female", memory: Memory | None = None):
         self.runtime, self.connect, self.api_key = runtime, connect_higgs, api_key
+        self.memory = memory         # what earlier calls heard, to confirm (O-09b); None: calls ask cold
         self.extractor = extractor   # the Auditor's text LLM (A-07); None: rules and the live record only
         self.clips = clips             # both faces, from the lines (a sim call has no audio)
         self.agent_gender = agent_gender   # the caller's face; the landlord's is the persona's
@@ -112,7 +114,11 @@ class SimRunner:
     async def place(self, dial: Dial, report: Report) -> CallResult:
         listing = self.runtime.catalogue.by_id[dial.listing_id]
         persona = self.persona_for(dial, listing)
-        b = brief(listing, dial.plan, wants(self._preferences(dial.session_id)))
+        # What earlier calls heard about the place, before the Caller's session opens. At most RECALL_S, and
+        # never raises: without it the brief asks cold (O-09b).
+        known = await recall(self.memory, dial.listing_id, now=self.clock())
+        b = brief(listing, dial.plan, wants(self._preferences(dial.session_id)), known=known,
+                  now=self.clock())
         ctx = caller_tools.CallerContext(session_id=dial.session_id, call_id=dial.call_id,
                                          listing_id=dial.listing_id, brief=b, runtime=self.runtime,
                                          clock=self.clock)
