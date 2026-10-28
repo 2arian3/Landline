@@ -52,7 +52,7 @@ export function Activity({ view, compact = false }: { view: SessionView | null; 
   if (!view) return <div className="h-[18px] w-1/2 rounded bg-press" aria-hidden />;
   const n = count(view.board);
   const done: string[] = [];
-  if (n.booked) done.push(`${n.booked} viewing booked`);
+  if (n.booked) done.push(`${n.booked} ${n.booked === 1 ? "viewing" : "viewings"} booked`);
   if (n.verified) done.push(`${n.verified} checked by phone`);
   if (n.suspect) done.push(`${n.suspect} flagged`);
   for (const [word, k] of unheardCounts(view.board, view.calls)) done.push(`${k} ${word}`);   // like the badges
