@@ -36,6 +36,7 @@ from landline.contracts import (
     SessionStarted,
     Viewing,
     ViewingBooked,
+    ViewingDecided,
 )
 from landline.orchestrator.state import ON_THE_LINE, Request, Said, SessionState
 
@@ -195,6 +196,19 @@ def viewing_booked(state: SessionState, e: ViewingBooked, known: Known) -> bool:
     return True
 
 
+def viewing_decided(state: SessionState, e: ViewingDecided, known: Known) -> bool:
+    """The listing agent confirmed or declined the booked viewing (O-08c). viewing_confirmations decided it
+    once; this flips the card. An answer for a time that is no longer the booked one flips nothing."""
+    lid = _call(state, e.call_id).listing_id
+    if lid != e.listing_id:
+        raise Refused("That answer is for a different listing than this call.")
+    booked = state.viewings.get(lid)
+    if booked is None or booked.starts_at != e.starts_at or state.viewing_status.get(lid) == e.status:
+        return False
+    state.viewing_status[lid] = e.status
+    return True
+
+
 def call_ended(state: SessionState, e: CallEnded, known: Known) -> bool:
     call = _call(state, e.call_id)
     if call.state == "ended":
@@ -242,6 +256,7 @@ HANDLERS: dict[str, Callable[[SessionState, Event, Known], bool]] = {
     "CallEnded": call_ended,
     "OutcomeReady": outcome_ready,
     "CallsCompleted": calls_completed,
+    "ViewingDecided": viewing_decided,
 }
 
 
