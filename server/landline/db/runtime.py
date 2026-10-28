@@ -29,6 +29,7 @@ from landline.db.rows import (
     FactRow,
     SessionRow,
     TurnRow,
+    ViewingConfirmationRow,
 )
 
 
@@ -213,6 +214,23 @@ class Audio(Repo):
             await cur.execute("select exists (select 1 from call_audio where call_id = %s)", (call_id,))
             row = await cur.fetchone()
             return bool(row and row[0])
+
+
+class ViewingConfirmations(Repo):
+    """O-08: one row per booked listing call, found by the token in the link the listing agent is texted."""
+
+    async def create(self, token: str, *, call_id: str, session_id: str, listing_id: str, starts_at: datetime,
+                     conn: Conn = None) -> ViewingConfirmationRow | None:
+        """The call's confirmation, pending. None when the call already has one: one row per call."""
+        return await self._one(
+            ViewingConfirmationRow,
+            "insert into viewing_confirmations (token, call_id, session_id, listing_id, starts_at) "
+            "values (%s, %s, %s, %s, %s) on conflict (call_id) do nothing returning *",
+            (token, call_id, session_id, listing_id, starts_at), conn)
+
+    async def for_call(self, call_id: str, conn: Conn = None) -> ViewingConfirmationRow | None:
+        return await self._one(ViewingConfirmationRow,
+                               "select * from viewing_confirmations where call_id = %s", (call_id,), conn)
 
 
 class Avatars(Repo):
