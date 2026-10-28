@@ -61,6 +61,7 @@ Return values are spoken aloud: at most 25 words, written as speech, no ids.
 | `focus_area` | `place` | Map flies there |
 | `ask_maps` | `kind` (nearby / walk / drive / transit / weather), `what?`, `to?`, `listing_ref?` (default: the focused card), `day?` | Answers a question about the area around a listing from Google's Maps MCP server (O-07b). No event; Google's place is never put on our map. Offered only with `GOOGLE_MAPS_API_KEY` |
 | `call_listings` | `listing_refs?[]` (default: top 3), `extra_questions?[]`, `availability?[]` (`{day, from, to}`, e.g. `saturday`, `13:00`, `17:00`; `day` is a weekday, `today` or `tomorrow`), `may_book?` | Records the plan; nothing dials until the session ends. Code resolves the refs against the board, and the reply reads the addresses back. At most 5 listings. Refused while an earlier plan is still calling |
+| `listing_status` | `listing_ref` (its street, its number on the list, or words about it) | What Landline's calls heard about one listing (A-14): whether the agent was reached, the facts with when, red flags and the viewing. Code resolves the ref against the board, then against the listings in this caller's past call plans (by phone number; a browser or judge session has only its own), and builds the reply from what was stored. No event. Nothing from earlier sessions reaches the call except this reply, and only when the renter asks |
 | `remember_me` / `forget_me` | — | Sets consent / deletes the profile |
 | `end_session` | — | Code hangs up once the goodbye has played |
 
