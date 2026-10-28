@@ -18,7 +18,7 @@ from landline.api.routes import router
 from landline.config import Settings
 from landline.db.catalogue import Catalogue
 from landline.db.pool import Database
-from landline.orchestrator import SessionRuntime
+from landline.orchestrator import SessionRuntime, memory
 from landline.voice import outbound
 from landline.voice.avatar_clip import Clips, gender_of_voice
 from landline.voice.calls import RenterCalls
@@ -79,6 +79,9 @@ def create_app(settings: Settings | None = None, catalogue: Catalogue | None = N
         # DATABASE_URL is set, else keeps them in memory. Demo sessions stay in `sessions` until A-06.
         # Its own matrix (with neighbourhoods), and the contact the place lookup identifies itself with.
         app.state.runtime = SessionRuntime(app.state.catalogue, db, contact=settings.contact_email)
+        # Each listing call's facts, mirrored to SurrealDB Agent Memory after its outcome commits (O-09a).
+        # None without the SPECTRON_* keys.
+        app.state.memory = memory.install(app.state.runtime, settings)
         # Map taps and background re-ranks, to the live Concierge between turns (A-02, voice/line.py).
         app.state.lines = Lines(app.state.runtime)
         app.state.judges = JudgeLines(settings.higgs_max_sessions)
@@ -117,6 +120,8 @@ def create_app(settings: Settings | None = None, catalogue: Catalogue | None = N
         await app.state.texter.close()
         app.state.sessions.close()
         await app.state.runtime.close()
+        if app.state.memory is not None:
+            await app.state.memory.close()
         await app.state.clips.aclose()
         if db is not None:
             await db.close()
