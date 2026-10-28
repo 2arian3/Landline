@@ -183,7 +183,9 @@ export function problemsFrom422(body: unknown): Problems {
   for (const d of detail as { loc?: unknown[]; msg?: string }[]) {
     const name = typeof d.loc?.[1] === "string" ? (d.loc[1] as string) : null;
     const field = name ? FROM_API[name] ?? (name as Field) : null;
-    if (field && !out[field]) out[field] = d.msg ?? "That isn't valid.";
+    // A check written in code reads "Value error, not an email address": the renter gets the second half.
+    const msg = (d.msg ?? "That isn't valid.").replace(/^Value error, /, "");
+    if (field && !out[field]) out[field] = msg.charAt(0).toUpperCase() + msg.slice(1);
   }
   return out;
 }

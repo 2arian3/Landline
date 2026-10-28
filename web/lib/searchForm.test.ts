@@ -106,7 +106,10 @@ test("a 422 lands on the field it's about", () => {
   assert.deepEqual(problemsFrom422(body), {
     budget: "Input should be a valid integer",
     areas: "String should have at most 80 characters",
-    email: "value is not a valid email address",
+    email: "Value is not a valid email address",
   });
+  const checked = { detail: [{ loc: ["body", "email"], msg: "Value error, not an email address" },
+                             { loc: ["body", "move_in"], msg: "Value error, a date written as YYYY-MM-DD" }] };
+  assert.deepEqual(problemsFrom422(checked), { email: "Not an email address", move_in: "A date written as YYYY-MM-DD" });
   assert.deepEqual(problemsFrom422({ detail: "sign in with your phone" }), {});
 });
