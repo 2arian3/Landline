@@ -29,10 +29,11 @@ const MapView = dynamic(() => import("./MapView").then((m) => m.MapView), {
 const SNAPS: (string | number)[] = [PEEK, 0.56, 1];
 
 /**
- * The whole screen. Desktops, tablets and phones held sideways (SPLIT): the map
- * fills the left, a panel on the right (440px, narrower on smaller screens)
- * holds what's happening, what Landline heard and the ranked places. Phones
- * upright: the map fills the screen and the panel becomes a bottom sheet with
+ * The whole screen. Desktops, tablets on their side and phones held sideways
+ * (SPLIT): the map fills the left, a panel on the right (440px, narrower on
+ * smaller screens, 560px on a projector) holds what's happening, what Landline
+ * heard and the ranked places. Phones and tablets upright: the map fills the
+ * screen and the panel becomes a bottom sheet with
  * three stops; at the lowest stop the renter sees the activity line, one line
  * of what was heard, and the top place.
  *

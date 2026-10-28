@@ -85,6 +85,10 @@ export function ListingDetail({
   const notes = callNotes(card, results, call ? [call] : []);
   const asked = notes.questions.length > 0;
   const around = gettingAround(detail as WithTransit | null, card);
+  // Until the listing arrives the drawer paints from the card, holding the room the listing's own lines
+  // will take (its photos, its building, its subway walk), so nothing below them jumps when it lands.
+  const loading = !detail && !failed;
+  const photos = detail ? detail.photos : loading && card?.photo ? [card.photo] : [];
 
   return (
     <article className="flex min-h-full flex-col gap-6 pb-8">
@@ -108,21 +112,22 @@ export function ListingDetail({
         )}
       </div>
 
-      {detail && detail.photos.length > 0 && (
+      {photos.length > 0 && (
         <figure className="m-0 -mt-2">
           {/* scroll-px-4 snaps the first photo to the gutter, in line with the text; px-4 alone snaps it to the edge. */}
           <div className="flex snap-x snap-mandatory scroll-px-4 gap-2 overflow-x-auto px-4 [scrollbar-width:none]">
-            {detail.photos.map((p, i) => (
+            {photos.map((p, i) => (
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 key={p}
                 src={p}
-                alt={i === 0 ? `Photo of ${detail.address}` : ""}
+                alt={i === 0 ? `Photo of ${address}` : ""}
                 loading={i < 2 ? "eager" : "lazy"}
                 fetchPriority={i === 0 ? "high" : "auto"}
                 // On a short screen (a phone on its side) the photo gives way, so the price still shows. Its
-                // width follows the panel, not the window: a tablet's panel is as narrow as a phone.
-                className="aspect-[4/3] max-h-[38svh] w-[82%] shrink-0 snap-start overflow-hidden rounded-[var(--radius-photo)] bg-press object-cover text-[0px]"
+                // width follows the panel, not the window: a tablet's panel is as narrow as a phone. On a
+                // projector's wider panel it's capped, so Getting around is on the first screen too.
+                className="aspect-[4/3] max-h-[38svh] w-[82%] shrink-0 snap-start overflow-hidden rounded-[var(--radius-photo)] bg-press object-cover text-[0px] min-[1600px]:max-h-[260px]"
               />
             ))}
           </div>
@@ -136,7 +141,7 @@ export function ListingDetail({
           <Money rent={(card ?? detail)!.rent} monthly={(card ?? detail)!.monthly_cost} lead />
         ) : null}
         <h2 className="mt-2 text-title font-strong">{detail?.address ?? card?.address ?? " "}</h2>
-        {place && <p className="mt-0.5 text-support text-ink-2">{place}</p>}
+        {(place || loading) && <p className="mt-0.5 min-h-5 text-support text-ink-2">{place}</p>}
         {card?.reasons.length ? <p className="mt-2 text-support text-ink-2">{card.reasons.join(" · ")}</p> : null}
         {card?.watch_out && <p className="mt-1 text-support text-dead">{card.watch_out}</p>}
       </header>
@@ -191,7 +196,8 @@ export function ListingDetail({
               {card.facts.map((f) => (
                 <li key={f.field + f.quote}>
                   <p className="text-fact">{f.value}</p>
-                  <p className="text-meta text-ink-3">
+                  {/* Their own words are the proof, so they read at the size of the text around them. */}
+                  <p className="text-support text-ink-2">
                     “{f.quote}” · {f.speaker}
                   </p>
                 </li>
@@ -211,7 +217,31 @@ export function ListingDetail({
               <p className="text-meta text-ink-3">Landline said it would check with you</p>
             </div>
           ))}
-          {call && <Captions key={call.call_id} call={call} />}
+          {/* The "line by line" link comes once the turns load: its line is held when someone talked. */}
+          {call && (
+            <div className={card?.facts.length || asked ? "min-h-[30px]" : undefined}>
+              <Captions key={call.call_id} call={call} />
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* Before the listing's own fields, so it's on a projector's first screen. While the listing loads, a
+          line is held for its subway walk, which comes first. */}
+      {(around.length > 0 || loading) && (
+        <section className="px-4" aria-labelledby="around-heading">
+          <h3 id="around-heading" className="text-meta font-label text-ink-3">
+            Getting around
+          </h3>
+          <ul className="mt-2 space-y-3">
+            {loading && <li aria-hidden className="h-[calc(var(--text-fact--line-height)_+_var(--text-meta--line-height))] rounded bg-press" />}
+            {around.map((line) => (
+              <li key={line.key}>
+                <p className="text-fact">{line.text}</p>
+                {line.source && <p className="text-meta text-ink-3">{line.source}</p>}
+              </li>
+            ))}
+          </ul>
         </section>
       )}
 
@@ -257,22 +287,6 @@ export function ListingDetail({
         )}
       </section>
 
-      {/* Last, so lines that arrive with the listing never push what the renter is reading. */}
-      {around.length > 0 && (
-        <section className="px-4" aria-labelledby="around-heading">
-          <h3 id="around-heading" className="text-meta font-label text-ink-3">
-            Getting around
-          </h3>
-          <ul className="mt-2 space-y-3">
-            {around.map((line) => (
-              <li key={line.key}>
-                <p className="text-fact">{line.text}</p>
-                {line.source && <p className="text-meta text-ink-3">{line.source}</p>}
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
     </article>
   );
 }
