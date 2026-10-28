@@ -47,6 +47,7 @@ from landline.db.pool import Database
 from landline.orchestrator import board, handlers, narrator
 from landline.orchestrator.calllog import CallLog
 from landline.orchestrator.commute import Commute
+from landline.orchestrator.maps_mcp import MapsMCP
 from landline.orchestrator.places import Places
 from landline.orchestrator.profiles import SAVED_SEARCH, Profiles, delta_of, is_saved_search
 from landline.orchestrator.state import SessionState
@@ -126,6 +127,8 @@ class SessionRuntime:
         self.commute = Commute(self.matrix, maps_key) if maps_key else None
         if self.commute is not None:
             self.on("AnchorResolved", self._commute)
+        # Google's Maps MCP server for the Concierge's ask_maps (O-07b), with the same key.
+        self.maps: MapsMCP | None = MapsMCP(maps_key) if maps_key else None
 
     def __len__(self) -> int:
         return len(self._live)
@@ -192,6 +195,10 @@ class SessionRuntime:
             live.seen.update(e.idem_key for e in tx.events)
         await self._published(session_id, tx.events)
 
+    def spawn(self, work) -> asyncio.Task:
+        """Run `work` in the background; `idle()` waits for it and `close()` cancels it."""
+        return self._spawn(work)
+
     def _spawn(self, work) -> asyncio.Task:
         """Run `work` in the background; `idle()` and `close()` keep track of it."""
         task = asyncio.create_task(work)
@@ -213,6 +220,8 @@ class SessionRuntime:
         await asyncio.gather(*self._tasks, return_exceptions=True)
         if self.commute is not None:
             await self.commute.close()
+        if self.maps is not None:
+            await self.maps.close()
 
     def _get(self, session_id: str) -> _Live:
         live = self._live.get(session_id)

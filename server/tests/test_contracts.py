@@ -132,7 +132,7 @@ def test_availability_keeps_the_from_key():
 
 def test_tools_match_the_spec():
     assert list(CONCIERGE_TOOLS) == [
-        "update_preferences", "give_feedback", "focus_listing", "focus_area", "call_listings",
+        "update_preferences", "give_feedback", "focus_listing", "focus_area", "ask_maps", "call_listings",
         "remember_me", "forget_me", "end_session",
     ]
     assert list(CALLER_TOOLS) == ["record_fact", "record_available_from", "note_question", "book_viewing",

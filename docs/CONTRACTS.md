@@ -59,6 +59,7 @@ Return values are spoken aloud: at most 25 words, written as speech, no ids.
 | `give_feedback` | `listing_ref?` (defaults to the focused listing), `reaction`, `reason?`, `attribute?` (light / location / size / cost / parking) | The Concierge maps the reason to its attribute ("too dark" → light); code applies the weight change from `docs/SCORING.md` |
 | `focus_listing` | `listing_ref` (address words or rank number) | Resolved by code against the current board |
 | `focus_area` | `place` | Map flies there |
+| `ask_maps` | `kind` (nearby / walk / drive / transit / weather), `what?`, `to?`, `listing_ref?` (default: the focused card), `day?` | Answers a question about the area around a listing from Google's Maps MCP server (O-07b). No event; Google's place is never put on our map. Offered only with `GOOGLE_MAPS_API_KEY` |
 | `call_listings` | `listing_refs?[]` (default: top 3), `extra_questions?[]`, `availability?[]` (`{day, from, to}`, e.g. `saturday`, `13:00`, `17:00`; `day` is a weekday, `today` or `tomorrow`), `may_book?` | Records the plan; nothing dials until the session ends. Code resolves the refs against the board, and the reply reads the addresses back. At most 5 listings. Refused while an earlier plan is still calling |
 | `remember_me` / `forget_me` | — | Sets consent / deletes the profile |
 | `end_session` | — | Code hangs up once the goodbye has played |
