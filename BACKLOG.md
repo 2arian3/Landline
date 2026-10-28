@@ -71,13 +71,15 @@ Landline is one of ten finalists at Build North's Demo Day: Thursday 29 October,
 | To do | A-13c | Text the renter what a callback learned | P0 | A-13b | the renter gets one update SMS | [#241](https://github.com/2arian3/Landline/issues/241) |
 | To do | A-14 | `listing_status`: answer "What happened with Markham?" | P0 | – | a second call gets that listing's facts and viewing in one reply | [#242](https://github.com/2arian3/Landline/issues/242) |
 | To do | A-13d | Write down who answers which call | P1 | A-13b | the table is in `docs/ARCHITECTURE.md` | [#241](https://github.com/2arian3/Landline/issues/241) |
-| To do | A-12a | Audio converters between our formats and Gemini's | P1 | – | the round-trip tests pass | [#243](https://github.com/2arian3/Landline/issues/243) |
-| To do | A-12b | The Gemini Live adapter, in text first | P1 | – | a scripted mock call passes on Gemini | [#243](https://github.com/2arian3/Landline/issues/243) |
-| To do | A-12c | Voice on Gemini: /try and phone calls | P1 | A-12a, A-12b | English and French briefs, a renter call and a listing call all work | [#243](https://github.com/2arian3/Landline/issues/243) |
-| To do | A-12d | Gemini and Higgs side by side, then pick the demo voice | P1 | A-12c | the numbers are in the team chat by Wed 20:00 | [#243](https://github.com/2arian3/Landline/issues/243) |
+| Built (gemini-refactor) | A-12a | Audio converters between our formats and Gemini's | P1 | – | the round-trip tests pass | [#243](https://github.com/2arian3/Landline/issues/243) |
+| In progress | A-12b | The Gemini Live adapter, in text first | P1 | – | a scripted mock call passes on Gemini | [#243](https://github.com/2arian3/Landline/issues/243) |
+| In progress | A-12c | Voice on Gemini: /try and phone calls | P1 | A-12a, A-12b | English and French briefs, a renter call and a listing call all work | [#243](https://github.com/2arian3/Landline/issues/243) |
+| Blocked on a key | A-12d | Gemini and Higgs side by side, then pick the demo voice | P1 | A-12c | the numbers are in the team chat by Wed 20:00 | [#243](https://github.com/2arian3/Landline/issues/243) |
 | To do | A-15 | The text model on Gemini (the Auditor and translations) | P1 | – | extraction numbers for both providers are in the PR | [#243](https://github.com/2arian3/Landline/issues/243) |
 | To do | E-06a | Make a simulated property manager in Era and save its data | P2 | – | the fixture is committed | [#244](https://github.com/2arian3/Landline/issues/244) |
 | To do | E-06b | An Era landlord persona, five cases and a report table | P2 | E-06a | `--set era` runs and the report has the table | [#244](https://github.com/2arian3/Landline/issues/244) |
+
+*Status, Tue 27 Oct 23:50: A-12a through A-12d are on `gemini-refactor`, not pushed. A-12a's phone μ-law and browser 24 kHz round-trip tests pass. A-12b's adapter and text mode pass on a fake socket; a scripted call on live Gemini has not run, because this checkout has no `GEMINI_API_KEY`. A-12c's phone and browser bridges pass on that fake socket; English and French briefs, a real renter call and a listing call have not. A-12d's spike script is in and has not been run, so there are no side-by-side numbers. `VOICE_PROVIDER` still defaults to higgs. Avatar clips stay on Boson. A-15 was not part of this change.*
 
 ### Mahyar
 
