@@ -222,8 +222,8 @@ class DemoSessions:
         if call.status == "no_answer":
             return ()
         address = self.catalogue.by_id[lid].address
-        opener = (f"Hi, I'm an AI assistant calling for a renter about the place at {address}. "
-                  "Is it still available?")
+        opener = ("Hi, this is Landline. I'm an AI assistant calling for a renter about the place at "
+                  f"{address}. Is it still available?")
         lines = (("agent", opener), *call.said)
         return tuple(TurnRow(call_id=call_id, idx=i, speaker=speaker, text=text, lang="en",
                              t_ms=round(i * self.tick_s / 2 * 1000))

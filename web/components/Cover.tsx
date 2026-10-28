@@ -62,7 +62,7 @@ const RESULTS = [
 
 // The call to the booked place, as its captions show it (README, "One call, start to finish").
 const CALL = [
-  ["Landline", "Hi, I’m an AI assistant calling for a renter about the place at 650 Briar Hill Avenue. Is it still available?"],
+  ["Landline", "Hi, this is Landline. I’m an AI assistant calling for a renter about the place at 650 Briar Hill Avenue. Is it still available?"],
   ["Listing agent", "Yes."],
   ["Landline", "Are pets okay? My client has a dog."],
   ["Listing agent", "Dogs are fine. There are a couple in the building already."],
