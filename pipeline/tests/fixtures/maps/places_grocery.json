@@ -1,0 +1,9 @@
+{
+  "places": [
+    {
+      "id": "ChIJfixture-grocery-1",
+      "location": {"latitude": 43.65412, "longitude": -79.41203},
+      "displayName": {"text": "No Frills", "languageCode": "en"}
+    }
+  ]
+}
