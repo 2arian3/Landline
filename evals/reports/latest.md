@@ -186,7 +186,7 @@ The real Auditor (`server/landline/agents/auditor/`) on 20 written call transcri
 
 ### Holdout (quote these)
 
-2026-10-24T15:03:03+00:00 · `768699e` · 8 transcripts · extractor: replayed recordings
+2026-10-28T05:14:21+00:00 · `ca81888` · 8 transcripts · extractor: replayed recordings
 
 | | Rules | With extractor | Previous (best mode) |
 |---|---|---|---|
@@ -213,24 +213,24 @@ The real Auditor (`server/landline/agents/auditor/`) on 20 written call transcri
 
 ### Tune (prompts change against these)
 
-2026-10-24T15:03:03+00:00 · `768699e` · 12 transcripts · extractor: replayed recordings
+2026-10-28T05:14:21+00:00 · `ca81888` · 13 transcripts · extractor: replayed recordings
 
 | | Rules | With extractor | Previous (best mode) |
 |---|---|---|---|
-| **Ungrounded facts shown** | **0 of 21** | **0 of 29** | **0 of 29** |
+| **Ungrounded facts shown** | **0 of 23** | **0 of 31** | **0 of 29** |
 | Precision | 96% | 100% | 100% |
-| Recall | 69% | 94% | 94% |
-| Transcripts fully right | 5 / 12 | 10 / 12 | 10 / 12 |
+| Recall | 70% | 95% | 94% |
+| Transcripts fully right | 6 / 13 | 11 / 13 | 10 / 12 |
 | Claims refused (quote not a landlord's, or the words say otherwise) | agent_words 3 | agent_words 3, unreadable 1 | agent_words 3, unreadable 1 |
 
 | Field | Rules P / R | With extractor P / R |
 |---|---|---|
 | available | 100% / 46% (5/11) | 100% / 91% (10/11) |
 | move-in date | 100% / 67% (2/3) | 100% / 67% (2/3) |
-| fees | 100% / 100% (2/2) | 100% / 100% (2/2) |
+| fees | 100% / 100% (3/3) | 100% / 100% (3/3) |
 | laundry | 100% / 100% (2/2) | 100% / 100% (2/2) |
 | lease length | 100% / 100% (1/1) | 100% / 100% (1/1) |
-| parking price | 100% / 67% (2/3) | 100% / 100% (3/3) |
+| parking price | 100% / 75% (3/4) | 100% / 100% (4/4) |
 | pets | 100% / 50% (2/4) | 100% / 100% (4/4) |
 | red flags | 100% / 100% (5/5) | 100% / 100% (5/5) |
 | rent | 67% / 67% (2/3) | 100% / 100% (3/3) |
