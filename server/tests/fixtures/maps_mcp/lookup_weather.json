@@ -1,0 +1,71 @@
+{
+  "_note": "Shaped from the live server's tools/list output schema (28 Oct 2026), not recorded: no key yet. scripts/maps_mcp_probe.py --live records real answers as recorded_*.json next to this.",
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"returnedLocation\": {\"latLng\": {\"latitude\": 43.6649, \"longitude\": -79.419}}, \"timeZone\": \"America/Toronto\", \"maxTemperature\": {\"degrees\": 11.6, \"unit\": \"CELSIUS\"}, \"minTemperature\": {\"degrees\": 5.5, \"unit\": \"CELSIUS\"}, \"feelsLikeMaxTemperature\": {\"degrees\": 9.8, \"unit\": \"CELSIUS\"}, \"weatherCondition\": {\"type\": \"LIGHT_RAIN\", \"description\": {\"text\": \"Light rain\", \"languageCode\": \"en\"}, \"iconBaseUri\": \"https://maps.gstatic.com/weather/v1/drizzle\"}, \"precipitation\": {\"probability\": {\"percent\": 60, \"type\": \"RAIN\"}, \"qpf\": {\"quantity\": 2.1, \"unit\": \"MILLIMETERS\"}}, \"wind\": {\"speed\": {\"value\": 18, \"unit\": \"KILOMETERS_PER_HOUR\"}, \"direction\": {\"degrees\": 250, \"cardinal\": \"WEST_SOUTHWEST\"}}, \"sunEvents\": {\"sunriseTime\": \"2026-10-29T11:43:00Z\", \"sunsetTime\": \"2026-10-29T22:12:00Z\"}, \"attribution\": {\"title\": \"Google Maps\", \"url\": \"https://www.google.com/maps\"}}"
+      }
+    ],
+    "structuredContent": {
+      "returnedLocation": {
+        "latLng": {
+          "latitude": 43.6649,
+          "longitude": -79.419
+        }
+      },
+      "timeZone": "America/Toronto",
+      "maxTemperature": {
+        "degrees": 11.6,
+        "unit": "CELSIUS"
+      },
+      "minTemperature": {
+        "degrees": 5.5,
+        "unit": "CELSIUS"
+      },
+      "feelsLikeMaxTemperature": {
+        "degrees": 9.8,
+        "unit": "CELSIUS"
+      },
+      "weatherCondition": {
+        "type": "LIGHT_RAIN",
+        "description": {
+          "text": "Light rain",
+          "languageCode": "en"
+        },
+        "iconBaseUri": "https://maps.gstatic.com/weather/v1/drizzle"
+      },
+      "precipitation": {
+        "probability": {
+          "percent": 60,
+          "type": "RAIN"
+        },
+        "qpf": {
+          "quantity": 2.1,
+          "unit": "MILLIMETERS"
+        }
+      },
+      "wind": {
+        "speed": {
+          "value": 18,
+          "unit": "KILOMETERS_PER_HOUR"
+        },
+        "direction": {
+          "degrees": 250,
+          "cardinal": "WEST_SOUTHWEST"
+        }
+      },
+      "sunEvents": {
+        "sunriseTime": "2026-10-29T11:43:00Z",
+        "sunsetTime": "2026-10-29T22:12:00Z"
+      },
+      "attribution": {
+        "title": "Google Maps",
+        "url": "https://www.google.com/maps"
+      }
+    },
+    "isError": false
+  }
+}
