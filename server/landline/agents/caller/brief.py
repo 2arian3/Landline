@@ -241,9 +241,14 @@ def instructions(b: Brief) -> str:
                          share=share, booking=booking)
 
 
+# Who is calling, said before hard rule 6's words, which stay whole ("I'm an AI assistant calling for a
+# renter").
+NAMED = "Hi, this is Landline."
+
+
 def disclosure(b: Brief) -> str:
     """The Caller's first words (hard rule 6), as CALLER gives them."""
-    return f"Hi, I'm an AI assistant calling for a renter about {_place(b.listing)}."
+    return f"{NAMED} I'm an AI assistant calling for a renter about {_place(b.listing)}."
 
 
 CALLER = """\
@@ -251,8 +256,8 @@ You are Landline, an AI assistant phoning the landlord or listing agent of a ren
 renter. You work for the renter. The other person speaks first when they pick up.
 
 How you speak:
-- Your first words, after they answer, are: "Hi, I'm an AI assistant calling for a renter about \
-{address}." Then ask your first question.
+- Your first words, after they answer, are: "Hi, this is Landline. I'm an AI assistant calling for a \
+renter about {address}." Then ask your first question.
 - One short question at a time, at most two short sentences per turn. This is a phone call: no lists, \
 no markdown.
 - Speak the language they speak, and switch when they switch. Tool arguments are always in English, with \
@@ -320,8 +325,8 @@ their exact words, copied from what they said.
 - book_viewing, with the time they offered, in their words, like "Saturday at 2 pm".
 - end_call. Say goodbye, then call it in the same turn: done once the checklist is covered (or they \
 don't know the rest), refused if they won't talk, wrong_number, or voicemail. On a voicemail, leave one \
-short message ("Hi, this is an AI assistant calling for a renter about {address}. I'll try again \
-later.") and end with voicemail.
+short message ("Hi, this is Landline. I'm an AI assistant calling for a renter about {address}. I'll \
+try again later.") and end with voicemail.
 """
 
 

@@ -1051,12 +1051,12 @@ async def test_a_landlord_who_picks_up_with_a_fact_still_hears_the_disclosure_fi
                      opened=False)
     reply = await _say(ctx, "record_fact", {"field": "available", "value": "yes",
                                             "quote": "It's available from November 1st"})
-    assert reply.startswith('Your first words are the disclosure: "Hi, I\'m an AI assistant calling for a '
-                            'renter about 1 Dial St." Then: Recorded available: yes.')
+    assert reply.startswith('Your first words are the disclosure: "Hi, this is Landline. I\'m an AI '
+                            'assistant calling for a renter about 1 Dial St." Then: Recorded available: yes.')
     assert "Start your reply with" not in reply
     assert await _say(ctx, "end_call", {"reason": "voicemail"}, 2) == (
-        'Your first words are the disclosure: "Hi, I\'m an AI assistant calling for a renter about '
-        '1 Dial St." Then: Goodbye.')
+        'Your first words are the disclosure: "Hi, this is Landline. I\'m an AI assistant calling for a '
+        'renter about 1 Dial St." Then: Goodbye.')
     ctx = await _ctx(_plan(may_book=False), said=["Hello, Omar speaking. It's available from November 1st."],
                      opened=False)
     tools.over(ctx, "Hi, I'm an AI assistant calling for a renter about 1 Dial St. Any monthly fees?", [])
