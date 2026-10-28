@@ -275,3 +275,87 @@ def test_the_opening_keeps_the_results_and_stays_within_120_words():
     assert said.startswith("This renter last called on Wednesday. Results of the calls you made for them: "
                            "I booked 1 Long Street Name Avenue")
     assert len(said.split()) <= MAX_OPENING_WORDS
+
+
+# U-12d: start the next call from the saved search, when the renter turned that on
+
+KING_AND_BAY = {"label": "King and Bay", "lat": 43.6487, "lng": -79.3817}
+
+
+async def _saved(db: Database, on: bool) -> int:
+    """A renter who saved up to $2,000, 1 bed or more, near King and Bay (with its point), and the switch."""
+    user = await db.users.upsert(PHONE)
+    await db.profiles.upsert(user.user_id, hard={"max_monthly": 2000, "min_beds": 1, "language": "fa"},
+                             priorities=[{"feature": "light"}], anchors=[KING_AND_BAY])
+    async with db.transaction() as conn:
+        await conn.execute("update users set use_saved_search = %s where user_id = %s", (on, user.user_id))
+    return user.user_id
+
+
+async def test_with_the_switch_on_the_first_board_uses_the_saved_search(db, monkeypatch):
+    await _saved(db, on=True)
+    rt = _runtime(db)
+
+    async def no_lookup(label):
+        raise AssertionError(f"{label} was looked up again: its stored point should be used")
+    monkeypatch.setattr(rt.places, "resolve", no_lookup)
+    sid = "s_prof000020"
+    first = await _call(rt, sid)
+    assert first.version == 1 and first.preferences.max_monthly is None   # the start waits on nothing
+    await rt.idle()
+    view = rt.get(sid)
+    assert view.version == 2   # one commit: the saved search and its place's point
+    p = view.preferences
+    assert (p.max_monthly, p.min_beds, p.priorities, p.language) == (2000, 1, ["light"], None)
+    assert [(a.label, a.lat, a.lng) for a in p.anchors] == [("King and Bay", 43.6487, -79.3817)]
+    # The budget filter keeps up to 10% over (docs/SCORING.md): $2,100 and $2,200 stay; $2,300 and up go.
+    assert {c.listing_id for c in view.board} == {"t:1", "t:2"}
+    said = "I've got your saved search: 1 bedroom under $2,000 near King and Bay. Want to start there?"
+    assert view.agent_says == said and rt.state(sid).saved_search == said
+
+
+async def test_with_the_switch_off_the_call_starts_fresh(db):
+    await _saved(db, on=False)
+    rt = _runtime(db)
+    sid = "s_prof000021"
+    await _call(rt, sid)
+    await rt.idle()
+    view = rt.get(sid)
+    assert view.version == 1 and view.preferences.max_monthly is None and view.preferences.anchors == []
+    assert view.agent_says == "Tell me what you're looking for, and the map will follow."
+    assert rt.state(sid).saved_search is None
+
+
+async def test_what_the_renter_says_first_wins_over_a_saved_search_that_comes_late(db, monkeypatch):
+    await _saved(db, on=True)
+    rt = _runtime(db)
+    said, read = asyncio.Event(), rt.profiles.saved_search
+
+    async def late(phone):
+        await said.wait()   # the saved search comes back only after the renter has spoken
+        return await read(phone)
+    monkeypatch.setattr(rt.profiles, "saved_search", late)
+    sid = "s_prof000022"
+    await _call(rt, sid)
+    await rt.emit(PreferencesUpdated(**_meta(sid, "p1", 1), delta=PreferenceDelta(max_monthly=3000)))
+    said.set()
+    await rt.idle()
+    view = rt.get(sid)
+    assert view.preferences.max_monthly == 3000 and view.preferences.anchors == []
+    assert rt.state(sid).saved_search is None
+
+
+def test_the_saved_search_line_says_only_the_stored_fields():
+    from landline.contracts import Anchor, Preferences
+    from landline.orchestrator.narrator import saved_search
+    from landline.orchestrator.profiles import delta_of
+
+    near = Preferences(max_monthly=2600, min_beds=2, anchors=[Anchor(label="King and Bay")])
+    assert saved_search(near) == (
+        "I've got your saved search: 2 bedrooms under $2,600 near King and Bay. Want to start there?")
+    assert saved_search(Preferences(areas=["Annex"], min_beds=0)) == (
+        "I've got your saved search: a studio or bigger in Annex. Want to start there?")
+    plain = "I've got your saved search on the map. Want to start there?"
+    assert saved_search(Preferences(pets=["dog"])) == plain
+    assert delta_of(Preferences()) is None
+    assert delta_of(Preferences(pets=["dog"])).model_dump(exclude_none=True) == {"pets": ["dog"]}
