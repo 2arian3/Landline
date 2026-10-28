@@ -1,9 +1,9 @@
 import { useAuth } from "@clerk/expo";
-import { Redirect, router } from "expo-router";
-import { ActivityIndicator, Pressable, StyleSheet, Text } from "react-native";
+import { Redirect } from "expo-router";
+import { ActivityIndicator, StyleSheet, Text } from "react-native";
 
 import { ListingCard } from "@/components/ListingCard";
-import { Button, ErrorLine, Screen } from "@/components/ui";
+import { Back, Button, ErrorLine, Screen } from "@/components/ui";
 import { getListings } from "@/lib/api";
 import { color } from "@/lib/theme";
 import { useLoad } from "@/lib/useLoad";
@@ -18,14 +18,7 @@ export default function Listings() {
 
   return (
     <Screen onRefresh={() => void refresh()} refreshing={refreshing}>
-      <Pressable
-        accessibilityRole="button"
-        hitSlop={12}
-        onPress={() => (router.canGoBack() ? router.back() : router.replace("/"))}
-        style={styles.back}
-      >
-        <Text style={styles.backLabel}>‹ Home</Text>
-      </Pressable>
+      <Back />
       <Text style={styles.title}>My listings</Text>
       {error ? <ErrorLine>{error}</ErrorLine> : null}
       {listings ? (
@@ -49,8 +42,6 @@ export default function Listings() {
 }
 
 const styles = StyleSheet.create({
-  back: { alignSelf: "flex-start", minHeight: 44, justifyContent: "center" },
-  backLabel: { fontSize: 17, color: color.ink },
   title: { fontSize: 28, fontWeight: "600", color: color.ink },
   meta: { fontSize: 15, color: color.ink3 },
   empty: { fontSize: 15, color: color.ink2 },
