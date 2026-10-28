@@ -64,6 +64,16 @@ def test_each_dialled_call_with_its_facts_flags_and_viewing_newest_first():
     assert got[2].viewing is None and got[0].facts == [] and got[1].unit_label == "Unit 4"
 
 
+def test_an_outcome_counts_a_call_whose_row_still_says_queued_and_a_blocked_one_never_does():
+    snapshot = {"state": {"outcomes": {
+        "t:1": {"call_id": "c_1", "listing_id": "t:1", "end_reason": "no_answer", "facts": []},
+        "t:2": {"call_id": "c_2", "listing_id": "t:2", "end_reason": "blocked", "facts": []}}}}
+    calls = [_call("c_1", "t:1", 1, state="queued", end_reason=None),
+             _call("c_2", "t:2", 2, state="queued", end_reason=None)]
+    got = listings([{"session_id": "s_1", "snapshot": snapshot}], calls, _place)
+    assert [(x.call_id, x.ended) for x in got] == [("c_1", "no_answer")]
+
+
 def test_a_viewing_without_a_stored_status_reads_as_booked():
     snapshot = {"state": {"outcomes": {}, "viewings": {"t:1": {"starts_at": "2026-10-25T18:00:00Z",
                                                                "slot_text": "Sunday at two"}}}}
