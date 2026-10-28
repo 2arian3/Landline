@@ -5,7 +5,8 @@ import Link from "next/link";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { duration, phoneLabel, type CallRow, type ChosenPlace, type SessionRow, type UserDetail, when } from "@/lib/admin";
 import { bedsLabel, heardLine, money } from "@/lib/format";
-import { isMeRefusal, loadMe, loadSignedIn, type MeRefusal } from "@/lib/me";
+import { VIEWING, WENT, factLine } from "@/lib/heard";
+import { isMeRefusal, loadMe, loadMyListings, loadSignedIn, type MeRefusal, type MyListing } from "@/lib/me";
 
 const PHONE_KEY = "landline-me-phone"; // this tab only: sessionStorage, never the URL
 // Set on Vercel (X-03a): /me signs in with an SMS code. Unset (local dev, CI): the typed number, as before.
@@ -56,22 +57,30 @@ function SignedInAccount() {
   const { isLoaded, isSignedIn, userId, getToken, signOut } = useAuth();
   const [user, setUser] = useState<UserDetail | null>(null);
   const [refusal, setRefusal] = useState<MeRefusal | null>(null);
+  const [listings, setListings] = useState<MyListing[] | MeRefusal | null>(null);
 
   useEffect(() => {
     setUser(null);
     setRefusal(null);
+    setListings(null);
     if (!isLoaded || !isSignedIn) return;
     const ctl = new AbortController();
     void (async () => {
       let got: UserDetail | MeRefusal;
+      let mine: MyListing[] | MeRefusal;
       try {
         const token = await getToken();
-        got = token ? await loadSignedIn(token, ctl.signal) : "signin";
+        if (!token) {
+          setRefusal("signin");
+          return;
+        }
+        [got, mine] = await Promise.all([loadSignedIn(token, ctl.signal), loadMyListings(token, ctl.signal)]);
       } catch {
         return; // the lookup was cancelled
       }
       if (isMeRefusal(got)) setRefusal(got);
       else setUser(got);
+      setListings(mine);
     })();
     return () => ctl.abort();
     // getToken comes from the session; a new user id is a new session
@@ -81,7 +90,7 @@ function SignedInAccount() {
   if (!isLoaded || (isSignedIn && !user && !refusal)) return <Loading />;
   if (!isSignedIn) return <PhoneSignIn />;
   if (!user) return <Refused refusal={refusal ?? "unreachable"} onSignOut={() => void signOut()} />;
-  return <History user={user} leave="Sign out" onLeave={() => void signOut()} />;
+  return <History user={user} listings={listings} leave="Sign out" onLeave={() => void signOut()} />;
 }
 
 function Loading() {
@@ -274,7 +283,17 @@ function Login({ refusal, onPhone }: { refusal: MeRefusal | null; onPhone: (phon
 
 const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
-function History({ user, leave, onLeave }: { user: UserDetail; leave: string; onLeave: () => void }) {
+function History({
+  user,
+  listings,
+  leave,
+  onLeave,
+}: {
+  user: UserDetail;
+  listings?: MyListing[] | MeRefusal | null; // signed in only: the route needs a Clerk session
+  leave: string;
+  onLeave: () => void;
+}) {
   const wants = user.preferences ? heardLine(user.preferences) : [];
   return (
     <div className="fixed inset-0 overflow-y-auto bg-ground">
@@ -317,6 +336,24 @@ function History({ user, leave, onLeave }: { user: UserDetail; leave: string; on
           {user.summary && <p className="mt-2 text-support text-ink-2">{user.summary}</p>}
         </Section>
 
+        {listings !== undefined && (
+          <Section title="My listings">
+            {listings === null ? (
+              <p className="text-support text-ink-3">Loading…</p>
+            ) : isMeRefusal(listings) ? (
+              <p className="text-support text-ink-2">Can&rsquo;t load your listings right now.</p>
+            ) : listings.length ? (
+              <ul className="space-y-3">
+                {listings.map((x) => (
+                  <ListingItem key={x.call_id} listing={x} />
+                ))}
+              </ul>
+            ) : (
+              <p className="text-support text-ink-2">Landline hasn&rsquo;t called any places for you yet.</p>
+            )}
+          </Section>
+        )}
+
         <Section title="Places">
           {user.places.length ? (
             <ul className="space-y-3">
@@ -351,6 +388,52 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
       <h2 className="text-meta font-label text-ink-3">{title}</h2>
       <div className="mt-2">{children}</div>
     </section>
+  );
+}
+
+/** One listing Landline called: how the call went, the viewing, red flags, and each fact with its source. */
+function ListingItem({ listing: x }: { listing: MyListing }) {
+  return (
+    <li className={`${card} p-4`} style={hairline}>
+      <div className="flex items-baseline justify-between gap-3">
+        <p className="min-w-0 text-fact font-strong">
+          {x.address}
+          {x.unit_label ? <span className="font-normal text-ink-2">, unit {x.unit_label}</span> : null}
+        </p>
+        <p className="shrink-0 text-meta text-ink-3">{WENT[x.ended] ?? x.ended}</p>
+      </div>
+      <p className="text-meta text-ink-3">Called {when(x.called_at)}</p>
+      {x.viewing && (
+        <p
+          className="mt-2 text-support"
+          style={{ color: x.viewing.status === "declined" ? "var(--color-dead)" : "var(--color-real)" }}
+        >
+          {VIEWING[x.viewing.status] ?? `Viewing ${x.viewing.status}`}: {x.viewing.slot_text} (
+          {when(x.viewing.starts_at)})
+        </p>
+      )}
+      {x.red_flags.map((f) => (
+        <p key={f} className="mt-2 text-support text-dead">
+          Watch out: {f}
+        </p>
+      ))}
+      {x.facts.length > 0 && (
+        <ul className="mt-2 space-y-1">
+          {x.facts.map((f, n) => (
+            <li key={`${f.field}-${n}`}>
+              <details>
+                <summary className="cursor-pointer text-support text-ink marker:text-ink-3">
+                  {factLine(f.field, f.value)} <span className="text-meta text-ink-3">· Agent heard</span>
+                </summary>
+                <p className="mt-0.5 pl-4 text-meta text-ink-2">
+                  &ldquo;{f.quote}&rdquo;{f.at ? ` · ${when(f.at)}` : ""}
+                </p>
+              </details>
+            </li>
+          ))}
+        </ul>
+      )}
+    </li>
   );
 }
 

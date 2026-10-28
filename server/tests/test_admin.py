@@ -18,6 +18,7 @@ from landline.contracts import (
     CallsCompleted,
     CallsRequested,
     CallsScheduled,
+    Fact,
     FeedbackGiven,
     Listing,
     OutcomeReady,
@@ -91,8 +92,10 @@ async def url(schema):
             await db.calls.create(cid, session_id=SID, role="listing", transport="sim", state="queued",
                                   listing_id=lid, conn=tx.conn)
     viewing = Viewing(starts_at=datetime(2026, 10, 24, 18, 0, tzinfo=UTC), slot_text="Saturday at two")
+    heard = Fact(field="parking_cost", value="$180 a month per spot", quote="Parking is $180 a month.",
+                 speaker="Agent heard", at=T0)
     await rt.emit(OutcomeReady(**_meta("o1", 6), outcome=CallOutcome(
-        call_id=LISTING_CALLS[0], listing_id="t:1", end_reason="done", viewing=viewing)))
+        call_id=LISTING_CALLS[0], listing_id="t:1", end_reason="done", viewing=viewing, facts=[heard])))
     await rt.emit(OutcomeReady(**_meta("o2", 7), outcome=CallOutcome(
         call_id=LISTING_CALLS[1], listing_id="t:2", end_reason="no_answer")))
     await rt.emit(CallsCompleted(**_meta("done", 8), call_ids=LISTING_CALLS))
@@ -173,6 +176,40 @@ def test_a_clerk_sign_in_opens_only_that_renters_history(url, clerk):
         r = c.get("/api/me", headers={"Authorization": f"Bearer {clerk.token(phone='+14165550999')}"})
         assert (r.status_code, r.json()["detail"]) == (404, "unknown number")
         assert c.post("/api/me", json={"phone": "(416) 555-0123"}).status_code == 401   # no proof, no history
+
+
+OTHER = "+14165550199"
+
+
+@pytest.fixture
+async def other_renter(url):
+    """A second stored renter, who never had a call."""
+    db = await Database.open(url, max_size=1)
+    await db.users.upsert(OTHER)
+    await db.close()
+    return OTHER
+
+
+def test_my_listings_shows_only_the_signed_in_renters_calls(url, clerk, other_renter):
+    """U-12c: each listing Landline called for this renter, from stored rows, with its facts and sources."""
+    settings = Settings(database_url=url, web_url="http://localhost:3000", transport="stub",
+                        clerk_secret_key="sk_test_throwaway", clerk_jwt_key=clerk.pem)
+    with TestClient(create_app(settings, Catalogue(LISTINGS, "test"))) as c:
+        def mine(phone: str):
+            return c.get("/api/me/listings", headers={"Authorization": f"Bearer {clerk.token(phone=phone)}"})
+
+        got = {x["listing_id"]: x for x in mine(PHONE).json()}
+        assert set(got) == {"t:1", "t:2"}
+        booked, unanswered = got["t:1"], got["t:2"]
+        assert (booked["address"], booked["ended"]) == ("1 Admin St", "talked")
+        assert booked["call_id"] == LISTING_CALLS[0]
+        assert [(f["field"], f["value"], f["quote"]) for f in booked["facts"]] == [
+            ("parking_cost", "$180 a month per spot", "Parking is $180 a month.")]
+        assert (booked["viewing"]["slot_text"], booked["viewing"]["status"]) == ("Saturday at two", "booked")
+        assert (unanswered["ended"], unanswered["facts"], unanswered["viewing"]) == ("no_answer", [], None)
+        assert mine(other_renter).json() == []                       # another renter sees none of these
+        r = mine("+14165550999")
+        assert (r.status_code, r.json()["detail"]) == (404, "unknown number")
 
 
 def test_a_call_shows_its_transcript_in_order(url):
