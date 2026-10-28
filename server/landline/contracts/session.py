@@ -29,6 +29,14 @@ class Fact(BaseModel):
     at: datetime | None = None
 
 
+class CardViewing(BaseModel):
+    """A viewing booked on a listing call, as its card shows it (O-08b, O-08e). "booked" means waiting for
+    the listing agent to confirm it."""
+    starts_at: datetime
+    slot_text: str             # as the landlord said it
+    status: Literal["booked", "confirmed", "declined"] = "booked"
+
+
 class Card(BaseModel):
     listing_id: str
     address: str
@@ -55,6 +63,7 @@ class Card(BaseModel):
     reaction: str | None = None
     facts: list[Fact] = Field(default_factory=list)
     red_flags: list[str] = Field(default_factory=list)
+    viewing: CardViewing | None = None   # X-04; filled from O-08b
 
 
 class CataloguePoint(BaseModel):

@@ -42,6 +42,13 @@ class Users(Repo):
         return await self._count("update users set consent_memory = %s where user_id = %s",
                                  (consent, user_id), conn) == 1
 
+    async def set_settings(self, user_id: int, *, email: str | None, use_saved_search: bool,
+                           conn: Conn = None) -> bool:
+        """The renter's own settings from /me (U-12a): their email, and whether the next call starts from the
+        saved search."""
+        return await self._count("update users set email = %s, use_saved_search = %s where user_id = %s",
+                                 (email, use_saved_search, user_id), conn) == 1
+
     async def touch(self, user_id: int, conn: Conn = None) -> bool:
         n = await self._count("update users set last_seen_at = now() where user_id = %s", (user_id,), conn)
         return n == 1

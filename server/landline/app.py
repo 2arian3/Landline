@@ -129,7 +129,7 @@ def create_app(settings: Settings | None = None, catalogue: Catalogue | None = N
         CORSMiddleware,
         allow_origins=settings.allowed_origins(),
         allow_origin_regex=settings.cors_origin_regex,
-        allow_methods=["GET", "POST"],
+        allow_methods=["GET", "POST", "PATCH"],   # PATCH: /me's profile edits (U-12a)
         allow_headers=["Content-Type", "Authorization"],   # Authorization: the admin panel's token
         max_age=600,
     )

@@ -99,6 +99,13 @@ create table call_audio (call_id text references calls on delete cascade, track 
 -- 0003: one Higgs Avatar MP4 of Landline's voice per call, rendered after the call
 create table call_avatar (call_id text primary key references calls on delete cascade, status text not null,
   boson_video_id text, error text, video bytea, updated_at timestamptz not null default now());
+-- 0004 (X-04, demo day): users.email (U-12, O-08), users.use_saved_search (U-12d), users.push_token (U-13c),
+-- calls.to_e164, the number a listing call dialled (A-13, O-08b), listings.grocery_name, grocery_walk_min,
+-- pharmacy_name, pharmacy_walk_min (D-10b), and a viewing waiting for the listing agent's confirm (O-08)
+create table viewing_confirmations (token text primary key, call_id text not null unique references calls,
+  session_id text not null references sessions, listing_id text not null references listings,
+  starts_at timestamptz not null, status text not null default 'pending',   -- pending | confirmed | declined
+  agent_email text, calendar_event_id text, created_at timestamptz not null default now(), decided_at timestamptz);
 create table facts (fact_id bigserial primary key, call_id text references calls, listing_id text references listings,
   field text not null, value jsonb not null, quote text not null, turn_idx int, confirmed boolean not null default false,
   source text not null, created_at timestamptz not null default now());
@@ -181,7 +188,7 @@ Every feature the ranker or the card uses. "Sources" lists them in order of trus
 | `geom` (lat, lng) | point | map pin › geocoder | precision kept; `postal`-only rows are shown but not ranked on distance |
 | `neighbourhood_id` | City id | PostGIS | adjacency from shared borders |
 | `distance_to_anchor_km` | km, per anchor | PostGIS / haversine | anchors come from the profile ("work at King and Bay") |
-| `transit_walk_min` | minutes | nearest subway station | haversine × 1.3 ÷ 80 m/min |
+| `transit_walk_min` | minutes | subway station with the shortest walk | Google Maps walking time to the 3 nearest stations (`python -m pipeline maps`, D-10a); without a key, haversine × 1.3 ÷ 80 m/min to the nearest |
 | `monthly_cost` | CAD | rent + mandatory monthly fees | computed in code, never by a model |
 | `price_vs_median` | ratio | neighbourhood median for same beds | < 0.7 adds a "too good to be true" check |
 | `beds`, `dens`, `baths` | number | listing | building ranges expanded into units |
@@ -196,6 +203,8 @@ Every feature the ranker or the card uses. "Sources" lists them in order of trus
 | `utilities_included` | list | call › LLM › City separate meters (hint only) | |
 | `elevator`, `step_free` | bool | City › LLM | accessibility filter |
 | `outdoor_space` | balcony / terrace / yard / none | LLM | |
+| `grocery_name`, `grocery_walk_min` | text, minutes | Google Places searchNearby (`grocery_store`, `supermarket`) + Routes walking time | the nearest within 1.5 km, else null; provenance `derived`, "Google Maps" and the fetch date (D-10b, `pipeline/nearby.py`) |
+| `pharmacy_name`, `pharmacy_walk_min` | text, minutes | Google Places searchNearby (`pharmacy`, `drugstore`) + Routes walking time | the same; a Shoppers Drug Mart counts |
 | `furnished`, `available_from`, `lease_months` | | listing › call | move-in fit |
 | `building_eval_score`, `pests_flag` | 0–100, bool | City evaluation | shown with the evaluation date |
 | `year_built` | int | City | |
