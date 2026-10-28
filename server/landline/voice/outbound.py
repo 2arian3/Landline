@@ -44,8 +44,8 @@ HANG_UP_S = 3               # a deadline's hang-up must not hold the Dispatcher 
 RING_S = 25                 # how long Twilio lets it ring before no-answer
 DISCLOSURE = "I'm an AI assistant calling for a renter."
 RECORDED = "This call is recorded."   # said right after the disclosure when the call's audio is stored
-VOICEMAIL = ("Hi, I'm an AI assistant calling for a renter about your listing at {address}. "
-             "They'd like to know if it's still available and to book a viewing. "
+VOICEMAIL = ("Hi, this is Landline. I'm an AI assistant calling for a renter about your listing at "
+             "{address}. They'd like to know if it's still available and to book a viewing. "
              "We'll try again later. Thank you.")
 # Twilio's AnsweredBy with MachineDetection=DetectMessageEnd: a machine waits for the beep. Detection runs
 # alongside the call (AsyncAmd), so nobody waits on it and its waits keep Twilio's defaults, which tell
@@ -316,14 +316,19 @@ class TwilioRunner:
 ANSWERED = "[The call was just answered.]"
 
 
-def opening(instructions: str, recorded: bool = False) -> tuple[str, list[dict[str, Any]]]:
-    """The Caller's session instructions, with how the call opens (the disclosure word for word, hard rule 6,
-    then RECORDED when `recorded`), and the events that start it: a quoted note and a plain
-    response.create, as the sim starts a Caller's turn. Never a response object on response.create: its
-    instructions replace the session's (#129)."""
-    first = f"{DISCLOSURE} {RECORDED}" if recorded else DISCLOSURE
+def opening(instructions: str, recorded: bool = False,
+            first: str | None = None) -> tuple[str, list[dict[str, Any]]]:
+    """The Caller's session instructions, with how the call opens (who is calling and the disclosure word for
+    word, hard rule 6, then RECORDED when `recorded`), and the events that start it: a quoted note and a
+    plain response.create, as the sim starts a Caller's turn. Never a response object on response.create:
+    its instructions replace the session's (#129). `first` is the brief's own line, with the address
+    (brief.disclosure), so the session has one set of first words; without it, the listing comes after."""
+    said = first or f"Hi, this is Landline. {DISCLOSURE}"
+    words = f"{said} {RECORDED}" if recorded else said
+    then = "Then ask if they have a minute." if first else \
+        "Then say which listing you are calling about and ask if they have a minute."
     opens = (f"\n\nHow this call opens: the call has just been answered. Your first words are exactly: "
-             f"\"{first}\" Then say which listing you are calling about and ask if they have a minute.")
+             f"\"{words}\" {then}")
     note = {"type": "message", "role": "user", "content": [{"type": "input_text", "text": ANSWERED}]}
     return f"{instructions}{opens}", [{"type": "conversation.item.create", "item": note},
                                       {"type": "response.create"}]

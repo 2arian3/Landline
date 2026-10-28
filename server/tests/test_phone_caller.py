@@ -22,6 +22,9 @@ from landline.voice.outbound import DISCLOSURE, RECORDED, OutboundCalls, TwilioR
 from landline.voice.phone_caller import PhoneCaller
 from landline.voice.recorder import CallRecorder
 
+# The Caller's first words on these calls: who is calling, then hard rule 6's words (brief.disclosure).
+FIRST = "Hi, this is Landline. I'm an AI assistant calling for a renter about 1 Dial St."
+
 NOW = datetime(2026, 10, 24, 15, 0, tzinfo=UTC)   # Saturday 11:00 in Toronto
 SID = "s_phone00001"
 AGENT = "+16475550101"
@@ -181,7 +184,7 @@ async def test_a_phone_call_records_what_the_agent_said_and_ends_once_after_the_
     assert any(t["name"] == "record_fact" for t in higgs.session["session"]["tools"])
     # The disclosure, then that the call is recorded, is in the session instructions, and no
     # response.create carries a response object.
-    assert f'exactly: "{DISCLOSURE} {RECORDED}"' in higgs.session["session"]["instructions"]
+    assert f'exactly: "{FIRST} {RECORDED}"' in higgs.session["session"]["instructions"]
     assert [e["type"] for e in higgs.sent[:2]] == ["conversation.item.create", "response.create"]
     assert all("response" not in e for e in higgs.sent if e["type"] == "response.create")
     assert {"type": "input_audio_buffer.append", "audio": "/w=="} in higgs.sent
@@ -708,7 +711,7 @@ PLACED = {0: ("agent", DISCLOSURE, 0, 100), 1: ("landlord", HELLO, 20, 60), 2: (
 
 async def test_a_phone_call_stores_both_sides_of_its_audio_with_each_line_in_place(monkeypatch):
     db, higgs, line = await _recorded_call(monkeypatch)
-    assert f'exactly: "{DISCLOSURE} {RECORDED}"' in higgs.session["session"]["instructions"]
+    assert f'exactly: "{FIRST} {RECORDED}"' in higgs.session["session"]["instructions"]
     assert db.turns.rows == PLACED
     assert line.cleared == 2   # the answer after the opening, and the barge-in
     assert {(fmt, rate) for _, _, _, fmt, rate, _ in db.audio.chunks} == {("pcmu", 8000)}
@@ -722,6 +725,6 @@ async def test_a_phone_call_stores_both_sides_of_its_audio_with_each_line_in_pla
 async def test_with_record_audio_off_no_audio_is_stored_and_the_call_doesnt_say_it_is(monkeypatch):
     db, higgs, _ = await _recorded_call(monkeypatch, record_audio=False)
     instructions = higgs.session["session"]["instructions"]
-    assert f'exactly: "{DISCLOSURE}"' in instructions and RECORDED not in instructions
+    assert f'exactly: "{FIRST}"' in instructions and RECORDED not in instructions
     assert db.audio.chunks == []
     assert db.turns.rows == PLACED   # the lines still get their place
