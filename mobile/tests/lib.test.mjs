@@ -6,6 +6,7 @@ import { test } from "node:test";
 import * as web from "../../web/lib/heard.ts";
 import { factLine, phoneLabel, VIEWING, WENT, when } from "../src/lib/heard.ts";
 import { latest } from "../src/lib/listings.ts";
+import { latestWins } from "../src/lib/loads.ts";
 import { toE164 } from "../src/lib/phone.ts";
 
 test("a heard fact reads as it does on the web's /me", () => {
@@ -44,4 +45,45 @@ test("a typed number becomes E.164", () => {
   assert.equal(toE164("1 416 555 0100"), "+14165550100");
   assert.equal(toE164("+44 20 7123 4567"), "+442071234567");
   assert.equal(toE164("555-0100"), null);
+});
+
+// A load the test settles by hand, to finish loads out of order.
+function pending() {
+  let resolve, reject;
+  const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
+  return { fetch: () => promise, resolve, reject };
+}
+
+test("a slow older load can't overwrite a newer one", async () => {
+  const shown = [];
+  const run = latestWins((s) => shown.push(s), (e) => e.message);
+  const first = pending(), refresh = pending();
+  const a = run(first.fetch), b = run(refresh.fetch);
+  refresh.resolve(["new"]);
+  await b;
+  first.resolve(["old"]);
+  await a;
+  assert.deepEqual(shown.at(-1), { data: ["new"], error: null });
+});
+
+test("a slow older failure can't put an error over newer data", async () => {
+  const shown = [];
+  const run = latestWins((s) => shown.push(s), (e) => e.message);
+  const first = pending(), refresh = pending();
+  const a = run(first.fetch), b = run(refresh.fetch);
+  refresh.resolve(["new"]);
+  await b;
+  first.reject(new Error("Can't reach Landline"));
+  await a;
+  assert.deepEqual(shown.at(-1), { data: ["new"], error: null });
+});
+
+test("a failed load keeps what was shown and says why; the next load clears it", async () => {
+  const shown = [];
+  const run = latestWins((s) => shown.push(s), (e) => e.message);
+  await run(async () => ["mine"]);
+  await run(async () => { throw new Error("Can't reach Landline"); });
+  assert.deepEqual(shown.at(-1), { data: ["mine"], error: "Can't reach Landline" });
+  await run(async () => ["again"]);
+  assert.deepEqual(shown.at(-1), { data: ["again"], error: null });
 });
