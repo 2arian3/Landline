@@ -15,6 +15,11 @@ answers 401, since a typed number proves nothing; without it (local dev, CI) it 
 GET /api/me/listings (U-12c), signed in the same way: every listing Landline called for the renter, newest
 first, with how the call ended, the facts heard in the agent's own words, red flags and the viewing.
 
+GET and PATCH /api/me/profile (U-12a), signed in the same way: the renter's saved search, email, what the
+Caller may tell listing agents, and whether the next call starts from the saved search. A PATCH changes only
+the fields it sends (null clears one), and every field is checked in code first (ProfileEdit): a bad one is
+a 422 naming it, and nothing is saved.
+
 Read only. The page shows that profile's saved search, places, sessions and calls; transcripts and
 recordings stay on the admin routes. Off without a database (404). A number that isn't stored is 404. A
 string that isn't a phone number is 422.
@@ -24,17 +29,19 @@ from __future__ import annotations
 import logging
 import re
 from collections.abc import Callable
-from datetime import datetime
-from typing import Any, Literal
+from datetime import date, datetime
+from typing import Annotated, Any, Literal
 
 from clerk_backend_api.security import authenticate_request_async
 from clerk_backend_api.security.types import AuthenticateRequestOptions
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
 from landline.api.admin import Place, UserDetail, _places, load_user
 from landline.config import Settings
-from landline.contracts import as_e164
+from landline.contracts import Preferences, as_e164
+from landline.db.rows import ProfileRow, UserRow
+from landline.orchestrator.profiles import preferences_of
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -195,3 +202,135 @@ async def _history(e164: str, request: Request) -> UserDetail:
     if detail is None:
         raise HTTPException(404, "unknown number")
     return detail
+
+
+# ── The renter's own profile (U-12a) ─────────────────────────────────────────
+
+SHARED_BY_DEFAULT = ("move_in", "occupants", "pets")   # user_profiles.shareable's default
+ShareKey = Literal["name", "move_in", "occupants", "pets"]
+EMAIL = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
+ISO_DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
+def _words(longest: int) -> Any:
+    return Annotated[str, Field(strict=True), StringConstraints(strip_whitespace=True, min_length=1,
+                                                                max_length=longest)]
+
+
+class ProfileEdit(BaseModel):
+    """PATCH /api/me/profile: any of these. A field left out stays as it is; null clears one that can be
+    empty, and [] empties a list. Each is checked here, before anything is saved."""
+    model_config = ConfigDict(extra="forbid")
+
+    max_monthly: Annotated[int, Field(strict=True, ge=0, le=20_000)] | None = None   # whole dollars
+    min_beds: Annotated[float, Field(strict=True, ge=0, le=5, multiple_of=0.5)] | None = None   # 0: a studio
+    areas: Annotated[list[_words(80)], Field(max_length=10)] = None
+    pets: Annotated[list[_words(40)], Field(max_length=10)] = None
+    must_have: Annotated[list[_words(60)], Field(max_length=20)] = None
+    move_in: date | None = None
+    email: Annotated[str, Field(strict=True, max_length=254)] | None = None
+    shareable: list[ShareKey] = None
+    use_saved_search: Annotated[bool, Field(strict=True)] = None
+
+    @field_validator("move_in", mode="before")
+    @classmethod
+    def _a_day(cls, v: Any) -> Any:
+        if v is not None and not (isinstance(v, str) and ISO_DAY.fullmatch(v)):
+            raise ValueError("a date written as YYYY-MM-DD")
+        return v   # then checked as a real calendar day
+
+    @field_validator("email")
+    @classmethod
+    def _an_email(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        v = v.strip()
+        if not EMAIL.fullmatch(v):
+            raise ValueError("not an email address")
+        return v
+
+    @field_validator("shareable")
+    @classmethod
+    def _each_once(cls, v: list[str] | None) -> list[str] | None:
+        if v is not None and len(set(v)) != len(v):
+            raise ValueError("each field once")
+        return v
+
+
+class MyProfile(BaseModel):
+    """The renter's profile as /me shows and edits it."""
+    phone: str
+    email: str | None = None
+    use_saved_search: bool = False
+    shareable: list[str] = Field(default_factory=lambda: list(SHARED_BY_DEFAULT))
+    preferences: Preferences = Field(default_factory=Preferences)
+    updated_at: datetime | None = None
+
+
+@router.get("/api/me/profile", response_model=MyProfile)
+async def my_profile(request: Request) -> MyProfile:
+    db, user = await _signed_in_user(request)
+    return _profile_of(user, await db.profiles.get(user.user_id))
+
+
+@router.patch("/api/me/profile", response_model=MyProfile)
+async def edit_profile(edit: ProfileEdit, request: Request) -> MyProfile:
+    db, user = await _signed_in_user(request)
+    changed = edit.model_fields_set
+    if not changed:
+        return _profile_of(user, await db.profiles.get(user.user_id))
+    async with db.transaction() as conn:
+        profile = await db.profiles.get(user.user_id, conn)
+        hard = dict(profile.hard) if profile else {}   # where profiles.py keeps the search, areas included
+        for key in ("max_monthly", "min_beds", "areas", "pets", "must_have"):
+            if key in changed:
+                _put(hard, key, getattr(edit, key))
+        move_in = profile.move_in if profile else None
+        if "move_in" in changed:
+            move_in = edit.move_in
+            _put(hard, "move_in", move_in.isoformat() if move_in else None)
+        profile = await db.profiles.upsert(
+            user.user_id, hard=hard, priorities=profile.priorities if profile else [],
+            anchors=profile.anchors if profile else [], move_in=move_in,
+            occupants=profile.occupants if profile else None,
+            shareable=edit.shareable if "shareable" in changed else
+            (profile.shareable if profile else SHARED_BY_DEFAULT),
+            memory_summary=profile.memory_summary if profile else None, conn=conn)
+        if {"email", "use_saved_search"} & changed:
+            saved = edit.use_saved_search if "use_saved_search" in changed else user.use_saved_search
+            await db.users.set_settings(user.user_id, email=edit.email if "email" in changed else user.email,
+                                        use_saved_search=saved, conn=conn)
+            user = await db.users.get(user.user_id, conn) or user
+    log.info("me: profile of user %s changed: %s", user.user_id, ", ".join(sorted(changed)))
+    return _profile_of(user, profile)
+
+
+def _put(hard: dict[str, Any], key: str, value: Any) -> None:
+    """Set one saved-search field, or drop it when cleared (stored_fields keeps no empty ones either)."""
+    if value in (None, []):
+        hard.pop(key, None)
+    else:
+        hard[key] = value
+
+
+def _profile_of(user: UserRow, profile: ProfileRow | None) -> MyProfile:
+    return MyProfile(phone=user.phone_e164, email=user.email, use_saved_search=user.use_saved_search,
+                     shareable=list(profile.shareable) if profile else list(SHARED_BY_DEFAULT),
+                     preferences=preferences_of(profile) if profile else Preferences(),
+                     updated_at=profile.updated_at if profile else None)
+
+
+async def _signed_in_user(request: Request) -> tuple[Any, UserRow]:
+    """The database and the signed-in renter's row; 404 when sign-in or the database is off, or the number
+    isn't stored; 401 without a valid token."""
+    settings: Settings = request.app.state.settings
+    if not settings.clerk_secret_key:
+        raise HTTPException(404, "sign-in is off")
+    phone = await _signed_in_phone(request, settings)
+    db = getattr(request.app.state, "db", None)
+    if db is None:
+        raise HTTPException(404, "history is off")
+    user = await db.users.by_phone(phone)
+    if user is None:
+        raise HTTPException(404, "unknown number")
+    return db, user
