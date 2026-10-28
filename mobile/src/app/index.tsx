@@ -12,17 +12,14 @@ import { latest } from "@/lib/listings";
 import { color, radius } from "@/lib/theme";
 import { useLoad } from "@/lib/useLoad";
 
-async function home(token: string | null) {
-  const [me, listings] = await Promise.all([getMe(token), getListings(token)]);
-  return { me, listings };
-}
-
 /** Signed in: who Landline knows this phone as, a button that calls Landline, and the latest results.
  *  Signed out: the sign-in screen. */
 export default function Home() {
   const { isLoaded, isSignedIn } = useAuth();
   const { signOut } = useClerk();
-  const { data, error, load, refresh, refreshing } = useLoad(home);
+  // Two loads, so a failed listings request still shows who the renter is.
+  const who = useLoad(getMe);
+  const called = useLoad(getListings);
   const [callError, setCallError] = useState<string | null>(null);
 
   if (!isLoaded) return <Screen><ActivityIndicator color={color.ink} /></Screen>;
@@ -35,10 +32,17 @@ export default function Home() {
       setCallError(`This phone can't place calls. Call ${phoneLabel(LANDLINE_PHONE)} from one that can.`));
   };
 
-  const me = data?.me;
-  const shown = data ? latest(data.listings) : [];
+  const me = who.data;
+  const errors = [...new Set([who.error, called.error])].filter((e) => e !== null);
+  const again = () => {
+    void who.load();
+    void called.load();
+  };
   return (
-    <Screen onRefresh={() => void refresh()} refreshing={refreshing}>
+    <Screen
+      onRefresh={() => void Promise.all([who.refresh(), called.refresh()])}
+      refreshing={who.refreshing || called.refreshing}
+    >
       <Text style={styles.brand}>Landline</Text>
       {me ? (
         <View style={styles.card}>
@@ -48,15 +52,11 @@ export default function Home() {
             {me.calls} {me.calls === 1 ? "place" : "places"} called · {me.booked} {me.booked === 1 ? "viewing" : "viewings"} booked
           </Text>
         </View>
-      ) : error ? null : (
+      ) : who.error ? null : (
         <ActivityIndicator color={color.ink} />
       )}
-      {error ? (
-        <>
-          <ErrorLine>{error}</ErrorLine>
-          {data ? null : <Button label="Try again" onPress={() => void load()} quiet />}
-        </>
-      ) : null}
+      {errors.map((e) => <ErrorLine key={e}>{e}</ErrorLine>)}
+      {errors.length > 0 && !(who.data && called.data) ? <Button label="Try again" onPress={again} quiet /> : null}
 
       <View style={styles.call}>
         <Button label="Call Landline" onPress={call} />
@@ -66,12 +66,12 @@ export default function Home() {
         {callError ? <ErrorLine>{callError}</ErrorLine> : null}
       </View>
 
-      {data ? (
+      {called.data ? (
         <>
           <Text style={styles.heading}>Latest results</Text>
-          {shown.length ? (
+          {called.data.length ? (
             <>
-              {shown.map((x) => <ListingCard key={x.call_id} listing={x} />)}
+              {latest(called.data).map((x) => <ListingCard key={x.call_id} listing={x} />)}
               <Button label="See all my listings" onPress={() => router.push("/listings")} quiet />
             </>
           ) : (
