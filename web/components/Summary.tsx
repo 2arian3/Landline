@@ -26,9 +26,10 @@ export function Brand({
     <div className="flex items-center justify-between gap-3">
       <div className="flex min-w-0 items-baseline gap-2">
         <p className="text-fact font-strong tracking-[-0.01em]">Landline</p>
+        {/* A 44px tap target that keeps the brand line's height: the margins give back what min-h-11 adds. */}
         <Link
           href="/me"
-          className="shrink-0 text-meta text-ink-3 underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-ink"
+          className="-my-[13px] inline-flex min-h-11 shrink-0 items-center text-meta text-ink-3 underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-ink"
         >
           Your calls
         </Link>
