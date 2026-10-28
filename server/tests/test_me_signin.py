@@ -43,10 +43,19 @@ def test_a_valid_token_from_our_web_app_or_a_preview_reaches_the_history(clerk):
             assert (r.status_code, r.json()["detail"]) == (404, "history is off"), azp
 
 
+def test_a_native_apps_token_with_no_authorized_party_reaches_the_history(clerk):
+    """The Expo app (U-13): Clerk sets azp from the Origin header, and a native request sends none."""
+    with _client(clerk) as c:
+        for azp in (None, ""):
+            r = c.get("/api/me", headers=_bearer(clerk.token(azp=azp)))
+            assert (r.status_code, r.json()["detail"]) == (404, "history is off"), azp
+
+
 @pytest.mark.parametrize(("why", "token"), [
     ("expired", lambda k: k.token(expires_in=-3600)),
     ("another app", lambda k: k.token(azp="https://evil.example.com")),
-    ("no authorized party", lambda k: k.token(azp=None)),
+    ("another app, close to ours", lambda k: k.token(azp="http://localhost:3000.evil.example.com")),
+    ("an azp that isn't a string", lambda k: k.token(azp=["http://localhost:3000"])),
     ("no phone claim", lambda k: k.token(phone=None)),
     ("not a phone", lambda k: k.token(phone="call me maybe")),
     ("signed by another key", lambda k: k.token(key=rsa.generate_private_key(public_exponent=65537,
