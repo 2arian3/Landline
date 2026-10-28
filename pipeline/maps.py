@@ -3,8 +3,8 @@
 - D-10a: the walk to the TTC. For each active listing, a Routes API computeRouteMatrix (travelMode WALK) to
   its 3 nearest subway stations by straight line; the shortest walk sets transit_station_id and
   transit_walk_min. Today's straight-line estimate (pipeline/geo.py) stays wherever Google finds no route.
-- D-10b adds the nearest grocery store and pharmacy to the same stage (pipeline/nearby.py), through the same
-  client and cache.
+- D-10b: the nearest grocery store and pharmacy (pipeline/nearby.py), a step of the same stage, through the
+  same client and cache.
 
 `GoogleMaps` is the one client: the API key, a field mask on every request, a disk cache under
 pipeline/cache/maps/ so a rerun costs nothing, and a pace that keeps the route matrix under 3,000 elements a
@@ -253,23 +253,31 @@ def load_walks(conn, walks: dict[str, dict]) -> int:
 
 
 def run(conn, client: GoogleMaps, stations: list[dict], load: bool = False, limit: int = 0) -> dict:
-    """The stage: every step over the active listings, in order. Returns counts for the report. D-10b's
-    nearest grocery and pharmacy is the next step here."""
+    """The stage: every step over the active listings, in order, each writing in its own transaction (so a
+    failure in a later step keeps an earlier one's writes; its answers are cached either way). Returns counts
+    for the report."""
+    from pipeline import nearby  # D-10b; imported here because it uses this module's VERSION
+
     listings = active_listings(conn)
+    conn.commit()   # end the read, so each step's write below commits on its own
     if limit:
         listings = listings[:limit]
     walks = station_walks(client, listings, stations)
-    counts = {"listings": len(listings), "walks": len(walks), "updated": 0}
+    counts: dict[str, Any] = {"listings": len(listings), "walks": len(walks), "updated": 0}
     if load:
         counts["updated"] = load_walks(conn, walks)
+    located = [(x["listing_id"], x["lat"], x["lng"]) for x in listings]
+    counts["nearby"] = nearby.run(conn, client, located, load)
     counts.update(requests=client.requests, elements=client.elements)
     return counts
 
 
 def report(c: dict) -> str:
+    from pipeline import nearby
+
     return (f"maps: {c['listings']} active listings, {c['walks']} with a Google walk to the TTC, "
-            f"{c['updated']} updated; {c['requests']} requests, {c['elements']} elements billed "
-            f"(the rest came from the cache)")
+            f"{c['updated']} updated; {c['requests']} requests, {c['elements']} route-matrix elements billed "
+            f"(the rest came from the cache)\n{nearby.report(c['nearby'])}")
 
 
 def _km(a: LatLng, b: LatLng) -> float:

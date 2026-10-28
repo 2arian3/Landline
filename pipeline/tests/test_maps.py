@@ -25,12 +25,14 @@ HOMES = [{"listing_id": "t:a", "lat": 43.6600, "lng": -79.4160},
 class Google:
     """A fake Routes API: answers from `reply(body)` and keeps every request."""
 
-    def __init__(self, reply=None, status: int = 200):
-        self.reply, self.status, self.seen = reply, status, []
+    def __init__(self, reply=None, status: int = 200, places=None):
+        self.reply, self.status, self.seen, self.places = reply, status, [], places
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
         body = json.loads(request.content)
         self.seen.append((request, body))
+        if request.url.host == "places.googleapis.com":   # D-10b's searchNearby: nothing close by default
+            return httpx.Response(200, json=self.places(body) if self.places else {})
         if self.status != 200:
             error = {"code": self.status, "status": "RESOURCE_EXHAUSTED"}
             return httpx.Response(self.status, json={"error": error})
@@ -167,7 +169,10 @@ def test_load_sets_the_station_the_walk_and_their_source(conn, tmp_path):  # noq
     geo.load(conn, HOODS, STATIONS)   # today's straight-line estimate first, as the refresh does
     client = _client(tmp_path, Google(_by_distance))
     counts = maps.run(conn, client, STATIONS, load=True)
-    assert counts == {"listings": 3, "walks": 3, "updated": 3, "requests": 2, "elements": 6}
+    # 2 route matrices for the stations, then D-10b's two searchNearby per listing (nothing close here).
+    assert counts == {"listings": 3, "walks": 3, "updated": 3, "requests": 8, "elements": 6,
+                      "nearby": {"listings": 3, "grocery": 0, "pharmacy": 0, "neither": 3}}
+    assert maps.report(counts).splitlines()[1].startswith("nearby: 3 listings")
     row = conn.execute("select s.name, l.transit_walk_min, l.provenance from listings l join stations s "
                        "on s.id = l.transit_station_id where l.listing_id = 't:next'").fetchone()
     station, minutes, provenance = row
@@ -183,3 +188,23 @@ def test_load_sets_the_station_the_walk_and_their_source(conn, tmp_path):  # noq
                         "where listing_id = 't:next'").fetchone() == (geo.VERSION,)
     rerun = _client(tmp_path, Google(lambda body: pytest.fail("not cached")))
     assert maps.run(conn, rerun, STATIONS, load=True)["requests"] == 0
+
+
+def test_the_stores_step_runs_on_the_same_client_and_cache(conn, tmp_path):  # noqa: F811
+    geo.load(conn, HOODS, STATIONS)
+
+    def places(body: dict) -> dict:   # D-10b's recorded searchNearby answers
+        name = "places_grocery" if "grocery_store" in body["includedTypes"] else "places_pharmacy"
+        return json.loads((FIXTURES / f"{name}.json").read_text())
+
+    client = _client(tmp_path, Google(_by_distance, places=places))
+    counts = maps.run(conn, client, STATIONS, load=True)
+    assert counts["nearby"] == {"listings": 3, "grocery": 3, "pharmacy": 3, "neither": 0}
+    grocery, pharmacy, minutes, source = conn.execute(
+        "select grocery_name, pharmacy_name, grocery_walk_min, provenance->'grocery_name' from listings "
+        "where listing_id = 't:in'").fetchone()
+    assert (grocery, pharmacy) == ("No Frills", "Shoppers Drug Mart") and minutes > 0
+    assert source == {"source": "derived", "via": "Google Maps", "at": DAY, "version": maps.VERSION}
+    cached = Google(lambda body: pytest.fail("walk not cached"),
+                    places=lambda body: pytest.fail("store not cached"))
+    assert maps.run(conn, _client(tmp_path, cached), STATIONS, load=True)["requests"] == 0
