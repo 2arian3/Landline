@@ -7,15 +7,28 @@ questions, and a viewing when the renter allowed booking. The instructions carry
 the listing says, the checklist, the renter's viewing windows, and only the answers the renter agreed to
 share (`CallPlan.shareable`). Nothing about the renter reaches the Caller any other way: nothing is
 injected mid-call.
+
+What an earlier call heard about the place in the last week (O-09b, `known`, read from SurrealDB Agent
+Memory at dial time) turns a checklist item into a confirm question: "Yesterday they said parking is $150
+a month. Is that still right?", the day in words from its Toronto date. Only items already on the
+checklist are confirmed, never the renter's own questions or the viewing, and a value with no plain way to
+say it is asked cold. The answer is recorded with record_fact as usual, so the outcome comes from this
+call's words.
 """
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
+from datetime import UTC, date, datetime, timedelta
+from typing import TYPE_CHECKING
 
 from landline.agents.caller import slots
 from landline.contracts import CallPlan, Listing, Preferences
 from landline.scoring.weights import feature_key
+
+if TYPE_CHECKING:
+    from landline.orchestrator.memory import Known
 
 MAX_GAPS = 3   # besides availability, the renter's questions and the viewing
 
@@ -26,6 +39,7 @@ class Item:
     ask: str                  # what to find out, in a few words
     fields: list[str]         # the record_fact fields that cover it
     done: bool = False
+    confirm: str = ""         # the confirm question, when an earlier call heard it (O-09b); else asked cold
 
 
 @dataclass
@@ -61,8 +75,11 @@ class Brief:
             return
 
 
-def brief(listing: Listing, plan: CallPlan, wants: frozenset[str] = frozenset()) -> Brief:
-    """`wants`: what the renter asked for that a call can check (`wants()`); the plan doesn't carry it."""
+def brief(listing: Listing, plan: CallPlan, wants: frozenset[str] = frozenset(), known: Sequence[Known] = (),
+          now: datetime | None = None) -> Brief:
+    """`wants`: what the renter asked for that a call can check (`wants()`); the plan doesn't carry it.
+    `known`: what earlier calls heard about the place (`memory.recall`), confirmed instead of asked cold;
+    `now` dates them in words."""
     items = [Item("available", "whether it's still available, and from when",
                   ["available", "available_from"])]
     gaps: list[Item] = []
@@ -96,7 +113,94 @@ def brief(listing: Listing, plan: CallPlan, wants: frozenset[str] = frozenset())
     elif plan.windows:   # the renter gave times but didn't allow booking: get a time for them (#189)
         items.append(Item("viewing", "what time inside the renter's times they could show it, given to "
                           "book_viewing (it notes the time for the renter and books nothing)", ["other"]))
+    if known:
+        _confirm(items, known, (now or datetime.now(UTC)).astimezone(slots.TORONTO).date())
     return Brief(listing, plan, items)
+
+
+def _confirm(items: list[Item], known: Sequence[Known], today: date) -> None:
+    """Each item an earlier call heard about asks to confirm it (O-09b). Its key and fields stay, so it's
+    covered as before, and the newest fact for it wins (on the same day, the later of its fields: parking_cost
+    over parking, available_from over available). A parking fee is confirmed once, as parking when the
+    renter asked about parking."""
+    parking = False   # the parking item has a confirm question
+    for item in items:
+        heard = [k for k in known if k.field in item.fields and k.field != "other"]   # never a question
+        if not heard:
+            continue
+        k = max(heard, key=lambda k: (k.day, item.fields.index(k.field)))
+        said = _said(k.field, k.value)
+        fee = _FEE.fullmatch(k.value.strip()) if k.field == "fees" else None
+        if said is None or (parking and fee is not None and fee["name"] == "parking"):
+            continue
+        parking = parking or item.key == "parking"
+        item.confirm = f"{_when(k.day, today)} they said {said}. Is that still right?"
+        item.ask = f'{item.ask}, confirming what an earlier call heard, in these words: "{item.confirm}"'
+
+
+def _when(day: date, today: date) -> str:
+    """When an earlier call heard it, in words, from Toronto dates: "Earlier today", "Yesterday", "On
+    Monday" earlier this week (weeks start on Monday), else "Last week"."""
+    gone = (today - day).days
+    if gone <= 0:
+        return "Earlier today"
+    if gone == 1:
+        return "Yesterday"
+    if day >= today - timedelta(days=today.weekday()):
+        return f"On {day:%A}"
+    return "Last week"
+
+
+# A heard value as the Auditor words it (auditor/values.py), as the Caller says it back.
+_SAID = {
+    ("available", "still available"): "it's available",
+    ("available", "not available"): "it's not available",
+    ("available_from", "now"): "it's available now",
+    ("pets", "pets allowed"): "pets are allowed",
+    ("pets", "no pets"): "pets aren't allowed",
+    ("pets", "cats only"): "only cats are allowed",
+    ("pets", "dogs only"): "only dogs are allowed",
+    ("pets", "small pets only"): "only small pets are allowed",
+    ("pets", "pets case by case"): "pets are case by case",
+    ("laundry", "laundry in the unit"): "the laundry is in the unit",
+    ("laundry", "laundry in the building"): "the laundry is in the building",
+    ("laundry", "no laundry"): "there's no laundry",
+    ("parking", "parking included"): "parking is included",
+    ("parking", "parking available"): "parking is available",
+    ("parking", "no parking"): "there's no parking",
+    ("utilities_included", "utilities included"): "utilities are included",
+    ("fees", "no other monthly fees"): "there are no other monthly fees",
+}
+# A fee as the Auditor words it: "parking $150 a month", "pet fee $300 one time, required".
+_FEE = re.compile(r"(?P<name>[a-z ]+) (?P<amount>\$[\d,]+)(?: × (?P<n>\d+))? (?P<when>a month|one time)"
+                  r"(?:, (?P<must>required|optional))?")
+_FEE_IS = {"parking": "parking is", "utilities": "utilities are", "internet": "internet is",
+           "other": "there's a fee of", "deposit": "the deposit is", "key deposit": "the key deposit is",
+           "pet fee": "the pet fee is"}
+_WEEKDAY = re.compile(r"(mon|tues|wednes|thurs|fri|satur|sun)day, ", re.I)
+
+
+def _said(field: str, value: str) -> str | None:
+    """What was heard, as a clause after "they said": "parking is $150 a month". None when the value has no
+    plain way to say it, and that item is asked cold."""
+    v = value.strip().rstrip(".")
+    if (field, v.lower()) in _SAID:
+        return _SAID[(field, v.lower())]
+    if field == "parking_cost" and v.startswith("$"):
+        return f"parking is {v}"
+    if field == "available_from" and _WEEKDAY.match(v):   # "Sunday, November 1"
+        return f"it's available from {v}"
+    if field == "utilities_included" and v.endswith(" included"):
+        named = v.removesuffix(" included").split(", ")
+        return f"{_join(named)} {'is' if len(named) == 1 else 'are'} included"
+    if field == "fees" and (m := _FEE.fullmatch(v)):
+        name = m["name"]
+        subject = _FEE_IS.get(name) or f"the {name} fee is"
+        cost = f"{m['amount']} a month" if m["when"] == "a month" else f"a one-time {m['amount']}"
+        each = f" each, for {m['n']}" if m["n"] else ""
+        must = f", and it's {m['must']}" if m["must"] else ""
+        return f"{subject} {cost}{each}{must}"
+    return None
 
 
 def wants(prefs: Preferences | None) -> frozenset[str]:
