@@ -14,7 +14,7 @@ From a read-only copy of production's database (`scripts/db_pull.py`, copied Wed
 | Viewings booked on calls | 1 on a real call, 3 on simulated calls | `ViewingBooked` events |
 | Plans finished, each followed by a results text (sending isn't stored) | 18 phone plans | `CallsCompleted` events on phone sessions |
 | Cost per search, as tested (1 renter call, 1 listing call, 2 texts) | about **$0.11–$0.19** (USD). Each more listing called adds about $0.04–$0.05, so three listings come to about $0.20–$0.28 | measured minutes × list prices, below |
-| Evals (holdout) | Concierge: 6/8 cases pass every run. Caller: 96% checklist coverage. Auditor: 0 ungrounded facts, precision 100%, recall 87%. Matcher: hit@3 100%; ranks 4,000 listings in 1.4 ms (p95) | `evals/reports/latest.md`, reruns; dates, SHAs and staleness below |
+| Evals (holdout) | Concierge: 6/8 cases pass every run. Caller: 96% checklist coverage. Auditor: 0 ungrounded facts, precision 100%, recall 91.3%. Matcher: hit@3 100%; ranks 4,000 listings in 1.4 ms (p95) | `evals/reports/latest.md`, reruns; dates, SHAs and staleness below |
 
 ## How we counted
 
@@ -70,13 +70,13 @@ How the range is built:
 - An extra listing call adds AMD, plus (when answered) its minutes on Twilio, Streams and Higgs.
 - **Not included:** the phone number ($1.15 a month), the Auditor's text-model tokens, Higgs Avatar clips, and texts sent in another language (only the English results are stored).
 
-**Evals.** Every eval ran on Sat 24 Oct, and the code has changed since. Extraction and ranking need no key, so they were rerun on today's `main` (`fae5f0f`) with `--no-report`.
+**Evals.** Every eval ran on Sat 24 Oct, and the code has changed since. Extraction and ranking need no key, so they were rerun on Oct 28: ranking on `fae5f0f` with `--no-report`, and extraction by the runner on `ca81888`, after #273.
 
 | Eval (holdout) | Number | Run | Stale? |
 |---|---|---|---|
 | Concierge vs scripted renters, 8 cases × 3 runs | 6/8 cases pass every run, 83% of runs | Oct 24, `e738796` | yes: 35 commits to `agents/concierge` since |
 | Caller vs landlord personas, 2 × 5 runs | checklist coverage 96%, 0 ungrounded quotes | Oct 24, `cfb384e` | yes: 25 commits to `agents/caller` since |
-| Auditor on 8 call transcripts (recorded extractor answers) | 0 of 16 facts ungrounded, precision 100%, recall 87% | rerun Oct 28, `fae5f0f` | fresh. **Recall dropped from 91%** (Oct 24, `768699e`): the Mandarin scam transcript's rent is now missed |
+| Auditor on 8 call transcripts (recorded extractor answers) | 0 of 17 facts ungrounded, precision 100%, recall 91.3%, 6/8 transcripts fully right | rerun Oct 28, `ca81888` (#273) | fresh. It had dropped to 87% since `f618ddb` (#216), which made a spoken amount like 一千七 one token, under the one-word rule; #273 fixed it |
 | Matcher on 3 renter briefs | hit@3 100%, precision@3 89%; p95 1.364 ms on 4,000 listings | rerun Oct 28, `fae5f0f` | fresh, unchanged |
 | Voice on Higgs audio | end of speech → first audio about 1.5 s (p50); barge-in recovered 12/12 | Oct 24, `674e37d` | yes: that SHA isn't in `main`'s history |
 
