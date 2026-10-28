@@ -181,7 +181,7 @@ Every feature the ranker or the card uses. "Sources" lists them in order of trus
 | `geom` (lat, lng) | point | map pin › geocoder | precision kept; `postal`-only rows are shown but not ranked on distance |
 | `neighbourhood_id` | City id | PostGIS | adjacency from shared borders |
 | `distance_to_anchor_km` | km, per anchor | PostGIS / haversine | anchors come from the profile ("work at King and Bay") |
-| `transit_walk_min` | minutes | nearest subway station | haversine × 1.3 ÷ 80 m/min |
+| `transit_walk_min` | minutes | subway station with the shortest walk | Google Maps walking time to the 3 nearest stations (`python -m pipeline maps`, D-10a); without a key, haversine × 1.3 ÷ 80 m/min to the nearest |
 | `monthly_cost` | CAD | rent + mandatory monthly fees | computed in code, never by a model |
 | `price_vs_median` | ratio | neighbourhood median for same beds | < 0.7 adds a "too good to be true" check |
 | `beds`, `dens`, `baths` | number | listing | building ranges expanded into units |
