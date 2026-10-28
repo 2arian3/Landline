@@ -31,6 +31,14 @@ export const VIEWING: Record<string, string> = {
   declined: "Viewing declined",
 };
 
+/** A viewing in one line, with its time once: "Viewing booked: Thu, Oct 29, 6:30 p.m.". The time is the code's
+ *  (starts_at, in Toronto time); the agent's own words (slot_text) only when there's no time to show. */
+export function viewingLine(v: { starts_at?: string | null; slot_text?: string | null; status: string }): string {
+  const word = VIEWING[v.status] ?? `Viewing ${v.status}`;
+  const at = (v.starts_at && when(v.starts_at)) || v.slot_text?.trim();
+  return at ? `${word}: ${at}` : word;
+}
+
 /** A moment in Toronto time, e.g. "Sat, Oct 24, 1:12 a.m.", as the web's /me writes it (web/lib/admin.ts). */
 export function when(iso: string): string {
   const at = new Date(iso);
