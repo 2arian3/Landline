@@ -191,6 +191,24 @@ async def test_the_next_call_does_not_open_with_the_results_of_the_last_one(db):
     assert later.agent_says == "Tell me what you're looking for, and the map will follow."
 
 
+async def test_the_call_plan_shares_only_what_the_renter_ticked_on_me(db):
+    # U-12: /me's privacy choice (user_profiles.shareable) is what the Caller may tell listing agents.
+    user = await db.users.upsert(PHONE, name="Sara")
+    await db.profiles.upsert(user.user_id, shareable=["name", "move_in"])   # occupants and pets unticked
+    rt = _runtime(db)
+    d = Dispatcher(rt, Settings(database_url=None, web_url="https://landline.example", transport="stub"))
+    sid = "s_prof000023"
+    await _call(rt, sid)
+    await rt.emit(PreferencesUpdated(**_meta(sid, "prefs", 1), delta=PreferenceDelta(
+        move_in="December 1", occupants=2, pets=["dog"])))
+    await rt.emit(CallsRequested(**_meta(sid, "plan", 2), listing_ids=["t:1"]))
+    await _hang_up(rt, sid)
+    await d.idle()
+    assert rt.state(sid).plan.shareable.model_dump() == {"name": "Sara", "move_in": "December 1",
+                                                          "occupants": None, "pets": []}
+    assert (await db.profiles.get(user.user_id)).shareable == ["name", "move_in"]   # the call kept the choice
+
+
 async def test_calls_nobody_can_place_end_the_session_and_the_next_call_is_not_told(db):
     # Production with TRANSPORT=stub: a phone session's calls have no runner (issue #95).
     rt = _runtime(db)
