@@ -120,8 +120,9 @@ const realDate = (iso: string): boolean => {
 // The limits U-12a checks in code, so the form says so before sending.
 const LISTS: [Field, number, number][] = [["areas", 10, 80], ["pets", 10, 40], ["must_have", 20, 60]];
 
-/** What's wrong with the form, by field; empty when it can be sent. */
-export function problems(form: Form): Problems {
+/** What's wrong with the form, by field; empty when it can be sent. `only`: just these fields (`touched`), so a
+ * value a call saved that the form's limits don't allow never blocks a save the renter didn't make there. */
+export function problems(form: Form, only?: readonly Field[]): Problems {
   const out: Problems = {};
   const budget = parseBudget(form.budget);
   if (budget === undefined || (budget != null && budget > 20000)) {
@@ -136,13 +137,25 @@ export function problems(form: Form): Problems {
   if (form.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
     out.email = "That isn't an email address.";
   }
+  if (only) for (const k of Object.keys(out) as Field[]) if (!only.includes(k)) delete out[k];
   return out;
 }
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
-/** Only what changed from the saved values; {} when nothing did. Call it after `problems` is empty. */
+// The server's names for the form's two renamed fields.
+const FROM_API: Record<string, Field> = { max_monthly: "budget", min_beds: "beds" };
+
+/** The fields the renter changed, compared as typed against the form the saved values make. */
+export function touched(form: Form, saved: Saved): Field[] {
+  const was = formFrom(saved);
+  return (Object.keys(was) as Field[]).filter((k) => !same(form[k], was[k]));
+}
+
+/** Only what changed from the saved values; {} when nothing did. Call it after `problems` is empty. A field left
+ * as loaded is never sent, even when the form can't hold its saved value exactly (an item with a comma, 1.5 beds). */
 export function edit(form: Form, saved: Saved): Edit {
+  const changed = touched(form, saved);
   const now: Required<Edit> = {
     max_monthly: parseBudget(form.budget) ?? null,
     min_beds: form.beds === "" ? null : Number(form.beds),
@@ -167,13 +180,12 @@ export function edit(form: Form, saved: Saved): Edit {
   };
   const out: Edit = {};
   for (const k of Object.keys(now) as (keyof Edit)[]) {
-    if (!same(now[k], before[k])) (out as Record<string, unknown>)[k] = now[k];
+    if (changed.includes(FROM_API[k] ?? (k as Field)) && !same(now[k], before[k])) {
+      (out as Record<string, unknown>)[k] = now[k];
+    }
   }
   return out;
 }
-
-// The server's names for the form's two renamed fields.
-const FROM_API: Record<string, Field> = { max_monthly: "budget", min_beds: "beds" };
 
 /** A 422 from PATCH /api/me/profile ({detail: [{loc: ["body", field, …], msg}]}) as the form's problems. */
 export function problemsFrom422(body: unknown): Problems {
