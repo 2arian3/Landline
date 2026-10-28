@@ -7,8 +7,11 @@
   same client and cache.
 
 `GoogleMaps` is the one client: the API key, a field mask on every request, a disk cache under
-pipeline/cache/maps/ so a rerun costs nothing, and a pace that keeps the route matrix under 3,000 elements a
-minute (625 a request). Without GOOGLE_MAPS_API_KEY the stage prints a skip line and changes nothing.
+pipeline/cache/maps/ so a rerun costs nothing, and a pace for each per-minute quota: the route matrix under
+3,000 elements a minute (625 a request), and searchNearby under NEARBY_PER_MIN requests. A 429 is retried
+(after Retry-After, else a minute) before the stage gives up; a give-up loads the listings whose answers are
+all in, reports the rest as pending, and exits nonzero, so a rerun finishes from the cache. Without
+GOOGLE_MAPS_API_KEY the stage prints a skip line and changes nothing.
 
 Provenance for what it writes: source `derived`, `via` "Google Maps walking time", and the day Google was
 asked (`at`). geo --load resets the station and the walk to the estimate, so the refresh runs this right
@@ -37,6 +40,14 @@ ROUTES_URL = "https://routes.googleapis.com/distanceMatrix/v2:computeRouteMatrix
 MATRIX_FIELDS = "originIndex,destinationIndex,duration,distanceMeters,status,condition"
 MAX_ELEMENTS = 625          # origins × destinations in one request (not TRANSIT)
 ELEMENTS_PER_MIN = 3000     # the Routes API's route-matrix quota
+# Places API (New) searchNearby requests a minute. Google sets this quota per method and per project, and
+# publishes no fixed default (developers.google.com/maps/documentation/places/web-service/usage-and-billing:
+# "The rate limit per minute is per API method per project"; the Cloud console's Quotas page shows it). The
+# first live run was refused ("SearchNearbyRequest per minute") after about 1,100 requests, so this stays
+# well under that. MAPS_NEARBY_PER_MIN overrides it.
+NEARBY_PER_MIN = int(os.getenv("MAPS_NEARBY_PER_MIN") or 500)
+RETRIES = 3                 # a 429 is retried this many times before the stage gives up
+RETRY_WAIT_S = 60.0         # without a Retry-After, wait a minute: these quotas are per minute
 TIMEOUT_S = 30
 NEAREST = 3                 # stations asked about per listing, nearest first by straight line
 WALK_VIA = "Google Maps walking time"
@@ -48,6 +59,14 @@ LatLng = tuple[float, float]
 
 class MapsError(RuntimeError):
     """Google refused a request (HTTP status, quota, key). The stage stops; what's cached so far is kept."""
+
+
+class Stopped(MapsError):
+    """A step gave up part-way: what it finished (`done`, the step's own result) and the listings left."""
+
+    def __init__(self, error: MapsError, done: Any, pending: list[str]):
+        super().__init__(str(error))
+        self.error, self.done, self.pending = error, done, pending
 
 
 @dataclass(frozen=True)
@@ -95,8 +114,9 @@ class GoogleMaps:
         self.today = today or (lambda: datetime.now(UTC).date().isoformat())
         self.routes_cache = Cache(cache_dir / "routes.json")
         self.places_cache = Cache(cache_dir / "places.json")   # D-10b's searchNearby answers
-        self.requests = self.elements = 0
-        self._sent: deque[tuple[float, int]] = deque()       # (when, elements) in the last minute
+        self.requests = self.elements = 0   # answered (billed) requests and route-matrix elements
+        self.throttled = 0                  # 429s waited out
+        self._sent: dict[str, deque[tuple[float, int]]] = {}   # per quota: (when, units) in the last minute
 
     def close(self) -> None:
         self.save()
@@ -106,31 +126,44 @@ class GoogleMaps:
         self.routes_cache.save()
         self.places_cache.save()
 
-    def post(self, url: str, body: dict, field_mask: str, *, elements: int = 0) -> Any:
-        """One POST with the key and a field mask, paced by route-matrix elements. Raises MapsError."""
-        self._pace(elements)
-        try:
-            resp = self.http.post(url, json=body, headers={"X-Goog-Api-Key": self.api_key,
-                                                           "X-Goog-FieldMask": field_mask})
-        except httpx.HTTPError as e:
-            raise MapsError(f"{url}: {e}") from e
-        self.requests += 1
-        self.elements += elements
-        if resp.status_code != 200:
-            raise MapsError(f"{url}: HTTP {resp.status_code}: {resp.text[:300]}")
-        return resp.json()
+    def post(self, url: str, body: dict, field_mask: str, *, elements: int = 0,
+             quota: str | None = None) -> Any:
+        """One POST with the key and a field mask. Paced under its per-minute quota: route-matrix
+        `elements`, or one request of `quota` "nearby" (searchNearby). A 429 waits (Retry-After, else
+        RETRY_WAIT_S) and goes again, up to RETRIES times. Raises MapsError."""
+        for attempt in range(RETRIES + 1):
+            if elements:
+                self._pace("routes", elements, ELEMENTS_PER_MIN)
+            if quota == "nearby":
+                self._pace("nearby", 1, NEARBY_PER_MIN)
+            try:
+                resp = self.http.post(url, json=body, headers={"X-Goog-Api-Key": self.api_key,
+                                                               "X-Goog-FieldMask": field_mask})
+            except httpx.HTTPError as e:
+                raise MapsError(f"{url}: {e}") from e
+            if resp.status_code == 429 and attempt < RETRIES:
+                self.throttled += 1
+                self.sleep(_retry_after(resp))
+                continue
+            if resp.status_code != 200:
+                tried = f" after {RETRIES} retries" if resp.status_code == 429 else ""
+                raise MapsError(f"{url}: HTTP {resp.status_code}{tried}: {resp.text[:300]}")
+            self.requests += 1
+            self.elements += elements
+            return resp.json()
+        raise AssertionError("unreachable")
 
-    def _pace(self, elements: int) -> None:
-        if not elements:
-            return
+    def _pace(self, name: str, units: int, cap: int) -> None:
+        """Wait until `units` more fit in the last minute's `cap` for this quota, then count them."""
+        sent = self._sent.setdefault(name, deque())
         while True:
             now = self.clock()
-            while self._sent and now - self._sent[0][0] >= 60:
-                self._sent.popleft()
-            if sum(n for _, n in self._sent) + elements <= ELEMENTS_PER_MIN:
+            while sent and now - sent[0][0] >= 60:
+                sent.popleft()
+            if sum(n for _, n in sent) + units <= cap:
                 break
-            self.sleep(60 - (now - self._sent[0][0]))
-        self._sent.append((self.clock(), elements))
+            self.sleep(60 - (now - sent[0][0]))
+        sent.append((self.clock(), units))
 
     def walk(self, origins: list[LatLng], destinations: list[LatLng]) -> dict[tuple[int, int], Walk | None]:
         """Walking time for every origin × destination, from the cache or the route matrix. None where Google
@@ -162,6 +195,14 @@ class GoogleMaps:
                     out[(i, j)] = _walk(value)
             self.save()   # a later failure keeps what this request paid for
         return out
+
+
+def _retry_after(resp: httpx.Response) -> float:
+    """How long a 429 says to wait: its Retry-After in seconds, else a minute."""
+    try:
+        return max(1.0, float(resp.headers.get("Retry-After", "")))
+    except ValueError:
+        return RETRY_WAIT_S
 
 
 def from_env() -> GoogleMaps | None:
@@ -210,9 +251,13 @@ def station_walks(client: GoogleMaps, listings: list[dict], stations: list[dict]
         by_id.update({s["id"]: s for s in near})
         groups.setdefault(tuple(s["id"] for s in near), []).append(x)
     out: dict[str, dict] = {}
-    for ids, members in sorted(groups.items()):
+    ordered = sorted(groups.items())
+    for n, (ids, members) in enumerate(ordered):
         near = [by_id[i] for i in ids]
-        walks = client.walk([(x["lat"], x["lng"]) for x in members], [(s["lat"], s["lng"]) for s in near])
+        try:
+            walks = client.walk([(x["lat"], x["lng"]) for x in members], [(s["lat"], s["lng"]) for s in near])
+        except MapsError as e:   # a give-up keeps the walks already found, and names the listings left
+            raise Stopped(e, out, [x["listing_id"] for _, rest in ordered[n:] for x in rest]) from e
         for i, x in enumerate(members):
             options = [(w.minutes, s["id"], s, w) for j, s in enumerate(near) if (w := walks.get((i, j)))]
             if options:
@@ -262,22 +307,41 @@ def run(conn, client: GoogleMaps, stations: list[dict], load: bool = False, limi
     conn.commit()   # end the read, so each step's write below commits on its own
     if limit:
         listings = listings[:limit]
-    walks = station_walks(client, listings, stations)
-    counts: dict[str, Any] = {"listings": len(listings), "walks": len(walks), "updated": 0}
+    located = [(x["listing_id"], x["lat"], x["lng"]) for x in listings]
+    stopped: Stopped | None = None
+    try:
+        walks = station_walks(client, listings, stations)
+    except Stopped as s:   # load the walks that are in; the rest are pending
+        walks, stopped = s.done, s
+    counts: dict[str, Any] = {"listings": len(listings), "walks": len(walks), "updated": 0,
+                              "walks_pending": len(stopped.pending) if stopped else 0}
     if load:
         counts["updated"] = load_walks(conn, walks)
-    located = [(x["listing_id"], x["lat"], x["lng"]) for x in listings]
-    counts["nearby"] = nearby.run(conn, client, located, load)
-    counts.update(requests=client.requests, elements=client.elements)
+    if stopped is None:
+        try:
+            counts["nearby"] = nearby.run(conn, client, located, load)
+        except Stopped as s:   # nearby.run already wrote the listings it finished
+            counts["nearby"], stopped = s.done, s
+    else:   # the stores need the same route matrix that just gave up: left for the rerun
+        counts["nearby"] = {**dict.fromkeys(("listings", "grocery", "pharmacy", "neither"), 0),
+                            "pending": len(located)}
+    counts.update(requests=client.requests, elements=client.elements, throttled=client.throttled,
+                  stopped=str(stopped) if stopped else None)
     return counts
 
 
 def report(c: dict) -> str:
     from pipeline import nearby
 
-    return (f"maps: {c['listings']} active listings, {c['walks']} with a Google walk to the TTC, "
-            f"{c['updated']} updated; {c['requests']} requests, {c['elements']} route-matrix elements billed "
-            f"(the rest came from the cache)\n{nearby.report(c['nearby'])}")
+    lines = [f"maps: {c['listings']} active listings, {c['walks']} with a Google walk to the TTC, "
+             f"{c['updated']} updated; {c['requests']} requests, {c['elements']} route-matrix elements "
+             f"billed (the rest came from the cache); {c.get('throttled', 0)} waits on a 429",
+             nearby.report(c["nearby"])]
+    if c.get("stopped"):
+        pending = c.get("walks_pending", 0) + c["nearby"].get("pending", 0)
+        lines.append(f"maps: stopped ({c['stopped']}); {pending} listing steps pending, rerun to "
+                     "finish (everything answered so far is cached and loaded)")
+    return "\n".join(lines)
 
 
 def _km(a: LatLng, b: LatLng) -> float:
