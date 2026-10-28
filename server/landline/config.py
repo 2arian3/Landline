@@ -58,6 +58,11 @@ class Settings:
     admin_token: str | None = None
     # Still face for the clip made after a call (voice/avatar_clip.py). Landline's voice lip-syncs it.
     higgs_avatar_image_url: str = "https://docs.boson.ai/public/avatar/sample.jpg"
+    # Clerk phone sign-in on /api/me (U-11a, api/me.py). With the secret key set, GET /api/me needs a Clerk
+    # session token and POST /api/me with a bare phone number is refused. CLERK_JWT_KEY (the instance's PEM
+    # public key) verifies tokens with no network call; without it the SDK fetches Clerk's JWKS.
+    clerk_secret_key: str | None = None
+    clerk_jwt_key: str | None = None
 
     @classmethod
     def load(cls) -> Settings:
@@ -86,6 +91,8 @@ class Settings:
             contact_email=os.getenv("SCRAPER_CONTACT_EMAIL") or None,
             higgs_avatar_image_url=os.getenv("HIGGS_AVATAR_IMAGE_URL")
             or "https://docs.boson.ai/public/avatar/sample.jpg",
+            clerk_secret_key=os.getenv("CLERK_SECRET_KEY") or None,
+            clerk_jwt_key=os.getenv("CLERK_JWT_KEY") or None,
         )
 
     def allowed_origins(self) -> list[str]:

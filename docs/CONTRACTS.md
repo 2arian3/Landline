@@ -118,7 +118,8 @@ Only into the Concierge, only between turns, as one `user` `input_text` item, qu
 | GET | `/api/sessions/{id}/avatars/{call_id}` | that clip's MP4 when `ready`, otherwise 404. Only a call in this session |
 | POST | `/api/judge/start` | `{session_id, ws_url}` for browser audio |
 | GET | `/health` | `{status, listings, sessions, transport, higgs}` |
-| POST | `/api/me` | `{phone}` → that number's saved search, chosen places, sessions and calls (the admin user shape). 422 when `phone` isn't a number; 404 when it isn't stored or there is no database. Transcripts and recordings stay on the admin routes. |
+| GET | `/api/me` | `Authorization: Bearer <Clerk session token>` → the signed-in renter's saved search, chosen places, sessions and calls (the admin user shape). The phone comes only from the verified token's `phone` claim, and the token's `azp` must be `WEB_URL`, a CORS origin or a preview matching `CORS_ORIGIN_REGEX`. 401 with no token, an invalid or expired one, another app's, or one with no phone; 404 when the number isn't stored, there is no database, or `CLERK_SECRET_KEY` is unset. |
+| POST | `/api/me` | `{phone}` → the same shape, for that number with no proof. **401 once `CLERK_SECRET_KEY` is set**; without it (local dev, CI): 422 when `phone` isn't a number; 404 when it isn't stored or there is no database. Transcripts and recordings stay on the admin routes. |
 | GET | `/api/admin/users` | Admin: every renter with counts (needs `Authorization: Bearer $ADMIN_TOKEN`; 404 when unset) |
 | GET | `/api/admin/users/{user_id}` | Admin: one renter's saved search, chosen places, sessions and calls |
 | GET | `/api/admin/calls/{call_id}` | Admin: one call with its transcript (each line with `audio_start_ms`/`audio_end_ms` when known), the facts heard, and `audio` (whether it has a recording) |

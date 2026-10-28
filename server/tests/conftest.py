@@ -1,4 +1,5 @@
-"""Fixtures shared by the tests that need Postgres (test_db.py, test_orchestrator.py).
+"""Fixtures shared by the tests that need Postgres (test_db.py, test_orchestrator.py), and Clerk session
+tokens signed with a throwaway RSA key (`clerk`, test_me_signin.py and test_admin.py).
 
 `schema` creates a throwaway schema `t_<random>` in TEST_DATABASE_URL, applies the
 migrations into it, and drops it afterwards. Without a reachable TEST_DATABASE_URL
@@ -14,9 +15,13 @@ import asyncio
 import os
 import secrets
 import sys
+import time
 
+import jwt
 import psycopg
 import pytest
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 from psycopg import sql
 
 from landline.db.migrations import apply
@@ -54,3 +59,28 @@ async def db(schema):
     database = await Database.open(URL, schema=schema[0], max_size=4)
     yield database
     await database.close()
+
+
+class ClerkKeys:
+    """A throwaway Clerk instance: `pem` is the public key the API is given as CLERK_JWT_KEY, and `token()`
+    signs a session token with the matching private key. Never a real key."""
+
+    WEB = "http://localhost:3000"
+
+    def __init__(self) -> None:
+        self._key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        self.pem = self._key.public_key().public_bytes(
+            serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo).decode()
+
+    def token(self, *, phone: str | None = "+14165550123", azp: str | None = WEB, expires_in: int = 60,
+              key: rsa.RSAPrivateKey | None = None) -> str:
+        now = int(time.time())
+        claims = {"sub": "user_test", "sid": "sess_test", "iat": now, "nbf": now, "exp": now + expires_in,
+                  "azp": azp, "phone": phone}
+        claims = {k: v for k, v in claims.items() if v is not None}
+        return jwt.encode(claims, key or self._key, algorithm="RS256")
+
+
+@pytest.fixture(scope="session")
+def clerk() -> ClerkKeys:
+    return ClerkKeys()
