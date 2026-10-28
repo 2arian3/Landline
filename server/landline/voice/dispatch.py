@@ -2,8 +2,8 @@
 
 When a session ends with a plan (`SessionEnded`, phase `calling`), it freezes the `CallPlan` from the
 session (the picked listings in the renter's order, their extra questions, their viewing times as Toronto
-datetimes, whether Landline may book, what they agreed to share) and queues one call per listing in the
-same commit (`CallsScheduled`). Then it runs them:
+datetimes, whether Landline may book, and only what they agreed to share: user_profiles.shareable, set on
+/me) and queues one call per listing in the same commit (`CallsScheduled`). Then it runs them:
 
 - at most `cap` at once across every session: the Higgs lines minus one kept for renters calling in;
 - a call that dials the phone network goes only to a number on the allowlist (hard rule 6), else it ends
@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Collection
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Protocol
@@ -55,6 +55,7 @@ TORONTO = ZoneInfo("America/Toronto")
 OPENS, CLOSES = time(9, 0), time(20, 0)   # Toronto business hours for calling listing agents
 WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
 SMS_MAX = 1500                            # Twilio joins long texts; keep the results well inside one message
+SHARED_BY_DEFAULT = frozenset({"move_in", "occupants", "pets"})   # user_profiles.shareable's default
 
 
 @dataclass(frozen=True)
@@ -118,7 +119,8 @@ class Dispatcher:
         if state.plan is not None or state.request is None:
             return
         now = self.clock()
-        plan = freeze(state, now)
+        allowed, name = await self._shareable(state)
+        plan = freeze(state, now, allowed=allowed, name=name)
         call_ids = [mint("c_") for _ in plan.listing_ids]
         runner = self.runner_for(sid)
         transport = runner.transport if runner else "stub"
@@ -255,20 +257,49 @@ class Dispatcher:
             await asyncio.gather(*list(self._tasks), return_exceptions=True)
             await asyncio.sleep(0)   # let finished calls leave the set (see SessionRuntime.idle)
 
+    async def _shareable(self, state: SessionState) -> tuple[frozenset[str], str | None]:
+        """What the renter allows the Caller to tell listing agents (user_profiles.shareable, ticked on /me),
+        and their stored name. A renter with nothing stored, or no database (judge mode, tests), shares the
+        default. If the lookup fails, nothing is shared: a privacy choice never falls back to sharing."""
+        db = self.runtime.db
+        if db is None:
+            return SHARED_BY_DEFAULT, None
+        try:
+            if state.user_id is not None:
+                user = await db.users.get(state.user_id)
+            elif state.channel == "phone" and state.caller_phone:
+                user = await db.users.by_phone(as_e164(state.caller_phone) or state.caller_phone)
+            else:
+                user = None
+            if user is None:
+                return SHARED_BY_DEFAULT, None
+            profile = await db.profiles.get(user.user_id)
+            return (frozenset(profile.shareable) if profile else SHARED_BY_DEFAULT), user.name
+        except Exception:
+            log.exception("session %s: what the renter shares couldn't be read; sharing nothing",
+                          state.session_id)
+            return frozenset(), None
+
     async def close(self) -> None:
         for task in list(self._tasks):
             task.cancel()
         await asyncio.gather(*self._tasks, return_exceptions=True)
 
 
-def freeze(state: SessionState, now: datetime) -> CallPlan:
-    """The CallPlan from what the brief recorded. Never edited afterwards."""
+def freeze(state: SessionState, now: datetime, allowed: Collection[str] = SHARED_BY_DEFAULT,
+           name: str | None = None) -> CallPlan:
+    """The CallPlan from what the brief recorded. Never edited afterwards. Only what the renter allowed
+    (`allowed`, user_profiles.shareable) reaches the Caller: an unticked answer is left out, and their name
+    only when they ticked it and it's known."""
     r, p = state.request, state.preferences
     assert r is not None
     windows = [w for a in r.availability if (w := window(a, now))]
+    shareable = Shareable(name=name if "name" in allowed and name else None,
+                          move_in=p.move_in if "move_in" in allowed else None,
+                          occupants=p.occupants if "occupants" in allowed else None,
+                          pets=p.pets if "pets" in allowed else [])
     return CallPlan(session_id=state.session_id, user_id=state.user_id, listing_ids=r.listing_ids[:5],
-                    questions=r.questions, windows=windows, may_book=r.may_book,
-                    shareable=Shareable(move_in=p.move_in, occupants=p.occupants, pets=p.pets),
+                    questions=r.questions, windows=windows, may_book=r.may_book, shareable=shareable,
                     language=p.language or "en", created_at=now)
 
 
