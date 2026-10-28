@@ -1,14 +1,27 @@
 import type { ReactNode } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { color, radius } from "@/lib/theme";
 
-/** A full screen on the warm ground, inside the safe area. */
-export function Screen({ children }: { children: ReactNode }) {
+/** A full screen on the warm ground, inside the safe area. With `onRefresh` it scrolls, and a pull reloads it. */
+export function Screen({ children, onRefresh, refreshing = false }: {
+  children: ReactNode;
+  onRefresh?: () => void;
+  refreshing?: boolean;
+}) {
   return (
     <SafeAreaView style={styles.screen}>
-      <View style={styles.body}>{children}</View>
+      {onRefresh ? (
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={color.ink3} />}
+        >
+          {children}
+        </ScrollView>
+      ) : (
+        <View style={styles.body}>{children}</View>
+      )}
     </SafeAreaView>
   );
 }
@@ -42,6 +55,7 @@ export function ErrorLine({ children }: { children: ReactNode }) {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: color.ground },
   body: { flex: 1, paddingHorizontal: 20, paddingTop: 24, gap: 16 },
+  scroll: { flexGrow: 1, paddingHorizontal: 20, paddingTop: 24, paddingBottom: 24, gap: 16 },
   button: {
     height: 52, borderRadius: radius.control, backgroundColor: color.ink,
     alignItems: "center", justifyContent: "center",
