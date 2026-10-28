@@ -25,6 +25,7 @@ Design: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Interfaces: [docs/CONTRACT
 | `evals/` | Fixtures, landlord personas, eval runners, reports | Danial |
 | `server/landline/api/` | REST + SSE read side for the web app, judge-mode endpoints | Mahyar (Twilio webhooks: Danial) |
 | `web/` | Next.js app: map, list, detail, judge mode; its Vercel deploys | Mahyar |
+| `mobile/` | Expo app for renters: phone sign-in (Clerk), their listings, a push when the calls finish | Mahyar |
 | `deploy/`, and the VM itself | VM service files, reverse proxy, deploy scripts; on the VM, its `~/landline/.env`, services and logs; shipping `main` to `release` | Arian |
 | `docs/`, `BACKLOG.md` | Design and plan | Arian |
 
