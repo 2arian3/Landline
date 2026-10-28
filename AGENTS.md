@@ -43,6 +43,7 @@ Work only inside your lane's paths. If a task needs a change in someone else's p
 8. **The page is never load-bearing.** If the web app dies, the voice loop still finishes, books and texts.
 9. **No secrets in git.** `.env` stays local; share keys through a password manager. Run `gitleaks detect` before any push that might include config.
 10. **Commit messages never mention AI tools.** No `Co-Authored-By` trailers for AI assistants, no "generated with" lines, no tool names. The `commit-msg` hook rejects them; run `make setup` once after cloning to install it.
+11. **Agents never call the Google Maps APIs on their own.** The Routes API, Places API (New) and Google's Maps MCP server (Maps Grounding Lite) bill per request beyond a monthly free tier, and one key covers all three. Don't call them live to test or check anything: no `pipeline maps` (with or without `--load`), no `scripts/maps_mcp_probe.py --live`, no curl. Tests use fakes and recorded fixtures only. A live run happens only when Arian asks for it, once, with the number of requests stated first. `pipeline/cache/maps/` means a rerun pays only for what's new. In the running app, the TTC commute (D-10c) and `ask_maps` (O-07b) call Google only for a real renter's request; never script calls to them. Free each month, at the time of writing: Compute Route Matrix 10,000 elements, Nearby Search 5,000 requests, Maps Grounding Lite 10,000 requests ([current prices](https://developers.google.com/maps/billing-and-pricing/pricing)).
 
 ## How we work
 
