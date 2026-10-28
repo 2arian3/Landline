@@ -19,6 +19,8 @@ does, and the Concierge hears the same `[renter is looking at] …` note as on a
 
 A returning caller (O-05) adds `"returning": {"opening": "<what Profiles would say>", "prefs": {...}}`, and
 `final` can then check the welcome with `"greeting_says": ["Erskine"]` and `"greeting_avoids": [...]`.
+`"calls": [{"listing_id": ..., "facts": [{"field", "value", "quote"}], "viewing_in_days": 2}]` gives that
+caller an earlier session's listing calls, which listing_status reads (A-14).
 
 A line the renter garbles (`"say": "Purple the fridge seventeen"`) can expect `no_tools`, `says_any`
 (["catch", "again"]) and `says_none` (["fridge", "Carabob"]): the agent asks again instead of guessing what
@@ -105,10 +107,29 @@ class Want(_Strict):
     near: Near | None = None         # the board's top cards are near this point
 
 
+class HeardThen(_Strict):
+    field: str
+    value: str
+    quote: str
+
+
+class EarlierCall(_Strict):
+    """A listing call from the caller's earlier session, as Postgres would hold it (A-14's listing_status)."""
+    listing_id: str                   # from fixtures/listings.json
+    end_reason: Literal["done", "voicemail", "no_answer"] = "done"
+    days_ago: int = Field(1, ge=1)    # the call was made this many days before the run, at 4 pm Toronto
+    facts: list[HeardThen] = Field(default_factory=list)
+    red_flags: list[str] = Field(default_factory=list)
+    viewing_in_days: int | None = Field(None, ge=1)   # a viewing booked that many days ahead, at 2 pm
+    viewing_status: Literal["booked", "confirmed", "declined"] = "booked"
+
+
 class Returning(_Strict):
-    """A returning caller (O-05): what Profiles would tell the Concierge, and the search it restores."""
+    """A returning caller (O-05): what Profiles would tell the Concierge, and the search it restores. With
+    `calls`, the caller phones in (a phone session) and those are their earlier session's listing calls."""
     opening: str
     prefs: dict[str, object] | None = None
+    calls: list[EarlierCall] | None = None
 
 
 class Line(_Strict):
