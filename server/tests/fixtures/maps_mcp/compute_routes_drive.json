@@ -1,0 +1,26 @@
+{
+  "_note": "Shaped from the live server's tools/list output schema (28 Oct 2026), not recorded: no key yet. scripts/maps_mcp_probe.py --live records real answers as recorded_*.json next to this.",
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"routes\": [{\"distanceMeters\": 5230, \"duration\": \"897s\", \"attribution\": {\"title\": \"Google Maps\", \"url\": \"https://www.google.com/maps/dir/\"}}]}"
+      }
+    ],
+    "structuredContent": {
+      "routes": [
+        {
+          "distanceMeters": 5230,
+          "duration": "897s",
+          "attribution": {
+            "title": "Google Maps",
+            "url": "https://www.google.com/maps/dir/"
+          }
+        }
+      ]
+    },
+    "isError": false
+  }
+}
