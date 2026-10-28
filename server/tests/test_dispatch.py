@@ -1,6 +1,8 @@
 """The Dispatcher (A-06) with fake calls: no phone, no Higgs. The four cases from BACKLOG.md, then the plan's
-viewing windows, the allowlist, business hours and the deadline."""
+viewing windows, the allowlist, business hours and the deadline. The Postgres tests run in a throwaway schema
+(conftest.py) and skip without TEST_DATABASE_URL."""
 import asyncio
+import os
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
@@ -20,6 +22,7 @@ from landline.contracts import (
 )
 from landline.contracts.tools import Availability
 from landline.db.catalogue import Catalogue
+from landline.db.pool import Database
 from landline.orchestrator import SessionRuntime
 from landline.voice.dispatch import (
     TORONTO,
@@ -47,11 +50,14 @@ def _settings(**kw) -> Settings:
     return replace(base, **kw)
 
 
-def _runtime(n: int = 6) -> SessionRuntime:
-    listings = [Listing(listing_id=f"t:{i}", source="t", source_id=str(i), url=f"https://example.com/{i}",
-                        first_seen=NOW, last_seen=NOW, address=f"{i} Dial St", lat=43.65, lng=-79.38,
-                        rent=2000 + i, monthly_cost=2000 + i, beds=1) for i in range(1, n + 1)]
-    return SessionRuntime(Catalogue(listings, "test"))
+def _listings(n: int = 6) -> list[Listing]:
+    return [Listing(listing_id=f"t:{i}", source="t", source_id=str(i), url=f"https://example.com/{i}",
+                    first_seen=NOW, last_seen=NOW, address=f"{i} Dial St", lat=43.65, lng=-79.38,
+                    rent=2000 + i, monthly_cost=2000 + i, beds=1) for i in range(1, n + 1)]
+
+
+def _runtime(n: int = 6, db: Database | None = None) -> SessionRuntime:
+    return SessionRuntime(Catalogue(_listings(n), "test"), db)
 
 
 class FakeTexter:
@@ -300,6 +306,34 @@ async def test_a_failed_call_gives_its_phone_back():
     assert [x.to for x in runner.dials] == [AGENTS[0]] * 2 and not runner.rang_busy
     outcomes = rt.state(SID).outcomes
     assert {lid: o.end_reason for lid, o in outcomes.items()} == {"t:1": "failed", "t:2": "done"}
+
+
+@pytest.fixture
+async def db(schema):
+    database = await Database.open(os.environ["TEST_DATABASE_URL"], schema=schema[0], max_size=4)
+    async with database.transaction() as conn:
+        await conn.execute("truncate users, sessions, events, calls, listings cascade")
+        for x in _listings():   # calls point at listings
+            await conn.execute(
+                "insert into listings (listing_id, source, source_id, url, first_seen, last_seen, status, "
+                "address, rent, monthly_cost, beds) "
+                "values (%s, 't', %s, %s, %s, %s, 'active', %s, 2000, 2000, 1)",
+                (x.listing_id, x.source_id, x.url, x.first_seen, x.last_seen, x.address))
+    yield database
+    await database.close()
+
+
+@pytest.mark.parametrize("uses_phone", [True, False])
+async def test_a_call_stores_the_number_it_dialled(db, uses_phone):
+    # A-13a: calls.to_e164 is where O-08b texts the confirm link and what A-13b matches a call back on.
+    rt, runner = _runtime(db=db), FakeRunner(uses_phone=uses_phone)
+    d = _dispatcher(rt, runner)
+    await _brief(rt, ["t:1", "t:2"])
+    await _hang_up(rt)
+    await d.idle()
+    stored = {row.listing_id: row.to_e164 for row in await db.calls.for_session(SID)}
+    assert stored == {x.listing_id: x.to for x in runner.dials} and len(stored) == 2
+    assert set(stored.values()) <= set(AGENTS) if uses_phone else set(stored.values()) == {None}
 
 
 async def test_sim_calls_take_no_phone():
