@@ -70,6 +70,21 @@ class TurnRow:
 
 
 @dataclass(frozen=True)
+class ViewingConfirmationRow:
+    """A booked viewing waiting for the listing agent to confirm it (viewing_confirmations, 0004, O-08)."""
+    token: str
+    call_id: str
+    session_id: str
+    listing_id: str
+    starts_at: datetime
+    status: str                 # pending | confirmed | declined
+    agent_email: str | None
+    calendar_event_id: str | None
+    created_at: datetime
+    decided_at: datetime | None
+
+
+@dataclass(frozen=True)
 class AvatarRow:
     """One call's Higgs Avatar clip (call_avatar), without the MP4 bytes."""
     call_id: str

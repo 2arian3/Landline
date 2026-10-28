@@ -5,7 +5,7 @@ never lag the state it came from.
 """
 from __future__ import annotations
 
-from landline.contracts import CallView, Card, Listing, SessionView
+from landline.contracts import CallView, Card, CardViewing, Listing, SessionView
 from landline.db.catalogue import Catalogue
 from landline.orchestrator import feedback, overrides
 from landline.orchestrator.state import SessionState
@@ -59,6 +59,7 @@ def _card(state: SessionState, x: Listing, n: int, why: Ranked, heard: dict) -> 
     lid = x.listing_id
     outcome = state.outcomes.get(lid)
     said = state.reactions.get(lid)
+    booked = state.viewings.get(lid)
     return Card(
         listing_id=lid, address=x.address, unit_label=x.unit_label,
         neighbourhood=x.neighbourhood or x.building_name, lat=x.lat, lng=x.lng, rent=x.rent,
@@ -69,4 +70,7 @@ def _card(state: SessionState, x: Listing, n: int, why: Ranked, heard: dict) -> 
         watch_out=why.watch_out, reaction=(said.reason or said.reaction) if said else None,
         facts=list(outcome.facts) if outcome else list(state.heard.get(lid, [])),
         red_flags=list(outcome.red_flags) if outcome else [],
+        # The booked viewing (O-08b), waiting for the listing agent to confirm it; O-08c adds the answer.
+        viewing=CardViewing(starts_at=booked.starts_at, slot_text=booked.slot_text, status="booked")
+        if booked else None,
     )
