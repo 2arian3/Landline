@@ -56,6 +56,24 @@ def test_grounding_matches_inside_one_source_only():
     assert grounding.find("rent is 2690", src).source == 0
 
 
+def test_a_spoken_amount_of_several_words_is_not_a_lone_number():
+    """"一千七" and "seventeen hundred" are answers as said, though they match as "1700": the one-token rule
+    counts the words before amounts become digits (f618ddb made them one token, and the Mandarin rent
+    in the holdout was dropped). A bare "1700" still proves nothing unless it is the whole turn."""
+    said_zh = "一千七。看房之前要先转账押金，然后我快递钥匙给你。"
+    assert grounding.find("一千七", [said_zh]).source == 0
+    assert grounding.verify("seventeen hundred", ["It's seventeen hundred a month, heat included."])
+    assert not grounding.verify("1700", ["It's seventeen hundred a month, heat included."])
+    assert not grounding.verify("一千七", ["一千八。看房之前要先转账押金。"])   # a different amount
+
+
+def test_the_caller_s_mandarin_rent_is_kept():
+    turns = [("agent", "请问租金是多少？"),
+             ("landlord", "一千七。看房之前要先转账押金，然后我快递钥匙给你。")]
+    out = build(call(turns, (ToolFact("rent", "1700", "一千七"),)), []).outcome
+    assert [(f.field, f.value) for f in out.facts] == [("rent", "$1,700 a month")]
+
+
 def test_a_spoken_amount_matches_the_same_amount_in_digits():
     """#216: "one fifty" and "$150" are one claim. A different amount still is not."""
     said = ("Yeah, there's an extra charge for parking if you want. "

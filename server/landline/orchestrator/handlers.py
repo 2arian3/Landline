@@ -23,6 +23,7 @@ from landline.contracts import (
     CallsScheduled,
     CallStateChanged,
     CallView,
+    CommuteResolved,
     Event,
     Fact,
     FactRecorded,
@@ -108,6 +109,14 @@ def anchor_resolved(state: SessionState, e: AnchorResolved, known: Known) -> boo
     if changed:
         state.preferences = state.preferences.model_copy(update={"anchors": anchors})
     return changed
+
+
+def commute_resolved(state: SessionState, e: CommuteResolved, known: Known) -> bool:
+    """TTC minutes to one of the session's anchors arrived (D-10c). Nothing in the state changes; the commit
+    rebuilds the board, which reads them. An anchor the renter has since dropped re-ranks nothing."""
+    point = (round(e.lat, 5), round(e.lng, 5))
+    return any(a.lat is not None and a.lng is not None and (round(a.lat, 5), round(a.lng, 5)) == point
+               for a in state.preferences.anchors)
 
 
 def calls_requested(state: SessionState, e: CallsRequested, known: Known) -> bool:
@@ -222,6 +231,7 @@ HANDLERS: dict[str, Callable[[SessionState, Event, Known], bool]] = {
     "ListingFocused": listing_focused,
     "AreaFocused": area_focused,
     "AnchorResolved": anchor_resolved,
+    "CommuteResolved": commute_resolved,
     "CallsRequested": calls_requested,
     "SessionEnded": session_ended,
     "CallsScheduled": calls_scheduled,

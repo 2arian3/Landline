@@ -67,6 +67,16 @@ class AnchorResolved(EventBase):
     lng: float
 
 
+class CommuteResolved(EventBase):
+    """TTC minutes from the top listings to an anchor are in the feature matrix's cache (D-10c): re-rank.
+    Emitted in the background after AnchorResolved; it changes no session state, only the board built from it.
+    The anchor is named as AnchorResolved named it."""
+    type: Literal["CommuteResolved"] = "CommuteResolved"
+    label: str
+    lat: float
+    lng: float
+
+
 class CallsRequested(EventBase):
     """Records the plan; dials nothing. The listing ids are the refs code resolved against the board."""
     type: Literal["CallsRequested"] = "CallsRequested"
@@ -142,8 +152,8 @@ class CallsCompleted(EventBase):
 
 Event = Annotated[
     SessionStarted | PreferencesUpdated | FeedbackGiven | ListingFocused | AreaFocused | AnchorResolved
-    | CallsRequested | SessionEnded | CallsScheduled | CallStateChanged | FactRecorded | QuestionNoted
-    | ViewingBooked | CallEnded | OutcomeReady | CallsCompleted,
+    | CommuteResolved | CallsRequested | SessionEnded | CallsScheduled | CallStateChanged | FactRecorded
+    | QuestionNoted | ViewingBooked | CallEnded | OutcomeReady | CallsCompleted,
     Field(discriminator="type"),
 ]
 EVENT: TypeAdapter[Event] = TypeAdapter(Event)
