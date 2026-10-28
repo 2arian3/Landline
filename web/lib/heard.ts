@@ -6,12 +6,17 @@ const LABEL: Record<string, string> = {
   other: "also",
 };
 
+/** In sentence case, "Pets: Cats yes, dogs no": only the first letter changes, so the Auditor's "Dec 1" stays. */
 export function factLine(field: string, value: string): string {
   const v = value.trim().replace(/\.$/, "");
-  if (field === "available") return v;                                     // "still available"
-  if (field === "available_from") return v.toLowerCase() === "now" ? "available now" : `free from ${v}`;
-  if (field === "fees" && v.startsWith("no other")) return v;             // "no other monthly fees"
-  return `${LABEL[field] ?? field.replaceAll("_", " ")}: ${v}`;
+  if (field === "available") return sentence(v);                           // "Still available"
+  if (field === "available_from") return v.toLowerCase() === "now" ? "Available now" : `Free from ${v}`;
+  if (field === "fees" && v.startsWith("no other")) return sentence(v);   // "No other monthly fees"
+  return `${sentence(LABEL[field] ?? field.replaceAll("_", " "))}: ${v}`;
+}
+
+function sentence(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 /** How a call ended, in a few words. */
