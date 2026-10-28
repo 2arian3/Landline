@@ -5,16 +5,20 @@ import { Brand } from "./Summary";
 export const PEEK = "196px";
 
 /**
- * Where the split layout takes over from the bottom sheet: tablets, desktops, and phones held sideways.
- * The same query as the `split` variant in app/globals.css, which this shell's CSS uses.
+ * Where the split layout takes over from the bottom sheet: desktops, tablets on their side, and phones held
+ * sideways. A tablet upright (768 px) gets the sheet: split, its cards were too narrow for an address. The
+ * same query as the `split` variant in app/globals.css, which this shell's CSS uses.
  */
-export const SPLIT = "(min-width: 768px), (orientation: landscape) and (max-height: 520px)";
+export const SPLIT = "(min-width: 1024px), (orientation: landscape) and (max-height: 520px)";
 
 /** A short screen (a phone on its side): the `short` variant in app/globals.css. */
 export const SHORT = "(max-height: 520px)";
 
-/** The split layout's panel: 440px on a desktop, narrower on a tablet or a phone on its side. */
-export const PANEL_WIDTH = "w-[clamp(340px,42vw,440px)]";
+/**
+ * The split layout's panel: 440px on a desktop, narrower on a tablet or a phone on its side, and 560px from
+ * 1600px (a projector), where its type also steps up a size (`.panel` in app/globals.css).
+ */
+export const PANEL_WIDTH = "panel w-[clamp(340px,42vw,440px)] min-[1600px]:w-[560px]";
 
 /** The split layout's panel, clear of a phone's notch when it's held sideways. */
 export const PANEL_STYLE: CSSProperties = {

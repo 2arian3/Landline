@@ -65,10 +65,10 @@
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
 }
 
-/* The split layout (map left, panel right): tablets, desktops, and phones held sideways, where a
-   bottom sheet would leave the map a strip. Keep in step with SPLIT in components/Shell.tsx. */
+/* The split layout (map left, panel right): desktops, tablets on their side, and phones held sideways,
+   where a bottom sheet would leave the map a strip. Keep in step with SPLIT in components/Shell.tsx. */
 @custom-variant split {
-  @media (min-width: 768px), (orientation: landscape) and (max-height: 520px) {
+  @media (min-width: 1024px), (orientation: landscape) and (max-height: 520px) {
     @slot;
   }
 }
@@ -102,6 +102,25 @@
 }
 
 .tnum { font-variant-numeric: lining-nums tabular-nums; }
+
+/* A projector (1920 x 1080 on stage): the split layout's panel widens to 560px (PANEL_WIDTH) and its type
+   steps up one size, so the story reads from the back of the room. Below 1600px nothing changes. */
+@media (min-width: 1600px) {
+  .panel {
+    --text-price-lead: 32px;
+    --text-price-lead--line-height: 36px;
+    --text-price: 26px;
+    --text-price--line-height: 30px;
+    --text-title: 24px;
+    --text-title--line-height: 30px;
+    --text-fact: 20px;
+    --text-fact--line-height: 26px;
+    --text-support: 17px;
+    --text-support--line-height: 23px;
+    --text-meta: 15px;
+    --text-meta--line-height: 20px;
+  }
+}
 
 /* ── map pins ─────────────────────────────────────────────────────────── */
 
@@ -219,8 +238,12 @@
    there's a mouse, go below it rather than under its "Live" pill. The split layout has no floating header.
    Keep the media query in step with the split variant above. */
 .maplibregl-ctrl-top-right { top: calc(max(12px, env(safe-area-inset-top)) + 40px); }
-@media (min-width: 768px), (orientation: landscape) and (max-height: 520px) {
+@media (min-width: 1024px), (orientation: landscape) and (max-height: 520px) {
   .maplibregl-ctrl-top-right { top: 0; }
+}
+/* A finger needs 44px: below a desktop's width the zoom buttons, where they show, grow to it. */
+@media (max-width: 1023px) {
+  .maplibregl-ctrl-group button { width: 44px; height: 44px; }
 }
 .maplibregl-ctrl-attrib a { color: var(--color-ink-2); }
 
