@@ -4408,6 +4408,46 @@
         "type": "function"
       },
       {
+        "description": "Answer a question about the area around a listing from Google Maps: the closest place of a kind, the time to walk, drive or take transit somewhere, or the weather on a day. Say only what the reply says.",
+        "name": "ask_maps",
+        "parameters": {
+          "properties": {
+            "day": {
+              "description": "For weather: the day in the renter's words, like 'Saturday'",
+              "type": "string"
+            },
+            "kind": {
+              "description": "nearby: the closest place of a kind; walk, drive or transit: the time to get somewhere; weather: the forecast for a day",
+              "enum": [
+                "nearby",
+                "walk",
+                "drive",
+                "transit",
+                "weather"
+              ],
+              "type": "string"
+            },
+            "listing_ref": {
+              "description": "Which listing: its number on the list or its street; leave it out for the one in focus",
+              "type": "string"
+            },
+            "to": {
+              "description": "For walk, drive or transit: where to, in the renter's words",
+              "type": "string"
+            },
+            "what": {
+              "description": "For nearby: what to find, in the renter's words, like 'a grocery store', 'Shoppers' or 'a gym'",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        "type": "function"
+      },
+      {
         "description": "Record which listings to call after the renter hangs up, their extra questions and when they can view. Nothing dials until the session ends. Read the addresses back from the reply.",
         "name": "call_listings",
         "parameters": {
