@@ -365,6 +365,18 @@ async def test_with_every_window_passed_it_says_not_to_book():
     assert "have all passed, so don't book" in reply and ctx.booked is None
 
 
+async def test_the_caller_says_a_confirm_link_is_coming_only_when_the_call_has_a_number_to_text():
+    """O-08b: the line is said once at booking, and only on a call whose dialled number gets the link."""
+    ctx = await _ctx()
+    plain = await _say(ctx, "book_viewing", {"slot": "Saturday at 1 pm"})
+    assert "text you a link" not in plain
+    ctx = await _ctx()
+    ctx.brief.texts_confirm = True
+    told = await _say(ctx, "book_viewing", {"slot": "Saturday at 1 pm"})
+    assert told.startswith("Booked for Saturday at 1 pm.") and told.endswith(
+        'Then say once: "I\'ll text you a link to confirm, and you\'ll get a calendar invite."')
+
+
 async def test_book_viewing_books_only_inside_the_renters_windows():
     ctx = await _ctx()
     assert "outside the renter's times" in await _say(ctx, "book_viewing", {"slot": "Tuesday at 7 pm"})
