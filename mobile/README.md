@@ -4,12 +4,16 @@ The renter's side of Landline after the call, on their phone (U-13). Sign in wit
 Landline from. Home then has a Call Landline button (the phone's own dialer) and the latest results: the
 places Landline called in your last session. My listings has every place it called, with how the call went,
 the viewing it booked, what to watch out for and each fact the agent gave. Tap a fact to see the agent's
-words and when they said them, as on the web's `/me`. A push when the calls finish and My search come next
-(U-13c–d). It's a thin client: it calls the same API as the web, directly.
+words and when they said them, as on the web's `/me`. My search edits the search Landline keeps (budget,
+bedrooms, areas, pets, must-haves, move-in date, email), what it may tell listing agents, and whether the
+next call starts from it: the same form, checks and words as `/me`'s, saved only where something changed. The
+move-in date is typed as YYYY-MM-DD, since a date picker would need a package. A push when the calls finish
+comes next (U-13c). It's a thin client: it calls the same API as the web, directly.
 
 Expo SDK 58 with Expo Router, and Clerk (`@clerk/expo`) for phone sign-in with an SMS code. The app uses
 the same Clerk app as the web (U-11), so the API checks the same session tokens (`GET /api/me`, U-11a, and
-`GET /api/me/listings`, U-12c). Pull down on either screen to reload it.
+`GET /api/me/listings`, U-12c, and `GET` and `PATCH /api/me/profile`, U-12a). Pull down on Home or My
+listings to reload it.
 
 ## Run it
 
