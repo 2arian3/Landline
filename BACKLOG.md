@@ -71,7 +71,7 @@ Landline is one of ten finalists at Build North's Demo Day: Thursday 29 October,
 | To do | A-13a | Remember which number each listing call dialled, and tell agents they can call back | P0, early | X-04 | `calls.to_e164` is filled and the voicemail says "You can call us back at this number" | [#241](https://github.com/2arian3/Landline/issues/241) |
 | To do | A-13b | Send a listing agent who calls back to the Caller for their listing | P0 | A-13a | a voicemail, then a call back from that phone, reaches the right Caller | [#241](https://github.com/2arian3/Landline/issues/241) |
 | To do | A-13c | Text the renter what a callback learned | P0 | A-13b | the renter gets one update SMS | [#241](https://github.com/2arian3/Landline/issues/241) |
-| To do | A-14 | `listing_status`: answer "What happened with Markham?" | P0 | – | a second call gets that listing's facts and viewing in one reply | [#242](https://github.com/2arian3/Landline/issues/242) |
+| Built (#303, contract #299): the VM check, a second call from the same phone | A-14 | `listing_status`: answer "What happened with Markham?" | P0 | – | a second call gets that listing's facts and viewing in one reply | [#242](https://github.com/2arian3/Landline/issues/242) |
 | To do | A-13d | Write down who answers which call | P1 | A-13b | the table is in `docs/ARCHITECTURE.md` | [#241](https://github.com/2arian3/Landline/issues/241) |
 | Built (#255) | A-12a | Audio converters between our formats and Gemini's | P1 | – | the round-trip tests pass | [#243](https://github.com/2arian3/Landline/issues/243) |
 | In progress | A-12b | The Gemini Live adapter, in text first | P1 | – | a scripted mock call passes on Gemini | [#243](https://github.com/2arian3/Landline/issues/243) |
