@@ -104,6 +104,8 @@ class ListingStatus(BaseModel):
     from what those calls stored."""
     listing_ref: str = Field(description="The listing as the renter named it: its street, its number on the "
                                          "list, or words about it, like 'the one with the balcony'")
+    text_rest: bool | None = Field(None, description="True only after the renter said yes to having the rest "
+                                                     "texted to them")
 
 
 class RememberMe(BaseModel):

@@ -4522,6 +4522,10 @@
             "listing_ref": {
               "description": "The listing as the renter named it: its street, its number on the list, or words about it, like 'the one with the balcony'",
               "type": "string"
+            },
+            "text_rest": {
+              "description": "True only after the renter said yes to having the rest texted to them",
+              "type": "boolean"
             }
           },
           "required": [
