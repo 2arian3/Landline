@@ -5,6 +5,8 @@
   report   print coverage for a JSONL file
   light    the light estimate (D-07): floor and light words, photo brightness; --load updates Postgres
   geo      neighbourhoods, their neighbours and the nearest subway station (D-05); --load updates Postgres
+  maps     Google Maps walking minutes to the TTC (D-10a); --load updates Postgres. Skips without
+           GOOGLE_MAPS_API_KEY. Run it after geo, which resets the walk to the straight-line estimate
 """
 from __future__ import annotations
 
@@ -50,12 +52,18 @@ def main(argv: list[str] | None = None) -> int:
     gp = sub.add_parser("geo", help="neighbourhood and nearest station for every listing")
     gp.add_argument("--load", action="store_true", help="load and tag in $DATABASE_URL (otherwise a dry run)")
 
+    mp = sub.add_parser("maps", help="Google Maps walking minutes to the TTC (needs GOOGLE_MAPS_API_KEY)")
+    mp.add_argument("--load", action="store_true", help="update $DATABASE_URL (otherwise print what changes)")
+    mp.add_argument("--limit", type=int, default=0, help="only the first N active listings (0: all)")
+
     args = parser.parse_args(argv)
 
     if args.cmd == "light":
         return _light(args)
     if args.cmd == "geo":
         return _geo(args)
+    if args.cmd == "maps":
+        return _maps(args)
 
     if args.cmd == "report":
         print(stages.report(stages.read_jsonl(args.path)))
@@ -165,6 +173,34 @@ def _geo(args) -> int:
 
     with psycopg.connect(url) as conn:
         print(geo.report(geo.load(conn, hoods, station_rows)))
+    return 0
+
+
+def _maps(args) -> int:
+    """Google's walking minutes for every active listing; answers are cached, so a rerun only pays for what's
+    new. Without a key, a skip line and nothing changes."""
+    from pipeline import geo, maps
+
+    client = maps.from_env()
+    if client is None:
+        print(maps.SKIP)
+        return 0
+    url = os.getenv("DATABASE_URL")
+    if not url:
+        print("Set DATABASE_URL: the stage reads the active listings from it.", file=sys.stderr)
+        client.close()
+        return 2
+    import psycopg
+
+    try:
+        with psycopg.connect(url) as conn:
+            print(maps.report(maps.run(conn, client, geo.stations(), load=args.load, limit=args.limit)))
+    except maps.MapsError as e:
+        print(f"maps: stopped, nothing loaded ({client.requests} requests, {client.elements} elements "
+              f"billed before it; those are cached): {e}", file=sys.stderr)
+        return 1
+    finally:
+        client.close()
     return 0
 
 
