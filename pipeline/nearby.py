@@ -50,7 +50,8 @@ def nearest(client: Any, kind: str, lat: float, lng: float,
         body = {"includedTypes": list(KINDS[kind]), "maxResultCount": 1, "rankPreference": "DISTANCE",
                 "locationRestriction": {"circle": {"center": {"latitude": lat, "longitude": lng},
                                                    "radius": RADIUS_M}}}
-        hit = {"at": today().isoformat(), "place": _first(client.post(SEARCH_NEARBY, body, FIELD_MASK))}
+        hit = {"at": today().isoformat(),
+               "place": _first(client.post(SEARCH_NEARBY, body, FIELD_MASK, quota="nearby"))}
         client.places_cache.put(key, hit)
     found = hit.get("place")
     return Place(found["name"], found["lat"], found["lng"], hit["at"]) if found else None
@@ -108,11 +109,19 @@ def run(conn: Any, client: Any, listings: Iterable[tuple[str, float, float]], lo
     With `load`, each listing's four fields are written (and cleared where nothing is close) in one
     transaction, once every answer is in, so no transaction stays open across requests. The fetch date is the
     client's day unless `today` says otherwise. Returns counts for the stage's report."""
+    from pipeline.maps import MapsError, Stopped
+
     today = today or (lambda: date.fromisoformat(client.today()))
-    counts = {"listings": 0, "grocery": 0, "pharmacy": 0, "neither": 0}
+    counts = {"listings": 0, "grocery": 0, "pharmacy": 0, "neither": 0, "pending": 0}
     rows = []
-    for listing_id, lat, lng in listings:
-        near = find(client, lat, lng, today)
+    todo = list(listings)
+    stopped: MapsError | None = None
+    for k, (listing_id, lat, lng) in enumerate(todo):
+        try:
+            near = find(client, lat, lng, today)
+        except MapsError as e:   # a give-up: write the listings that are done, and leave the rest pending
+            stopped, counts["pending"] = e, len(todo) - k
+            break
         counts["listings"] += 1
         for kind, n in near.items():
             counts[kind] += n is not None
@@ -122,11 +131,14 @@ def run(conn: Any, client: Any, listings: Iterable[tuple[str, float, float]], lo
     if load and rows:
         with conn.transaction(), conn.cursor() as cur:
             cur.executemany(UPDATE, rows)
+    if stopped is not None:
+        raise Stopped(stopped, counts, [lid for lid, _, _ in todo[len(rows):]])
     return counts
 
 
 def report(c: dict) -> str:
     n = c["listings"] or 1
+    pending = f"; {c['pending']} pending, rerun to finish" if c.get("pending") else ""
     return (f"nearby: {c['listings']} listings; a grocery store within 1.5 km for {c['grocery']} "
             f"({c['grocery'] / n:.0%}), a pharmacy for {c['pharmacy']} ({c['pharmacy'] / n:.0%}), "
-            f"neither for {c['neither']}")
+            f"neither for {c['neither']}{pending}")
