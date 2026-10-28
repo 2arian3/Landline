@@ -649,3 +649,22 @@ async def test_a_callback_whose_stream_never_comes_ends_failed_and_is_put_down(m
     dial = replace(_dial(), callback=True, twilio_sid="CA5")
     result = await asyncio.wait_for(runner.place(dial, _nothing), 2)
     assert result.end_reason == "failed" and twilio_api.created == [] and twilio_api.hung_up == ["CA5"]
+
+
+@pytest.mark.parametrize("trouble", ["raises", "slow", "refused"])
+def test_a_callback_that_cant_start_hands_the_call_to_the_concierge(monkeypatch, trouble):
+    monkeypatch.setattr(callbacks, "START_S", 0.05)
+
+    async def callback(missed, phone, twilio_sid):
+        if trouble == "raises":
+            raise RuntimeError("the database is down")
+        if trouble == "slow":
+            await asyncio.sleep(5)
+        return None   # refused: no runner, or the session said no
+
+    with _client() as c:
+        _session_in_app(c)
+        _missed(monkeypatch, [("t:1", "1 Dial St")])
+        c.app.state.dispatcher.callback = callback
+        r = _post(c, "/twiml/renter", {"CallSid": "CA9", "From": AGENT, "To": OURS})
+        assert "wss://landline.test/twilio/media" in r.text and "outbound" not in r.text

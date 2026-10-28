@@ -66,11 +66,12 @@ async def _done(rt: SessionRuntime, sid: str = SID, listing_ids=("t:1", "t:2")) 
     return call_ids
 
 
-def _row(call_id: str, listing_id: str, end_reason: str | None, session_id: str = SID) -> CallRow:
+def _row(call_id: str, listing_id: str, end_reason: str | None, session_id: str = SID, *,
+         answered: bool = False, to: str = AGENT) -> CallRow:
     return CallRow(call_id=call_id, session_id=session_id, listing_id=listing_id, role="listing",
                    transport="voice", twilio_sid=None, state="ended" if end_reason else "live",
-                   end_reason=end_reason, created_at=NOW, answered_at=None,
-                   ended_at=NOW if end_reason else None, deadline_at=None, attempt=1, to_e164=AGENT)
+                   end_reason=end_reason, created_at=NOW, answered_at=NOW if answered else None,
+                   ended_at=NOW if end_reason else None, deadline_at=None, attempt=1, to_e164=to)
 
 
 class FakeCalls:
@@ -122,7 +123,22 @@ async def test_voicemail_no_answer_and_busy_all_count_as_missed(reason):
 async def test_a_number_whose_latest_call_reached_someone_or_is_still_on_is_not_a_callback(reason):
     rt = SessionRuntime(_catalogue())
     c1, _ = await _done(rt)
-    assert await lookup(_with_calls(rt, FakeCalls([_row(c1, "t:1", reason)])), AGENT, NOW) == []
+    reached = _row(c1, "t:1", reason, answered=True)
+    assert await lookup(_with_calls(rt, FakeCalls([reached])), AGENT, NOW) == []
+
+
+async def test_a_callback_that_dropped_before_anyone_spoke_still_leaves_the_listing_missed():
+    rt = SessionRuntime(_catalogue())
+    await _done(rt)
+    dropped = _row("c_dropped001", "t:1", "failed")   # never answered: its stream never came
+    assert [m.listing_id for m in await lookup(_with_calls(rt, FakeCalls([dropped])), AGENT, NOW)] == ["t:1"]
+
+
+async def test_a_renter_calling_about_their_own_sessions_calls_is_the_renter():
+    rt = SessionRuntime(_catalogue())
+    c1, _ = await _done(rt)   # the renter is RENTER; in a rehearsal their phone was dialled as an agent too
+    rung = _row(c1, "t:1", "no_answer", to=RENTER)
+    assert await lookup(_with_calls(rt, FakeCalls([rung])), RENTER, NOW) == []
 
 
 async def test_an_unknown_number_a_renter_and_a_session_gone_with_a_restart_are_not_callbacks():
@@ -182,6 +198,18 @@ def test_the_agent_picks_by_key_or_by_saying_the_address():
                                                 ("", "the other one"), ("", "Street")])
 def test_no_key_a_wrong_key_or_words_naming_none_pick_nothing(digits, speech):
     assert pick(_choices(), digits=digits, speech=speech) is None
+
+
+@pytest.mark.parametrize("said", ["two", "Two.", "number 2", "2", "press two"])
+def test_a_key_said_instead_of_pressed_is_the_key_not_a_house_number(said):
+    choices = [Missed("c_1", SID, "t:1", "2 Bloor St"), Missed("c_2", SID, "t:2", "45 King St")]
+    assert pick(choices, speech=said) is choices[1]
+    assert pick(choices, speech="45") is choices[1] and pick(choices, speech="2 Bloor") is choices[0]
+
+
+def test_two_units_in_one_building_are_read_out_with_their_units():
+    assert callbacks._place("88 Bloor St E", "unit 4") == "88 Bloor St E, unit 4"
+    assert callbacks._place("88 Bloor St E", None) == "88 Bloor St E"
 
 
 def test_two_addresses_on_one_street_are_told_apart_by_the_number_or_not_at_all():
@@ -292,9 +320,26 @@ async def test_a_callback_nothing_here_can_answer_goes_to_the_concierge():
     assert await d.callback(Missed("c_x", SID, "t:3", "12 Dial St"), AGENT, "CA1") is None   # not in the plan
 
 
+async def test_a_callback_whose_line_never_came_up_ends_without_touching_the_card():
+    class Drops(AnsweringRunner):
+        async def place(self, dial, report):
+            return CallResult("failed")   # the stream never came: never live
+
+    rt = SessionRuntime(_catalogue())
+    c1, _ = await _done(rt)
+    d = _dispatcher(rt, Drops())
+    cid = await d.callback(Missed(c1, SID, "t:1", "412 Markham St"), AGENT, "CA1")
+    await d.idle()
+    view = rt.get(SID)
+    back = next(c for c in view.calls if c.call_id == cid)
+    assert (back.state, back.outcome) == ("ended", None)   # ended once, with no outcome of its own
+    assert rt.state(SID).outcomes["t:1"].call_id == c1     # the card still says what the missed call did
+
+
 async def test_a_callback_that_runs_past_its_deadline_ends_once_as_timeout():
     class Hangs(AnsweringRunner):
         async def place(self, dial, report):
+            await report("live")
             await asyncio.sleep(60)
 
     rt = SessionRuntime(_catalogue())
@@ -327,9 +372,11 @@ async def db(schema):
 
 
 async def _dialled(db, call_id: str, listing_id: str, reason: str | None, *, days_ago: float = 0,
-                   to: str = AGENT) -> None:
+                   to: str = AGENT, answered: bool = False) -> None:
     await db.calls.create(call_id, session_id=SID, role="listing", transport="voice", state="queued",
                           listing_id=listing_id, to_e164=to)
+    if answered:
+        await db.calls.set_state(call_id, "live", answered=True)
     if reason:
         await db.calls.finalize(call_id, reason)
     async with db.transaction() as conn:
@@ -344,8 +391,19 @@ async def test_on_postgres_only_a_missed_call_from_the_last_two_days_counts(db):
     await _dialled(db, "c_pg00000001", "t:1", "voicemail", days_ago=0.5)          # missed: a callback
     await _dialled(db, "c_pg00000002", "t:2", "no_answer", days_ago=3)            # older than two days
     await _dialled(db, "c_pg00000003", "t:3", "voicemail", days_ago=1)            # missed, then reached:
-    await _dialled(db, "c_pg00000004", "t:3", "done", days_ago=0.2)               # the latest call counts
+    await _dialled(db, "c_pg00000004", "t:3", "done", days_ago=0.2, answered=True)   # the latest counts
     await _dialled(db, "c_pg00000005", "t:2", "voicemail", to="+16475550102")     # another number
     assert await lookup(rt, AGENT, now) == [Missed("c_pg00000001", SID, "t:1", "412 Markham St")]
     assert await lookup(rt, "+16475550199", now) == []                             # a number never called
     assert (await db.calls.get("c_pg00000005")).to_e164 == "+16475550102"
+
+
+async def test_on_postgres_a_dropped_callback_keeps_the_listing_missed_and_the_renter_is_the_renter(db):
+    rt = SessionRuntime(_catalogue(), db)
+    await _done(rt, listing_ids=("t:1", "t:2"))
+    now = datetime.now(UTC)
+    await _dialled(db, "c_pg00000011", "t:1", "voicemail", days_ago=0.5)
+    await _dialled(db, "c_pg00000012", "t:1", "failed", days_ago=0.1)            # its callback's line dropped
+    await _dialled(db, "c_pg00000013", "t:2", "no_answer", to=RENTER)            # the renter's phone, rung
+    assert [m.listing_id for m in await lookup(rt, AGENT, now)] == ["t:1"]       # still a callback
+    assert await lookup(rt, RENTER, now) == []                                   # the renter: the Concierge
