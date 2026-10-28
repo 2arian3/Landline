@@ -3,12 +3,17 @@
 Twilio frames are G.711 μ-law at 8 kHz and the browser is PCM16 at 24 kHz. Gemini Live takes PCM16
 (native 16 kHz, other rates if the MIME type says so) and always speaks PCM16 at 24 kHz. The bridge
 keeps seeing the transport's own format; this module converts at the session edge. `audioop` is in
-the standard library on the 3.12 we run.
+the standard library up to Python 3.12 and was removed in 3.13; the VM runs 3.14. It's imported only
+if it's there, so the API still boots without it, and a Gemini call says plainly what's missing.
 """
 from __future__ import annotations
 
-import audioop
 import base64
+
+try:
+    import audioop
+except ModuleNotFoundError:   # Python 3.13+: install audioop-lts to use Gemini Live
+    audioop = None
 
 GEMINI_IN_RATE = 16000
 GEMINI_OUT_RATE = 24000
@@ -20,6 +25,8 @@ class Transcoder:
     """One call's audio, both ways. Rate conversion keeps its state so chunk edges don't click."""
 
     def __init__(self, audio_format: dict) -> None:
+        if audioop is None:
+            raise RuntimeError("Gemini Live audio needs audioop: Python 3.12, or the audioop-lts package")
         self.format = audio_format
         self._to_state = None
         self._from_state = None
