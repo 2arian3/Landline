@@ -14,6 +14,7 @@ export interface MyListing {
   listing_id: string;
   address: string;
   unit_label?: string | null;
+  monthly_cost?: number | null; // what it costs a month in all, from the catalogue
   session_id: string;
   call_id: string;
   called_at: string;

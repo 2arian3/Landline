@@ -259,7 +259,7 @@ def test_my_listings_shows_only_the_signed_in_renters_calls(url, clerk, other_re
         got = {x["listing_id"]: x for x in mine(PHONE).json()}
         assert set(got) == {"t:1", "t:2"}
         booked, unanswered = got["t:1"], got["t:2"]
-        assert (booked["address"], booked["ended"]) == ("1 Admin St", "talked")
+        assert (booked["address"], booked["ended"], booked["monthly_cost"]) == ("1 Admin St", "talked", 2100)
         assert booked["call_id"] == LISTING_CALLS[0]
         assert [(f["field"], f["value"], f["quote"]) for f in booked["facts"]] == [
             ("parking_cost", "$180 a month per spot", "Parking is $180 a month.")]

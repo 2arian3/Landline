@@ -13,7 +13,8 @@ POST /api/me {phone} is the hackathon's way in, where the number is the login. W
 answers 401, since a typed number proves nothing; without it (local dev, CI) it works as before.
 
 GET /api/me/listings (U-12c), signed in the same way: every listing Landline called for the renter, newest
-first, with how the call ended, the facts heard in the agent's own words, red flags and the viewing.
+first, with what it costs a month, how the call ended, the facts heard in the agent's own words, red flags
+and the viewing.
 
 GET and PATCH /api/me/profile (U-12a), signed in the same way: the renter's saved search, email, what the
 Caller may tell listing agents, and whether the next call starts from the saved search. A PATCH changes only
@@ -70,6 +71,7 @@ class MyListing(BaseModel):
     listing_id: str
     address: str
     unit_label: str | None = None
+    monthly_cost: int | None = None   # what it costs a month in all, from the catalogue (code computes it)
     session_id: str
     call_id: str
     called_at: datetime
@@ -139,7 +141,8 @@ def listings(sessions: list[dict[str, Any]], calls: list[dict[str, Any]],
         card = next((x for x in board if x.get("listing_id") == lid), {})
         at = place(lid)
         out.append(MyListing(
-            listing_id=lid, address=at.address, unit_label=at.unit_label, session_id=c["session_id"],
+            listing_id=lid, address=at.address, unit_label=at.unit_label, monthly_cost=at.monthly_cost,
+            session_id=c["session_id"],
             call_id=c["call_id"], called_at=c["answered_at"] or c["created_at"], ended=_ended(c, outcome),
             facts=[HeardFact(field=f["field"], value=f["value"], quote=f["quote"], at=f.get("at"))
                    for f in outcome.get("facts") or []],
