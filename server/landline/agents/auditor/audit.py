@@ -297,7 +297,9 @@ def _amount_elsewhere(quote: str, others: Sequence[str], landlord: Sequence[str]
 
 def _readback_turn(turns: Sequence[Turn], turn: Turn, field: str, quote: str) -> Turn | None:
     """The agent's read-back just before a bare yes, when every amount in it was also said by the landlord.
-    That turn is the fact's source. A number only the agent said is still the agent's words (PORTING #15)."""
+    That turn is the fact's source. A number only the agent said is still the agent's words (PORTING #15).
+    A short yes that says every amount itself ("Yes, still $150" to a confirm question, O-09b) is its own
+    source, so the fact keeps the landlord's words."""
     if field not in MONEY_FIELDS or bare(quote) != "yes":
         return None
     before = [t for t in turns if t.idx < turn.idx]
@@ -306,7 +308,7 @@ def _readback_turn(turns: Sequence[Turn], turn: Turn, field: str, quote: str) ->
     asked = before[-1]
     need = set(amounts(asked.text))
     said = {n for t in turns if t.speaker == LANDLORD for n in amounts(t.text)}
-    if not need or not need <= said:
+    if not need or not need <= said or need <= set(amounts(quote)):
         return None
     return asked
 
