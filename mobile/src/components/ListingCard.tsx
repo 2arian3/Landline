@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import type { HeardFact, MyListing } from "@/lib/api";
-import { factLine, VIEWING, WENT, when } from "@/lib/heard";
+import { factLine, viewingLine, WENT, when } from "@/lib/heard";
 import { color, radius } from "@/lib/theme";
 
 /** One listing Landline called, as the web's /me shows it: how the call went, the viewing, what to watch out
@@ -20,7 +20,7 @@ export function ListingCard({ listing: x }: { listing: MyListing }) {
       <Text style={styles.meta}>Called {when(x.called_at)}</Text>
       {x.viewing ? (
         <Text style={[styles.line, { color: x.viewing.status === "declined" ? color.dead : color.real }]}>
-          {VIEWING[x.viewing.status] ?? `Viewing ${x.viewing.status}`}: {x.viewing.slot_text} ({when(x.viewing.starts_at)})
+          {viewingLine(x.viewing)}
         </Text>
       ) : null}
       {x.red_flags.map((f) => (
