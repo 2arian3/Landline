@@ -110,7 +110,8 @@ export function ListingCard({
       </span>
 
       <span className="min-w-0">
-        <span className="flex items-start justify-between gap-2">
+        {/* Room for the "Listed $2,200 +$180" line from the start, so a card never grows when a call finds a fee. */}
+        <span className="flex min-h-[calc(var(--text-price--line-height)_+_2px_+_var(--text-meta--line-height))] items-start justify-between gap-2">
           <Money rent={card.rent} monthly={card.monthly_cost} />
           {moveWord && (
             <span className="mt-1 shrink-0 text-meta font-label text-ink-2 tnum" aria-hidden>
@@ -122,16 +123,17 @@ export function ListingCard({
           {card.address}
         </span>
         <span className="block truncate text-meta text-ink-3">{specLine(card)}</span>
+        {/* The evidence wraps to a second line rather than ending in "…". */}
         {card.reasons.length > 0 && (
-          <span className="mt-1 block truncate text-meta text-ink-2">{card.reasons.join(" · ")}</span>
+          <span className="mt-1 line-clamp-2 text-meta text-ink-2">{card.reasons.join(" · ")}</span>
         )}
-        {flag && <span className="block truncate text-meta text-dead">Red flag: {lower(flag)}</span>}
+        {flag && <span className="line-clamp-2 text-meta text-dead">Red flag: {lower(flag)}</span>}
         {heard && (
-          <span className="block truncate text-meta text-ink-2">
+          <span className="line-clamp-2 text-meta text-ink-2">
             <span className="text-ink-3">{heard.speaker}:</span> {lower(heard.value)}
           </span>
         )}
-        {card.watch_out && <span className="block truncate text-meta text-dead">{card.watch_out}</span>}
+        {card.watch_out && <span className="line-clamp-2 text-meta text-dead">{card.watch_out}</span>}
         {card.reaction && (
           <span className="block truncate text-meta text-ink">
             <span className="font-label">You:</span> {lower(card.reaction)}
