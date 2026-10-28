@@ -440,7 +440,7 @@ def _caller(state: Any, settings: Settings, extractor: Any) -> Converse:
         log.exception("TRANSPORT=voice but the Caller can't load: answered calls will end failed")
         return no_caller
     return PhoneCaller(state.runtime, lambda key, cfg: state.connect_higgs(key, cfg),
-                       settings.boson_api_key or "", voice=settings.higgs_voice_renter,
+                       settings.voice_api_key() or "", voice=settings.live_voice(),
                        extractor=extractor, record_audio=settings.record_audio,
                        clips=getattr(state, "clips", None))
 

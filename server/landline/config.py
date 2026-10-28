@@ -28,9 +28,14 @@ class Settings:
     # Judge sessions one address may start per window. A venue's Wi-Fi puts every judge on one address.
     judge_starts_per_ip: int = 3
     judge_start_window_s: int = 600
-    # The renter's phone call (A-02, A-04). Without the key the number answers "not taking calls";
-    # without the token every Twilio webhook is refused.
+    # The renter's phone call (A-02, A-04). Without the voice provider's key the number answers
+    # "not taking calls"; without the token every Twilio webhook is refused.
     boson_api_key: str | None = None
+    # higgs (Boson Realtime) or gemini (Gemini Live). Higgs stays the default until a spike accepts Gemini.
+    voice_provider: str = "higgs"
+    gemini_api_key: str | None = None
+    gemini_live_model: str = "gemini-3.8-live"
+    gemini_live_voice: str = "Aoede"
     twilio_auth_token: str | None = None
     # Texting the renter the board link needs the account SID too; it goes out from the number they
     # dialled, or TWILIO_PHONE_NUMBER when that isn't known.
@@ -78,6 +83,10 @@ class Settings:
             judge_starts_per_ip=int(os.getenv("JUDGE_STARTS_PER_IP") or 3),
             judge_start_window_s=int(os.getenv("JUDGE_START_WINDOW_S") or 600),
             boson_api_key=os.getenv("BOSON_API_KEY") or None,
+            voice_provider=(os.getenv("VOICE_PROVIDER") or "higgs").strip().lower() or "higgs",
+            gemini_api_key=os.getenv("GEMINI_API_KEY") or None,
+            gemini_live_model=(os.getenv("GEMINI_LIVE_MODEL") or "gemini-3.8-live").strip(),
+            gemini_live_voice=(os.getenv("GEMINI_LIVE_VOICE") or "Aoede").strip(),
             twilio_auth_token=os.getenv("TWILIO_AUTH_TOKEN") or None,
             twilio_account_sid=os.getenv("TWILIO_ACCOUNT_SID") or None,
             twilio_phone_number=os.getenv("TWILIO_PHONE_NUMBER") or None,
@@ -94,6 +103,20 @@ class Settings:
             clerk_secret_key=os.getenv("CLERK_SECRET_KEY") or None,
             clerk_jwt_key=os.getenv("CLERK_JWT_KEY") or None,
         )
+
+    def voice_api_key(self) -> str | None:
+        """The key the Concierge and Caller dial with. Avatar clips still use `boson_api_key`."""
+        if self.voice_provider == "gemini":
+            return self.gemini_api_key
+        if self.voice_provider == "higgs":
+            return self.boson_api_key
+        return None
+
+    def live_voice(self) -> str:
+        """The preset the live session is opened with. Gemini rejects Higgs's `default`."""
+        if self.voice_provider == "gemini":
+            return self.gemini_live_voice
+        return self.higgs_voice_renter
 
     def allowed_origins(self) -> list[str]:
         # An Origin header never ends in "/", so a pasted URL with one would never match.
