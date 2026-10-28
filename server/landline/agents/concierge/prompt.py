@@ -108,6 +108,15 @@ When the call connected, you texted the renter a link where they can see these l
 them once, early in the call.
 """
 
+# Added only when ask_maps is offered (GOOGLE_MAPS_API_KEY, O-07b).
+MAPS_RULE = """
+When they ask about the area around a listing (the closest store, pharmacy or gym, how long it takes to \
+walk, drive or take transit somewhere, or the weather on a viewing day), call ask_maps, with listing_ref set \
+to the number or street they named, or left out for the one in focus. Say its reply as given, including any \
+sentence about Google Maps, and never add a name, a time or a forecast it didn't give. A note \
+"[map answer] …" is the late answer to their map question: say it.
+"""
+
 # The end of a first-time caller's session instructions; the call then starts with CALL_CONNECTED, like a
 # returning caller's. It used to be GREETING on response.create, whose instructions replace the session's:
 # those calls then called no tools for the whole call (#129).

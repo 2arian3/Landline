@@ -73,6 +73,20 @@ class FocusArea(BaseModel):
     place: str = Field(description="A neighbourhood, intersection or landmark")
 
 
+class AskMaps(BaseModel):
+    """A question about the area around one listing, answered from Google Maps (O-07b). Words only: code
+    resolves the listing and its coordinates, and the answer's names and minutes come from Google."""
+    kind: Literal["nearby", "walk", "drive", "transit", "weather"] = Field(
+        description="nearby: the closest place of a kind; walk, drive or transit: the time to get somewhere; "
+                    "weather: the forecast for a day")
+    what: str | None = Field(None, description="For nearby: what to find, in the renter's words, like "
+                                                "'a grocery store', 'Shoppers' or 'a gym'")
+    to: str | None = Field(None, description="For walk, drive or transit: where to, in the renter's words")
+    listing_ref: str | None = Field(None, description="Which listing: its number on the list or its street; "
+                                                       "leave it out for the one in focus")
+    day: str | None = Field(None, description="For weather: the day in the renter's words, like 'Saturday'")
+
+
 class CallListings(BaseModel):
     listing_refs: list[str] | None = Field(
         None, max_length=5, description="Address words or rank numbers, at most 5; defaults to the top 3",
@@ -141,6 +155,12 @@ CONCIERGE_TOOLS: dict[str, tuple[type[BaseModel], str]] = {
     ),
     "focus_listing": (FocusListing, "Show one listing on the map, by address words or rank number."),
     "focus_area": (FocusArea, "Fly the map to a place."),
+    "ask_maps": (
+        AskMaps,
+        "Answer a question about the area around a listing from Google Maps: the closest place of a kind, "
+        "the time to walk, drive or take transit somewhere, or the weather on a day. Say only what the reply "
+        "says.",
+    ),
     "call_listings": (
         CallListings,
         "Record which listings to call after the renter hangs up, their extra questions and when they can "

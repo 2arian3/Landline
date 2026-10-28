@@ -14,7 +14,7 @@ import logging
 import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from functools import cache
 from typing import Any
 
@@ -35,6 +35,7 @@ from landline.contracts import (
 from landline.contracts.tools import (
     CONCIERGE_TOOLS,
     AnchorRef,
+    AskMaps,
     Availability,
     CallListings,
     FocusArea,
@@ -44,6 +45,7 @@ from landline.contracts.tools import (
     concierge_tools,
 )
 from landline.orchestrator import Refused, SessionRuntime, UnknownSession
+from landline.orchestrator.maps_mcp import DISCLOSURE, Nearby, Route, Weather
 from landline.orchestrator.places import load_stations
 from landline.scoring.reasons import to_station
 from landline.voice.dispatch import TORONTO, until_open
@@ -52,10 +54,21 @@ log = logging.getLogger(__name__)
 
 # remember_me / forget_me wait for profiles (O-05): until then there is nothing for them to change.
 DEFERRED = {"remember_me", "forget_me"}
-TOOLS: list[dict[str, Any]] = [t for t in concierge_tools() if t["name"] not in DEFERRED]
+# ask_maps (O-07b) is offered only when the runtime has Google's Maps MCP client (GOOGLE_MAPS_API_KEY).
+MAPS_TOOL = "ask_maps"
+TOOLS: list[dict[str, Any]] = [t for t in concierge_tools() if t["name"] not in DEFERRED | {MAPS_TOOL}]
+_ASK_MAPS = next(t for t in concierge_tools() if t["name"] == MAPS_TOOL)
+
+
+def offered(runtime: SessionRuntime) -> list[dict[str, Any]]:
+    """The tools for this runtime's calls: ask_maps only with a Maps client."""
+    return [*TOOLS, _ASK_MAPS] if getattr(runtime, "maps", None) is not None else TOOLS
 
 AREA_ZOOM = 14
 PLACE_WAIT_S = 2.5   # how long a turn waits on a place lookup; a slower one moves the map when it lands
+MAPS_WAIT_S = 2.5    # how long a turn waits on Google Maps; a slower answer comes between turns (O-07b)
+CHECKING_MAP = "Checking the map; tell the renter the answer comes in a moment."
+MAP_ANSWER = "[map answer]"   # the note a late ask_maps answer comes in, through the call's Line
 TO_CALL = 3   # call_listings without refs: the top three
 UNKNOWN = "Sorry, I can't do that yet."
 NOT_CAUGHT = "Sorry, I didn't catch that. Could you say it again?"
@@ -93,11 +106,18 @@ class ToolContext:
     # The agent's line just before the renter's latest, so a plain "Yes" answers it (#174): "Should I book
     # tomorrow at 10?" "Yes."
     agent_before: str | None = None
+    # ask_maps (O-07b): `text` texts the renter (a phone call's renter; None in the browser), `note` tells the
+    # Concierge between turns (the call's Line). Google's disclosure is said once a call, and only the latest
+    # ask's late answer is delivered.
+    text: Callable[[str], None] | None = None
+    note: Callable[[str], Awaitable[None]] | None = None
+    maps_disclosed: bool = False
+    maps_asks: int = 0
 
 
 async def handle(name: str, arguments: str, tool_call_id: str, ctx: ToolContext) -> str:
     """Runs one tool call from Higgs and returns what the Concierge should hear back."""
-    if name not in CONCIERGE_TOOLS or name in DEFERRED:
+    if name not in CONCIERGE_TOOLS or name in DEFERRED or (name == MAPS_TOOL and ctx.runtime.maps is None):
         log.warning("call %s: unknown tool %r", ctx.call_id, name)
         return UNKNOWN
     model, _ = CONCIERGE_TOOLS[name]
@@ -359,6 +379,145 @@ async def _show_area(ctx: ToolContext, meta: dict, place: str, lat: float, lng: 
     await ctx.runtime.emit(AreaFocused(**meta, label=place, lat=lat, lng=lng, zoom=AREA_ZOOM))
 
 
+# ── ask_maps (O-07b): the area around a listing, from Google's Maps MCP server ──────────────────────────────
+#
+# Option B on Google's terms (#275): Google's place is never put on our map. The answer is spoken, its names
+# and minutes only as Google gave them (hard rule 3); the first answer in a call starts with Google's
+# disclosure; a walking answer says Google's walking routes are in beta; and a phone caller is texted the
+# answer with its "Google Maps" source link and the full warning. The listing and its coordinates come from
+# the board and the catalogue, never from the model (hard rule 2). A slow answer doesn't hold the turn: after
+# MAPS_WAIT_S the reply says it's coming, and it arrives through the call's Line unless the call has ended or
+# a newer question replaced it.
+
+_BY = {"walk": ("WALK", "on foot"), "drive": ("DRIVE", "by car"), "transit": ("TRANSIT", "by transit")}
+_WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+
+
+@dataclass(frozen=True)
+class _Said:
+    """One answer: the words to speak, the text with its source for the renter's phone, and whether it gave
+    walking minutes."""
+    spoken: str
+    texted: str | None
+    walking: bool = False
+
+
+async def ask_maps(args: AskMaps, ctx: ToolContext, meta: dict) -> str:
+    maps = ctx.runtime.maps
+    if maps is None:
+        return UNKNOWN
+    if args.kind == "nearby" and not (args.what or "").strip():
+        return "Ask the renter what kind of place to look for."
+    if args.kind in _BY and not (args.to or "").strip():
+        return "Ask the renter where to."
+    view = ctx.runtime.get(ctx.session_id)
+    found = refs.match(args.listing_ref, view.board, view.focus_listing_id) if args.listing_ref else None
+    focused = next((c for c in view.board if c.listing_id == view.focus_listing_id), None)
+    card = found.card if found else focused
+    if card is None:
+        return _which(found) if found else "Which listing? Ask the renter for its number or street."
+    listing = ctx.runtime.catalogue.by_id.get(card.listing_id)
+    if listing is None or listing.lat is None or listing.lng is None:
+        return f"I don't have {card.address} on the map."
+    ctx.maps_asks += 1
+    ask = ctx.maps_asks
+    work = asyncio.ensure_future(_answer(maps, args, card.address, listing.lat, listing.lng))
+    done, _ = await asyncio.wait({work}, timeout=MAPS_WAIT_S)
+    if done:
+        return _deliver(ctx, work.result())
+    ctx.runtime.spawn(_deliver_late(ctx, ask, work))   # runtime-tracked: close() cancels it, idle() waits
+    return CHECKING_MAP
+
+
+async def _answer(maps: Any, args: AskMaps, address: str, lat: float, lng: float) -> _Said:
+    """Google's answer in words. Nothing but Google's names, minutes and summaries goes in it."""
+    if args.kind == "nearby":
+        what = (args.what or "").strip()
+        n: Nearby | None = await maps.nearby(lat, lng, what)
+        if n is None:
+            return _Said(f"I couldn't find {_a(what)} near {address} on Google Maps.", None)
+        walk = f"about {n.minutes} minutes' walk" if n.minutes is not None else None
+        if n.name and walk:
+            spoken = f"The closest {what} to {address} is {n.name}, {walk}."
+        elif n.name:
+            spoken = f"The closest {what} to {address} is {n.name}."
+        elif walk:
+            spoken = f"There's {_a(what)} {walk} from {address}."
+        else:
+            spoken = f"Google Maps shows {_a(what)} near {address}."
+        return _Said(spoken, _text(spoken, n.attribution, n.maps_url or n.attribution_url, n.warning),
+                     walking=n.minutes is not None)
+    if args.kind in _BY:
+        mode, by = _BY[args.kind]
+        to = (args.to or "").strip()
+        r: Route | None = await maps.route((lat, lng), to, mode)
+        if r is None:
+            return _Said(f"I couldn't get a time {by} to {to} from Google Maps.", None)
+        spoken = f"From {address}, {to} is about {r.minutes} minutes {by}."
+        texted = _text(spoken, r.attribution, r.attribution_url, r.warning)
+        return _Said(spoken, texted, walking=mode == "WALK")
+    day = _day(args.day, datetime.now(TORONTO).date())
+    w: Weather | None = await maps.weather(lat, lng, day)
+    named = (args.day or "today").strip()
+    if w is None:
+        return _Said(f"I couldn't get the forecast for {named} from Google Maps.", None)
+    spoken = f"{named[:1].upper()}{named[1:]} near {address}: {w.summary}"
+    return _Said(spoken, _text(spoken, w.attribution, w.attribution_url, None))
+
+
+def _deliver(ctx: ToolContext, said: _Said) -> str:
+    """The reply the Concierge speaks, with Google's disclosure on the first answer of the call; and the text
+    with the source link, when there's a renter's phone to send it to."""
+    spoken = said.spoken + (" Google says its walking routes are in beta." if said.walking else "")
+    if not ctx.maps_disclosed and said.texted is not None:
+        spoken, ctx.maps_disclosed = f"{DISCLOSURE}. {spoken}", True
+    if said.texted is not None and ctx.text is not None:
+        ctx.text(said.texted)
+        spoken += " I've texted you the Google Maps link."
+    return spoken
+
+
+async def _deliver_late(ctx: ToolContext, ask: int, work: asyncio.Future) -> None:
+    """A slow answer, delivered between turns, unless the call has ended or a newer question replaced it."""
+    try:
+        said = await work
+    except Exception:
+        log.exception("call %s: ask_maps failed", ctx.call_id)
+        return
+    open_ = ctx.runtime.has(ctx.session_id) and ctx.runtime.state(ctx.session_id).phase == "open"
+    if ctx.hang_up or ask != ctx.maps_asks or not open_:
+        log.info("call %s: a map answer came too late and was dropped", ctx.call_id)
+        return
+    reply = _deliver(ctx, said)
+    if ctx.note is not None:
+        await ctx.note(f"{MAP_ANSWER} {reply}")
+
+
+def _text(spoken: str, attribution: str, url: str | None, warning: str | None) -> str:
+    """What the renter is texted: the answer, then its source exactly as Google titles it, with the link,
+    and Google's walking warning when it has one."""
+    source = f"Source: {attribution}" + (f" {url}" if url else "")
+    return " ".join(x for x in (f"Landline: {spoken}", source, warning, f"{DISCLOSURE}.") if x)
+
+
+def _day(words: str | None, today: date) -> date:
+    """The day the renter named for a forecast: today, tomorrow or the coming weekday; today otherwise."""
+    t = (words or "").lower()
+    if "tomorrow" in t:
+        return today + timedelta(days=1)
+    for i, name in enumerate(_WEEKDAYS):
+        if name in t:
+            return today + timedelta(days=(i - today.weekday()) % 7)
+    return today
+
+
+def _a(what: str) -> str:
+    """"a grocery store", "an ATM", or a name as it is ("Shoppers")."""
+    if not what or what[:1].isupper():
+        return what
+    return f"{'an' if what[:1].lower() in 'aeiou' else 'a'} {what}"
+
+
 async def call_listings(args: CallListings, ctx: ToolContext, meta: dict) -> str:
     """Records the plan, or updates the one already recorded: what this call leaves out (the listings,
     the viewing times, the permission to book) stays as it was, and extra questions add up. The reply
@@ -602,6 +761,7 @@ HANDLERS: dict[str, Callable[[Any, ToolContext, dict], Awaitable[str]]] = {
     "give_feedback": give_feedback,
     "focus_listing": focus_listing,
     "focus_area": focus_area,
+    MAPS_TOOL: ask_maps,
     "call_listings": call_listings,
     "end_session": end_session,
 }
