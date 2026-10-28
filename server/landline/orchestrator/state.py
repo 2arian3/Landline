@@ -48,6 +48,7 @@ class SessionState(BaseModel):
     previous_results: str | None = None  # the last session's results, which this call opens with
     recalled: dict[str, Said] = Field(default_factory=dict)   # reactions from earlier calls, by listing
     opening: str | None = None           # what the Concierge remembers, ≤ 120 words
+    saved_search: str | None = None      # U-12d: the line for the saved search this call started from
     phase: Phase = "open"
     preferences: Preferences = Field(default_factory=Preferences)
     focus_listing_id: str | None = None

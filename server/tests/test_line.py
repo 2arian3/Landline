@@ -10,10 +10,18 @@ from fastapi.testclient import TestClient
 
 from landline.app import create_app
 from landline.config import Settings
-from landline.contracts import AnchorResolved, Listing, ListingFocused, SessionStarted
+from landline.contracts import (
+    AnchorResolved,
+    Listing,
+    ListingFocused,
+    PreferenceDelta,
+    PreferencesUpdated,
+    SessionStarted,
+)
 from landline.db.catalogue import Catalogue
 from landline.orchestrator import SessionRuntime
-from landline.voice.line import LOOKING, STALE_S, Item, Line, Lines, describe
+from landline.voice import bridge
+from landline.voice.line import BOARD, LOOKING, STALE_S, Item, Line, Lines, describe
 
 T0 = datetime(2026, 10, 24, tzinfo=UTC)
 CREATED = {"type": "response.created"}
@@ -244,3 +252,54 @@ def test_a_tap_on_the_board_reaches_a_browser_call():
             ws.close(1000)
         assert _taps(fake.sent) == [f"{LOOKING} 2 Test St: 1 bed, $2,402 a month"]
         assert fake.sent[-1] == {"type": "response.create"}
+
+
+# U-12d: a call that starts from the renter's saved search
+
+SAVED = "I've got your saved search: 1 bedroom under $2,500. Want to start there?"
+
+
+async def _saved_search_session(rt, sid):
+    await rt.start(SessionStarted(session_id=sid, at=T0, idem_key=f"{sid}:start", channel="phone",
+                                  caller_phone="+14165550100"))
+    await rt.emit(PreferencesUpdated(session_id=sid, at=T0, idem_key=f"{sid}:saved-search",
+                                     delta=PreferenceDelta(max_monthly=2500, min_beds=1)))
+
+
+async def test_a_saved_search_that_lands_after_the_greeting_reaches_the_concierge_once():
+    rt = SessionRuntime(Catalogue([_listing(1), _listing(2)], "test"))
+    lines = Lines(rt)
+    sid = "s_line000002"
+    sent = []
+
+    async def send(event):
+        sent.append(event)
+    await rt.start(SessionStarted(session_id=sid, at=T0, idem_key=f"{sid}:start", channel="phone",
+                                  caller_phone="+14165550100"))
+    lines.open(sid, send)
+    # A preference the Concierge set through its tool is said in the tool's reply: nothing queued.
+    await rt.emit(PreferencesUpdated(session_id=sid, at=T0, idem_key="tool1",
+                                     delta=PreferenceDelta(min_beds=1)))
+    await rt.idle()
+    assert _texts(sent) == []
+    await rt.emit(PreferencesUpdated(session_id=sid, at=T0, idem_key=f"{sid}:saved-search",
+                                     delta=PreferenceDelta(max_monthly=2500)))
+    await rt.idle()
+    assert _texts(sent) == [f"{BOARD} {SAVED}"]
+
+
+async def test_a_saved_search_already_on_the_map_goes_in_the_greeting_and_not_again():
+    rt = SessionRuntime(Catalogue([_listing(1), _listing(2)], "test"))
+    sid = "s_line000003"
+    await _saved_search_session(rt, sid)
+    saved = rt.state(sid).saved_search
+    assert saved == SAVED and rt.get(sid).agent_says == SAVED
+    _, start = bridge.opening()
+    note, create = bridge.with_saved_search(start, saved)
+    text = note["item"]["content"][0]["text"]
+    assert text == f"[The call just connected.] [their saved search is on the map] {SAVED}"
+    assert create == {"type": "response.create"}   # no response object (#129)
+    line, sent, _ = _line()
+    line.board_told = f"{BOARD} {saved}"           # what the bridge marks once the greeting carries it
+    await line.push(Item("board", f"{BOARD} {saved}", 100.0))
+    assert sent == []
