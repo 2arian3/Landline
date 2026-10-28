@@ -3,13 +3,20 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import type { HeardFact, MyListing } from "@/lib/api";
 import { factLine, viewingLine, WENT, when } from "@/lib/heard";
+import { money } from "@/lib/listings";
 import { color, radius } from "@/lib/theme";
 
-/** One listing Landline called, as the web's /me shows it: how the call went, the viewing, what to watch out
- *  for, and each fact the agent gave, with their own words a tap away. */
-export function ListingCard({ listing: x }: { listing: MyListing }) {
+/** One listing Landline called, as the web's /me shows it: what it costs a month, how the call went, the
+ *  viewing, what to watch out for, and each fact the agent gave, with their own words a tap away (shown
+ *  from the start with `quotesOpen`). */
+export function ListingCard({ listing: x, quotesOpen = false }: { listing: MyListing; quotesOpen?: boolean }) {
   return (
     <View style={styles.card}>
+      {x.monthly_cost != null ? (
+        <Text style={styles.money}>
+          {money(x.monthly_cost)}<Text style={styles.meta}>/mo</Text>
+        </Text>
+      ) : null}
       <View style={styles.top}>
         <Text style={styles.address}>
           {x.address}
@@ -28,7 +35,7 @@ export function ListingCard({ listing: x }: { listing: MyListing }) {
       ))}
       {x.facts.length ? (
         <View>
-          {x.facts.map((f, n) => <FactRow key={`${f.field}-${n}`} fact={f} />)}
+          {x.facts.map((f, n) => <FactRow key={`${f.field}-${n}`} fact={f} startOpen={quotesOpen} />)}
         </View>
       ) : null}
     </View>
@@ -36,8 +43,8 @@ export function ListingCard({ listing: x }: { listing: MyListing }) {
 }
 
 /** A heard fact. A tap shows its source: the agent's words, and when they said them. */
-function FactRow({ fact: f }: { fact: HeardFact }) {
-  const [open, setOpen] = useState(false);
+function FactRow({ fact: f, startOpen }: { fact: HeardFact; startOpen: boolean }) {
+  const [open, setOpen] = useState(startOpen);
   return (
     <Pressable
       accessibilityRole="button"
@@ -60,6 +67,7 @@ const styles = StyleSheet.create({
     backgroundColor: color.surface, borderRadius: radius.card, padding: 16, gap: 4,
     borderWidth: StyleSheet.hairlineWidth, borderColor: color.line,
   },
+  money: { fontSize: 22, fontWeight: "600", color: color.ink, fontVariant: ["tabular-nums"] },
   top: { flexDirection: "row", alignItems: "baseline", justifyContent: "space-between", gap: 12 },
   address: { flexShrink: 1, fontSize: 17, fontWeight: "600", color: color.ink },
   unit: { fontWeight: "400", color: color.ink2 },
