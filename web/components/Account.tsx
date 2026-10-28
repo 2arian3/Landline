@@ -7,6 +7,7 @@ import { duration, phoneLabel, type CallRow, type ChosenPlace, type SessionRow, 
 import { bedsLabel, heardLine, money } from "@/lib/format";
 import { WENT, factLine, viewingLine } from "@/lib/heard";
 import { isMeRefusal, loadMe, loadMyListings, loadSignedIn, type MeRefusal, type MyListing } from "@/lib/me";
+import { Money } from "./Money";
 import { MySearch } from "./MySearch";
 
 const PHONE_KEY = "landline-me-phone"; // this tab only: sessionStorage, never the URL
@@ -137,6 +138,9 @@ function PhoneSignIn() {
 
 /** Clerk's form in the page's look: no card of its own, the ink as the accent, the page's type and radius. */
 const CLERK_LOOK = {
+  // The development instance's orange strip reads at 3.0:1 and means nothing to a renter. "Secured by Clerk"
+  // stays. (Clerk 7 calls this `options`; it was `layout` before.)
+  options: { unsafe_disableDevelopmentModeWarnings: true },
   variables: {
     colorPrimary: "#1a1815",
     colorText: "#1a1815",
@@ -155,6 +159,9 @@ const CLERK_LOOK = {
     headerTitle: { display: "none" },
     headerSubtitle: { display: "none" },
     footer: { background: "transparent" },
+    // A thumb's height on a phone: Clerk's own are 35 px.
+    formFieldInput: { minHeight: "44px" },
+    formButtonPrimary: { minHeight: "44px" },
   },
 };
 
@@ -418,17 +425,35 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-/** One listing Landline called: how the call went, the viewing, red flags, and each fact with its source. */
+/**
+ * One listing Landline called: what it costs a month, first and biggest as on the board's cards, then how the
+ * call went, the viewing, red flags, and each fact with its source.
+ */
 function ListingItem({ listing: x }: { listing: MyListing }) {
+  const went = WENT[x.ended] ?? x.ended;
+  const unit = x.unit_label ? <span className="font-normal text-ink-2">, unit {x.unit_label}</span> : null;
   return (
     <li className={`${card} p-4`} style={hairline}>
-      <div className="flex items-baseline justify-between gap-3">
-        <p className="min-w-0 text-fact font-strong">
-          {x.address}
-          {x.unit_label ? <span className="font-normal text-ink-2">, unit {x.unit_label}</span> : null}
-        </p>
-        <p className="shrink-0 text-meta text-ink-3">{WENT[x.ended] ?? x.ended}</p>
-      </div>
+      {x.monthly_cost != null ? (
+        <>
+          <div className="flex items-start justify-between gap-3">
+            <Money rent={x.monthly_cost} monthly={x.monthly_cost} />
+            <p className="mt-1 shrink-0 text-meta text-ink-3">{went}</p>
+          </div>
+          <p className="mt-1 min-w-0 text-fact font-label">
+            {x.address}
+            {unit}
+          </p>
+        </>
+      ) : (
+        <div className="flex items-baseline justify-between gap-3">
+          <p className="min-w-0 text-fact font-strong">
+            {x.address}
+            {unit}
+          </p>
+          <p className="shrink-0 text-meta text-ink-3">{went}</p>
+        </div>
+      )}
       <p className="text-meta text-ink-3">Called {when(x.called_at)}</p>
       {x.viewing && (
         <p
