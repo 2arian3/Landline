@@ -190,6 +190,12 @@ def test_a_renter_with_no_pets_hears_no_pets_question_and_availability_comes_fir
     assert "pet" not in text.lower()
 
 
+def test_a_voicemail_the_caller_leaves_invites_a_call_back():
+    # A-13a: the same ending as the voicemail Twilio plays when it detects a machine (voice/outbound.py).
+    text = instructions(brief(_listing(), _plan(may_book=False)))
+    assert "You can call us back at this number." in text and "try again later" not in text
+
+
 def test_an_other_fact_answers_one_thing():
     b = brief(_listing(), _plan(may_book=False, questions=["Is it quiet?", "Any noise?"]))
     b.covered("other", "quiet building")
