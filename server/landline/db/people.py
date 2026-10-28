@@ -19,8 +19,10 @@ ACTIONS = ("viewed", "liked", "rejected", "called", "booked")
 
 
 class Users(Repo):
-    async def get(self, user_id: int, conn: Conn = None) -> UserRow | None:
-        return await self._one(UserRow, "select * from users where user_id = %s", (user_id,), conn)
+    async def get(self, user_id: int, conn: Conn = None, *, lock: bool = False) -> UserRow | None:
+        """`lock`: hold the row until the transaction ends (a read-modify-write, U-12a)."""
+        return await self._one(UserRow, "select * from users where user_id = %s"
+                               + (" for update" if lock else ""), (user_id,), conn)
 
     async def by_phone(self, phone_e164: str, conn: Conn = None) -> UserRow | None:
         return await self._one(UserRow, "select * from users where phone_e164 = %s", (phone_e164,), conn)
@@ -62,8 +64,11 @@ class Users(Repo):
 
 
 class Profiles(Repo):
-    async def get(self, user_id: int, conn: Conn = None) -> ProfileRow | None:
-        return await self._one(ProfileRow, "select * from user_profiles where user_id = %s", (user_id,), conn)
+    async def get(self, user_id: int, conn: Conn = None, *, lock: bool = False) -> ProfileRow | None:
+        """`lock`: hold the row until the transaction ends, so /me's edits and a call's end never overwrite
+        each other."""
+        return await self._one(ProfileRow, "select * from user_profiles where user_id = %s"
+                               + (" for update" if lock else ""), (user_id,), conn)
 
     async def upsert(self, user_id: int, *, hard: dict[str, Any] | None = None,
                      priorities: list[Any] | None = None, anchors: list[Any] | None = None,
