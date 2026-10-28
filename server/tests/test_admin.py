@@ -162,6 +162,19 @@ def test_a_phone_number_opens_that_renters_history(url):
         assert c.post("/api/me", json={"phone": "not a number"}).status_code == 422
 
 
+def test_a_clerk_sign_in_opens_only_that_renters_history(url, clerk):
+    """U-11a: the phone comes from the verified Clerk token, never from the request."""
+    settings = Settings(database_url=url, web_url="http://localhost:3000", transport="stub",
+                        admin_token=TOKEN, clerk_secret_key="sk_test_throwaway", clerk_jwt_key=clerk.pem)
+    with TestClient(create_app(settings, Catalogue(LISTINGS, "test"))) as c:
+        u = c.get("/api/me", headers={"Authorization": f"Bearer {clerk.token(phone=PHONE)}"}).json()
+        assert u["phone"] == PHONE
+        assert u["history"][0]["results"].startswith("I booked 1 Admin St")
+        r = c.get("/api/me", headers={"Authorization": f"Bearer {clerk.token(phone='+14165550999')}"})
+        assert (r.status_code, r.json()["detail"]) == (404, "unknown number")
+        assert c.post("/api/me", json={"phone": "(416) 555-0123"}).status_code == 401   # no proof, no history
+
+
 def test_a_call_shows_its_transcript_in_order(url):
     with _client(url) as c:
         call = c.get(f"/api/admin/calls/{RENTER_CALL}", headers=AUTH).json()
