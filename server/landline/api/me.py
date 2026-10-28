@@ -115,14 +115,18 @@ def listings(sessions: list[dict[str, Any]], calls: list[dict[str, Any]],
     out: list[MyListing] = []
     for c in calls:
         lid = c.get("listing_id")
-        if c["role"] != "listing" or not lid or "blocked" in (c["state"], c.get("end_reason")) \
-                or c["state"] == "queued":   # never dialled
+        if c["role"] != "listing" or not lid:
             continue
         snapshot = snapshots.get(c["session_id"], {})
         state = snapshot.get("state") or {}
         outcome = (state.get("outcomes") or {}).get(lid) or {}
         if outcome.get("call_id") not in (None, c["call_id"]):
             outcome = {}   # what a later call to the same listing settled
+        # Never dialled: blocked, or still queued with nothing settled (an outcome says the call happened,
+        # even when its row wasn't moved on).
+        if "blocked" in (c["state"], c.get("end_reason"), outcome.get("end_reason")) or (
+                c["state"] == "queued" and not outcome):
+            continue
         viewing = outcome.get("viewing") or (state.get("viewings") or {}).get(lid)
         board = (snapshot.get("view") or {}).get("board") or []
         card = next((x for x in board if x.get("listing_id") == lid), {})
