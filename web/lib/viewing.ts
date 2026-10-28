@@ -5,11 +5,14 @@ import type { CardViewing } from "./types";
  * confirmed by them (O-08c), or turned down.
  */
 export function viewingStatus(v: CardViewing): { word: string; color: string } {
-  const when = viewingTime(v);
-  if (v.status === "confirmed") return { word: `Viewing ${when} · confirmed`, color: "var(--color-real)" };
+  const when = viewingTime(v).replace(/\s/g, " ");   // "Sun 11:00 AM" never splits across lines
+  if (v.status === "confirmed") return { word: `Viewing ${when}${SEP}confirmed`, color: "var(--color-real)" };
   if (v.status === "declined") return { word: `The agent can't do ${when}`, color: "var(--color-dead)" };
-  return { word: `Viewing ${when} · waiting for the agent`, color: "var(--color-ink-2)" };
+  return { word: `Viewing ${when}${SEP}waiting for the agent`, color: "var(--color-ink-2)" };
 }
+
+// A no-break space before the dot: a line that wraps there ends with "·" rather than starting with it.
+const SEP = " · ";
 
 /** "Sat 2:00 PM" in Toronto time; the agent's own words ("Saturday at 2 pm") when the time doesn't parse. */
 export function viewingTime(v: CardViewing): string {
