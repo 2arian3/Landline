@@ -160,11 +160,26 @@ def calls_scheduled(state: SessionState, e: CallsScheduled, known: Known) -> boo
 
 
 def call_state(state: SessionState, e: CallStateChanged, known: Known) -> bool:
+    if e.listing_id is not None and e.call_id not in state.calls:
+        return _callback(state, e)
     call = _call(state, e.call_id)
+    if e.listing_id is not None and e.listing_id != call.listing_id:
+        raise Refused("That call is for a different listing.")
     if call.state == "ended" or call.state == e.state:
         return False   # an ended call never changes again
     started_at = call.started_at or (e.at if e.state in ON_THE_LINE else None)
     state.calls[e.call_id] = call.model_copy(update={"state": e.state, "started_at": started_at})
+    return True
+
+
+def _callback(state: SessionState, e: CallStateChanged) -> bool:
+    """A listing agent calling back (A-13b) joins the session as a new call for a listing in its plan, while
+    the calls run or after they're done. Its facts, booking and outcome then land like any listing call's."""
+    plan, lid = state.plan, e.listing_id
+    if state.phase not in ("calling", "done") or plan is None or lid is None or lid not in plan.listing_ids:
+        raise Refused("That call isn't part of this session.")
+    state.calls[e.call_id] = CallView(call_id=e.call_id, listing_id=lid, state=e.state,
+                                      started_at=e.at if e.state in ON_THE_LINE else None)
     return True
 
 
