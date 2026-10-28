@@ -18,19 +18,18 @@ The numbers come from `docs/PITCH_NUMBERS.md` (X-03f, #272). **All of them are f
 
 ### 1. Is it all right for an AI to phone people?
 
-**Say:** "Every call opens with 'Hi, I'm an AI assistant calling for a renter about [the address]', so nobody is fooled about who's calling or why. It only calls a short allowlist of numbers, today our own team's phones, between 9 a.m. and 8 p.m. Toronto time, and only for listings the renter picked. Every call has a hard five-minute limit."
+**Say:** "Every call opens with 'Hi, this is Landline. I'm an AI assistant calling for a renter about [the address]. This call is recorded.' So nobody is fooled about who's calling, why, or that it's recorded. It only calls a short allowlist of numbers, today our own team's phones, between 9 a.m. and 8 p.m. Toronto time, and only for listings the renter picked. Every call has a hard five-minute limit."
 
 **Behind it:**
-- The first words: `server/landline/agents/caller/brief.py` (`disclosure()` and the `CALLER` prompt). Hard rule 6 in `AGENTS.md`.
+- The first words: `server/landline/agents/caller/brief.py` (`disclosure()` and the `CALLER` prompt). Hard rule 6 in `AGENTS.md`. The recording notice follows them when the audio is stored (`RECORDED` in `voice/outbound.py` `opening()`, `RECORD_AUDIO`, #280).
 - The allowlist: `voice/outbound.py` `dial()` is the only place a listing call reaches the phone network, and it refuses any number not in `DEMO_AGENT_PHONES`. `voice/dispatch.py` checks it too.
 - The hours: `OPENS, CLOSES = 9:00, 20:00` in `voice/dispatch.py`.
 - The time limit: `listing_call_max_s = 300` in `config.py`, plus Twilio's own `TimeLimit`. Every call ends once, through `finalize` (hard rule 5).
 - Judge mode (`/try`) never touches the phone network: its calls go to simulated landlords (`voice/routing.py`).
 
 **Not built yet:**
-- **Listing calls are recorded but don't say so.** The audio is stored unless `RECORD_AUDIO=0` (`voice/phone_caller.py`), but the Caller's opening says it's an AI, not that the call is recorded. The renter's own call does say "this call is recorded" (`agents/concierge/prompt.py`). Adding one line to the Caller's opening fixes it.
 - **No "don't call me again" list.** There's no do-not-call list for agents yet. Today it only dials our own phones, so nobody else can be called.
-- **The opening doesn't name Landline or give a call-back number, and the weekend hours are too wide.** Canada's automated-call rules expect both, and allow weekend calls only from 10:00 to 18:00 (question 10).
+- **The opening doesn't give a call-back number, and the weekend hours are too wide.** It names Landline (#280), but a call back would reach the renter line until callbacks (A-13) are built. Canada's automated-call rules expect a number to reach us, and allow weekend calls only from 10:00 to 18:00 (question 10).
 
 ### 2. What happens to the renter's data?
 
@@ -134,7 +133,7 @@ The numbers come from `docs/PITCH_NUMBERS.md` (X-03f, #272). **All of them are f
 
 ### 10. Isn't automated calling a regulatory risk?
 
-**Say:** "Our calls don't sell the agent anything; they ask about the agent's own listing for a renter who asked us to, so Canada's telemarketing and do-not-call rules most likely don't apply. The CRTC's rules for automated calls apply whatever the purpose, and it's consulting right now on whether AI voices count, so we build to the strict reading: the AI says what it is in its first sentence, and calls one listing per request, in business hours. Before we call anyone outside our team, that first sentence will also name us, give a call-back number and say the call is recorded."
+**Say:** "Our calls don't sell the agent anything; they ask about the agent's own listing for a renter who asked us to, so Canada's telemarketing and do-not-call rules most likely don't apply. The CRTC's rules for automated calls apply whatever the purpose, and it's consulting right now on whether AI voices count, so we build to the strict reading: the AI says what it is in its first sentence, and calls one listing per request, in business hours. That first sentence already names us and says the call is recorded. Before we call anyone outside our team, it will also give a call-back number."
 
 *Background for the team, with sources. This is not legal advice; get a lawyer's read before calling real agents.*
 
@@ -164,12 +163,11 @@ The numbers come from `docs/PITCH_NUMBERS.md` (X-03f, #272). **All of them are f
 - It ends every call once, with a deadline (hard rule 5).
 
 **Not built yet (do these before calling anyone outside the team):**
-1. Name Landline and give a call-back number and email in the opening line. Today it says "Hi, I'm an AI assistant calling for a renter about …" and doesn't name Landline.
+1. A call-back number and email in the opening line. It already says "Hi, this is Landline. I'm an AI assistant calling for a renter about … This call is recorded." (#280), but a call back reaches the renter line until callbacks (A-13) are built.
 2. Weekend hours of 10:00–18:00. `voice/dispatch.py` allows 9:00–20:00 every day, which is too wide on weekends.
-3. A recording notice on listing calls (see question 1).
-4. A do-not-call list for agents who ask not to be called again.
-5. STOP wording and contact details in the renter's texts, checked against CASL. They already start with "Landline:" (`voice/dispatch.py`, `voice/bridge.py`).
-6. A lawyer's read, and a watch on the CRTC's 2026-132 decision.
+3. A do-not-call list for agents who ask not to be called again.
+4. STOP wording and contact details in the renter's texts, checked against CASL. They already start with "Landline:" (`voice/dispatch.py`, `voice/bridge.py`).
+5. A lawyer's read, and a watch on the CRTC's 2026-132 decision.
 
 ---
 
