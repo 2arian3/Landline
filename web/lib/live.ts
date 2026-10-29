@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { announced, owed } from "./owed.ts";
 import { sessionPath } from "./sessionPath";
 import type { CataloguePoint, SessionView } from "./types";
 
@@ -23,8 +24,11 @@ import type { CataloguePoint, SessionView } from "./types";
  *   - a new session id starts from nothing: versions count per session, and
  *     what's still in flight for the session the page left is cancelled
  * Until the first snapshot is in, it's asked for every POLL_MS even while the
- * stream is up. With no snapshot and no word from the server for
- * UNREACHABLE_MS, `unreachable` says so, and the asking carries on.
+ * stream is up. With no word from the server for UNREACHABLE_MS (and, before
+ * the first snapshot, none of that either), `unreachable` says so, and the
+ * asking carries on: the board in memory comes back with the next answer. A 404
+ * with no board is an answer, not silence: `missing` says the link matches no
+ * call (lib/pill.ts words the rest), and it's never called offline.
  */
 const STALE_MS = 6500;
 const POLL_MS = 1500;
@@ -48,6 +52,7 @@ export function useLiveSession(sessionId: string | null) {
   const [view, setView] = useState<SessionView | null>(null);
   const [stale, setStale] = useState(false);
   const [unreachable, setUnreachable] = useState(false);
+  const [missing, setMissing] = useState(false);
   const current = useRef<SessionView | null>(null);
   const lastOk = useRef(Date.now());
 
@@ -55,12 +60,15 @@ export function useLiveSession(sessionId: string | null) {
     // Another session (judge mode's "Start again") starts from nothing: versions count per session.
     current.current = null;
     setUnreachable(false);
+    setMissing(false);
     // Judge mode mounts the board before a session exists: nothing to follow yet.
     if (!sessionId) return;
     // Everything below belongs to this session. Leaving it cancels what's still in flight, so an answer for
     // the session the page left can't land on the next one, or hold up its first request.
     const left = new AbortController();
     let inFlight = false;
+    let wanted = 0; // the newest version the stream announced (lib/owed.ts)
+    let chased = 0; // asks since then for a version still owed; a few, then the tick's polling is the net
     let source: EventSource | null = null;
     let errors = 0;
     let retryIn = RETRY_MS; // until a closed stream is opened again; doubles up to REOPEN_MS
@@ -78,11 +86,19 @@ export function useLiveSession(sessionId: string | null) {
           cache: "no-store",
           signal: AbortSignal.any([left.signal, AbortSignal.timeout(4000)]),
         });
+        if (res.status === 404 && !current.current && !left.signal.aborted) {
+          // The server answered: this id matches no call. Not "Reconnecting", not "Offline".
+          lastOk.current = Date.now();
+          setStale(false);
+          setMissing(true);
+          return;
+        }
         if (!res.ok) return;
         const data = (await res.json()) as SessionView;
         if (left.signal.aborted) return;
         lastOk.current = Date.now();
         setStale(false);
+        setMissing(false);
         const cur = current.current;
         if (cur && data.version < cur.version) return;
         if (cur && data.board.length === 0 && cur.board.length > 0 && data.version <= cur.version) return;
@@ -93,6 +109,12 @@ export function useLiveSession(sessionId: string | null) {
         // keep the last good state
       } finally {
         inFlight = false;
+        // A newer version announced while this fetch was out, and it brought an older one: ask again, or
+        // the board sits on it for good (the stream's pings stop the tick from polling). Spaced out, so a
+        // server that keeps failing (or restarted, counting from 1 again) isn't asked in a loop.
+        if (!left.signal.aborted && owed(wanted, current.current?.version) && chased++ < 8) {
+          setTimeout(() => void refresh(), 250);
+        }
       }
     };
     void refresh();
@@ -115,6 +137,8 @@ export function useLiveSession(sessionId: string | null) {
         heard();
         try {
           const { version } = JSON.parse(ev.data) as { version: number };
+          if (announced(wanted, version) > wanted) chased = 0;
+          wanted = announced(wanted, version);
           if (!current.current || version > current.current.version) void refresh();
         } catch {
           void refresh();
@@ -147,8 +171,13 @@ export function useLiveSession(sessionId: string | null) {
       }
       if (quiet && now - openedAt >= REOPEN_MS) open();
       setStale(now - lastOk.current > STALE_MS);
-      // No snapshot yet, and no word from the server either: a stream that's up means it's there.
-      setUnreachable(!current.current && now - since > UNREACHABLE_MS && now - lastOk.current > STALE_MS);
+      // No snapshot yet, and no word from the server either: a stream that's up means it's there. With a board,
+      // Reconnecting turns to Offline once nothing at all has been heard for UNREACHABLE_MS (the Status board).
+      setUnreachable(
+        current.current
+          ? now - lastOk.current > UNREACHABLE_MS
+          : now - since > UNREACHABLE_MS && now - lastOk.current > STALE_MS,
+      );
     }, 500);
     const onVisible = () => {
       if (document.visibilityState !== "visible") return;
@@ -168,7 +197,7 @@ export function useLiveSession(sessionId: string | null) {
   }, [sessionId]);
 
   // Until the new session's first snapshot, the old one's board isn't shown under its id.
-  return { view: view?.session_id === sessionId ? view : null, stale, unreachable };
+  return { view: view?.session_id === sessionId ? view : null, stale, unreachable, missing };
 }
 
 export function useCatalogue() {
@@ -196,15 +225,24 @@ export function useCatalogue() {
   return points;
 }
 
-export async function postJSON<T>(path: string, body: unknown): Promise<T | null> {
+/** A tap's answer: the server's new snapshot, or why it wasn't saved, so the page can put it back and say so. */
+export type Tapped<T> = { ok: true; value: T } | { ok: false; why: "refused" | "unreachable" };
+
+export async function tap<T>(path: string, body: unknown): Promise<Tapped<T>> {
   try {
     const res = await fetch(api(path), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(8000),
     });
-    return res.ok ? ((await res.json()) as T) : null;
+    return res.ok ? { ok: true, value: (await res.json()) as T } : { ok: false, why: "refused" };
   } catch {
-    return null;
+    return { ok: false, why: "unreachable" };
   }
+}
+
+export async function postJSON<T>(path: string, body: unknown): Promise<T | null> {
+  const got = await tap<T>(path, body);
+  return got.ok ? got.value : null;
 }

@@ -105,6 +105,17 @@ async def test_a_call_ends_exactly_once(db):
     assert [x.call_id for x in await db.calls.for_session(sid)] == ["c_call000001"]
 
 
+async def test_a_listing_call_keeps_the_number_it_dialled(db):
+    # A-13a: stored as the call starts dialling; the call's later moves keep it.
+    sid = (await db.sessions.create("s_dial000001", "phone")).session_id
+    lid = await _listing(db, "t:dial1")
+    c = await db.calls.create("c_dial000001", session_id=sid, role="listing", transport="voice",
+                              state="queued", listing_id=lid)
+    assert c.to_e164 is None
+    assert (await db.calls.set_state(c.call_id, "dialing", to_e164="+16475550101")).to_e164 == "+16475550101"
+    assert (await db.calls.set_state(c.call_id, "live", answered=True)).to_e164 == "+16475550101"
+
+
 async def test_turns_and_facts(db):
     sid = (await db.sessions.create("s_turn000001", "phone")).session_id
     lid = await _listing(db, "t:turn1")

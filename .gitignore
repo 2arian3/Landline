@@ -2,6 +2,8 @@
 .env
 .env.*
 !.env.example
+# web/.env.production holds only Clerk's public publishable key (U-11b); never a secret.
+!web/.env.production
 
 # python
 __pycache__/
