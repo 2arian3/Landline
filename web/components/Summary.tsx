@@ -216,25 +216,36 @@ export function Results({ view, compact = false }: { view: SessionView | null; c
   const rows = calledPlaces(view);
   const { done } = tally(rows);
   return (
-    <motion.section className="results" aria-label="What the calls found" {...enter(0)}>
+    <motion.section
+      className={`results ${compact ? "gap-2.5! p-3.5!" : ""}`}
+      aria-label="What the calls found"
+      {...enter(0)}
+    >
       <div className="flex items-center justify-between gap-2">
-        <div>
-          <p className="t-title">What the calls found</p>
-          <p className="t-caption c-2">The same words Landline texted you</p>
-        </div>
+        {/* On a phone: a one-line title and the button, nothing more (M7). */}
+        {compact ? (
+          <p className="t-headline">What the calls found</p>
+        ) : (
+          <div>
+            <p className="t-title">What the calls found</p>
+            <p className="t-caption c-2">The same words Landline texted you</p>
+          </div>
+        )}
         <button
           type="button"
-          className="btn btn-quiet btn-small -mr-2"
+          className={`btn btn-quiet btn-small ${compact ? "-mr-2.5 px-2.5! text-[15px]!" : "-mr-2"}`}
           aria-expanded={open}
           aria-controls={textId}
           onClick={() => setOpen(!open)}
         >
           Read the text
-          <Icon
-            name="chevron-right"
-            size={18}
-            className={`transition-transform motion-reduce:transition-none ${open ? "rotate-90" : ""}`}
-          />
+          {!compact && (
+            <Icon
+              name="chevron-right"
+              size={18}
+              className={`transition-transform motion-reduce:transition-none ${open ? "rotate-90" : ""}`}
+            />
+          )}
         </button>
       </div>
       {/* In the page even while folded away, so it can be found and checked against the session's. */}
@@ -245,7 +256,7 @@ export function Results({ view, compact = false }: { view: SessionView | null; c
         <motion.div key={card.listing_id} className="result" data-s={status.pin} {...enter(i + 1)}>
           <span className="pin-face">{card.rank}</span>
           <div className="min-w-0">
-            <p className={compact ? "t-callout font-semibold" : "t-headline"}>{card.address}</p>
+            <p className={`t-headline ${compact ? "text-[16px]!" : ""}`}>{card.address}</p>
             {status.words && (
               <p className={`status is-${status.tone} mt-0.5`}>
                 {status.glyph && <Icon name={status.glyph} size={18} />}
@@ -255,7 +266,7 @@ export function Results({ view, compact = false }: { view: SessionView | null; c
                 </span>
               </p>
             )}
-            {card.facts.length > 0 && (
+            {!compact && card.facts.length > 0 && (
               <p className="t-callout c-2 mt-1">
                 {card.facts.slice(0, 3).map((f) => factLine(f.field, f.value)).join(" · ")}
               </p>
@@ -263,7 +274,7 @@ export function Results({ view, compact = false }: { view: SessionView | null; c
           </div>
         </motion.div>
       ))}
-      {done.length > 0 && (
+      {!compact && done.length > 0 && (
         <p className="tally">
           {done.map(([pin, words]) => (
             <span key={words}>
@@ -342,6 +353,8 @@ export function Heard({
   const chips = view ? heardLine(view.preferences).map(capitalize) : null;
   const fresh = useJustHeard(chips);
   const pop = usePop();
+  // The plan, and later What the calls found, take its place (P3, P6).
+  if (view && (planShown(view) || (view.phase === "done" && view.results))) return null;
   if (!view || !chips) {
     return (
       <div className="space-y-2" aria-hidden>
