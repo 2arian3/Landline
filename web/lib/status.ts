@@ -190,14 +190,3 @@ export function statusOf(card: Card, { call = null, planned = false, stage, ende
   return make({ kind: "ranked", words: "", sub: null, glyph: null, tone: "quiet", pin: "pending", badge: null,
     spoken: "Not called yet" });
 }
-
-/** The CSS colour for a tone, until every caller styles by `.status.is-…` (the Lucent tokens, PR1). */
-export function toneColor(tone: Tone): string {
-  return {
-    ink: "var(--color-ink)",
-    quiet: "var(--color-ink-3)",
-    live: "var(--color-live)",
-    real: "var(--color-real)",
-    dead: "var(--color-dead)",
-  }[tone];
-}
