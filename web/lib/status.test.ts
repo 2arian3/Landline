@@ -74,7 +74,7 @@ test("didn't get through: worded from how the call ended", () => {
   for (const [reason, word] of [["no_answer", "No answer"], ["busy", "No answer"], ["voicemail", "Left a message"],
     ["hangup", "Hung up early"], ["timeout", "Call dropped"], ["wrong_number", "Wrong number"]] as const) {
     assert.deepEqual(said(statusOf(card({ status: "no_answer" }), { call: ended(reason) })),
-      ["unheard", word, null, "voicemail", "quiet", "noanswer", null], reason);
+      ["unheard", word, null, reason === "voicemail" ? "voicemail" : "x", "quiet", "noanswer", null], reason);
     assert.equal(statusOf(card({ status: "no_answer" }), { ended: reason }).words, word, reason);
   }
   assert.equal(statusOf(card({ status: "no_answer" })).words, "No answer");   // no outcome yet
