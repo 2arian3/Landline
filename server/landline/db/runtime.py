@@ -235,6 +235,25 @@ class ViewingConfirmations(Repo):
         return await self._one(ViewingConfirmationRow,
                                "select * from viewing_confirmations where call_id = %s", (call_id,), conn)
 
+    async def get(self, token: str, conn: Conn = None) -> ViewingConfirmationRow | None:
+        return await self._one(ViewingConfirmationRow,
+                               "select * from viewing_confirmations where token = %s", (token,), conn)
+
+    async def decide(self, token: str, *, status: str, agent_email: str | None = None,
+                     conn: Conn = None) -> ViewingConfirmationRow | None:
+        """O-08c: the agent's answer, once. One update that only a pending row matches, so two answers at
+        the same moment can't both win. None when the token is unknown or already decided."""
+        return await self._one(
+            ViewingConfirmationRow,
+            "update viewing_confirmations set status = %s, agent_email = coalesce(%s, agent_email), "
+            "decided_at = now() where token = %s and status = 'pending' returning *",
+            (status, agent_email, token), conn)
+
+    async def set_event(self, token: str, event_id: str, conn: Conn = None) -> None:
+        async with self._use(conn) as c:
+            await c.execute("update viewing_confirmations set calendar_event_id = %s where token = %s",
+                            (event_id, token))
+
 
 class Avatars(Repo):
     """call_avatar: one Higgs Avatar MP4 of Landline's voice per call, rendered after the call."""

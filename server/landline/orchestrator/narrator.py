@@ -75,6 +75,11 @@ def line(before: SessionView | None, after: SessionView, events: Sequence[Event]
     if outcomes := [e for e in events if e.type == "OutcomeReady"]:
         lid = outcomes[-1].outcome.listing_id
         return _fit(_place(state, lid, after, catalogue), _place(state, lid, after, catalogue)[:1])
+    if decided := [e for e in events if e.type == "ViewingDecided"]:   # O-08c: the agent's answer
+        e = decided[-1]
+        addr = _address(catalogue, e.listing_id, _planned(state))
+        verb = "confirmed" if e.status == "confirmed" else "can't do"
+        return f"The agent at {addr} {verb} {_when(e.starts_at)}."
     if "CallsRequested" in kinds and state.request:
         ids = state.request.listing_ids
         names = [_address(catalogue, lid, ids) for lid in ids]
