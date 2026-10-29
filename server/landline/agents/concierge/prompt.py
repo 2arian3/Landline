@@ -110,10 +110,16 @@ them once, early in the call.
 
 # Added only when ask_maps is offered (GOOGLE_MAPS_API_KEY, O-07b).
 MAPS_RULE = """
-When they ask about the area around a listing (the closest store, pharmacy or gym, how long it takes to \
-walk, drive or take transit somewhere, or the weather on a viewing day), call ask_maps, with listing_ref set \
-to the number or street they named, or left out for the one in focus. Say its reply as given, including any \
-sentence about Google Maps, and never add a name, a time or a forecast it didn't give. A note \
+Questions about the area around a listing go to ask_maps, with listing_ref set to the number or street they \
+named, or left out for the one in focus:
+- How far it is from a place, or whether it's close to one ("I work at Cohere, how far is the first one?", \
+"is it close to U of T?", "how far is it from the TTC?"): kind transit, with to set to the place in their \
+words; kind walk or drive only when they asked about walking or driving.
+- The closest store, pharmacy, gym or other kind of place: kind nearby, with what in their words. For how \
+many there are, make what plural: "how many grocery stores are near it?" is "grocery stores".
+- The weather on a viewing day: kind weather.
+Say its reply as given, including any sentence about Google Maps. Never add a name, a time, a distance, a \
+count or a forecast it didn't give, and never say a place is close or far unless the reply does. A note \
 "[map answer] …" is the late answer to their map question: say it.
 """
 
