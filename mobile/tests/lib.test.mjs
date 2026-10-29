@@ -163,6 +163,19 @@ test("a time reads as the board writes it, and a viewing as the board's statusOf
     assert.equal(formatWhen(iso), webFormatWhen(iso), iso);
   }
   assert.equal(formatWhen("not a time"), null);
+  // Hermes tags formatToParts' hour and minute as "literal" ("18", ":", "30"), which once read "12: AM" on
+  // the phone. Fake that, and the app's times must still match the web's.
+  const want = ["2026-10-29T22:30:00Z", "2026-10-31T18:00:00Z"].map((iso) => [iso, webFormatWhen(iso)]);
+  const real = Intl.DateTimeFormat.prototype.formatToParts;
+  Intl.DateTimeFormat.prototype.formatToParts = function (d) {
+    return real.call(this, d).map((p) => (p.type === "hour" || p.type === "minute" ? { ...p, type: "literal" } : p));
+  };
+  try {
+    for (const [iso, web] of want) assert.equal(formatWhen(iso), web, `${iso} with Hermes-tagged parts`);
+  } finally {
+    Intl.DateTimeFormat.prototype.formatToParts = real;
+  }
+  assert.equal(formatWhen("2026-10-29T22:30:00Z"), "Thu,\u00a0Oct\u00a029\u00a0· 6:30\u00a0PM");
   for (const status of ["booked", "confirmed", "declined"]) {
     for (const v of [{ starts_at: "2026-10-31T18:00:00Z", slot_text: "Saturday at 2" }, { starts_at: "", slot_text: "Saturday at 2" }]) {
       const viewing = { ...v, status };
