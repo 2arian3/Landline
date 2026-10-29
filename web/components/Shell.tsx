@@ -25,8 +25,9 @@ export const PANEL = "panel glass absolute top-4 right-4 bottom-4 z-10 w-[clamp(
 /** Clear of a phone's notch when it's held sideways. */
 export const PANEL_STYLE: CSSProperties = { marginRight: "env(safe-area-inset-right)" };
 
-/** The room the map leaves the panel when it frames the board: its width, its 16px inset and 16px more. */
-export const panelRoom = (width: number) => width + 32;
+/** The room the map leaves the panel when it frames the board: its width and 16px inset, then the same 64px
+ *  the map keeps clear on its other edges, so the outermost pin never touches the glass. */
+export const panelRoom = (width: number) => width + 16 + 64;
 
 /** The phone's header: one glass capsule floating over the map, clear of the notch. */
 export const CAPSULE_STYLE: CSSProperties = { top: "max(12px, env(safe-area-inset-top))" };
@@ -77,7 +78,7 @@ export function Shell({ idle = false }: { idle?: boolean }) {
       <div className="hidden split:block">
         <aside className={PANEL} style={PANEL_STYLE}>
           <div className="panel-head">
-            <Brand stale={false} connected={false} idle={idle} />
+            <Brand stale={false} idle={idle} />
           </div>
           <div className="min-h-0 flex-1">{places}</div>
           <PanelFoot />
@@ -87,7 +88,7 @@ export function Shell({ idle = false }: { idle?: boolean }) {
       <div className="split:hidden">
         {!idle && (
           <header className="cap glass" style={CAPSULE_STYLE}>
-            <Brand stale={false} connected={false} idle={idle} yourCalls />
+            <Brand stale={false} idle={idle} yourCalls />
           </header>
         )}
         {/* Where LiveBoard's sheet starts: the viewport less PEEK, as vaul computes it. */}
