@@ -1,4 +1,4 @@
-import { UNHEARD } from "./status.ts";
+import { NOT_THROUGH, UNHEARD } from "./status.ts";
 import type { CallView, Card, EndReason } from "./types";
 
 /** How a call that learned nothing ended, in words: the card's word, the detail's sentence, and the reason. */
@@ -11,13 +11,13 @@ export type Unheard = { word: string; line: string; reason: EndReason };
  */
 /**
  * The summary's counts for the cards whose calls learned nothing, in the same words as their badges:
- * [["hung up early", 1], ["no answer", 1]], most first. A card with no outcome yet counts as "no answer".
+ * [["hung up early", 1], ["didn't get through", 1]], most first. A card with no outcome yet counts as that.
  */
 export function unheardCounts(board: Card[], calls: CallView[] = []): [string, number][] {
   const n = new Map<string, number>();
   for (const card of board) {
     if (card.status !== "no_answer") continue;
-    const word = (unheard(card, calls)?.word ?? "No answer").toLowerCase();
+    const word = (unheard(card, calls)?.word ?? NOT_THROUGH).toLowerCase();
     n.set(word, (n.get(word) ?? 0) + 1);
   }
   return [...n].sort((a, b) => b[1] - a[1]);
