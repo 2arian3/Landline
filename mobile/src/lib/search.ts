@@ -179,11 +179,11 @@ function said(msg: string | undefined): string {
   return words ? words.charAt(0).toUpperCase() + words.slice(1) : "That isn't valid.";
 }
 
-/** Bedrooms, the fewest the renter would take: the web's range (web/components/MySearch.tsx, up to 5, which is
- *  the API's limit), in the app's short words. A saved value between them (1.5) gets its own chip. */
+/** Bedrooms, the fewest the renter would take: the web's chips exactly (web/components/MySearch.tsx BEDS, Any to
+ *  4+). A saved value the chips don't have (1.5, or 5 from a call) gets its own chip. */
 export function bedOptions(current: string): (readonly [string, string])[] {
   const base: (readonly [string, string])[] = [
-    ["", "Any"], ["0", "Studio+"], ["1", "1+"], ["2", "2+"], ["3", "3+"], ["4", "4+"], ["5", "5+"],
+    ["", "Any"], ["0", "Studio+"], ["1", "1+"], ["2", "2+"], ["3", "3+"], ["4", "4+"],
   ];
   return base.some(([v]) => v === current) ? base : [...base, [current, `${current}+`]];
 }

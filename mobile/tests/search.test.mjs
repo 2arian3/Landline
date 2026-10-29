@@ -1,7 +1,7 @@
 // My search's form logic (src/lib/search.ts): the API's limits, checked before sending, and only what
 // changed sent. npm test.
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import {
@@ -85,10 +85,16 @@ test("a 422's message reads without Pydantic's \"Value error,\" prefix", () => {
   });
 });
 
-test("bedrooms offer the web's range, any to 5+, and a saved half keeps its own chip", () => {
-  assert.deepEqual(bedOptions("2").map(([v]) => v), ["", "0", "1", "2", "3", "4", "5"]);
-  assert.deepEqual(bedOptions("").map(([, w]) => w), ["Any", "Studio+", "1+", "2+", "3+", "4+", "5+"]);
+// The web's /me form, whose bedroom chips the app's match.
+const WEB_ME = new URL("../../web/components/MySearch.tsx", import.meta.url);
+
+test("bedrooms offer the web's chips exactly, any to 4+, and a saved value they don't have keeps its own chip", () => {
+  const webChips = /const BEDS = \[([\s\S]*?)\] as const;/.exec(readFileSync(WEB_ME, "utf8"))[1];
+  const web = [...webChips.matchAll(/\["([^"]*)", "([^"]*)"\]/g)].map(([, v, w]) => [v, w]);
+  assert.deepEqual(bedOptions("2"), web);
+  assert.deepEqual(bedOptions("").map(([, w]) => w), ["Any", "Studio+", "1+", "2+", "3+", "4+"]);
   assert.deepEqual(bedOptions("1.5").at(-1), ["1.5", "1.5+"]);
+  assert.deepEqual(bedOptions("5").at(-1), ["5", "5+"]);
 });
 
 // The web's form (U-12b, web/lib/searchForm.ts) checks and sends the same way; once it's on main, hold the
