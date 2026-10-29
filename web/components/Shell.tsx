@@ -52,6 +52,21 @@ export function sheetLook(full: boolean): { className: string; style: CSSPropert
 }
 
 /**
+ * The sheet settling on a stop on Lucent's sheet spring (400/38, about 490ms; lib/motion.ts's SPRING_SHEET),
+ * sampled as a CSS curve. vaul sets the transition inline as the finger lets go; this changes only its curve
+ * and length, so while dragging (vaul's `transition: none`) the sheet still follows the finger. Under reduced
+ * motion it goes straight to the stop.
+ */
+const SHEET_SETTLE =
+  "[data-vaul-drawer]{transition-duration:490ms!important;transition-timing-function:" +
+  "linear(0,.159,.42,.64,.792,.886,.941,.971,.986,.994,.998,.999,1,1,1)!important}" +
+  "@media (prefers-reduced-motion:reduce){[data-vaul-drawer]{transition-duration:0s!important}}";
+
+export function SheetSpring() {
+  return <style>{SHEET_SETTLE}</style>;
+}
+
+/**
  * The first paint, sent as HTML before any script runs: the brand and the panel, with grey places where
  * the board will be, in the spots LiveBoard puts them. CSS picks the phone or desktop layout because the
  * page hasn't asked the browser yet; LiveBoard takes over in place once it has. `idle` is judge mode's

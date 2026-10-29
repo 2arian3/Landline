@@ -1,10 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useId, useRef, useState } from "react";
 import { Icon, type IconName, Mark } from "./Icon";
 import { heardLine } from "@/lib/format";
 import { factLine } from "@/lib/heard";
+import { EXIT, REDUCED, SPRING_LENS } from "@/lib/motion";
 import { LANDLINE_PHONE } from "@/lib/phone";
 import { type Pill, type PillKind, pill } from "@/lib/pill";
 import { calledPlaces, statuses, tally } from "@/lib/tally";
@@ -94,6 +96,23 @@ export function Brand({
   );
 }
 
+/** Lucent's enter: 700ms on the settle curve (--dur-enter, --ease-settle). */
+const ENTER = { duration: 0.7, ease: [0.22, 1, 0.36, 1] } as const;
+
+/** A chip arriving on the lens spring with its one soft overshoot, leaving faster; reduced motion fades. The
+ *  chips there when the panel opened don't arrive (AnimatePresence initial={false}). */
+function usePop() {
+  const reduced = useReducedMotion();
+  return reduced
+    ? { initial: { opacity: 0 }, animate: { opacity: 1, transition: REDUCED }, exit: { opacity: 0, transition: REDUCED } }
+    : {
+        layout: true,
+        initial: { opacity: 0, scale: 0.85 },
+        animate: { opacity: 1, scale: 1, transition: SPRING_LENS },
+        exit: { opacity: 0, scale: 0.9, transition: EXIT },
+      };
+}
+
 /** The plan's still to come: before the renter hangs up, and after it until the calls are scheduled (A-06). */
 const planShown = (view: SessionView) =>
   view.plan.length > 0 && (view.phase === "open" || (view.phase === "calling" && !view.calls.length));
@@ -103,6 +122,7 @@ const planShown = (view: SessionView) =>
  * its number and address, as the board shows them. Nothing about when or how is promised beyond that.
  */
 export function Plan({ view }: { view: SessionView | null }) {
+  const pop = usePop();
   if (!view || !planShown(view)) return null;
   const n = view.plan.length;
   const places = view.plan.map((id) => view.board.find((c) => c.listing_id === id)).filter((c) => c !== undefined);
@@ -119,12 +139,14 @@ export function Plan({ view }: { view: SessionView | null }) {
       </div>
       {places.length > 0 && (
         <ul className="chips" aria-label="The places Landline will call">
-          {places.map((c) => (
-            <li key={c.listing_id} className="chip gap-2 pl-1.5" data-s="picked">
-              <span className="pin-face size-7! border-0! text-[14px]! shadow-none!">{c.rank}</span>
-              {c.address}
-            </li>
-          ))}
+          <AnimatePresence initial={false}>
+            {places.map((c) => (
+              <motion.li key={c.listing_id} {...pop} className="chip gap-2 pl-1.5" data-s="picked">
+                <span className="pin-face size-7! border-0! text-[14px]! shadow-none!">{c.rank}</span>
+                {c.address}
+              </motion.li>
+            ))}
+          </AnimatePresence>
         </ul>
       )}
     </section>
@@ -184,11 +206,17 @@ export function Activity({ view }: { view: SessionView | null }) {
 export function Results({ view, compact = false }: { view: SessionView | null; compact?: boolean }) {
   const [open, setOpen] = useState(false);
   const textId = useId();
+  const reduced = useReducedMotion();
   if (view?.phase !== "done" || !view.results) return null;
+  // The calls finish: the block slides in at the top and its rows arrive 60ms apart; reduced motion fades.
+  const enter = (i: number) =>
+    reduced
+      ? { initial: { opacity: 0 }, animate: { opacity: 1 }, transition: REDUCED }
+      : { initial: { opacity: 0, y: 8 }, animate: { opacity: 1, y: 0 }, transition: { ...ENTER, delay: i * 0.06 } };
   const rows = calledPlaces(view);
   const { done } = tally(rows);
   return (
-    <section className="results" aria-label="What the calls found">
+    <motion.section className="results" aria-label="What the calls found" {...enter(0)}>
       <div className="flex items-center justify-between gap-2">
         <div>
           <p className="t-title">What the calls found</p>
@@ -213,8 +241,8 @@ export function Results({ view, compact = false }: { view: SessionView | null; c
       <p id={textId} hidden={!open} className="t-callout whitespace-pre-line">
         {view.results}
       </p>
-      {rows.map(({ card, status }) => (
-        <div key={card.listing_id} className="result" data-s={status.pin}>
+      {rows.map(({ card, status }, i) => (
+        <motion.div key={card.listing_id} className="result" data-s={status.pin} {...enter(i + 1)}>
           <span className="pin-face">{card.rank}</span>
           <div className="min-w-0">
             <p className={compact ? "t-callout font-semibold" : "t-headline"}>{card.address}</p>
@@ -233,7 +261,7 @@ export function Results({ view, compact = false }: { view: SessionView | null; c
               </p>
             )}
           </div>
-        </div>
+        </motion.div>
       ))}
       {done.length > 0 && (
         <p className="tally">
@@ -245,7 +273,7 @@ export function Results({ view, compact = false }: { view: SessionView | null; c
           ))}
         </p>
       )}
-    </section>
+    </motion.section>
   );
 }
 
@@ -313,6 +341,7 @@ export function Heard({
 }) {
   const chips = view ? heardLine(view.preferences).map(capitalize) : null;
   const fresh = useJustHeard(chips);
+  const pop = usePop();
   if (!view || !chips) {
     return (
       <div className="space-y-2" aria-hidden>
@@ -341,14 +370,17 @@ export function Heard({
           </p>
           {/* A <p>, read as one line ("Up to $2,200 a month2+ bedroom…") by check-stalled-stream. */}
           <p className="chips">
-            {chips.map((c) => (
-              <span
-                key={c}
-                className={`chip${fresh.has(c) ? " is-new" : ""}${compact ? " h-8! px-3! text-[14px]!" : ""}`}
-              >
-                {c}
-              </span>
-            ))}
+            <AnimatePresence initial={false}>
+              {chips.map((c) => (
+                <motion.span
+                  key={c}
+                  {...pop}
+                  className={`chip${fresh.has(c) ? " is-new" : ""}${compact ? " h-8! px-3! text-[14px]!" : ""}`}
+                >
+                  {c}
+                </motion.span>
+              ))}
+            </AnimatePresence>
           </p>
         </section>
       )}
