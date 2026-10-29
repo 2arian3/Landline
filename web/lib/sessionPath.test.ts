@@ -13,3 +13,4 @@ test("the ?dev=1 demo asks for its brief", () => {
   assert.equal(sessionPath("smoke-375", "?dev=1"), "/api/sessions/smoke-375?dev=1");
   assert.equal(sessionPath("a b", "?x=2&dev=1"), "/api/sessions/a%20b?dev=1");
 });
+

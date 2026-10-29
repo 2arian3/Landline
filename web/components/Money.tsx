@@ -44,3 +44,50 @@ export function Money({ rent, monthly, lead = false }: { rent: number; monthly: 
     </div>
   );
 }
+
+/**
+ * The card's price (Lucent): the real monthly cost in tabular figures, rolling its digits when a call changes
+ * it. Its screen-reader words are the card's own label, so this part is hidden from them.
+ */
+export function Price({ monthly }: { monthly: number }) {
+  return (
+    <span aria-hidden className="price t-price">
+      <NumberFlow value={monthly} format={CAD} locales="en-CA" className="tnum" />
+      <span className="per">/mo</span>
+    </span>
+  );
+}
+
+/**
+ * The fee line under the price, when a cost on top of the rent was found: "Listed $3,050 +$150 · agent heard".
+ * Ink, not red: a fee isn't a problem with the place. `source` says who said it; the reason for the fee needs
+ * Card.fees (a contract field the card doesn't have yet), so it isn't guessed. With `hold`, a card that might
+ * still get one keeps the line's room, so the card doesn't grow when a call finds a fee (#312).
+ */
+export function FeeLine({
+  rent,
+  monthly,
+  source,
+  hold = false,
+}: {
+  rent: number;
+  monthly: number;
+  source?: string | null;
+  hold?: boolean;
+}) {
+  if (monthly === rent) return hold ? <span aria-hidden className="fee invisible">Listed</span> : null;
+  const delta = monthly - rent;
+  return (
+    <span aria-hidden className="fee">
+      <span>
+        Listed <s className="tnum">{money(rent)}</s>
+      </span>
+      <b className="tnum">
+        {delta > 0 ? "+" : "−"}
+        {money(Math.abs(delta))}
+      </b>
+      {/* On a phone a call's facts below already say who heard it; the listing's own says so everywhere. */}
+      {source && <span className={source === "agent heard" ? "max-sm:hidden" : undefined}>· {source}</span>}
+    </span>
+  );
+}

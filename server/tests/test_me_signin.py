@@ -81,6 +81,7 @@ def test_no_token_gets_401(clerk):
     ({"max_monthly": "2600"}, "max_monthly"),                 # a budget sent as text
     ({"max_monthly": 2600.5}, "max_monthly"),                 # money in whole dollars
     ({"max_monthly": -1}, "max_monthly"),
+    ({"max_monthly": 0}, "max_monthly"),                      # a $0 budget would empty every board
     ({"min_beds": 6}, "min_beds"),                            # beds from 0 to 5
     ({"min_beds": 1.25}, "min_beds"),
     ({"min_beds": "two"}, "min_beds"),

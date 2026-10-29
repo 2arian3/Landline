@@ -8,13 +8,18 @@ const LABEL: Record<string, string> = {
   other: "also",
 };
 
-/** A heard fact under a plain label: "parking: $150 a month", "free from November 1". */
+/** A heard fact under a plain label, in sentence case: "Parking: $150 a month", "Free from November 1". Only
+ *  the first letter changes, so the Auditor's "Dec 1" stays. */
 export function factLine(field: string, value: string): string {
   const v = value.trim().replace(/\.$/, "");
-  if (field === "available") return v;                                     // "still available"
-  if (field === "available_from") return v.toLowerCase() === "now" ? "available now" : `free from ${v}`;
-  if (field === "fees" && v.startsWith("no other")) return v;             // "no other monthly fees"
-  return `${LABEL[field] ?? field.replaceAll("_", " ")}: ${v}`;
+  if (field === "available") return sentence(v);                           // "Still available"
+  if (field === "available_from") return v.toLowerCase() === "now" ? "Available now" : `Free from ${v}`;
+  if (field === "fees" && v.startsWith("no other")) return sentence(v);   // "No other monthly fees"
+  return `${sentence(LABEL[field] ?? field.replaceAll("_", " "))}: ${v}`;
+}
+
+function sentence(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 /** How a call ended, in a few words. */
@@ -30,6 +35,14 @@ export const VIEWING: Record<string, string> = {
   confirmed: "Viewing confirmed",
   declined: "Viewing declined",
 };
+
+/** A viewing in one line, with its time once: "Viewing booked: Thu, Oct 29, 6:30 p.m.". The time is the code's
+ *  (starts_at, in Toronto time); the agent's own words (slot_text) only when there's no time to show. */
+export function viewingLine(v: { starts_at?: string | null; slot_text?: string | null; status: string }): string {
+  const word = VIEWING[v.status] ?? `Viewing ${v.status}`;
+  const at = (v.starts_at && when(v.starts_at)) || v.slot_text?.trim();
+  return at ? `${word}: ${at}` : word;
+}
 
 /** A moment in Toronto time, e.g. "Sat, Oct 24, 1:12 a.m.", as the web's /me writes it (web/lib/admin.ts). */
 export function when(iso: string): string {
@@ -49,4 +62,46 @@ export function when(iso: string): string {
 export function phoneLabel(e164: string): string {
   const m = /^\+1(\d{3})(\d{3})(\d{4})$/.exec(e164);
   return m ? `+1 ${m[1]} ${m[2]} ${m[3]}` : e164;
+}
+
+const NBSP = " ";
+
+/** A date part in Toronto time, from a plain formatter, with its spaces made no-break so it can't wrap inside. */
+function part(t: Date, options: Intl.DateTimeFormatOptions): string {
+  return new Intl.DateTimeFormat("en-US", { timeZone: "America/Toronto", ...options }).format(t).replace(/\s+/g, NBSP);
+}
+
+/**
+ * The board's one way to write a time, "Sat, Oct 31 · 2:00 PM" in Toronto (web/lib/time.ts's formatWhen: keep
+ * the two in step). Null when it doesn't parse. Built from three plain formatters rather than formatToParts,
+ * whose part types Hermes gets wrong (the hour and minute come back as "literal", which read as "12:"). A phone
+ * without time zone data gets `when`'s wording instead.
+ */
+export function formatWhen(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const t = new Date(iso);
+  if (Number.isNaN(t.getTime())) return null;
+  try {
+    const weekday = part(t, { weekday: "short" });
+    const date = part(t, { month: "short", day: "numeric" });
+    const clock = part(t, { hour: "numeric", minute: "2-digit", hour12: true });
+    return `${weekday},${NBSP}${date}${NBSP}· ${clock}`;
+  } catch {
+    return when(iso) || null;
+  }
+}
+
+/** A viewing as the board's statusOf says it (web/lib/status.ts): booked in ink, waiting on the agent;
+ *  confirmed in green; declined in red. The time is the code's; the agent's words only when there's none. */
+export function viewingStatus(v: { starts_at?: string | null; slot_text?: string | null; status: string }): {
+  words: string;
+  sub: string | null;
+  tone: "ink" | "real" | "dead";
+} {
+  const at = formatWhen(v.starts_at) ?? (v.slot_text?.trim() || null);
+  if (v.status === "confirmed") return { words: at ? `Viewing confirmed · ${at}` : "Viewing confirmed", sub: null, tone: "real" };
+  if (v.status === "declined") {
+    return { words: at ? `The agent can’t do ${at}` : "The agent can’t make the viewing", sub: null, tone: "dead" };
+  }
+  return { words: at ? `Viewing ${at}` : "Viewing booked", sub: "Waiting for the agent to confirm", tone: "ink" };
 }

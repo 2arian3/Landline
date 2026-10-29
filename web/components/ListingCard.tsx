@@ -1,37 +1,36 @@
 "use client";
 
-import { Money } from "./Money";
+import { motion, useReducedMotion } from "motion/react";
+import { Icon } from "./Icon";
+import { FeeLine, Price } from "./Money";
+import { LiveLines } from "./Captions";
+import { cardFacts, newestQuote } from "@/lib/facts";
 import { money, photoAt, specLine } from "@/lib/format";
 import type { Unheard } from "@/lib/outcome";
-import type { Card } from "@/lib/types";
-import { viewingStatus } from "@/lib/viewing";
-
-export const STATUS: Partial<Record<Card["status"], { word: string; color: string }>> = {
-  calling: { word: "On the phone", color: "var(--color-live)" },
-  verified: { word: "Checked by phone", color: "var(--color-real)" },
-  suspect: { word: "Something's off", color: "var(--color-dead)" },
-  dead: { word: "Already rented", color: "var(--color-ink-3)" },
-  no_answer: { word: "No answer yet", color: "var(--color-ink-3)" },
-  booked: { word: "Viewing booked", color: "var(--color-real)" },
-};
-
-/** Where a planned place stands before its call has a result: picked, queued after hang-up, ringing. */
-export type Mark = "will_call" | "queued" | "ringing";
-
-export const MARK: Record<Mark, { word: string; color: string }> = {
-  will_call: { word: "Will call", color: "var(--color-ink)" },
-  queued: { word: "Queued", color: "var(--color-ink-3)" },
-  ringing: { word: "Ringing", color: "var(--color-live)" },
-};
+import { SPRING_DETAIL } from "@/lib/motion";
+import { type Stage, statusOf } from "@/lib/status";
+import { formatClock } from "@/lib/time";
+import type { CallView, Card } from "@/lib/types";
 
 /** "Up 2", "Down 1" or "New" for a few seconds after a re-rank; null when nothing moved. */
 export type Move = number | "new" | null;
 
+// What the card's costs come from when a call heard them, so the fee line can say who.
+const COSTS = new Set(["parking", "parking_cost", "fees", "utilities_included", "rent"]);
+
+/**
+ * One place on the board (the canvas's Card board): money first, then the place, then what a person said.
+ * The rank wears the pin's face, so the card and the map name the same place at a glance. The status line
+ * comes from lib/status.ts, shared with the pin and the detail. While its call is on, the call's last two
+ * lines show under it.
+ */
 export function ListingCard({
   card,
   focused,
   hovered,
   moved = null,
+  call = null,
+  planned = false,
   mark,
   ended,
   onSelect,
@@ -41,25 +40,36 @@ export function ListingCard({
   focused: boolean;
   hovered: boolean;
   moved?: Move;
-  mark?: Mark;
-  /** How a call that learned nothing ended, in place of "No answer yet". */
+  /** The place's latest call, for its status and its live lines. */
+  call?: CallView | null;
+  /** In the plan the renter picked. */
+  planned?: boolean;
+  /** LiveBoard's stage for the place, when it worked one out. */
+  mark?: Stage;
+  /** How a call that learned nothing ended, when LiveBoard worked it out. */
   ended?: Unheard | null;
   onSelect: (id: string) => void;
   onHover: (id: string | null) => void;
 }) {
-  // A viewing says more than "Viewing booked": when, and whether the agent has confirmed it (O-08e).
-  const status = mark
-    ? MARK[mark]
-    : card.viewing
-      ? viewingStatus(card.viewing)
-      : ended
-        ? { word: ended.word, color: "var(--color-ink-3)" }
-        : STATUS[card.status];
-  const dead = card.status === "dead";
+  const s = statusOf(card, { call, planned, stage: mark ?? undefined, ended: ended?.reason ?? null });
+  // The photo, price and address travel into the detail (LiveBoard), unless motion is reduced.
+  const reduced = useReducedMotion();
+  const travel = (part: string) => (reduced ? undefined : `${part}-${card.listing_id}`);
+  const dead = s.kind === "gone";
   const flag = card.red_flags[0];
-  // What a person said on the phone. A red flag outranks it here; the detail shows both.
-  const heard = flag ? undefined : card.facts[0];
+  const facts = cardFacts(card.facts);
+  const quote = newestQuote(card.facts);
+  const heardCost = card.facts.some((f) => COSTS.has(f.field));
+  // A place in the calls may still get a fee, so its card keeps the fee line's room until then.
+  const inCalls = s.kind !== "ranked";
+  const live = s.kind === "on_phone" && call?.state === "live" ? call : null;
+  // A flag says itself, in full, below; a flagged place with no flag text still gets its status line.
+  const showStatus = !!s.words && !(s.kind === "flagged" && flag);
+  const foot = facts.length > 0 || !!flag || !!card.watch_out || showStatus || !!live;
   const moveWord = moved === "new" ? "New" : moved && moved > 0 ? `Up ${moved}` : moved && moved < 0 ? `Down ${-moved}` : null;
+  const classes = ["card", focused && "is-focus", hovered && !focused && "is-hover", dead && "is-gone"];
+  const said = formatClock(quote?.at);
+
   return (
     <button
       type="button"
@@ -67,93 +77,157 @@ export function ListingCard({
       onMouseEnter={() => onHover(card.listing_id)}
       onMouseLeave={() => onHover(null)}
       aria-current={focused ? "true" : undefined}
-      aria-label={`${card.rank}. ${card.address}, ${money(card.monthly_cost)} a month, ${specLine(card)}${
-        status ? `, ${status.word}` : ""
-      }`}
-      className="group grid w-full grid-cols-[28px_84px_1fr] items-start gap-3 rounded-[var(--radius-card)] bg-surface p-3 text-left transition-[box-shadow,background-color] duration-200"
-      style={{
-        boxShadow: focused
-          ? "0 0 0 1.5px var(--color-ink)"
-          : hovered
-            ? "0 0 0 1px var(--color-line), 0 4px 14px rgba(26,24,21,.06)"
-            : "0 0 0 1px var(--color-hair)",
-        opacity: dead ? 0.62 : 1,
-      }}
+      data-listing-id={card.listing_id}
+      aria-label={`${card.rank}. ${card.address}, ${money(card.monthly_cost)} a month, ${specLine(card)}, ${s.spoken}`}
+      className={classes.filter(Boolean).join(" ")}
     >
-      <span
-        aria-hidden
-        className="mt-0.5 grid h-7 w-7 place-items-center rounded-full bg-ink text-meta font-strong text-white tnum"
-      >
-        {card.rank}
-      </span>
-
-      <span className="relative block h-[84px] w-[84px] overflow-hidden rounded-[var(--radius-photo)] bg-press">
+      <span className="card-media">
         {card.photo ? (
           // Source photos stay on the source's CDN, attributed in the detail view. The top card's is
           // usually the largest thing on a phone's first screen, so it loads first rather than lazily.
           // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={photoAt(card.photo, 168)}
-            srcSet={`${photoAt(card.photo, 168)} 168w, ${photoAt(card.photo, 252)} 252w`}
-            sizes="84px"
-            width={84}
-            height={84}
+          <motion.img
+            layoutId={travel("photo")}
+            transition={SPRING_DETAIL}
+            src={photoAt(card.photo, 208)}
+            srcSet={`${photoAt(card.photo, 208)} 208w, ${photoAt(card.photo, 312)} 312w`}
+            sizes="(min-width: 1600px) 104px, 88px"
+            width={104}
+            height={104}
             alt=""
             loading={card.rank === 1 ? "eager" : "lazy"}
             fetchPriority={card.rank === 1 ? "high" : "auto"}
-            className="h-full w-full object-cover"
+            className="card-photo"
+            style={dead ? { opacity: 0.6 } : undefined}
           />
         ) : (
           // Said plainly, so an empty square doesn't read as a photo still loading.
-          <span className="flex h-full w-full items-center justify-center text-meta text-ink-3">No photo</span>
+          <span className="card-nophoto">No photo</span>
         )}
+        {/* The rank wears the pin's face: same number, same shape, same badge as on the map. */}
+        <span aria-hidden className="card-rank" data-s={s.pin}>
+          <span className="pin-face">
+            {card.rank}
+            {s.badge && (
+              <span className="pin-badge">
+                <Icon name={s.badge} />
+              </span>
+            )}
+          </span>
+        </span>
       </span>
 
-      <span className="min-w-0">
-        <span className="flex items-start justify-between gap-2">
-          <Money rent={card.rent} monthly={card.monthly_cost} />
+      <span className="card-body">
+        <span className="card-top">
+          <motion.span layoutId={travel("price")} transition={SPRING_DETAIL}>
+            <Price monthly={card.monthly_cost} />
+          </motion.span>
           {moveWord && (
-            <span className="mt-1 shrink-0 text-meta font-label text-ink-2 tnum" aria-hidden>
+            <span aria-hidden className="move">
+              {typeof moved === "number" && <Icon name={moved > 0 ? "arrow-up" : "arrow-down"} />}
               {moveWord}
             </span>
           )}
         </span>
-        <span className={`mt-1 block truncate text-fact font-label ${dead ? "line-through" : ""}`}>
+        <FeeLine
+          rent={card.rent}
+          monthly={card.monthly_cost}
+          source={heardCost ? "agent heard" : "listing says"}
+          hold={inCalls}
+        />
+        {/* Two lines at most on a phone; one on a desktop and the projector. */}
+        <motion.span layoutId={travel("addr")} transition={SPRING_DETAIL} className="addr block max-sm:line-clamp-2 sm:truncate">
           {card.address}
-        </span>
-        <span className="block truncate text-meta text-ink-3">{specLine(card)}</span>
+        </motion.span>
+        <span className="spec block truncate">{specLine(card)}</span>
         {card.reasons.length > 0 && (
-          <span className="mt-1 block truncate text-meta text-ink-2">{card.reasons.join(" · ")}</span>
-        )}
-        {flag && <span className="block truncate text-meta text-dead">Red flag: {lower(flag)}</span>}
-        {heard && (
-          <span className="block truncate text-meta text-ink-2">
-            <span className="text-ink-3">{heard.speaker}:</span> {lower(heard.value)}
+          // On a phone, once a call has heard facts, the facts say more than the reasons.
+          <span className={`reasons line-clamp-2 ${facts.length ? "max-sm:hidden" : ""}`}>
+            {leading(card.reasons).join(" · ")}
           </span>
         )}
-        {card.watch_out && <span className="block truncate text-meta text-dead">{card.watch_out}</span>}
         {card.reaction && (
-          <span className="block truncate text-meta text-ink">
-            <span className="font-label">You:</span> {lower(card.reaction)}
-          </span>
-        )}
-        {status && (
-          <span
-            className="mt-1 flex items-start gap-1.5 text-meta font-label transition-colors duration-300 motion-reduce:transition-none"
-            style={{ color: status.color }}
-          >
-            {/* Beside the first line when a viewing wraps to two. */}
-            <span
-              aria-hidden
-              className={`mt-[6px] h-1.5 w-1.5 shrink-0 rounded-full ${card.status === "calling" || mark === "ringing" ? "live-dot" : ""}`}
-              style={{ background: status.color }}
-            />
-            {status.word}
+          <span className="you block truncate">
+            <b>You:</b> {lower(card.reaction)}
           </span>
         )}
       </span>
+
+      {foot && (
+        <span className="card-foot">
+          {facts.length > 0 && (
+            <span className="facts">
+              {facts.map((f) => (
+                <span key={f.key} className="fact">
+                  <Icon name={f.glyph} />
+                  <span>
+                    {f.label ? (
+                      <>
+                        <b>{f.label}:</b> {f.text}
+                      </>
+                    ) : (
+                      <b>{f.text}</b>
+                    )}
+                  </span>
+                </span>
+              ))}
+              {/* Every fact says where it came from (hard rule 3). On the projector, their words verbatim with
+                  who said them and when; elsewhere who said them, and every quote is a tap away in the detail. */}
+              {quote && (
+                <span className="quote hidden min-[1600px]:block">
+                  &ldquo;{quote.quote}&rdquo;{" "}
+                  <span className="src">
+                    {quote.speaker || "Agent heard"}
+                    {said ? ` · ${said}` : ""}
+                  </span>
+                </span>
+              )}
+              <span className={`src block ${quote ? "min-[1600px]:hidden" : ""}`}>
+                {quoteSource(quote?.speaker ?? card.facts[0]?.speaker ?? "Agent heard")} heard on the call
+                {quote ? ", in their words in the detail" : ""}
+              </span>
+            </span>
+          )}
+          {card.watch_out && (
+            // A watch-out (a long commute, over budget) is ink, never red: red is a problem with the place.
+            <span className="fact">
+              <Icon name="triangle-alert" />
+              <span>{upper(card.watch_out)}</span>
+            </span>
+          )}
+          {flag && (
+            // Shown whole: a warning a renter must read in full (#312).
+            <span className="flag">
+              <Icon name="triangle-alert" />
+              <span>Something&rsquo;s off: {lower(flag)}</span>
+            </span>
+          )}
+          {showStatus && (
+            <span className={`status is-${s.tone}`}>
+              {s.glyph && <Icon name={s.glyph} />}
+              <span>
+                {s.words}
+                {s.sub && <span className="sub block">{s.sub}</span>}
+              </span>
+            </span>
+          )}
+          {live && <LiveLines key={live.call_id} call={live} />}
+        </span>
+      )}
     </button>
   );
 }
 
+/** "Agent" for "Agent heard": the quote's own line says it was heard. */
+function quoteSource(speaker: string): string {
+  return speaker.replace(/\s+heard$/i, "") || "Agent";
+}
+
 const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
+const upper = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+/** The reasons as the server ranked them, with the commute to the place the renter named leading. */
+function leading(reasons: string[]): string[] {
+  const i = reasons.findIndex((r) => /\bmin by TTC\b/i.test(r));
+  return i <= 0 ? reasons : [reasons[i], ...reasons.slice(0, i), ...reasons.slice(i + 1)];
+}

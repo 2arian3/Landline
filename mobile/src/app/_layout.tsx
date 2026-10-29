@@ -6,7 +6,7 @@ import { StyleSheet, Text } from "react-native";
 
 import { Screen } from "@/components/ui";
 import { CLERK_PUBLISHABLE_KEY } from "@/lib/config";
-import { color } from "@/lib/theme";
+import { color, type } from "@/lib/theme";
 
 export default function RootLayout() {
   // No key yet (a fresh clone, or a teammate without mobile/.env): say so rather than crash.
@@ -30,6 +30,6 @@ export default function RootLayout() {
 }
 
 const styles = StyleSheet.create({
-  title: { fontSize: 24, fontWeight: "600", color: color.ink },
-  body: { fontSize: 16, lineHeight: 22, color: color.ink2 },
+  title: { ...type.largeTitle, color: color.ink },
+  body: { ...type.body, color: color.ink2 },
 });
