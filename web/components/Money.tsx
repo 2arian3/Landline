@@ -86,8 +86,8 @@ export function FeeLine({
         {delta > 0 ? "+" : "−"}
         {money(Math.abs(delta))}
       </b>
-      {/* On a phone the facts below already say who. */}
-      {source && <span className="max-sm:hidden">· {source}</span>}
+      {/* On a phone a call's facts below already say who heard it; the listing's own says so everywhere. */}
+      {source && <span className={source === "agent heard" ? "max-sm:hidden" : undefined}>· {source}</span>}
     </span>
   );
 }
