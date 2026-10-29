@@ -24,7 +24,7 @@ import {
   panelRoom,
   sheetLook,
 } from "./Shell";
-import { Activity, Brand, Heard, Results, Welcome } from "./Summary";
+import { Activity, Brand, Heard, Plan, Results, Welcome } from "./Summary";
 import { type Opened, follows } from "@/lib/follow";
 import { nothingHeard } from "@/lib/format";
 import { type Unheard, unheard } from "@/lib/outcome";
@@ -268,8 +268,9 @@ export function LiveBoard({
         <p className="text-support text-ink">{view?.agent_says || "Tell Landline what you\u2019re looking for."}</p>
       ) : (
         <>
+          <Plan view={view} />
+          <Heard key={sessionId} view={view} compact={compact} wrap={!desktop && snap !== PEEK} />
           <Activity view={view} compact={compact} />
-          <Heard view={view} compact={compact} wrap={!desktop && snap !== PEEK} />
           <Board
             board={board}
             loading={!view}
