@@ -72,6 +72,8 @@ export type Status = {
   spoken: string;
   /** The short word the summary counts it by: "1 left a message · 2 didn't get through". */
   tally: string;
+  /** The map legend's word for its pin's shape: "Ranked", "Calling", "No answer", "Booked"… */
+  legend: string;
 };
 
 /** What a call that reached nobody, or learned nothing, says about how it ended: the card's words and the
@@ -126,10 +128,28 @@ const TALLY: Record<StatusKind, string> = {
   gone: "already rented",
 };
 
-const make = (s: Omit<Status, "spoken" | "tally"> & { spoken?: string; tally?: string }): Status => ({
+// The legend names the pin's shape, so ringing and on the phone share "Calling", and a left message and
+// no answer share the one no-answer pin.
+const LEGEND: Record<StatusKind, string> = {
+  ranked: "Ranked",
+  will_call: "Will call",
+  queued: "Queued",
+  ringing: "Calling",
+  on_phone: "Calling",
+  checked: "Checked",
+  booked: "Booked",
+  confirmed: "Confirmed",
+  declined: "Declined",
+  flagged: "Flagged",
+  unheard: "No answer",
+  gone: "Rented",
+};
+
+const make = (s: Omit<Status, "spoken" | "tally" | "legend"> & { spoken?: string; tally?: string }): Status => ({
   ...s,
   spoken: s.spoken ?? (s.sub ? `${s.words}. ${s.sub}` : s.words),
   tally: s.tally ?? TALLY[s.kind],
+  legend: LEGEND[s.kind],
 });
 
 /** The one status for a card, from the card, its latest call and its viewing. */
