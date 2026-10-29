@@ -1,5 +1,6 @@
 "use client";
 
+import { motion, useReducedMotion } from "motion/react";
 import { type UIEvent, useCallback, useEffect, useRef, useState } from "react";
 import { Captions } from "./Captions";
 import { Feedback, type Reaction } from "./Feedback";
@@ -10,6 +11,7 @@ import { factLine } from "@/lib/heard";
 import { api } from "@/lib/live";
 import { type Unheard, callNotes, unheard } from "@/lib/outcome";
 import { type Stage, statusOf } from "@/lib/status";
+import { SPRING_DETAIL } from "@/lib/motion";
 import { formatWhen } from "@/lib/time";
 import type { CallState, CallView, Card, Fact, ListingDetail as Detail, Provenance } from "@/lib/types";
 
@@ -121,6 +123,9 @@ export function ListingDetail({
   const photos = detail?.photos.length ? detail.photos : card?.photo ? [card.photo] : [];
   // The card is the session's truth: it carries what calls changed (+$150 parking).
   const price = card ?? detail;
+  // The card's photo, price and address travel here (layoutId), unless motion is reduced.
+  const reduced = useReducedMotion();
+  const travel = (part: string) => (reduced ? undefined : `${part}-${id}`);
   const address = detail?.address ?? card?.address;
   const unit = card?.unit_label;
   const place = [detail?.building_name, card?.neighbourhood].find((p) => p && p !== address) ?? null;
@@ -170,17 +175,17 @@ export function ListingDetail({
       </nav>
 
       <div className="flex flex-col gap-3 px-4">
-        {photos.length > 0 && <Hero photos={photos} address={address ?? "this place"} />}
+        {photos.length > 0 && <Hero photos={photos} address={address ?? "this place"} travel={travel("photo")} />}
 
         <header>
           {price ? (
             <div className="flex items-baseline justify-between gap-3">
-              <p className="t-price-lead">
+              <motion.p layoutId={travel("price")} transition={SPRING_DETAIL} className="t-price-lead">
                 <span aria-hidden>
                   {money(price.monthly_cost)} <span className="per">/mo</span>
                 </span>
                 <span className="sr-only">{money(price.monthly_cost)} a month</span>
-              </p>
+              </motion.p>
               {photos.length > 0 && <p className="t-caption c-2 shrink-0">Photos: {src}</p>}
             </div>
           ) : (
@@ -196,10 +201,10 @@ export function ListingDetail({
               a month
             </p>
           )}
-          <h2 className="t-title mt-2">
+          <motion.h2 layoutId={travel("addr")} transition={SPRING_DETAIL} className="t-title mt-2">
             {address ?? " "}
             {unit ? <span className="font-normal c-2">, unit {unit}</span> : null}
-          </h2>
+          </motion.h2>
           {/* Painted from the card, so it's there before the listing lands and its line never moves. */}
           <p className="t-callout c-2 mt-0.5 min-h-[var(--text-callout--line-height)]">{spec}</p>
           {card?.watch_out && <p className="t-callout mt-1 text-dead">{card.watch_out}</p>}
@@ -396,7 +401,7 @@ const TONE: Record<string, string> = {
 };
 
 /** The photos, one at a time, swiped or scrolled, with a dot for each (the canvas's hero). */
-function Hero({ photos, address }: { photos: string[]; address: string }) {
+function Hero({ photos, address, travel }: { photos: string[]; address: string; travel?: string }) {
   const [at, setAt] = useState(0);
   const onScroll = (e: UIEvent<HTMLDivElement>) => {
     const el = e.currentTarget;
@@ -413,8 +418,10 @@ function Hero({ photos, address }: { photos: string[]; address: string }) {
       >
         {photos.map((p, i) => (
           // eslint-disable-next-line @next/next/no-img-element
-          <img
+          <motion.img
             key={p}
+            layoutId={i === 0 ? travel : undefined}
+            transition={SPRING_DETAIL}
             src={p}
             alt={i === 0 ? `Photo of ${address}` : ""}
             loading={i < 2 ? "eager" : "lazy"}
