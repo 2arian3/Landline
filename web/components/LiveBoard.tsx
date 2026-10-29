@@ -10,7 +10,7 @@ import { Board } from "./Board";
 import { DemoControls } from "./DemoControls";
 import { Toasts, useToasts } from "./Toast";
 import { Icon } from "./Icon";
-import type { Mark } from "./ListingCard";
+import type { Stage } from "@/lib/status";
 import { ListingDetail, type Reaction } from "./ListingDetail";
 import type { Padding } from "./MapView";
 import {
@@ -140,7 +140,7 @@ export function LiveBoard({
   // Where each planned place stands until its call has a result: picked during the brief, queued
   // once the renter hangs up, then ringing. Live and finished calls speak through the card's status.
   const marks = useMemo(() => {
-    const m: Record<string, Mark> = {};
+    const m: Record<string, Stage> = {};
     for (const id of view?.plan ?? []) m[id] = "will_call";
     for (const call of view?.calls ?? []) {
       if (call.state === "queued") m[call.listing_id] = "queued";

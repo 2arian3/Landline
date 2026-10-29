@@ -6,28 +6,9 @@ import { LiveLines } from "./Captions";
 import { cardFacts, newestQuote } from "@/lib/facts";
 import { money, photoAt, specLine } from "@/lib/format";
 import type { Unheard } from "@/lib/outcome";
-import { type Stage, statusOf, toneColor } from "@/lib/status";
+import { type Stage, statusOf } from "@/lib/status";
 import { formatClock } from "@/lib/time";
 import type { CallView, Card } from "@/lib/types";
-
-/** Where a planned place stands before its call has a result (lib/status.ts `Stage`). */
-export type Mark = Stage;
-
-// Shims for the detail's header line until it reads statusOf itself (Lucent PR7): the same words and
-// colours, built from lib/status.ts so they can't drift from the card's.
-type Said = { word: string; color: string };
-const said = (card: Partial<Card>, stage: Stage | null = null): Said => {
-  const s = statusOf({ red_flags: [], ...card } as Card, { stage });
-  return { word: s.words, color: toneColor(s.tone) };
-};
-export const STATUS: Partial<Record<Card["status"], Said>> = Object.fromEntries(
-  (["calling", "verified", "suspect", "dead", "no_answer", "booked"] as const).map((k) => [k, said({ status: k })]),
-);
-export const MARK: Record<Mark, Said> = {
-  will_call: said({ status: "pending" }, "will_call"),
-  queued: said({ status: "pending" }, "queued"),
-  ringing: said({ status: "pending" }, "ringing"),
-};
 
 /** "Up 2", "Down 1" or "New" for a few seconds after a re-rank; null when nothing moved. */
 export type Move = number | "new" | null;
@@ -62,7 +43,7 @@ export function ListingCard({
   /** In the plan the renter picked. */
   planned?: boolean;
   /** LiveBoard's stage for the place, when it worked one out. */
-  mark?: Mark;
+  mark?: Stage;
   /** How a call that learned nothing ended, when LiveBoard worked it out. */
   ended?: Unheard | null;
   onSelect: (id: string) => void;
@@ -90,6 +71,7 @@ export function ListingCard({
       onMouseEnter={() => onHover(card.listing_id)}
       onMouseLeave={() => onHover(null)}
       aria-current={focused ? "true" : undefined}
+      data-listing-id={card.listing_id}
       aria-label={`${card.rank}. ${card.address}, ${money(card.monthly_cost)} a month, ${specLine(card)}, ${s.spoken}`}
       className={classes.filter(Boolean).join(" ")}
     >
