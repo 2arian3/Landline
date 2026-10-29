@@ -1,6 +1,7 @@
-"""listing_status (A-14): "What happened with Markham?" on a later call, answered by code from what the
-renter's calls stored. A phone caller's earlier sessions come from rows shaped like the database's (a fake
-here); a judge session answers from itself only. Every reply is spoken: at most 25 words."""
+"""listing_status (A-14): "What happened with Markham?", answered by code from what this session's calls
+stored. A phone caller's earlier sessions are never read (the fake database here records any read). What
+it says is checked on rows shaped like the database's, through the same builder (api/me.py `listings`).
+Every reply is spoken: at most 25 words."""
 import asyncio
 import json
 from datetime import UTC, date, datetime
@@ -9,7 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 from landline.agents.concierge import status, tools
-from landline.api.me import HeardFact, MyListing
+from landline.api.me import HeardFact, MyListing, listings
 from landline.contracts import (
     CallOutcome,
     CallPlan,
@@ -149,40 +150,73 @@ def _thursday(monkeypatch):
     monkeypatch.setattr(tools, "datetime", Clock)
 
 
-async def test_a_second_call_hears_that_listings_facts_and_viewing_in_one_reply(phone):
-    assert await _ask(phone, "Markham") == ("112 Markham St: Viewing Saturday at 2 pm, confirmed. On Tuesday "
-                                            "the agent said parking: $150 a month; pets: dogs allowed.")
-    assert phone.runtime.db.asked == [PHONE]   # found by the number the call came from
+PLACE = status._place_of(CATALOGUE)
 
 
-async def test_a_call_that_went_to_voicemail_says_nothing_was_heard(phone):
-    assert await _ask(phone, "what happened with Erskine") == \
+def _found(ref: str, view):
+    """What resolve finds among the stored calls in EARLIER and CALLS, as if this session had made them."""
+    return status.resolve(ref, view, listings([{"session_id": "s_earlier01", "snapshot": EARLIER}], CALLS,
+                                              PLACE), PLACE)
+
+
+def _said(ref: str, view) -> str:
+    found = _found(ref, view)
+    said = found if isinstance(found, str) else status.spoken(found, NOW, can_text=True)
+    assert len(said.split()) <= 25, said
+    return said
+
+
+async def test_a_phone_callers_earlier_sessions_are_never_read(phone):
+    """The Concierge knows nothing about a renter from earlier calls: their sessions aren't read, so a
+    place this call hasn't got anything on says so."""
+    assert await _ask(phone, "Markham") == "112 Markham St: Landline hasn't called it for you yet."
+    assert await _ask(phone, "Spadina") == status.NOT_FOUND == "I don't have anything on that one yet."
+    assert await _ask(phone, "my viewing") == status.NOT_FOUND
+    assert phone.runtime.db.asked == []
+
+
+def test_a_listings_facts_and_viewing_in_one_reply(phone):
+    assert _said("Markham", _view(phone)) == ("112 Markham St: Viewing Saturday at 2 pm, confirmed. On "
+                                              "Tuesday the agent said parking: $150 a month; pets: dogs "
+                                              "allowed.")
+
+
+def test_a_call_that_went_to_voicemail_says_nothing_was_heard(phone):
+    assert _said("what happened with Erskine", _view(phone)) == \
         "88 Erskine Ave: On Tuesday the call went to voicemail, so nothing was heard yet."
 
 
 async def test_a_place_none_of_their_calls_reached(phone):
-    assert await _ask(phone, "Spadina") == status.NOT_FOUND
+    assert _said("Spadina", _view(phone)) == status.NOT_FOUND
     on_the_board = await _ask(phone, "Dupont")
     assert on_the_board == "322 Dupont St: Landline hasn't called it for you yet."
 
 
-async def test_words_about_the_place_and_my_viewing_find_it(phone):
-    balcony = await _ask(phone, "the one with the balcony")
+def test_words_about_the_place_and_my_viewing_find_it(phone):
+    balcony = _said("the one with the balcony", _view(phone))
     assert balcony.startswith("40 Bloor St W: On Tuesday the agent said outdoor space: a balcony;")
-    viewing = await _ask(phone, "my viewing")
+    viewing = _said("my viewing", _view(phone))
     assert viewing.startswith("112 Markham St: Viewing Saturday at 2 pm, confirmed.")
 
 
-async def test_more_than_fits_is_offered_by_text_and_sent_to_the_callers_own_number(phone):
-    said = await _ask(phone, "Bloor")
+def test_more_than_fits_is_offered_by_text_with_every_quote(phone):
+    said = _said("Bloor", _view(phone))
     assert said.endswith(status.OFFER) and "lease" not in said
-    assert phone.texts == []   # nothing is sent until they say yes
-    sent_it = await _ask(phone, "Bloor", text_rest=True)
-    assert sent_it == "Texted you everything Landline heard about 40 Bloor St W."
-    [sent] = phone.texts
+    sent = status.texted(_found("Bloor", _view(phone)), NOW)
     assert sent.startswith("Landline: what our calls heard about 40 Bloor St W.")
     for quote in ("There's a balcony off the bedroom.", "Cats only, sorry.", "It's a one year lease."):
         assert f"“{quote}”" in sent   # every fact with the agent's own words
+
+
+async def test_text_rest_sends_to_the_callers_own_number(phone):
+    assert phone.texts == []   # nothing is sent until they say yes
+    sent_it = await _ask(phone, "Dupont", text_rest=True)
+    assert sent_it == "Texted you everything Landline heard about 322 Dupont St."
+    assert [t.splitlines()[0] for t in phone.texts] == ["Landline: what our calls heard about 322 Dupont St."]
+
+
+def _view(ctx):
+    return ctx.runtime.get(SID)
 
 
 async def test_a_judge_session_answers_from_itself_only():
@@ -223,21 +257,21 @@ async def test_other_calls_add_what_this_renter_didnt_hear_with_when_and_never_w
     monday = date(2026, 10, 26)
     laundry = Known(field="laundry", value="in the building", quote="Coin laundry downstairs.", day=monday)
     parking = Known(field="parking_cost", value="$90 a month", quote="Ninety for parking.", day=monday)
-    phone.runtime.memory = Memory([laundry])
+    phone.runtime.memory = Memory([laundry])   # listing memory (O-09b), not the renter's earlier calls
     said = await _ask(phone, "Erskine")
-    assert said == ("88 Erskine Ave: On Tuesday the call went to voicemail, so nothing was heard yet. "
+    assert said == ("88 Erskine Ave: Landline hasn't called it for you yet. "
                     "Another Landline call on Monday heard laundry: in the building.")
     phone.runtime.memory = Memory([laundry, parking])
-    said = await _ask(phone, "Markham")   # it heard parking itself, so theirs stands; the rest is by text
+    found = _found("Markham", _view(phone))   # it heard parking itself, so theirs stands; the rest is by text
+    found.others = await status._others(phone.runtime, found)
+    said = status.spoken(found, NOW, can_text=True)
     assert "$90" not in said and said.endswith(status.OFFER)
-    await _ask(phone, "Markham", text_rest=True)
-    sent = phone.texts[-1]
+    sent = status.texted(found, NOW)
     assert "on Monday heard: laundry: in the building (“Coin laundry downstairs.”)." in sent
     assert "Ninety" not in sent
     monkeypatch.setattr(status, "OTHERS_WAIT_S", 0.01)
     phone.runtime.memory = Memory(None)   # a read still going: the reply doesn't wait for it
-    assert await _ask(phone, "Erskine") == \
-        "88 Erskine Ave: On Tuesday the call went to voicemail, so nothing was heard yet."
+    assert await _ask(phone, "Erskine") == "88 Erskine Ave: Landline hasn't called it for you yet."
 
 
 @pytest.mark.parametrize("ref", ["Markham", "Erskine", "Bloor", "the one with the balcony", "my viewing", "2",
@@ -248,9 +282,9 @@ async def test_every_reply_is_25_words_or_fewer(phone, ref):
     await _ask(phone, ref)   # _ask checks the count
 
 
-async def test_the_eval_case_is_answerable_from_its_earlier_calls():
+async def test_the_eval_cases_earlier_calls_are_never_told():
     """The Concierge eval's returning caller (evals/fixtures/concierge/returning-asks-what-happened.json),
-    offline: the earlier calls the driver seeds answer "the place on Logan" with its facts and viewing."""
+    offline: the earlier calls the driver seeds are never read, so nothing about them is said."""
     from evals.sim.cases import FIXTURES, load
     from evals.sim.driver import SIM_PHONE, EarlierCalls
     from landline.db.catalogue import _from_fixture
@@ -262,11 +296,9 @@ async def test_the_eval_case_is_answerable_from_its_earlier_calls():
     ctx = tools.ToolContext(session_id=SID, call_id="c_renter001", runtime=runtime,
                             history=EarlierCalls(case.returning.calls, NOW))
     try:
-        said = await _ask(ctx, "the place on Logan")
-        assert said == ("150 Logan Ave: Viewing Saturday at 2 pm, confirmed. On Tuesday the agent said "
-                        "parking: $150 a month; pets: dogs allowed.")
-        assert await _ask(ctx, "Danforth") == ("803 Danforth Ave: On Tuesday the call went to voicemail, so "
-                                               "nothing was heard yet.")
+        for ref in ("the place on Logan", "Danforth", "my viewing"):
+            said = await _ask(ctx, ref)
+            assert "Viewing" not in said and "agent said" not in said and "voicemail" not in said, said
     finally:
         await runtime.close()
 
