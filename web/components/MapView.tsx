@@ -3,14 +3,17 @@
 import {
   AttributionControl,
   type GeoJSONSource,
+  type IControl,
   LngLatBounds,
   Map as MapLibre,
   Marker,
-  NavigationControl,
   setWorkerUrl,
 } from "maplibre-gl";
-import { useEffect, useRef, useState } from "react";
-import type { Area, Card, CataloguePoint } from "@/lib/types";
+import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
+import { type Stage, type Status, statusOf } from "@/lib/status";
+import type { Anchor, Area, Card, CataloguePoint } from "@/lib/types";
+import { glyphElement, type IconName } from "./Icon";
+import { Legend } from "./Legend";
 
 // Copied there by `npm install` (scripts/copy-maplibre-worker.mjs); the bundler
 // can't resolve MapLibre's own worker path.
@@ -42,7 +45,16 @@ const NARROW_PX = 640;
 const PIN_GAP = 44;
 
 export type Padding = { top: number; right: number; bottom: number; left: number };
-type Pin = { marker: Marker; el: HTMLButtonElement; face: HTMLSpanElement };
+/** One board pin: the 44px button, its rank, the badge for its status, and the status in words. */
+type Pin = {
+  marker: Marker;
+  el: HTMLButtonElement;
+  rank: Text;
+  face: HTMLSpanElement;
+  badge: { name: IconName; el: HTMLSpanElement } | null;
+  said: HTMLSpanElement;
+};
+type Located = Anchor & { lat: number; lng: number };
 
 /**
  * Greater Toronto, generously. A pin or a fit outside it is a data error (a
@@ -67,6 +79,7 @@ export function MapView({
   hoverId,
   marks,
   focusArea = null,
+  anchors = [],
   padding,
   showZoom,
   onSelect,
@@ -79,6 +92,8 @@ export function MapView({
   hoverId: string | null;
   marks: Record<string, string>;
   focusArea?: Area | null;
+  /** The places the renter named ("near King and Bay"): drawn as anchors, never as listings. */
+  anchors?: Anchor[];
   padding: Padding;
   showZoom: boolean;
   onSelect: (id: string) => void;
@@ -92,6 +107,16 @@ export function MapView({
   const [ready, setReady] = useState(false);
   const handlers = useRef({ onSelect, onHover });
   handlers.current = { onSelect, onHover };
+  const anchorMarkers = useRef(new Map<string, Marker>());
+  const legend = useRef<HTMLDivElement>(null);
+
+  // Each card's one status (lib/status.ts): the pin's shape and badge, the legend, and what's said aloud.
+  const statuses = useMemo(
+    () => new Map(board.map((c) => [c.listing_id, statusOf(c, { stage: (marks[c.listing_id] || null) as Stage | null })])),
+    [board, marks],
+  );
+  const placed = anchors.filter((a): a is Located => onMap(a.lat, a.lng));
+  const anchorKey = placed.map((a) => `${a.label}@${a.lat},${a.lng}`).join("|");
 
   // ── create the map once ─────────────────────────────────────────────────
   useEffect(() => {
@@ -110,7 +135,8 @@ export function MapView({
       pixelRatio: Math.min(window.devicePixelRatio || 1, 2),
     });
     m.touchZoomRotate.disableRotation();
-    m.addControl(new AttributionControl({ compact: true }), "bottom-left");
+    // Bottom right, so the legend has the bottom left; compact on a narrow map.
+    m.addControl(new AttributionControl(), "bottom-right");
     map.current = m;
 
     m.on("load", () => {
@@ -151,16 +177,19 @@ export function MapView({
     return () => {
       pins.current.forEach(({ marker }) => marker.remove());
       pins.current.clear();
+      anchorMarkers.current.forEach((marker) => marker.remove());
+      anchorMarkers.current.clear();
       m.remove();
       map.current = null;
     };
   }, []);
 
-  // ── zoom buttons only where there's a mouse ─────────────────────────────
+  // ── zoom and fit-all buttons only where there's a mouse ─────────────────
+  const fitRef = useRef<() => void>(() => {});
   useEffect(() => {
     const m = map.current;
     if (!m || !showZoom) return;
-    const ctl = new NavigationControl({ showCompass: false });
+    const ctl = new MapButtons(() => fitRef.current());
     m.addControl(ctl, "top-right");
     return () => {
       // On unmount the map itself may already be gone.
@@ -195,31 +224,16 @@ export function MapView({
       keep.add(card.listing_id);
       let pin = pins.current.get(card.listing_id);
       if (!pin) {
-        const el = document.createElement("button");
-        el.type = "button";
-        el.className = "pin";
-        el.addEventListener("click", (e) => {
-          e.stopPropagation();
-          handlers.current.onSelect(card.listing_id);
-        });
-        el.addEventListener("mouseenter", () => handlers.current.onHover(card.listing_id));
-        el.addEventListener("mouseleave", () => handlers.current.onHover(null));
-        const face = document.createElement("span");
-        face.className = "pin-face";
-        el.append(face);
-        const marker = new Marker({ element: el, anchor: "center" }).setLngLat([card.lng!, card.lat!]).addTo(m);
-        pin = { marker, el, face };
+        pin = makePin(m, card, handlers);
         pins.current.set(card.listing_id, pin);
       } else {
         pin.marker.setLngLat([card.lng!, card.lat!]); // a geocode can refine where a place is
       }
-      pin.face.textContent = String(card.rank);
-      pin.el.dataset.status = card.status;
+      dressPin(pin, card, statuses.get(card.listing_id)!);
       pin.el.dataset.mark = marks[card.listing_id] ?? "";
-      pin.el.dataset.focus = String(card.listing_id === focusId);
-      pin.el.dataset.hover = String(card.listing_id === hoverId);
+      pin.el.classList.toggle("is-focus", card.listing_id === focusId);
+      pin.el.classList.toggle("is-hover", card.listing_id === hoverId);
       pin.el.style.zIndex = card.listing_id === focusId ? "30" : String(20 - card.rank);
-      pin.el.setAttribute("aria-label", `Number ${card.rank}: ${card.address}`);
     }
     for (const [id, pin] of pins.current) {
       if (!keep.has(id)) {
@@ -234,26 +248,54 @@ export function MapView({
       spreadFor.current = where;
       spread(m, pins.current, pinned.current);
     }
-  }, [ready, board, focusId, hoverId, marks]);
+  }, [ready, board, focusId, hoverId, marks, statuses]);
+
+  // ── the places the renter named, as anchors ─────────────────────────────
+  useEffect(() => {
+    const m = map.current;
+    if (!m || !ready) return;
+    const keep = new Set<string>();
+    for (const a of placed) {
+      const key = `${a.label}@${a.lat},${a.lng}`;
+      keep.add(key);
+      if (!anchorMarkers.current.has(key)) anchorMarkers.current.set(key, makeAnchor(m, a));
+    }
+    for (const [key, marker] of anchorMarkers.current) {
+      if (!keep.has(key)) {
+        marker.remove();
+        anchorMarkers.current.delete(key);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, anchorKey]);
 
   // ── frame the board when its set of listings changes ────────────────────
   const boardKey = board.map((c) => c.listing_id).sort().join(",");
   const framed = useRef<string | null>(null); // the board last framed
-  useEffect(() => {
+  const frame = (force: boolean) => {
     const m = map.current;
     if (!m || !ready) return;
     const located = board.filter((c) => onMap(c.lat, c.lng));
     if (!located.length) return;
+    const key = `${boardKey}|${anchorKey}`;
     // Only the padding changed (the phone sheet moved to another stop): leave the map alone unless a pin
     // would now sit under the sheet, so dragging the sheet doesn't set off an 800 ms fit every time.
-    if (framed.current === boardKey && !located.some((c) => underSheet(m, c, padding))) return;
-    framed.current = boardKey;
+    if (!force && framed.current === key && !located.some((c) => underSheet(m, c, padding))) return;
+    framed.current = key;
     const bounds = new LngLatBounds();
     located.forEach((c) => bounds.extend([c.lng!, c.lat!]));
+    placed.forEach((a) => bounds.extend([a.lng, a.lat])); // the place they named stays in the frame
     m.resize(); // a layout change (the panel, the sheet, a rotation) may have resized the map since its last frame
-    m.fitBounds(bounds, { padding, maxZoom: 14, duration: reducedMotion() ? 0 : 800 });
+    // The legend, where it shows (split layout), takes the map's bottom left: keep the pins clear of it.
+    const clear = legend.current?.offsetParent ? legend.current.offsetHeight + 16 + PIN_GAP / 2 : 0;
+    const room = { ...padding, bottom: Math.max(padding.bottom, clear) };
+    m.fitBounds(bounds, { padding: room, maxZoom: 14, duration: reducedMotion() ? 0 : 800 });
+  };
+  fitRef.current = () => frame(true);
+  useEffect(() => {
+    frame(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, boardKey, padding.bottom, padding.right]);
+  }, [ready, boardKey, anchorKey, padding.bottom, padding.right]);
 
   // ── bring the focused listing into view ─────────────────────────────────
   useEffect(() => {
@@ -284,11 +326,83 @@ export function MapView({
 
   // MapLibre sets `position: relative` on its container (unlayered CSS wins over
   // Tailwind's layered utilities), so the sizing lives on a wrapper.
+  // The legend names only what's on the map.
+  const shown = new Set(board.filter((c) => onMap(c.lat, c.lng)).map((c) => statuses.get(c.listing_id)!.pin));
   return (
-    <div className="absolute inset-0">
+    // Where the panel floats over the map (its fit padding is the panel plus 16 + 64), the map's corners keep
+    // clear of it: the map buttons and attribution sit 16px left of the glass, and the legend wraps short of it.
+    <div className="absolute inset-0" style={{ "--map-chrome-right": `${Math.max(0, padding.right - 64)}px` } as CSSProperties}>
       <div ref={container} className="h-full w-full" aria-label="Map of matching rentals" />
+      {ready && <Legend ref={legend} shapes={shown} named={placed.length > 0} />}
     </div>
   );
+}
+
+/** A board pin: the 44px target, a ring and a face that carries the rank, a badge for the status. */
+type Handlers = { current: { onSelect: (id: string) => void; onHover: (id: string | null) => void } };
+
+function makePin(m: MapLibre, card: Card, handlers: Handlers): Pin {
+  const el = document.createElement("button");
+  el.type = "button";
+  el.className = "pin";
+  el.addEventListener("click", (e) => {
+    e.stopPropagation();
+    handlers.current.onSelect(card.listing_id);
+  });
+  el.addEventListener("mouseenter", () => handlers.current.onHover(card.listing_id));
+  el.addEventListener("mouseleave", () => handlers.current.onHover(null));
+  const ring = document.createElement("span");
+  ring.className = "pin-ring";
+  const face = document.createElement("span");
+  face.className = "pin-face";
+  const rank = document.createTextNode("");
+  face.append(rank);
+  // The status in words, for a screen reader: the label stays "Number 3: 88 Bloor St E" and this describes it.
+  const said = document.createElement("span");
+  said.className = "sr";
+  said.id = `pin-${card.listing_id.replace(/[^\w-]/g, "-")}`;
+  el.setAttribute("aria-describedby", said.id);
+  el.append(ring, face, said);
+  const marker = new Marker({ element: el, anchor: "center" }).setLngLat([card.lng!, card.lat!]).addTo(m);
+  return { marker, el, rank, face, badge: null, said };
+}
+
+/** Puts a card's rank and status on its pin: the shape (data-s), the badge, the words. */
+function dressPin(pin: Pin, card: Card, status: Status) {
+  pin.rank.data = String(card.rank);
+  pin.el.dataset.s = status.pin;
+  pin.el.dataset.status = card.status; // the server's word, which the smoke check compares
+  pin.el.setAttribute("aria-label", `Number ${card.rank}: ${card.address}`);
+  pin.said.textContent = status.spoken;
+  if (pin.badge?.name !== status.badge) {
+    pin.badge?.el.remove();
+    pin.badge = null;
+    if (status.badge) {
+      const el = document.createElement("span");
+      el.className = "pin-badge";
+      el.append(glyphElement(status.badge));
+      pin.face.append(el);
+      pin.badge = { name: status.badge, el };
+    }
+  }
+}
+
+/** The renter's named place: a pin-shaped dot and its name, under the board's pins, not clickable. */
+function makeAnchor(m: MapLibre, a: Located): Marker {
+  const el = document.createElement("div");
+  el.className = "anchor";
+  el.setAttribute("role", "img");
+  el.setAttribute("aria-label", `The place you named: ${a.label}`);
+  const dot = document.createElement("span");
+  dot.className = "anchor-dot";
+  dot.append(glyphElement("map-pin"));
+  const label = document.createElement("span");
+  label.className = "anchor-label glass-thin";
+  label.textContent = a.label;
+  el.append(dot, label);
+  el.style.zIndex = "5"; // under every board pin (20 − rank)
+  // The dot (28px) sits on the point; the name runs to its right.
+  return new Marker({ element: el, anchor: "left", offset: [-14, 0] }).setLngLat([a.lng, a.lat]).addTo(m);
 }
 
 /**
@@ -348,5 +462,35 @@ function tuneStyle(m: MapLibre, colour: ReturnType<typeof colours>) {
     } catch {
       // a layer the style doesn't let us repaint keeps its default
     }
+  }
+}
+
+/** Zoom in, zoom out and fit the board: one glass group of 44px buttons (the canvas's map controls). */
+class MapButtons implements IControl {
+  private box: HTMLDivElement | null = null;
+  constructor(private readonly fit: () => void) {}
+
+  onAdd(m: MapLibre): HTMLElement {
+    const box = document.createElement("div");
+    box.className = "maplibregl-ctrl mapctl glass-clear";
+    const button = (glyph: IconName, label: string, act: () => void) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.setAttribute("aria-label", label);
+      b.title = label;
+      b.append(glyphElement(glyph));
+      b.addEventListener("click", act);
+      box.append(b);
+    };
+    button("plus", "Zoom in", () => m.zoomIn({ animate: !reducedMotion() }));
+    button("minus", "Zoom out", () => m.zoomOut({ animate: !reducedMotion() }));
+    button("scan", "Show every place", this.fit);
+    this.box = box;
+    return box;
+  }
+
+  onRemove(): void {
+    this.box?.remove();
+    this.box = null;
   }
 }

@@ -289,68 +289,37 @@
 
   /* ── map pins ─────────────────────────────────────────────────────────── */
 
-  /* The button is the 44 px tap target; the 30 px face inside it is what shows. */
+  /* The button is the 44 px tap target; the 30 px face inside it is what shows. The board's pins take their
+     shape from data-s (lib/status.ts, the kit's rules below); the cover's drawn pins (Cover.tsx) still name
+     the server's status in data-status, and the rules after this one keep them looking as they did. */
   .pin {
-    display: grid;
-    place-items: center;
-    width: 44px;
-    height: 44px;
     padding: 0;
     border: 0;
-    border-radius: 999px; /* a round target: no corners reaching into the map or a neighbour */
     background: none;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
   }
   .pin:focus-visible { outline: none; }
-  .pin-face {
-    position: relative;
-    display: grid;
-    place-items: center;
-    width: 30px;
-    height: 30px;
-    border-radius: 999px;
-    background: var(--color-ink);
-    color: #fff;
-    font: 580 13px/1 var(--font-sans);
-    font-variant-numeric: tabular-nums;
-    border: 2px solid #fff;
-    box-shadow: 0 1px 2px rgba(26, 24, 21, 0.18), 0 4px 10px rgba(26, 24, 21, 0.12);
-    transition: transform 220ms var(--ease-out), box-shadow 220ms var(--ease-out);
-  }
-  .pin:focus-visible .pin-face { outline: 2px solid var(--color-ink); outline-offset: 2px; }
-  .pin:hover .pin-face, .pin[data-hover="true"] .pin-face { transform: scale(1.12); }
-  .pin[data-focus="true"] .pin-face {
+  .pin:focus-visible .pin-face { outline: 3px solid var(--color-accent); outline-offset: 3px; }
+  .pin:hover .pin-face { transform: scale(1.12); }
+
+  /* The cover's drawn pins (no data-s) */
+  .pin:not([data-s])[data-focus="true"] .pin-face {
     transform: scale(1.22);
-    box-shadow: 0 0 0 2px var(--color-ink), 0 6px 16px rgba(26, 24, 21, 0.25);
+    box-shadow: 0 0 0 2px var(--color-ink), 0 6px 16px rgba(25, 25, 24, 0.3);
   }
-  .pin[data-status="verified"] .pin-face { background: var(--color-real); }
-  .pin[data-status="calling"] .pin-face { background: var(--color-live); }
-  .pin[data-status="calling"] .pin-face::after {
+  .pin:not([data-s])[data-status="verified"] .pin-face,
+  .pin:not([data-s])[data-status="booked"] .pin-face { background: var(--color-real); }
+  .pin:not([data-s])[data-status="no_answer"] .pin-face::after {
     content: "";
     position: absolute;
     inset: -6px;
     border-radius: 999px;
-    border: 2px solid var(--color-live);
-    animation: ring 1.8s var(--ease-out) infinite;
+    border: 2px dashed var(--color-quiet);
   }
-  /* No answer: the ring of a call that stopped, dashed and still. It reads apart from pending (no
-     ring), calling (a pulsing ring) and gone (hollow) without relying on colour. */
-  .pin[data-status="no_answer"] .pin-face::after {
-    content: "";
-    position: absolute;
-    inset: -6px;
-    border-radius: 999px;
-    border: 2px dashed var(--color-ink-3);
-  }
-  .pin[data-status="dead"] .pin-face { background: #fff; color: var(--color-ink-3); border-color: var(--color-ink-3); }
-  /* Suspect: outlined in red with a mark, so it reads without colour too. */
-  .pin[data-status="suspect"] .pin-face { background: #fff; color: var(--color-dead); border-color: var(--color-dead); }
-  .pin[data-status="booked"] .pin-face { background: var(--color-real); }
-  .pin[data-status="suspect"] .pin-face::before,
-  .pin[data-status="booked"] .pin-face::before,
-  .pin[data-mark="will_call"] .pin-face::before,
-  .pin[data-mark="queued"] .pin-face::before {
+  .pin:not([data-s])[data-status="suspect"] .pin-face { background: #fff; color: var(--color-dead); border-color: var(--color-dead); }
+  .pin:not([data-s])[data-status="suspect"] .pin-face::before,
+  .pin:not([data-s])[data-status="booked"] .pin-face::before {
     position: absolute;
     top: -7px;
     right: -7px;
@@ -363,16 +332,9 @@
     color: #fff;
     font: 700 10px/1 var(--font-sans);
   }
-  .pin[data-status="suspect"] .pin-face::before { content: "!"; background: var(--color-dead); }
-  .pin[data-status="booked"] .pin-face::before { content: "★"; background: var(--color-ink); font-size: 9px; }
-  /* Picked to call, until it dials (the card says "Will call", then "Queued"): a check, the renter's own pick. */
-  .pin[data-mark="will_call"] .pin-face::before,
-  .pin[data-mark="queued"] .pin-face::before { content: "✓"; background: var(--color-ink); }
+  .pin:not([data-s])[data-status="suspect"] .pin-face::before { content: "!"; background: var(--color-dead); }
+  .pin:not([data-s])[data-status="booked"] .pin-face::before { content: "★"; background: var(--color-ink); font-size: 9px; }
 
-  @keyframes ring {
-    from { opacity: 0.7; transform: scale(0.85); }
-    to { opacity: 0; transform: scale(1.5); }
-  }
 
   /* The calling dot in the activity line breathes with the pin's ring. */
   .live-dot { animation: breathe 1.8s var(--ease-out) infinite; }
@@ -495,6 +457,8 @@
   .mini[data-s="flagged"] { background: #fff; border-color: var(--color-dead); box-shadow: none; }
   .mini[data-s="noanswer"] { background: var(--color-quiet); box-shadow: 0 0 0 1px #fff, 0 0 0 2.5px var(--color-quiet); }
   .mini[data-s="gone"] { background: #fff; border-color: var(--color-quiet); box-shadow: none; }
+  .mini[data-s="declined"] { background: #fff; border-color: var(--color-dead); box-shadow: none; }
+  .mini.is-anchor { background: #fff; box-shadow: 0 0 0 2px var(--color-ink); }
   .mini .i { width: 9px; height: 9px; stroke-width: 3; color: #fff; }
   .mini[data-s="flagged"] .i { color: var(--color-dead); }
 
@@ -743,24 +707,39 @@
   }
 }
 
-/* MapLibre's own controls, quieted to match */
-.maplibregl-ctrl-group {
-  border-radius: var(--radius-control) !important;
-  box-shadow: 0 0 0 1px var(--color-line), 0 2px 8px rgba(26, 24, 21, 0.06) !important;
+/* MapLibre's corners: the map buttons (MapView's MapButtons, the kit's .mapctl on clear glass) top right, the
+   attribution as a glass pill bottom right, both 16px in. Where the panel floats over the map, the page sets
+   --map-chrome-right to the panel's width plus its insets, so neither sits under it. */
+.maplibregl-ctrl-top-right .mapctl { margin: 16px 16px 0 0; }
+/* The group clips to its corners, so a button's focus ring sits inside it. */
+.mapctl button:focus-visible { outline-offset: -3px; }
+.maplibregl-ctrl-bottom-right .maplibregl-ctrl-attrib { margin: 0 16px 16px 0; }
+.maplibregl-ctrl-attrib {
+  display: flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--glass-fill-strong);
+  -webkit-backdrop-filter: blur(var(--blur-thin)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--blur-thin)) saturate(var(--glass-saturate));
+  box-shadow: var(--shadow-rim), var(--shadow-glass);
+  font: 500 11px/1.3 var(--font-text);
+  color: var(--color-ink-secondary);
 }
-.maplibregl-ctrl-attrib { font: 400 11px/1.4 var(--font-sans); color: var(--color-ink-3); }
-/* On a phone the header card floats over the map's top (Shell, LiveBoard): the zoom buttons, shown where
+.maplibregl-ctrl-attrib a { color: var(--color-ink-secondary); }
+@media (prefers-reduced-transparency: reduce) {
+  .maplibregl-ctrl-attrib { background: var(--color-surface); -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+/* On a phone the header card floats over the map's top (Shell, LiveBoard): the map buttons, shown where
    there's a mouse, go below it rather than under its "Live" pill. The split layout has no floating header.
    Keep the media query in step with the split variant above. */
-.maplibregl-ctrl-top-right { top: calc(max(12px, env(safe-area-inset-top)) + 40px); }
+/* (the glass capsule: 12px down, 52px tall; the buttons' 16px margin then clears it by 16px) */
+.maplibregl-ctrl-top-right { top: calc(max(12px, env(safe-area-inset-top)) + 52px); }
 @media (min-width: 1024px), (orientation: landscape) and (max-height: 520px) {
   .maplibregl-ctrl-top-right { top: 0; }
+  .maplibregl-ctrl-top-right, .maplibregl-ctrl-bottom-right { right: var(--map-chrome-right, 0px); }
 }
-/* A finger needs 44px: below a desktop's width the zoom buttons, where they show, grow to it. */
-@media (max-width: 1023px) {
-  .maplibregl-ctrl-group button { width: 44px; height: 44px; }
-}
-.maplibregl-ctrl-attrib a { color: var(--color-ink-2); }
 
 /* vaul sheet */
 [data-vaul-drawer] { touch-action: none; }
