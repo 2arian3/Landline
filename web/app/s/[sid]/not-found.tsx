@@ -7,13 +7,10 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-const hairline = { boxShadow: "0 0 0 1px var(--color-hair)" };
-const button =
-  "inline-flex min-h-11 flex-1 items-center justify-center rounded-[var(--radius-control)] px-4 text-support font-label focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink";
-
 /**
  * /s/<id> for an id that matches no call (PR9, the States board): an old or cut-short link said so plainly,
- * where it used to open an empty board, with the two ways forward.
+ * where it used to open an empty board, with the two ways forward. No map behind it, so a solid surface, not
+ * glass.
  */
 export default function NoSuchCall() {
   return (
@@ -21,18 +18,28 @@ export default function NoSuchCall() {
       className="fixed inset-0 grid place-items-center overflow-y-auto bg-ground px-4"
       style={{ paddingTop: "max(24px, env(safe-area-inset-top))", paddingBottom: 24 }}
     >
-      <div className="w-full max-w-sm rounded-[var(--radius-card)] bg-surface p-5" style={hairline}>
-        <p className="mb-4 text-fact font-strong tracking-[-0.01em]">Landline</p>
-        <h1 className="text-title font-strong">We couldn&rsquo;t find this call</h1>
-        <p className="mt-2 text-support text-ink-2">
+      <div
+        className="w-full max-w-[400px] bg-surface p-6"
+        style={{ borderRadius: "var(--radius-lg)", boxShadow: "var(--shadow-glass)" }}
+      >
+        <p className="wordmark">
+          <span className="mark" aria-hidden>
+            <svg viewBox="0 0 32 32">
+              <path d="M16 5.5c-4.1 0-7.5 3.3-7.5 7.4 0 5.3 7.5 13.6 7.5 13.6s7.5-8.3 7.5-13.6c0-4.1-3.4-7.4-7.5-7.4zm0 10.2a2.8 2.8 0 1 1 0-5.6 2.8 2.8 0 0 1 0 5.6z" />
+            </svg>
+          </span>
+          Landline
+        </p>
+        <h1 className="t-headline mt-6">We couldn&rsquo;t find this call</h1>
+        <p className="t-callout c-2 mt-1">
           The link may be cut short, or from an old call. Open it again from Landline&rsquo;s text, or start a new
           call.
         </p>
         <div className="mt-5 flex flex-wrap gap-2">
-          <a href={LANDLINE_PHONE.href} className={`${button} bg-ink text-white`}>
+          <a href={LANDLINE_PHONE.href} className="btn btn-primary flex-1">
             Call Landline
           </a>
-          <Link href="/me" className={`${button} text-ink`} style={hairline}>
+          <Link href="/me" className="btn btn-secondary flex-1">
             Your calls
           </Link>
         </div>
