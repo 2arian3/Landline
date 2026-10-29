@@ -1,21 +1,8 @@
+import { UNHEARD } from "./status.ts";
 import type { CallView, Card, EndReason } from "./types";
 
-/** How a call that learned nothing ended, in words: the card's word and the detail's sentence. */
-export type Unheard = { word: string; line: string };
-
-// The server's results text words these the same way (orchestrator/narrator.py `_unheard`, #152).
-const UNHEARD: Record<EndReason, Unheard> = {
-  no_answer: { word: "No answer", line: "Nobody picked up." },
-  busy: { word: "No answer", line: "Nobody picked up." },
-  voicemail: { word: "Left a message", line: "Landline left a message for the agent." },
-  hangup: { word: "Hung up early", line: "The agent hung up before Landline could ask anything." },
-  timeout: { word: "Call dropped", line: "The call dropped before Landline learned anything." },
-  failed: { word: "Call dropped", line: "The call dropped before Landline learned anything." },
-  blocked: { word: "Couldn\u2019t call", line: "Landline couldn\u2019t place this call." },
-  done: { word: "Reached, nothing new", line: "Landline reached the agent, but learned nothing new." },
-  refused: { word: "Wouldn\u2019t answer", line: "The agent wouldn\u2019t answer Landline\u2019s questions." },
-  wrong_number: { word: "Wrong number", line: "The number Landline had didn\u2019t reach the agent." },
-};
+/** How a call that learned nothing ended, in words: the card's word, the detail's sentence, and the reason. */
+export type Unheard = { word: string; line: string; reason: EndReason };
 
 /**
  * The card's status stays `no_answer` for every call that learned nothing (CardStatus is a contract), but an
@@ -40,7 +27,8 @@ export function unheard(card: Card | undefined, calls: CallView[] = []): Unheard
   if (!card || card.status !== "no_answer") return null;
   const outcome = calls.filter((c) => c.listing_id === card.listing_id && c.outcome).at(-1)?.outcome;
   if (!outcome || outcome.facts.length) return null;
-  return UNHEARD[outcome.end_reason] ?? null;
+  const said = UNHEARD[outcome.end_reason];
+  return said ? { ...said, reason: outcome.end_reason } : null;
 }
 
 /** What a finished call settled for one place, beyond its facts: a booked viewing, questions for the renter. */
