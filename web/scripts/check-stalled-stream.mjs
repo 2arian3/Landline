@@ -72,8 +72,8 @@ const send = (method, params = {}) => new Promise((ok) => replies.set(++seq, ok)
 const read = async (expr) => (await send("Runtime.evaluate", { expression: expr, returnByValue: true })).result.value;
 await send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
 
-// The panel's "What I heard" line, and the status next to the brand ("Live" or "Reconnecting…").
-const HEARD = "[...document.querySelectorAll('p')].find(p => p.previousElementSibling?.textContent === 'What I heard')?.textContent ?? ''";
+// The panel's "What Landline heard" line, and the status next to the brand ("Live" or "Reconnecting…").
+const HEARD = "[...document.querySelectorAll('p')].find(p => p.previousElementSibling?.textContent === 'What Landline heard')?.textContent ?? ''";
 const STATUS = "document.querySelector('[aria-live=polite]')?.textContent ?? ''";
 const UNREACHABLE = "/Can.t reach Landline/.test(document.body.innerText)";
 

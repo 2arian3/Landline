@@ -26,7 +26,7 @@ import {
   panelRoom,
   sheetLook,
 } from "./Shell";
-import { Activity, Brand, Heard, Plan, Results, Welcome } from "./Summary";
+import { Activity, Brand, Heard, Opening, Plan, Results, Welcome } from "./Summary";
 import { type Opened, follows } from "@/lib/follow";
 import { nothingHeard } from "@/lib/format";
 import { type Unheard, unheard } from "@/lib/outcome";
@@ -229,7 +229,7 @@ export function LiveBoard({
     if (!was) return;
     for (const c of view.board) {
       if (c.viewing?.status === "confirmed" && was.get(c.listing_id) !== "confirmed") {
-        toast({ text: `Confirmed: ${viewingWhen(c.viewing)}`, icon: "calendar-check", tone: "real" });
+        toast({ text: `The agent confirmed ${viewingWhen(c.viewing)} at ${c.address}`, icon: "calendar-check", tone: "real" });
       }
     }
   }, [view, toast]);
@@ -293,7 +293,7 @@ export function LiveBoard({
       )}
       <Results view={view} compact={compact} />
       {blank ? (
-        <p className="text-support text-ink">{view?.agent_says || "Tell Landline what you\u2019re looking for."}</p>
+        <Opening view={view} compact={compact} peek={!desktop && snap === PEEK} />
       ) : (
         <>
           <Plan view={view} />
