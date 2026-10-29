@@ -264,6 +264,9 @@ export function LiveBoard({
       marks={marks}
       focusArea={focusArea}
       anchors={view?.preferences.anchors ?? []}
+      calls={view?.calls}
+      plan={view?.plan}
+      ended={ended}
       padding={padding}
       showZoom={mouse === true}
       onSelect={select}

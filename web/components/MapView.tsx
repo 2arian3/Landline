@@ -11,7 +11,8 @@ import {
 } from "maplibre-gl";
 import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import { type Stage, type Status, statusOf } from "@/lib/status";
-import type { Anchor, Area, Card, CataloguePoint } from "@/lib/types";
+import type { Unheard } from "@/lib/outcome";
+import type { Anchor, Area, CallView, Card, CataloguePoint } from "@/lib/types";
 import { glyphElement, type IconName } from "./Icon";
 import { Legend } from "./Legend";
 import { SPLIT } from "./Shell";
@@ -79,6 +80,9 @@ export function MapView({
   focusId,
   hoverId,
   marks,
+  calls = [],
+  plan = [],
+  ended = {},
   focusArea = null,
   anchors = [],
   padding,
@@ -92,6 +96,10 @@ export function MapView({
   focusId: string | null;
   hoverId: string | null;
   marks: Record<string, string>;
+  /** The session's calls, plan and unheard ends, as the cards get them, so a pin and its card say one thing. */
+  calls?: CallView[];
+  plan?: string[];
+  ended?: Record<string, Unheard>;
   focusArea?: Area | null;
   /** The places the renter named ("near King and Bay"): drawn as anchors, never as listings. */
   anchors?: Anchor[];
@@ -112,9 +120,21 @@ export function MapView({
   const legend = useRef<HTMLDivElement>(null);
 
   // Each card's one status (lib/status.ts): the pin's shape and badge, the legend, and what's said aloud.
+  // The same inputs ListingCard gives statusOf (via Board), so the pin, the legend and the card can't disagree.
   const statuses = useMemo(
-    () => new Map(board.map((c) => [c.listing_id, statusOf(c, { stage: (marks[c.listing_id] || null) as Stage | null })])),
-    [board, marks],
+    () =>
+      new Map(
+        board.map((c) => [
+          c.listing_id,
+          statusOf(c, {
+            call: calls.filter((call) => call.listing_id === c.listing_id).at(-1) ?? null,
+            planned: plan.includes(c.listing_id),
+            stage: (marks[c.listing_id] as Stage | undefined) ?? undefined,
+            ended: ended[c.listing_id]?.reason ?? null,
+          }),
+        ]),
+      ),
+    [board, marks, calls, plan, ended],
   );
   const placed = anchors.filter((a): a is Located => onMap(a.lat, a.lng));
   const anchorKey = placed.map((a) => `${a.label}@${a.lat},${a.lng}`).join("|");
@@ -353,7 +373,7 @@ export function MapView({
   // MapLibre sets `position: relative` on its container (unlayered CSS wins over
   // Tailwind's layered utilities), so the sizing lives on a wrapper.
   // The legend names only what's on the map.
-  const shown = new Set(board.filter((c) => onMap(c.lat, c.lng)).map((c) => statuses.get(c.listing_id)!.pin));
+  const shown = board.filter((c) => onMap(c.lat, c.lng)).map((c) => statuses.get(c.listing_id)!);
   return (
     // Where the panel floats over the map (its fit padding is the panel plus 16 + 64), the map's corners keep
     // clear of it: the map buttons and attribution sit 16px left of the glass, and the legend wraps short of it.
@@ -364,7 +384,7 @@ export function MapView({
         "--map-chrome-bottom": `${Math.max(0, padding.bottom - 52)}px`,
       } as CSSProperties}>
       <div ref={container} className="h-full w-full" aria-label="Map of matching rentals" />
-      {ready && <Legend ref={legend} shapes={shown} named={placed.length > 0} />}
+      {ready && <Legend ref={legend} statuses={shown} named={placed.length > 0} />}
     </div>
   );
 }
