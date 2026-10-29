@@ -1,12 +1,14 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useId, useRef, useState } from "react";
 import { Icon, type IconName, Mark } from "./Icon";
 import { heardLine } from "@/lib/format";
-import { unheardCounts } from "@/lib/outcome";
+import { factLine } from "@/lib/heard";
+import { LANDLINE_PHONE } from "@/lib/phone";
 import { type Pill, type PillKind, pill } from "@/lib/pill";
-import { resultsByPlace } from "@/lib/results";
-import type { Card, SessionView } from "@/lib/types";
+import { calledPlaces, statuses, tally } from "@/lib/tally";
+import type { SessionView } from "@/lib/types";
 import { splitWelcome } from "@/lib/welcome";
 
 /** Landline's mark and its name: the canvas's wordmark. */
@@ -92,103 +94,157 @@ export function Brand({
   );
 }
 
+/** The plan's still to come: before the renter hangs up, and after it until the calls are scheduled (A-06). */
+const planShown = (view: SessionView) =>
+  view.plan.length > 0 && (view.phase === "open" || (view.phase === "calling" && !view.calls.length));
+
 /**
- * What the agents are doing right now, counted from the card statuses the
- * server sent. Nothing here is guessed: no "dialing", no ETAs. With no calls
- * yet it says how many places fit.
+ * The calls the renter picked, before they start: "Will call 2 places when you hang up", and each place by
+ * its number and address, as the board shows them. Nothing about when or how is promised beyond that.
  */
-export function Activity({ view, compact = false }: { view: SessionView | null; compact?: boolean }) {
-  if (!view) return <div className="h-[18px] w-1/2 rounded bg-press" aria-hidden />;
-  const n = count(view.board);
-  const done: string[] = [];
-  if (n.booked) done.push(`${n.booked} ${n.booked === 1 ? "viewing" : "viewings"} booked`);
-  if (n.verified) done.push(`${n.verified} checked by phone`);
-  if (n.suspect) done.push(`${n.suspect} flagged`);
-  for (const [word, k] of unheardCounts(view.board, view.calls)) done.push(`${k} ${word}`);   // like the badges
-  if (n.dead) done.push(`${n.dead} already rented`);
-  const queued = view.calls.filter((c) => c.state === "queued").length;
-  const rest = compact ? "min-w-0 truncate" : "";
-
-  // The plan, before the renter hangs up, and after it until the calls are scheduled (A-06).
-  if (view.plan.length && (view.phase === "open" || (view.phase === "calling" && !view.calls.length))) {
-    return (
-      <p className="flex items-baseline gap-x-1.5 text-meta" aria-live="polite">
-        <span aria-hidden className="h-2 w-2 shrink-0 self-center rounded-full bg-ink" />
-        <span className={`font-label text-ink ${rest}`}>
-          Will call {view.plan.length} {view.plan.length === 1 ? "place" : "places"}
-          {view.phase === "open" && " when you hang up"}
+export function Plan({ view }: { view: SessionView | null }) {
+  if (!view || !planShown(view)) return null;
+  const n = view.plan.length;
+  const places = view.plan.map((id) => view.board.find((c) => c.listing_id === id)).filter((c) => c !== undefined);
+  return (
+    <section className="results" aria-live="polite">
+      <div className="flex items-center gap-3.5">
+        <span aria-hidden className="grid size-10 shrink-0 place-items-center rounded-full bg-ink text-white">
+          <Icon name="phone" size={20} />
         </span>
-      </p>
-    );
-  }
+        <p className="t-title">
+          Will call {n} {n === 1 ? "place" : "places"}
+          {view.phase === "open" && " when you hang up"}
+        </p>
+      </div>
+      {places.length > 0 && (
+        <ul className="chips" aria-label="The places Landline will call">
+          {places.map((c) => (
+            <li key={c.listing_id} className="chip gap-2 pl-1.5" data-s="picked">
+              <span className="pin-face size-7! border-0! text-[14px]! shadow-none!">{c.rank}</span>
+              {c.address}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
 
-  if (n.calling || queued) {
-    const now = [n.calling && `Calling ${n.calling} ${n.calling === 1 ? "place" : "places"}`, queued && `${queued} queued`]
-      .filter(Boolean)
-      .join(" · ");
-    const label = (
-      <span className={`shrink-0 whitespace-nowrap font-label ${n.calling ? "text-live" : "text-ink-2"}`}>{now}</span>
-    );
-    const dot = n.calling ? (
-      <span aria-hidden className="live-dot h-2 w-2 shrink-0 self-center rounded-full bg-live" />
-    ) : (
-      <span aria-hidden className="h-2 w-2 shrink-0 self-center rounded-full bg-ink-3" />
-    );
-    if (compact) {
-      return (
-        <p className="flex items-baseline gap-x-1.5 text-meta" aria-live="polite">
-          {dot}
-          {label}
-          {done.length > 0 && <span className={`text-ink-2 ${rest}`}>· {done.join(" · ")}</span>}
-        </p>
-      );
-    }
+/**
+ * What the agents are doing right now, counted from each card's status in the words the cards use ("1 on
+ * the phone · 1 ringing"). Nothing here is guessed: no ETAs. With no calls yet it says how many places fit.
+ * The pill above already says how many places are being called.
+ */
+export function Activity({ view }: { view: SessionView | null }) {
+  if (!view) return <div className="h-[18px] w-1/2 rounded bg-press" aria-hidden />;
+  if (planShown(view)) return null;   // the plan says it
+  if (view.phase === "closed" && !view.plan.length) {
+    // The brief ended with nothing picked: say so, and how to start again. A second call starts fresh (#144).
     return (
-      <div aria-live="polite">
-        <p className="flex items-baseline gap-x-1.5 text-meta">
-          {dot}
-          {label}
-        </p>
-        {done.length > 0 && <p className="pl-3.5 text-meta text-ink-2">{capitalize(done.join(" · "))}</p>}
+      <div className="banner" role="status">
+        <Icon name="phone" size={20} />
+        <div>
+          <p className="w6">The call ended before any places were picked</p>
+          <p className="c-2">Call again to start a new search.</p>
+          <a href={LANDLINE_PHONE.href} className="btn btn-secondary btn-small mt-3">
+            <Icon name="phone" size={18} />
+            Call Landline
+          </a>
+        </div>
       </div>
     );
   }
-  if (done.length) {
-    // The calls' tally is the demo's payoff, so on a phone it wraps rather than losing its end.
+  // Once the calls are done, What the calls found says it, with its tally.
+  if (view.phase === "done" && view.results) return null;
+  const { going, done } = tally(statuses(view));
+  const line = [...going, ...done.map(([, words]) => words)];
+  if (line.length) {
     return (
-      <p className="flex items-baseline gap-x-1.5 text-meta" aria-live="polite">
-        <span aria-hidden className="h-2 w-2 shrink-0 self-center rounded-full bg-real" />
-        <span className="font-label text-ink">{capitalize(done.join(" · "))}</span>
+      <p className="activity tnum text-ink" aria-live="polite">
+        <span aria-hidden className={`pill-dot ${going.length ? "text-live" : "text-real"}`} />
+        <span>{capitalize(line.join(" · "))}</span>
       </p>
     );
   }
   const shown = view.board.length;
   return (
-    <p className={`text-meta text-ink-3 tnum ${compact ? "truncate" : ""}`}>
+    <p className="activity tnum">
       {view.matches.length.toLocaleString("en-CA")} {view.matches.length === 1 ? "place fits" : "places fit"}
-      {shown > 0 && ` · the best ${shown} are numbered on the map`}
+      {shown > 0 && ` · the best ${shown} ${shown === 1 ? "is" : "are"} on the map`}
     </p>
   );
 }
 
 /**
- * What the calls found, once they're all done: the results text (written by code from the outcomes,
- * the same words the renter gets by text), at the top of the panel, one line per place with the
- * booking first.
+ * What the calls found, once they're all done, built from the cards: each place with its number, its one
+ * status and what its agent said, then the tally. The text Landline sent the renter (written by code from
+ * the same outcomes) is a tap away under "Read the text".
  */
 export function Results({ view, compact = false }: { view: SessionView | null; compact?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const textId = useId();
   if (view?.phase !== "done" || !view.results) return null;
-  const lines = resultsByPlace(view.results, view.board.map((c) => c.address));
+  const rows = calledPlaces(view);
+  const { done } = tally(rows);
   return (
-    <section aria-label="What the calls found">
-      <p className="text-meta text-ink-3">What the calls found</p>
-      <ul className="mt-1 space-y-1.5">
-        {lines.map((line, i) => (
-          <li key={i} className={`text-ink ${compact ? "text-support" : "text-fact"}`}>
-            {line}
-          </li>
-        ))}
-      </ul>
+    <section className="results" aria-label="What the calls found">
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <p className="t-title">What the calls found</p>
+          <p className="t-caption c-2">The same words Landline texted you</p>
+        </div>
+        <button
+          type="button"
+          className="btn btn-quiet btn-small -mr-2"
+          aria-expanded={open}
+          aria-controls={textId}
+          onClick={() => setOpen(!open)}
+        >
+          Read the text
+          <Icon
+            name="chevron-right"
+            size={18}
+            className={`transition-transform motion-reduce:transition-none ${open ? "rotate-90" : ""}`}
+          />
+        </button>
+      </div>
+      {/* In the page even while folded away, so it can be found and checked against the session's. */}
+      <p id={textId} hidden={!open} className="t-callout whitespace-pre-line">
+        {view.results}
+      </p>
+      {rows.map(({ card, status }) => (
+        <div key={card.listing_id} className="result" data-s={status.pin}>
+          <span className="pin-face">{card.rank}</span>
+          <div className="min-w-0">
+            <p className={compact ? "t-callout font-semibold" : "t-headline"}>{card.address}</p>
+            {status.words && (
+              <p className={`status is-${status.tone} mt-0.5`}>
+                {status.glyph && <Icon name={status.glyph} size={18} />}
+                <span>
+                  {status.words}
+                  {status.sub && <span className="sub block">{status.sub}</span>}
+                </span>
+              </p>
+            )}
+            {card.facts.length > 0 && (
+              <p className="t-callout c-2 mt-1">
+                {card.facts.slice(0, 3).map((f) => factLine(f.field, f.value)).join(" · ")}
+              </p>
+            )}
+          </div>
+        </div>
+      ))}
+      {done.length > 0 && (
+        <p className="tally">
+          {done.map(([pin, words]) => (
+            <span key={words}>
+              <i className="mini" data-s={pin} aria-hidden />
+              {words}
+            </span>
+          ))}
+        </p>
+      )}
     </section>
   );
 }
@@ -215,11 +271,36 @@ const saysNothingFits = (view: SessionView) => !view.board.length && /^Nothing f
 /** Landline's last line is the returning renter's welcome: the panel shows it once, as the welcome. */
 const opensWithWelcome = (view: SessionView) => view.returning && /^welcome back/i.test(view.agent_says ?? "");
 
+/** A chip just heard wears an ink ring for 2s, then settles (the canvas's "What Landline heard"). The chips
+ *  there when the page opened aren't new. */
+function useJustHeard(chips: string[] | null): Set<string> {
+  const seen = useRef<Set<string> | null>(null);
+  const timers = useRef<number[]>([]);
+  const [fresh, setFresh] = useState<Set<string>>(() => new Set());
+  const key = chips?.join("\n") ?? null;
+  useEffect(() => {
+    if (key === null) return;
+    const now = key ? key.split("\n") : [];
+    if (seen.current === null) {
+      seen.current = new Set(now);
+      return;
+    }
+    const added = now.filter((c) => !seen.current?.has(c));
+    for (const c of now) seen.current.add(c);
+    if (!added.length) return;
+    setFresh((f) => new Set([...f, ...added]));
+    timers.current.push(
+      window.setTimeout(() => setFresh((f) => new Set([...f].filter((c) => !added.includes(c)))), 2000),
+    );
+  }, [key]);
+  useEffect(() => () => timers.current.forEach((t) => window.clearTimeout(t)), []);
+  return fresh;
+}
+
 /**
- * What Landline heard and what it last said: the renter's half of the call, on
- * screen. `compact` (phones) keeps it to one line so the first place shows
- * above the fold of the sheet; the renter is hearing Landline already. `wrap`
- * lets that line wrap once the sheet is raised and there's room.
+ * What Landline heard, as chips, and what it last said: the renter's half of the call, on screen. At the
+ * phone sheet's lowest stop (`compact` without `wrap`) it's one line, so the first place shows above the
+ * fold; once the sheet is raised the chips show, a size smaller.
  */
 export function Heard({
   view,
@@ -230,7 +311,9 @@ export function Heard({
   compact?: boolean;
   wrap?: boolean;
 }) {
-  if (!view) {
+  const chips = view ? heardLine(view.preferences).map(capitalize) : null;
+  const fresh = useJustHeard(chips);
+  if (!view || !chips) {
     return (
       <div className="space-y-2" aria-hidden>
         <div className="h-4 w-2/3 rounded bg-press" />
@@ -238,45 +321,47 @@ export function Heard({
       </div>
     );
   }
-  const heard = capitalize(heardLine(view.preferences).join(" · "));
 
-  if (compact) {
-    return (
-      <div className="min-w-0">
-        {heard && (
-          <p className={`text-support text-ink ${wrap ? "" : "truncate"}`}>
-            <span className="text-ink-3">Heard </span>
-            {heard.charAt(0).toLowerCase() + heard.slice(1)}
-          </p>
-        )}
-      </div>
-    );
+  if (compact && !wrap) {
+    return chips.length ? (
+      <p className="truncate px-1 text-support text-ink">
+        <span className="text-ink-3">Heard </span>
+        {chips.join(" · ")}
+      </p>
+    ) : null;
   }
 
   return (
-    <div className="space-y-3">
-      {heard && (
-        <div>
-          <p className="text-meta text-ink-3">What I heard</p>
-          <p className="text-support text-ink">{heard}</p>
-        </div>
+    <div className="flex flex-col gap-4">
+      {chips.length > 0 && (
+        <section className="flex flex-col gap-2.5">
+          <p className="label">
+            <Icon name="ear" />
+            What I heard
+          </p>
+          {/* A <p>, read as one line ("Up to $2,200 a month2+ bedroom…") by check-stalled-stream. */}
+          <p className="chips">
+            {chips.map((c) => (
+              <span
+                key={c}
+                className={`chip${fresh.has(c) ? " is-new" : ""}${compact ? " h-8! px-3! text-[14px]!" : ""}`}
+              >
+                {c}
+              </span>
+            ))}
+          </p>
+        </section>
       )}
       {/* What Landline said during the brief: stale once the calls start. With nothing on the board, its
           stock "Nothing fits yet" is what the list's empty state says already; anything else it said shows. */}
-      {view.agent_says && view.phase === "open" && !saysNothingFits(view) && !opensWithWelcome(view) && (
-        <blockquote className="m-0 border-0 p-0">
-          <p className="text-meta text-ink-3">Landline said</p>
-          <p className="text-fact">“{view.agent_says}”</p>
+      {!compact && view.agent_says && view.phase === "open" && !saysNothingFits(view) && !opensWithWelcome(view) && (
+        <blockquote className="m-0 flex flex-col gap-1.5 border-0 p-0">
+          <p className="label">Landline said</p>
+          <p className="said">“{view.agent_says}”</p>
         </blockquote>
       )}
     </div>
   );
-}
-
-function count(board: Card[]) {
-  const n = { calling: 0, verified: 0, suspect: 0, dead: 0, no_answer: 0, booked: 0, pending: 0 };
-  for (const c of board) n[c.status] += 1;
-  return n;
 }
 
 const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
