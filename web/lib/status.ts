@@ -162,8 +162,9 @@ export function statusOf(card: Card, { call = null, planned = false, stage, ende
     // Worded from how the call ended; a call that heard facts isn't "unheard" (the card shows them instead).
     const reason = ended ?? (call?.outcome && !call.outcome.facts.length ? call.outcome.end_reason : null);
     const word = (reason && UNHEARD[reason]?.word) || "No answer";
-    return make({ kind: "unheard", words: word, sub: null, glyph: "voicemail", tone: "quiet", pin: "noanswer",
-      badge: null });
+    // The voicemail glyph only when a message was left; any other way of not getting through is an x.
+    return make({ kind: "unheard", words: word, sub: null, glyph: reason === "voicemail" ? "voicemail" : "x",
+      tone: "quiet", pin: "noanswer", badge: null });
   }
   return make({ kind: "ranked", words: "", sub: null, glyph: null, tone: "quiet", pin: "pending", badge: null,
     spoken: "Not called yet" });
