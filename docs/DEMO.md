@@ -2,6 +2,8 @@
 
 ## Demo Day: the live run of show
 
+Slides: [docs/slides/landline-demo-day.pdf](slides/landline-demo-day.pdf) (the cover and what Landline does; [HTML](slides/landline-demo-day.html) to open in a browser).
+
 Build North Demo Day, Thu 29 Oct, live demos 18:00–19:30. One renter calls Landline on stage, and two real phones ring as listing agents. In three minutes the room sees a voice agent that searches, calls, books, remembers and sends the invites, with every fact traced to who said it.
 
 Status of each beat: **verified live** means it worked on a real call or a live test. **First run at 15:00** means it's merged and tested in code but has never run on a real phone. **Don't show** means it isn't built or isn't reliable.
