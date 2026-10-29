@@ -23,6 +23,7 @@ from landline.orchestrator.maps_mcp import (
     WALK_WARNING,
     MapsMCP,
     Nearby,
+    Place,
     duration_s,
     from_settings,
     place_name,
@@ -266,7 +267,7 @@ async def test_nearby_finds_a_place_and_the_walk_to_it():
     assert search == {"textQuery": "Shoppers Drug Mart",
                       "locationBias": {"circle": {"center": {"latitude": LAT, "longitude": LNG},
                                                   "radiusMeters": 1500}},
-                      "regionCode": "CA", "pageSize": 3}
+                      "regionCode": "CA", "pageSize": 5}
     [walk] = server.args("compute_routes")
     assert walk == {"origin": {"latLng": {"latitude": LAT, "longitude": LNG}},
                     "destination": {"placeId": "ChIJshaped0ShoppersBloorWest"}, "travelMode": "WALK"}
@@ -274,8 +275,60 @@ async def test_nearby_finds_a_place_and_the_walk_to_it():
     assert place == Nearby(
         name="Shoppers Drug Mart", place_id="ChIJshaped0ShoppersBloorWest", lat=43.6652, lng=-79.4078,
         maps_url=link, summary=structured("search_places")["summary"], minutes=14, distance_m=1010,
-        warning=WALK_WARNING, attribution="Google Maps", attribution_url=link, fetched_at=NOW)
+        warning=WALK_WARNING, within_1km=1, attribution="Google Maps", attribution_url=link, fetched_at=NOW)
     assert place.keep_until == NOW + timedelta(days=30)
+
+
+def _places(*at: tuple[float, float] | None) -> dict:
+    """A search answer with one place at each point (None: a place with no location)."""
+    places = [{"id": f"p{i}", **({"location": {"latitude": p[0], "longitude": p[1]}} if p else {})}
+              for i, p in enumerate(at)]
+    return answer({"summary": " ".join(f"**Store {i}** [{i}]." for i in range(len(at))), "places": places})
+
+
+@pytest.mark.parametrize("at, near", [
+    ([(43.6655, -79.4170), (43.6700, -79.4190), (43.6800, -79.4300)], 2),   # about 170 m, 570 m, 1.9 km
+    ([(43.6650, -79.4180)] * 5, 5),
+    ([(43.6800, -79.4300), None], 0),
+])
+async def test_nearby_counts_the_matches_within_1_km_in_a_straight_line(at, near):
+    server = Server({**shaped(), "search_places": _places(*at)})
+    place = await client(server).nearby(LAT, LNG, "grocery store")
+    assert place.within_1km == near
+
+
+async def test_a_named_place_is_googles_first_match_for_the_words_in_toronto():
+    search = copy.deepcopy(fixture("search_places"))
+    content = search["result"]["structuredContent"]
+    content["summary"] = "**Cohere** [0] is an AI company with offices on John Street."
+    search["result"]["structuredContent"] = content
+    server = Server({**shaped(), "search_places": search})
+    maps = client(server)
+    place = await maps.place(LAT, LNG, "  Cohere ")
+    assert server.args("search_places") == [{
+        "textQuery": "Cohere Toronto",
+        "locationBias": {"circle": {"center": {"latitude": LAT, "longitude": LNG}, "radiusMeters": 5000}},
+        "regionCode": "CA", "pageSize": 1}]
+    first = content["places"][0]
+    link = first["googleMapsLinks"]["placeUrl"]
+    assert place == Place(name="Cohere", place_id=first["id"], lat=43.6652, lng=-79.4078, maps_url=link,
+                          summary=content["summary"], attribution="Google Maps",
+                          attribution_url=first["attribution"]["url"], fetched_at=NOW)
+    assert not server.args("compute_routes")   # finding it routes nothing
+    await maps.route((LAT, LNG), place, "WALK")
+    assert server.args("compute_routes")[-1]["destination"] == {"placeId": first["id"]}
+    await maps.place(LAT, LNG, "University of Toronto")
+    assert server.args("search_places")[-1]["textQuery"] == "University of Toronto"
+
+
+async def test_a_named_place_with_no_clear_name_or_no_match():
+    server = Server({**shaped(), "search_places": _places((43.6505, -79.3910))})
+    server.answers["search_places"]["result"]["structuredContent"]["summary"] = "Here's what I found [0]."
+    place = await client(server).place(LAT, LNG, "my office")
+    assert place.name is None and place.place_id == "p0"
+    empty = Server({"search_places": answer({"summary": "Nothing.", "places": []})})
+    assert await client(empty).place(LAT, LNG, "Cohere") is None
+    assert await client(Server({})).place(LAT, LNG, "  ") is None
 
 
 async def test_nearby_takes_the_closest_match_and_its_name():
