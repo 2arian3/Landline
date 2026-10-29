@@ -4,7 +4,9 @@ import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { test } from "node:test";
 
-import { edit, formFrom, parseBudget, problems, problemsFrom422, savedFrom, splitList } from "../src/lib/search.ts";
+import {
+  bedOptions, edit, formFrom, parseBudget, problems, problemsFrom422, savedFrom, splitList,
+} from "../src/lib/search.ts";
 
 const profile = {
   phone: "+14165550100",
@@ -68,6 +70,25 @@ test("a 422 marks the fields it names", () => {
     areas: "String should have at most 80 characters",
   });
   assert.deepEqual(problemsFrom422(null), {});
+});
+
+test("a 422's message reads without Pydantic's \"Value error,\" prefix", () => {
+  const body = { detail: [
+    { loc: ["body", "move_in"], msg: "Value error, move_in must be a date" },
+    { loc: ["body", "email"], msg: "value error, That isn't an email address." },
+    { loc: ["body", "pets"], msg: "Value error, " },
+  ] };
+  assert.deepEqual(problemsFrom422(body), {
+    move_in: "Move_in must be a date",
+    email: "That isn't an email address.",
+    pets: "That isn't valid.",
+  });
+});
+
+test("bedrooms offer the web's range, any to 5+, and a saved half keeps its own chip", () => {
+  assert.deepEqual(bedOptions("2").map(([v]) => v), ["", "0", "1", "2", "3", "4", "5"]);
+  assert.deepEqual(bedOptions("").map(([, w]) => w), ["Any", "Studio+", "1+", "2+", "3+", "4+", "5+"]);
+  assert.deepEqual(bedOptions("1.5").at(-1), ["1.5", "1.5+"]);
 });
 
 // The web's form (U-12b, web/lib/searchForm.ts) checks and sends the same way; once it's on main, hold the

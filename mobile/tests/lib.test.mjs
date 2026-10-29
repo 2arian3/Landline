@@ -7,9 +7,9 @@ import { money as webMoney } from "../../web/lib/format.ts";
 import * as web from "../../web/lib/heard.ts";
 import { ApiError, NO_CALLS_YET, notFound, UnknownNumber } from "../src/lib/errors.ts";
 import { factLine, phoneLabel, VIEWING, viewingLine, WENT, when } from "../src/lib/heard.ts";
-import { latest, money } from "../src/lib/listings.ts";
+import { latest, money, tally } from "../src/lib/listings.ts";
 import { latestWins } from "../src/lib/loads.ts";
-import { toE164 } from "../src/lib/phone.ts";
+import { grouped, toE164 } from "../src/lib/phone.ts";
 
 test("a heard fact reads as it does on the web's /me", () => {
   const facts = [
@@ -119,4 +119,30 @@ test("a failed load keeps what was shown and says why; the next load clears it",
   assert.deepEqual(shown.at(-1), { data: ["mine"], error: "Can't reach Landline" });
   await run(async () => ["again"]);
   assert.deepEqual(shown.at(-1), { data: ["again"], error: null });
+});
+
+test("Home's tally counts the same listings and viewings the cards show, a place called twice once", () => {
+  const call = (listing_id, call_id, viewing) => ({ listing_id, call_id, session_id: "s", viewing });
+  const listings = [
+    call("a", "c3", { status: "confirmed" }),   // newest first: a's latest call has the confirmed viewing
+    call("b", "c2", null),
+    call("a", "c1", { status: "booked" }),      // an older call to a: not counted again
+    call("c", "c0", { status: "booked" }),
+  ];
+  assert.deepEqual(tally(listings), [
+    { kind: "called", words: "3 places called" },
+    { kind: "confirmed", words: "1 viewing confirmed" },
+    { kind: "booked", words: "1 viewing booked" },
+  ]);
+  assert.deepEqual(tally([call("a", "c1", null)]), [{ kind: "called", words: "1 place called" }]);
+});
+
+test("a typed number is grouped as the renter types it, and still reads as E.164", () => {
+  assert.equal(grouped("41655501"), "416 555 01");
+  assert.equal(grouped("(416) 555-0100"), "416 555 0100");
+  assert.equal(grouped("4165550100999"), "416 555 0100");
+  assert.equal(grouped("14165550100"), "1 416 555 0100");
+  assert.equal(grouped("+44 20 7123 4567"), "+44 20 7123 4567");
+  assert.equal(toE164(grouped("4165550100")), "+14165550100");
+  assert.equal(toE164(grouped("14165550100")), "+14165550100");
 });
