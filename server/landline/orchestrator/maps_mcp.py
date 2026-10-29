@@ -9,7 +9,8 @@ log line and None. The key is never logged.
 Four helpers return plain dataclasses for O-07b's `ask_maps`:
 - `nearby(lat, lng, what)`: the closest of Google's top 5 matches around a point, the walk to it, and how many
   of the 5 are within 1 km in a straight line;
-- `place(lat, lng, words)`: the place the renter named ("Cohere", "U of T"), Google's first match in Toronto;
+- `place(words)`: the place the renter named ("Cohere", "Union"), Google's first match in Toronto, looked for
+  around downtown;
 - `route(origin, destination, mode)`: minutes and km by DRIVE, WALK, BICYCLE or TRANSIT;
 - `weather(lat, lng, day)`: a one-line daily forecast, today to 9 days ahead.
 
@@ -52,7 +53,8 @@ TIMEOUT_S = 3.0
 NEARBY_RADIUS_M = 1500
 NEARBY_RESULTS = 5               # search_places returns at most 5; all of them count towards NEAR_M
 NEAR_M = 1000                    # "3 within 1 km", in a straight line from the listing
-PLACE_RADIUS_M = 5000            # a named place is looked for around the listing, but not only there
+DOWNTOWN = (43.645642, -79.380208)   # Union station (pipeline/data/ttc_subway_stations.json)
+PLACE_RADIUS_M = 5000            # a named place is looked for around DOWNTOWN, but not only there
 REGION = "CA"
 MODES = ("DRIVE", "WALK", "BICYCLE", "TRANSIT")
 FORECAST_DAYS = 10               # daily forecasts cover today and the next 9 days
@@ -163,20 +165,26 @@ class MapsMCP:
                       distance_m=walk[1] if walk else None, warning=WALK_WARNING if walk else None,
                       within_1km=near)
 
-    async def place(self, lat: float, lng: float, words: str) -> Place | None:
-        """The place the renter named ("Cohere", "U of T", "171 John St"): Google's first match for their
-        words in Toronto, looked for around (lat, lng). None when Google can't be asked or finds nothing."""
+    async def place(self, words: str) -> Place | None:
+        """The place the renter named ("Cohere", "Union", "171 John St"): Google's first match for their words
+        in Toronto, looked for around downtown. None when Google can't be asked or finds nothing.
+
+        Not around the listing: a renter asks how far a listing is from somewhere they go, and around the
+        listing a local business with the same name ranks first (a café called Union near Ossington, not Union
+        Station; Arian's live check, 29 Oct). Nor "the most prominent" of the matches: search_places gives no
+        rating or other sign of how well known a place is, so Google's own order around downtown, where the
+        city's workplaces, campuses and stations are, is the better guess."""
         words = " ".join((words or "").split())
         if not words:
             return None
         query = words if "toronto" in words.lower() else f"{words} Toronto"
-        found = await self._search(query, lat, lng, PLACE_RADIUS_M, 1)
+        found = await self._search(query, *DOWNTOWN, PLACE_RADIUS_M, 1)
         if found is None:
             return None
         places, summary = found
         i = next((k for k, p in enumerate(places) if _place_id(p)), None)
         if i is None:
-            log.info("maps mcp search_places: no place for the words near %.4f,%.4f", lat, lng)
+            log.info("maps mcp search_places: no place for the words")
             return None
         return self._place(places[i], i, summary, words)
 

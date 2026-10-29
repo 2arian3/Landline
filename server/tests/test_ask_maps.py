@@ -53,8 +53,8 @@ class FakeMaps:
                       distance_m=480 if self.minutes else None,
                       warning=WALK_WARNING if self.minutes is not None else None, within_1km=self.within)
 
-    async def place(self, lat, lng, words):
-        self.asked.append(("place", lat, lng, words))
+    async def place(self, words):
+        self.asked.append(("place", words))
         await asyncio.sleep(self.delay)
         if self.place_at is None:
             return None
@@ -252,11 +252,11 @@ async def test_the_ttc_comes_from_the_stored_walk_without_asking_google(ctx, mon
     assert _calls(ctx) == [] and _texts(ctx) == []   # nothing from Google: no disclosure, nothing to text
 
 
-async def test_another_station_or_no_stored_walk_asks_google(ctx, monkeypatch):
+async def test_another_station_is_routed_to_and_no_stored_walk_asks_google(ctx, monkeypatch):
     _stored(ctx, monkeypatch, **STATION)
     await _focus(ctx, 1)
     await _ask(ctx, '{"kind": "transit", "to": "Union station"}')
-    assert _calls(ctx)[0] == "place" and ctx.runtime.maps.asked[0][3] == "Union station"
+    assert _calls(ctx) == ["route TRANSIT"]   # Union, from the station list: no search
     ctx.runtime.maps.asked.clear()
     _stored(ctx, monkeypatch, transit_station=None, transit_walk_min=None)
     ctx.runtime.maps.name = "Christie Station"
@@ -307,14 +307,15 @@ async def test_a_nearby_answer_counts_the_matches_within_1_km(ctx, within, said)
             f"Google Maps shows {said} within 1 km.") in reply
 
 
-async def test_a_named_place_far_away_is_found_then_routed_to_by_ttc(ctx):
-    ctx.runtime.maps = FakeMaps(place_at=FAR_AWAY, routes={"TRANSIT": (26, 6000), "WALK": (70, 5600)})
+async def test_a_place_on_neither_list_is_found_on_google_then_routed_to_by_ttc(ctx):
+    ctx.runtime.maps = FakeMaps(place_name="Evergreen Brick Works", place_at=FAR_AWAY,
+                                routes={"TRANSIT": (26, 6000), "WALK": (70, 5600)})
     await _focus(ctx, 1)
-    reply = await _ask(ctx, '{"kind": "transit", "to": "Cohere"}')
-    assert reply == (f"{DISCLOSURE}. 1 Bloor St W is about 26 minutes by TTC (6 km) from Cohere; that's not "
-                     "walking distance. I've texted you the Google Maps link.")
+    reply = await _ask(ctx, '{"kind": "transit", "to": "the Brick Works"}')
+    assert reply == (f"{DISCLOSURE}. 1 Bloor St W is about 26 minutes by TTC (6 km) from Evergreen Brick "
+                     "Works; that's not walking distance. I've texted you the Google Maps link.")
     assert _calls(ctx) == ["place", "route TRANSIT"]   # 2 calls: past 2.5 km a walk isn't asked for
-    assert ctx.runtime.maps.asked[0] == ("place", *AT, "Cohere")
+    assert ctx.runtime.maps.asked[0] == ("place", "the Brick Works")
     route = ctx.runtime.maps.asked[1]
     assert route[1] == AT and route[2].place_id == "p2"   # from the listing to the place Google found
     texted = _texts(ctx)[0]
@@ -331,10 +332,10 @@ async def test_a_named_place_far_away_is_found_then_routed_to_by_ttc(ctx):
     ({"WALK": (16, 1300)},
      "1 Bloor St W is about 16 minutes' walk from University of Toronto (1.3 km); that's walkable.")])
 async def test_a_place_within_walking_distance_gets_the_walk_first(ctx, routes, said):
-    ctx.runtime.maps = FakeMaps(place_name="University of Toronto", place_at=NEAR, routes=routes)
+    ctx.runtime.maps = FakeMaps(place_name="Trinity Bellwoods Park", place_at=NEAR, routes=routes)
     await _focus(ctx, 1)
-    reply = await _ask(ctx, '{"kind": "transit", "to": "U of T"}')
-    assert said in reply and "in beta" in reply
+    reply = await _ask(ctx, '{"kind": "transit", "to": "Trinity Bellwoods"}')
+    assert said.replace("University of Toronto", "Trinity Bellwoods Park") in reply and "in beta" in reply
     assert _calls(ctx) == ["place", "route TRANSIT", "route WALK"]
 
 
@@ -376,9 +377,44 @@ async def test_a_place_with_no_clear_name_no_match_or_no_route(ctx):
     reply = await _ask(ctx, '{"kind": "transit", "to": "my office"}')
     assert "1 Bloor St W is about 26 minutes by TTC (6 km) from the place Google found for my office" in reply
     ctx.runtime.maps = FakeMaps(place_at=None)
-    reply = await _ask(ctx, '{"kind": "transit", "to": "Cohere"}', "fc_2")
-    assert reply == "I couldn't find Cohere on Google Maps."
+    reply = await _ask(ctx, '{"kind": "transit", "to": "Trinity Bellwoods"}', "fc_2")
+    assert reply == "I couldn't find Trinity Bellwoods on Google Maps."
     assert _calls(ctx) == ["place"]
     ctx.runtime.maps = FakeMaps(place_at=FAR_AWAY, routes={})
     assert await _ask(ctx, '{"kind": "transit", "to": "Cohere"}', "fc_3") == \
         "I couldn't get a time by TTC to Cohere from Google Maps."
+
+
+# Our own lists first: Places' landmarks and TTC stations, routed to by their point (one call, no search)
+
+UNION = (43.645642, -79.380208)   # pipeline/data/ttc_subway_stations.json
+
+
+@pytest.mark.parametrize("to", ["Union", "Union Station", "union station"])
+async def test_union_is_union_station_routed_to_by_its_point_in_one_call(ctx, to):
+    ctx.runtime.maps = FakeMaps(routes={"TRANSIT": (26, 6000)})
+    await _focus(ctx, 1)
+    reply = await _ask(ctx, json.dumps({"kind": "transit", "to": to}))
+    assert ("1 Bloor St W is about 26 minutes by TTC (6 km) from Union station; that's not walking "
+            "distance.") in reply
+    assert ctx.runtime.maps.asked == [("route", AT, UNION, "TRANSIT")]   # 3.3 km: no walk, and no search
+    assert "Source: Google Maps https://maps.google.com" in _texts(ctx)[0]   # the route's own source
+
+
+@pytest.mark.parametrize("to", ["U of T", "UofT", "University of Toronto", "the Cohere office"])
+async def test_a_landmark_by_any_of_its_names_is_routed_to_without_a_search(ctx, to):
+    ctx.runtime.maps = FakeMaps(routes={"TRANSIT": (12, 2100), "WALK": (18, 1500)})
+    await _focus(ctx, 1)
+    reply = await _ask(ctx, json.dumps({"kind": "transit", "to": to}))
+    name = "Cohere" if "Cohere" in to else "University of Toronto, St. George campus"
+    assert f"1 Bloor St W is about 18 minutes' walk from {name}" in reply and "that's walkable" in reply
+    assert _calls(ctx) == ["route TRANSIT", "route WALK"]   # both within 2.5 km: the walk too
+    assert all(isinstance(a[2], tuple) for a in ctx.runtime.maps.asked)   # to the landmark's point
+
+
+async def test_a_chain_named_alone_is_its_closest_branch(ctx):
+    ctx.runtime.maps = FakeMaps(name="Tim Hortons", minutes=4, within=2)
+    await _focus(ctx, 1)
+    reply = await _ask(ctx, '{"kind": "transit", "to": "Tim Hortons"}')
+    assert "The closest Tim Hortons to 1 Bloor St W is Tim Hortons, about 4 minutes' walk." in reply
+    assert _calls(ctx) == ["nearby"]

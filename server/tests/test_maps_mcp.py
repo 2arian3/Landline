@@ -304,10 +304,11 @@ async def test_a_named_place_is_googles_first_match_for_the_words_in_toronto():
     search["result"]["structuredContent"] = content
     server = Server({**shaped(), "search_places": search})
     maps = client(server)
-    place = await maps.place(LAT, LNG, "  Cohere ")
+    place = await maps.place("  Cohere ")
     assert server.args("search_places") == [{
         "textQuery": "Cohere Toronto",
-        "locationBias": {"circle": {"center": {"latitude": LAT, "longitude": LNG}, "radiusMeters": 5000}},
+        "locationBias": {"circle": {"center": {"latitude": 43.645642, "longitude": -79.380208},
+                                    "radiusMeters": 5000}},   # around downtown (Union), not the listing
         "regionCode": "CA", "pageSize": 1}]
     first = content["places"][0]
     link = first["googleMapsLinks"]["placeUrl"]
@@ -317,18 +318,45 @@ async def test_a_named_place_is_googles_first_match_for_the_words_in_toronto():
     assert not server.args("compute_routes")   # finding it routes nothing
     await maps.route((LAT, LNG), place, "WALK")
     assert server.args("compute_routes")[-1]["destination"] == {"placeId": first["id"]}
-    await maps.place(LAT, LNG, "University of Toronto")
+    await maps.place("University of Toronto")
     assert server.args("search_places")[-1]["textQuery"] == "University of Toronto"
+
+
+OSSINGTON = (43.6610, -79.4228)   # 798 Ossington Ave, where Arian's live check asked from
+UNION_CAFE = {"id": "cafe", "location": {"latitude": 43.6458, "longitude": -79.4196}}   # a café called Union
+UNION_STATION = {"id": "station", "location": {"latitude": 43.645642, "longitude": -79.380208}}
+
+
+def _nearest_the_bias_first(request: httpx.Request) -> httpx.Response:
+    """search_places as it behaved live (29 Oct): of the matches for "Union", the one nearest the bias
+    circle's centre comes first."""
+    body = json.loads(request.content)
+    c = body["params"]["arguments"]["locationBias"]["circle"]["center"]
+    ranked = sorted([UNION_CAFE, UNION_STATION], key=lambda p: maps_mcp.metres(
+        c["latitude"], c["longitude"], p["location"]["latitude"], p["location"]["longitude"]))
+    names = {"cafe": "Union", "station": "Union Station"}
+    msg = answer({"summary": f"**{names[ranked[0]['id']]}** [0] is in Toronto.", "places": ranked[:1]})
+    return httpx.Response(200, json={**msg, "id": body["id"]})
+
+
+async def test_union_is_union_station_not_the_cafe_near_the_listing():
+    http = httpx.AsyncClient(transport=httpx.MockTransport(_nearest_the_bias_first))
+    place = await MapsMCP(KEY, client=http, now=lambda: NOW).place("Union")
+    assert (place.place_id, place.name) == ("station", "Union Station")
+    # Biased around the listing, as #352 was, the same fake gives the café: what the live check found.
+    near_listing = sorted([UNION_CAFE, UNION_STATION], key=lambda p: maps_mcp.metres(
+        *OSSINGTON, p["location"]["latitude"], p["location"]["longitude"]))
+    assert near_listing[0] is UNION_CAFE
 
 
 async def test_a_named_place_with_no_clear_name_or_no_match():
     server = Server({**shaped(), "search_places": _places((43.6505, -79.3910))})
     server.answers["search_places"]["result"]["structuredContent"]["summary"] = "Here's what I found [0]."
-    place = await client(server).place(LAT, LNG, "my office")
+    place = await client(server).place("my office")
     assert place.name is None and place.place_id == "p0"
     empty = Server({"search_places": answer({"summary": "Nothing.", "places": []})})
-    assert await client(empty).place(LAT, LNG, "Cohere") is None
-    assert await client(Server({})).place(LAT, LNG, "  ") is None
+    assert await client(empty).place("Cohere") is None
+    assert await client(Server({})).place("  ") is None
 
 
 async def test_nearby_takes_the_closest_match_and_its_name():
