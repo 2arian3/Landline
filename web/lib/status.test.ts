@@ -71,15 +71,15 @@ test("something's off: red, with the flag in full under it", () => {
 });
 
 test("didn't get through: worded from how the call ended", () => {
-  for (const [reason, word] of [["no_answer", "No answer"], ["busy", "No answer"], ["voicemail", "Left a message"],
+  for (const [reason, word] of [["no_answer", "Didn\u2019t get through"], ["busy", "Didn\u2019t get through"], ["voicemail", "Left a message"],
     ["hangup", "Hung up early"], ["timeout", "Call dropped"], ["wrong_number", "Wrong number"]] as const) {
     assert.deepEqual(said(statusOf(card({ status: "no_answer" }), { call: ended(reason) })),
       ["unheard", word, null, reason === "voicemail" ? "voicemail" : "x", "quiet", "noanswer", null], reason);
     assert.equal(statusOf(card({ status: "no_answer" }), { ended: reason }).words, word, reason);
   }
-  assert.equal(statusOf(card({ status: "no_answer" })).words, "No answer");   // no outcome yet
+  assert.equal(statusOf(card({ status: "no_answer" })).words, "Didn\u2019t get through");   // no outcome yet
   assert.equal(statusOf(card({ status: "no_answer" }), { call: ended("hangup", [{ field: "pets" }]) }).words,
-    "No answer");   // a call that heard facts isn't worded as unheard
+    "Didn\u2019t get through");   // a call that heard facts isn't worded as unheard
 });
 
 test("already rented: quiet, hollow pin", () => {
@@ -109,4 +109,13 @@ test("every end reason has a word and a sentence", () => {
   const reasons: EndReason[] = ["done", "refused", "wrong_number", "voicemail", "hangup", "no_answer", "busy",
     "failed", "blocked", "timeout"];
   for (const r of reasons) assert.ok(UNHEARD[r].word && UNHEARD[r].line, r);
+});
+
+test("the tally word is the status's own, lower case: a left message and not getting through count apart", () => {
+  assert.equal(statusOf(card({ status: "no_answer" }), { ended: "voicemail" }).tally, "left a message");
+  assert.equal(statusOf(card({ status: "no_answer" }), { ended: "busy" }).tally, "didn\u2019t get through");
+  assert.equal(statusOf(card({ status: "no_answer" })).tally, "didn\u2019t get through");
+  assert.equal(statusOf(card({ status: "verified" })).tally, "checked by phone");
+  assert.equal(statusOf(card({ status: "suspect", red_flags: ["x"] })).tally, "flagged");
+  assert.equal(statusOf(card()).tally, "not called yet");
 });
