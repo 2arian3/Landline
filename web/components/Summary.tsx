@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Icon, type IconName, Mark } from "./Icon";
 import { heardLine } from "@/lib/format";
 import { unheardCounts } from "@/lib/outcome";
 import { type Pill, pill } from "@/lib/pill";
@@ -8,28 +9,22 @@ import { resultsByPlace } from "@/lib/results";
 import type { Card, SessionView } from "@/lib/types";
 import { splitWelcome } from "@/lib/welcome";
 
-/** Landline's mark (a map pin, white on ink) and its name: the canvas's wordmark. */
+/** Landline's mark and its name: the canvas's wordmark. */
 export function Wordmark() {
   return (
     <p className="wordmark">
-      <span className="mark" aria-hidden>
-        <svg viewBox="0 0 32 32">
-          <path d="M16 5.5c-4.1 0-7.5 3.3-7.5 7.4 0 5.3 7.5 13.6 7.5 13.6s7.5-8.3 7.5-13.6c0-4.1-3.4-7.4-7.5-7.4zm0 10.2a2.8 2.8 0 1 1 0-5.6 2.8 2.8 0 0 1 0 5.6z" />
-        </svg>
-      </span>
+      <Mark />
       Landline
     </p>
   );
 }
 
-const PILL_ICON: Record<Exclude<Pill["icon"], "waiting">, string> = {
-  wave: "M2 10v3M6 6v11M10 3v18M14 8v7M18 5v13M22 10v3",
-  phone:
-    "M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z",
-  check: "M20 6 9 17l-5-5",
-  offline:
-    "M12 20h.01M8.5 16.43a5 5 0 0 1 7 0M2 8.82a15 15 0 0 1 4.17-2.65M10.66 5c4.01-.36 8.14.9 11.34 3.76M16.85 11.25a10 10 0 0 1 2.22 1.68M5 13a10 10 0 0 1 5.24-2.76M2 2l20 20",
-  ended: "M18 6 6 18M6 6l12 12",
+const PILL_ICON: Record<Exclude<Pill["icon"], "waiting">, IconName> = {
+  wave: "audio-lines",
+  phone: "phone",
+  check: "check",
+  offline: "wifi-off",
+  ended: "x",
 };
 
 /** What the call is doing (lib/pill.ts), as Lucent's pill: its icon and words, never colour alone. */
@@ -43,9 +38,7 @@ export function PhasePill({ pill: p }: { pill: Pill }) {
           <i />
         </span>
       ) : (
-        <svg className="i" viewBox="0 0 24 24" aria-hidden>
-          <path d={PILL_ICON[p.icon]} />
-        </svg>
+        <Icon name={PILL_ICON[p.icon]} size={16} />
       )}
       {p.words}
     </span>
@@ -81,10 +74,7 @@ export function Brand({
         {!idle && <PhasePill pill={pill(view, { connected, stale, offline, line })} />}
         {yourCalls && (
           <Link href="/me" className="btn btn-quiet btn-icon" aria-label="Your calls">
-            <svg className="i" viewBox="0 0 24 24" aria-hidden>
-              <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
-              <circle cx="12" cy="7" r="4" />
-            </svg>
+            <Icon name="user" size={20} />
           </Link>
         )}
       </div>
