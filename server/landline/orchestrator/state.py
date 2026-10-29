@@ -5,6 +5,8 @@ a restart can reload it. Handlers change it only inside `session_tx`.
 """
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 from landline.contracts import (
@@ -60,6 +62,8 @@ class SessionState(BaseModel):
     heard: dict[str, list[Fact]] = Field(default_factory=dict)      # facts recorded live, by listing
     questions: dict[str, list[str]] = Field(default_factory=dict)   # landlord questions, by listing
     viewings: dict[str, Viewing] = Field(default_factory=dict)      # booked, by listing
+    # The listing agent's answer to a booked viewing (O-08c), by listing; none yet means it waits.
+    viewing_status: dict[str, Literal["confirmed", "declined"]] = Field(default_factory=dict)
     outcomes: dict[str, CallOutcome] = Field(default_factory=dict)  # from the Auditor, by listing
     results: str | None = None
     board: list[str] = Field(default_factory=list)   # the last board's order, so ties keep their place

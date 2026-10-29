@@ -21,6 +21,7 @@ from typing import Any
 from pydantic import BaseModel, ValidationError
 
 from landline.agents.concierge import refs
+from landline.agents.concierge.status import listing_status
 from landline.contracts import (
     AnchorResolved,
     AreaFocused,
@@ -45,7 +46,16 @@ from landline.contracts.tools import (
     concierge_tools,
 )
 from landline.orchestrator import Refused, SessionRuntime, UnknownSession
-from landline.orchestrator.maps_mcp import DISCLOSURE, Nearby, Route, Weather
+from landline.orchestrator.maps_mcp import (
+    DISCLOSURE,
+    NEARBY_RESULTS,
+    WALK_WARNING,
+    Nearby,
+    Place,
+    Route,
+    Weather,
+    metres,
+)
 from landline.orchestrator.places import Point, Unplaced, load_stations, place_of
 from landline.orchestrator.runtime import PLACE_TIMEOUT_S
 from landline.scoring.reasons import to_station
@@ -115,6 +125,9 @@ class ToolContext:
     note: Callable[[str], Awaitable[None]] | None = None
     maps_disclosed: bool = False
     maps_asks: int = 0
+    # listing_status (A-14): where a phone caller's earlier sessions are read. None reads the runtime's
+    # database; the eval's returning callers set an in-memory one (evals/sim/driver.py).
+    history: Any | None = None
 
 
 async def handle(name: str, arguments: str, tool_call_id: str, ctx: ToolContext) -> str:
@@ -453,9 +466,30 @@ async def _show_area(ctx: ToolContext, meta: dict, place: str, lat: float, lng: 
 # the board and the catalogue, never from the model (hard rule 2). A slow answer doesn't hold the turn: after
 # MAPS_WAIT_S the reply says it's coming, and it arrives through the call's Line unless the call has ended or
 # a newer question replaced it.
+#
+# How far, how close and how many: the walks to the nearest subway station (D-10a) and to the nearest
+# grocery store and pharmacy (D-10b) are stored on the listing, so those answers ask Google nothing. A place
+# the renter names is found first (place()), then routed to from the listing. The verdict ("very close",
+# "walkable", "not walking distance"), the km and the count within 1 km are computed here, from Google's
+# numbers.
 
-_BY = {"walk": ("WALK", "on foot"), "drive": ("DRIVE", "by car"), "transit": ("TRANSIT", "by transit")}
+_MODE = {"walk": "WALK", "drive": "DRIVE", "transit": "TRANSIT"}
+_BY = {"WALK": "on foot", "DRIVE": "by car", "TRANSIT": "by TTC"}
 _WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+VERY_CLOSE_MIN, WALKABLE_MIN = 10, 20   # a walk's verdict
+WALK_TOO_MIN = 30      # a walk this long or longer isn't worth saying next to the TTC
+WALK_TOO_KM = 2.5      # farther than this in a straight line, a walk takes 30 minutes or more: not asked for
+WALK_FAR_KM = 2.0      # with no walking time, this far in a straight line is not walking distance
+# Words that mean the TTC, the subway or the nearest station ("TTC station", "the subway", "closest station").
+_TTC = {"ttc", "subway", "metro", "station", "transit"}
+_TTC_FILLER = {"the", "a", "an", "nearest", "closest", "nearby", "near", "local", "public", "stop", "line",
+               "underground", "to", "from"}
+# The stores stored on each listing (D-10b), in the words a renter uses for them. A brand ("Shoppers") isn't
+# one of them, and a plural ("grocery stores") asks how many, which only Google's search answers.
+_STORES = {"grocery": {"grocery", "supermarket", "grocer", "food"},
+           "pharmacy": {"pharmacy", "drugstore", "drug", "chemist"}}
+_STORE_FILLER = {"a", "an", "the", "any", "nearest", "closest", "nearby", "near", "local", "store", "shop",
+                 "place", "one"}
 
 
 @dataclass(frozen=True)
@@ -473,7 +507,7 @@ async def ask_maps(args: AskMaps, ctx: ToolContext, meta: dict) -> str:
         return UNKNOWN
     if args.kind == "nearby" and not (args.what or "").strip():
         return "Ask the renter what kind of place to look for."
-    if args.kind in _BY and not (args.to or "").strip():
+    if args.kind in _MODE and not (args.to or "").strip():
         return "Ask the renter where to."
     view = ctx.runtime.get(ctx.session_id)
     found = refs.match(args.listing_ref, view.board, view.focus_listing_id) if args.listing_ref else None
@@ -486,7 +520,7 @@ async def ask_maps(args: AskMaps, ctx: ToolContext, meta: dict) -> str:
         return f"I don't have {card.address} on the map."
     ctx.maps_asks += 1
     ask = ctx.maps_asks
-    work = asyncio.ensure_future(_answer(maps, args, card.address, listing.lat, listing.lng))
+    work = asyncio.ensure_future(_answer(maps, args, listing, card.address))
     done, _ = await asyncio.wait({work}, timeout=MAPS_WAIT_S)
     if done:
         return _deliver(ctx, work.result())
@@ -494,36 +528,148 @@ async def ask_maps(args: AskMaps, ctx: ToolContext, meta: dict) -> str:
     return CHECKING_MAP
 
 
-async def _answer(maps: Any, args: AskMaps, address: str, lat: float, lng: float) -> _Said:
-    """Google's answer in words. Nothing but Google's names, minutes and summaries goes in it."""
-    if args.kind == "nearby":
-        what = (args.what or "").strip()
-        n: Nearby | None = await maps.nearby(lat, lng, what)
-        if n is None:
-            return _Said(f"I couldn't find {_a(what)} near {address} on Google Maps.", None)
-        walk = f"about {n.minutes} minutes' walk" if n.minutes is not None else None
-        if n.name and walk:
-            spoken = f"The closest {what} to {address} is {n.name}, {walk}."
-        elif n.name:
-            spoken = f"The closest {what} to {address} is {n.name}."
-        elif walk:
-            spoken = f"There's {_a(what)} {walk} from {address}."
-        else:
-            spoken = f"Google Maps shows {_a(what)} near {address}."
-        return _Said(spoken, _text(spoken, n.attribution, n.maps_url or n.attribution_url, n.warning),
-                     walking=n.minutes is not None)
-    if args.kind in _BY:
-        mode, by = _BY[args.kind]
-        to = (args.to or "").strip()
-        r: Route | None = await maps.route((lat, lng), to, mode)
-        if r is None:
-            return _Said(f"I couldn't get a time {by} to {to} from Google Maps.", None)
-        spoken = f"From {address}, {to} is about {r.minutes} minutes {by}."
-        texted = _text(spoken, r.attribution, r.attribution_url, r.warning)
-        return _Said(spoken, texted, walking=mode == "WALK")
-    day = _day(args.day, datetime.now(TORONTO).date())
+async def _answer(maps: Any, args: AskMaps, listing: Listing, address: str) -> _Said:
+    """The answer in words: from the listing's stored walks when they answer it, else from Google. Nothing but
+    Google's names, minutes and summaries, the stored fields, and code's verdicts and counts goes in it."""
+    if args.kind == "weather":
+        return await _weather(maps, args.day, address, listing.lat, listing.lng)
+    words = ((args.what if args.kind == "nearby" else args.to) or "").strip()
+    if _means_ttc(words, listing.transit_station):
+        return _stored_station(listing, address) or await _nearby(maps, "subway station", listing, address)
+    store = _store(words)   # "how far is the nearest pharmacy?" is the closest one, however it's asked
+    if store and not store[1] and (said := _stored_store(listing, store[0], words, address)):
+        return said
+    if args.kind == "nearby" or store:
+        return await _nearby(maps, words, listing, address, store)
+    return await _trip(maps, _MODE[args.kind], words, address, listing.lat, listing.lng)
+
+
+async def _nearby(maps: Any, what: str, listing: Listing, address: str,
+                  store: tuple[str, bool] | None = None) -> _Said:
+    """The closest place of a kind, the walk to it, and how many Google found within 1 km."""
+    n: Nearby | None = await maps.nearby(listing.lat, listing.lng, what)
+    one = _kind(what)
+    if n is None:
+        if store and (said := _stored_store(listing, store[0], what, address)):
+            return said
+        return _Said(f"I couldn't find {_a(one)} near {address} on Google Maps.", None)
+    walk = _walk(n.minutes) if n.minutes is not None else None
+    if n.name and walk:
+        spoken = f"The closest {one} to {address} is {n.name}, {walk}."
+    elif n.name:
+        spoken = f"The closest {one} to {address} is {n.name}."
+    elif walk:
+        spoken = f"There's {_a(one)} {walk} from {address}."
+    else:
+        spoken = f"Google Maps shows {_a(one)} near {address}."
+    near = n.within_1km
+    count = f"{near} or more" if near >= NEARBY_RESULTS else str(near) if near else "none"
+    spoken += f" Google Maps shows {count} within 1 km."
+    return _Said(spoken, _text(spoken, n.attribution, n.maps_url or n.attribution_url, n.warning),
+                 walking=n.minutes is not None)
+
+
+async def _trip(maps: Any, mode: str, to: str, address: str, lat: float, lng: float) -> _Said:
+    """How far a place the renter named is from the listing: the place is found first, then routed to.
+    Transit is also how a question that doesn't say how comes, so it gets the walk too when the place is
+    within WALK_TOO_KM in a straight line."""
+    place: Place | None = await maps.place(lat, lng, to)
+    if place is None:
+        return _Said(f"I couldn't find {to} on Google Maps.", None)
+    name = place.name or f"the place Google found for {to}"
+    km = metres(lat, lng, place.lat, place.lng) / 1000 if place.lat is not None and place.lng is not None \
+        else None
+    modes = [mode] + (["WALK"] if mode == "TRANSIT" and (km is None or km < WALK_TOO_KM) else [])
+    routes: dict[str, Route | None] = dict(zip(modes, await asyncio.gather(
+        *(maps.route((lat, lng), place, m) for m in modes)), strict=True))
+    walk, ride = routes.get("WALK"), routes.get(mode) if mode != "WALK" else None
+    spoken = _how_far(address, name, walk, ride, km)
+    if spoken is None:
+        return _Said(f"I couldn't get a time {_BY[mode]} to {name} from Google Maps.", None)
+    said_walk = walk is not None and (ride is None or walk.minutes < WALK_TOO_MIN)
+    texted = _text(spoken, place.attribution, place.maps_url or place.attribution_url,
+                   WALK_WARNING if said_walk else None)
+    return _Said(spoken, texted, walking=said_walk)
+
+
+def _how_far(address: str, name: str, walk: Route | None, ride: Route | None, km: float | None) -> str | None:
+    """How far, with code's verdict. A walk of up to WALKABLE_MIN comes first ("very close", "walkable");
+    otherwise the ride comes first, with the walk when it's under WALK_TOO_MIN, or else "not walking distance"
+    when the walk is longer or the place is WALK_FAR_KM or more away in a straight line."""
+    if walk is not None and (ride is None or walk.minutes <= WALKABLE_MIN):
+        said = f"{address} is {_walk(walk.minutes)} from {name} ({_distance(walk)}){_verdict(walk.minutes)}."
+        if ride is not None:
+            by = _BY[ride.mode]
+            said += f" {by[:1].upper()}{by[1:]}, it's about {ride.minutes} minutes."
+        return said
+    if ride is None:
+        return None
+    said = f"{address} is about {ride.minutes} minutes {_BY[ride.mode]} ({_distance(ride)}) from {name}"
+    if walk is not None and walk.minutes < WALK_TOO_MIN:
+        return f"{said}, or {_walk(walk.minutes)}."
+    if walk is not None or (km is not None and km >= WALK_FAR_KM):
+        return f"{said}; that's not walking distance."
+    return f"{said}."
+
+
+def _means_ttc(words: str, station: str | None) -> bool:
+    """Whether the words mean the TTC, the subway or the nearest station, however they're put ("TTC station",
+    "the subway", "closest station", "public transit"), or name the listing's own nearest station."""
+    said = [w for w in _singular(words) if w not in _TTC_FILLER]
+    rest = [w for w in said if w not in _TTC]
+    if not rest:
+        return bool(said)
+    own = [w for w in _singular(station or "") if w not in _TTC]
+    return bool(own) and rest == own
+
+
+def _singular(text: str) -> list[str]:
+    """The words, lower case, each without a plural "s" ("stations", "stops")."""
+    return [w.removesuffix("s") for w in re.findall(r"[a-z0-9]+", text.lower())]
+
+
+def _stored_station(listing: Listing, address: str) -> _Said | None:
+    """The walk to the nearest subway station stored on the listing (D-10a), or None when it has none."""
+    station, minutes = listing.transit_station, listing.transit_walk_min
+    if not station or minutes is None:
+        return None
+    if minutes < 1:
+        return _Said(f"{address} is right next to {station} station.", None)
+    m = _whole(minutes)
+    return _Said(f"The nearest subway station to {address} is {station}, {_walk(m)}{_verdict(m)}.", None)
+
+
+def _store(what: str) -> tuple[str, bool] | None:
+    """The stored store the words ask for, "grocery" or "pharmacy", and whether they're plural; None for
+    anything else, a brand among them."""
+    kinds: set[str | None] = set()
+    plural = False
+    for w in re.findall(r"[a-z]+", what.lower()):
+        one = w[:-3] + "y" if w.endswith("ies") else w[:-1] if w.endswith("s") and not w.endswith("ss") else w
+        plural |= one != w
+        if one not in _STORE_FILLER:
+            kinds.add(next((k for k, words in _STORES.items() if one in words), None))
+    if len(kinds) != 1 or None in kinds:
+        return None
+    return kinds.pop(), plural
+
+
+def _stored_store(listing: Listing, store: str, what: str, address: str) -> _Said | None:
+    """The nearest grocery store or pharmacy stored on the listing (D-10b), or None when it has none."""
+    name, minutes = ((listing.grocery_name, listing.grocery_walk_min) if store == "grocery"
+                     else (listing.pharmacy_name, listing.pharmacy_walk_min))
+    if minutes is None:
+        return None
+    m, one = _whole(minutes), _kind(what)
+    if name:
+        return _Said(f"The closest {one} to {address} is {name}, {_walk(m)}{_verdict(m)}.", None)
+    return _Said(f"There's {_a(one)} {_walk(m)} from {address}{_verdict(m)}.", None)
+
+
+async def _weather(maps: Any, words: str | None, address: str, lat: float, lng: float) -> _Said:
+    day = _day(words, datetime.now(TORONTO).date())
     w: Weather | None = await maps.weather(lat, lng, day)
-    named = (args.day or "today").strip()
+    named = (words or "today").strip()
     if w is None:
         return _Said(f"I couldn't get the forecast for {named} from Google Maps.", None)
     spoken = f"{named[:1].upper()}{named[1:]} near {address}: {w.summary}"
@@ -581,6 +727,43 @@ def _a(what: str) -> str:
     if not what or what[:1].isupper():
         return what
     return f"{'an' if what[:1].lower() in 'aeiou' else 'a'} {what}"
+
+
+def _kind(what: str) -> str:
+    """The kind of place in the renter's words, as one: "a grocery store" and "grocery stores" are "grocery
+    store"; a name stays as it is ("Shoppers", "No Frills")."""
+    words = what.split()
+    while len(words) > 1 and words[0].lower() in {"a", "an", "the", "any", "nearest", "closest", "nearby"}:
+        words.pop(0)
+    last = words[-1] if words else ""
+    if last[:1].islower() and last.endswith("ies"):
+        words[-1] = last[:-3] + "y"
+    elif last[:1].islower() and last.endswith("s") and not last.endswith("ss"):
+        words[-1] = last[:-1]
+    return " ".join(words)
+
+
+def _whole(minutes: float) -> int:
+    """Stored minutes as whole minutes, rounded half up, and at least 1."""
+    return max(1, int(minutes + 0.5))
+
+
+def _walk(minutes: int) -> str:
+    return f"about {minutes} minute's walk" if minutes == 1 else f"about {minutes} minutes' walk"
+
+
+def _verdict(walk_min: int) -> str:
+    """Code's verdict on a walk, said after it: very close, walkable, or nothing."""
+    if walk_min <= VERY_CLOSE_MIN:
+        return "; that's very close"
+    return "; that's walkable" if walk_min <= WALKABLE_MIN else ""
+
+
+def _distance(route: Route) -> str:
+    """A route's length as said: metres to the nearest 10 under 1 km, else km to one decimal."""
+    if route.distance_m < 1000:
+        return f"{round(route.distance_m, -1)} m"
+    return f"{route.km:g} km"
 
 
 async def call_listings(args: CallListings, ctx: ToolContext, meta: dict) -> str:
@@ -828,6 +1011,7 @@ HANDLERS: dict[str, Callable[[Any, ToolContext, dict], Awaitable[str]]] = {
     "focus_area": focus_area,
     MAPS_TOOL: ask_maps,
     "call_listings": call_listings,
+    "listing_status": listing_status,   # A-14: agents/concierge/status.py
     "end_session": end_session,
 }
 

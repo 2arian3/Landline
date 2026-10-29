@@ -111,12 +111,12 @@ class Events(Repo):
 class Calls(Repo):
     async def create(self, call_id: str, *, session_id: str | None, role: str, transport: str,
                      state: str, listing_id: str | None = None, deadline_at: datetime | None = None,
-                     attempt: int = 1, conn: Conn = None) -> CallRow:
+                     attempt: int = 1, to_e164: str | None = None, conn: Conn = None) -> CallRow:
         row = await self._one(
             CallRow,
             "insert into calls (call_id, session_id, listing_id, role, transport, state, deadline_at, "
-            "attempt) values (%s, %s, %s, %s, %s, %s, %s, %s) returning *",
-            (call_id, session_id, listing_id, role, transport, state, deadline_at, attempt), conn,
+            "attempt, to_e164) values (%s, %s, %s, %s, %s, %s, %s, %s, %s) returning *",
+            (call_id, session_id, listing_id, role, transport, state, deadline_at, attempt, to_e164), conn,
         )
         assert row is not None
         return row
@@ -143,6 +143,14 @@ class Calls(Repo):
         n = await self._count("update calls set state = 'ended', end_reason = %s, ended_at = now() "
                               "where call_id = %s and ended_at is null", (reason, call_id), conn)
         return n == 1
+
+    async def latest_to(self, phone_e164: str, since: datetime, conn: Conn = None) -> list[CallRow]:
+        """The latest listing call on this number for each session and listing, made since `since`, newest
+        first: a listing agent calling back (A-13b) is about one of these."""
+        return await self._all(CallRow, "select * from (select distinct on (session_id, listing_id) * from "
+                               "calls where role = 'listing' and to_e164 = %s and created_at >= %s "
+                               "order by session_id, listing_id, created_at desc, call_id desc) latest "
+                               "order by created_at desc, call_id", (phone_e164, since), conn)
 
     async def for_session(self, session_id: str, conn: Conn = None) -> list[CallRow]:
         return await self._all(CallRow, "select * from calls where session_id = %s "
@@ -234,6 +242,25 @@ class ViewingConfirmations(Repo):
     async def for_call(self, call_id: str, conn: Conn = None) -> ViewingConfirmationRow | None:
         return await self._one(ViewingConfirmationRow,
                                "select * from viewing_confirmations where call_id = %s", (call_id,), conn)
+
+    async def get(self, token: str, conn: Conn = None) -> ViewingConfirmationRow | None:
+        return await self._one(ViewingConfirmationRow,
+                               "select * from viewing_confirmations where token = %s", (token,), conn)
+
+    async def decide(self, token: str, *, status: str, agent_email: str | None = None,
+                     conn: Conn = None) -> ViewingConfirmationRow | None:
+        """O-08c: the agent's answer, once. One update that only a pending row matches, so two answers at
+        the same moment can't both win. None when the token is unknown or already decided."""
+        return await self._one(
+            ViewingConfirmationRow,
+            "update viewing_confirmations set status = %s, agent_email = coalesce(%s, agent_email), "
+            "decided_at = now() where token = %s and status = 'pending' returning *",
+            (status, agent_email, token), conn)
+
+    async def set_event(self, token: str, event_id: str, conn: Conn = None) -> None:
+        async with self._use(conn) as c:
+            await c.execute("update viewing_confirmations set calendar_event_id = %s where token = %s",
+                            (event_id, token))
 
 
 class Avatars(Repo):

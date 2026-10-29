@@ -64,7 +64,7 @@ async def run(sets: list[str], runs: int, concurrency: int, only: set[str], use_
                                    prefs=back.prefs if back else None,
                                    taps={i: int(line.tap.split(":")[1]) for i, line in enumerate(case.lines)
                                          if line.tap},
-                                   reader=reader)
+                                   reader=reader, earlier=back.calls if back else None)
         result = score(case, trace, catalogue)
         folder = out / name
         folder.mkdir(parents=True, exist_ok=True)

@@ -14,9 +14,11 @@ from __future__ import annotations
 import asyncio
 import time
 from dataclasses import asdict, dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from typing import Any, Protocol
 
+from evals.sim.cases import EarlierCall
 from landline.agents.concierge import backstop, tools
 from landline.contracts import ListingFocused, PreferencesUpdated, SessionStarted
 from landline.contracts.tools import PreferenceDelta
@@ -32,6 +34,7 @@ from landline.voice.bridge import (
     response_settles,
     run_tool,
 )
+from landline.voice.dispatch import TORONTO
 from landline.voice.higgs import ConnectHiggs, session_config
 from landline.voice.line import LOOKING, describe
 
@@ -100,6 +103,51 @@ class Trace:
                       "tools": [ToolCall(**t) for t in data.get("tools", [])]})
 
 
+SIM_PHONE = "+15555550199"   # a returning sim caller's number: only looked up, never dialled or texted
+
+
+class EarlierCalls:
+    """A returning caller's earlier session as Postgres hands it to listing_status (A-14): the user found by
+    the call's number, their session with its snapshot of each call's outcome, and the call rows."""
+
+    def __init__(self, calls: list[EarlierCall], now: datetime) -> None:
+        sid, outcomes, board, rows = "s_sim_earlier", {}, [], []
+        for n, c in enumerate(calls, start=1):
+            at, cid = _toronto(now, -c.days_ago, 16), f"c_sim_earlier{n}"
+            viewing = None
+            if c.viewing_in_days:
+                starts = _toronto(now, c.viewing_in_days, 14)
+                viewing = {"starts_at": starts.isoformat(),
+                           "slot_text": f"{starts.astimezone(TORONTO):%A} at two"}
+                board.append({"listing_id": c.listing_id, "viewing": {"status": c.viewing_status}})
+            facts = [{**f.model_dump(), "speaker": "Agent heard", "at": at.isoformat()} for f in c.facts]
+            outcomes[c.listing_id] = {"call_id": cid, "listing_id": c.listing_id, "end_reason": c.end_reason,
+                                      "facts": facts, "red_flags": c.red_flags, "viewing": viewing}
+            rows.append({"call_id": cid, "session_id": sid, "role": "listing", "listing_id": c.listing_id,
+                         "state": "voicemail" if c.end_reason == "voicemail" else "ended",
+                         "end_reason": c.end_reason, "created_at": at, "answered_at": None})
+        self.sessions = [{"session_id": sid, "snapshot": {"state": {"outcomes": outcomes},
+                                                          "view": {"board": board}}}]
+        self.rows = rows
+        self.users = SimpleNamespace(by_phone=self._user)
+        self.admin = SimpleNamespace(sessions=self._sessions, calls=self._calls)
+
+    async def _user(self, phone: str) -> Any:
+        return SimpleNamespace(user_id=1) if phone == SIM_PHONE else None
+
+    async def _sessions(self, user_id: int) -> list[dict]:
+        return self.sessions
+
+    async def _calls(self, session_ids: list[str]) -> list[dict]:
+        return [r for r in self.rows if r["session_id"] in session_ids]
+
+
+def _toronto(now: datetime, days: int, hour: int) -> datetime:
+    """`hour` o'clock in Toronto, `days` from now's Toronto date."""
+    day = now.astimezone(TORONTO).date() + timedelta(days=days)
+    return datetime(day.year, day.month, day.day, hour, tzinfo=TORONTO).astimezone(UTC)
+
+
 class HiggsClosed(Exception):
     """Higgs closed the socket mid-conversation (or a replay ran out of events)."""
 
@@ -128,21 +176,25 @@ async def simulate(case_id: str, run: int, opponent: Opponent, *, catalogue: Cat
                    connect_higgs: ConnectHiggs, api_key: str = "", max_lines: int = MAX_LINES,
                    turn_timeout_s: float = TURN_TIMEOUT_S, remembered: str | None = None,
                    prefs: dict[str, Any] | None = None, taps: dict[int, int] | None = None,
-                   reader: Any | None = None) -> Trace:
+                   reader: Any | None = None, earlier: list[EarlierCall] | None = None) -> Trace:
     """One conversation between the Concierge and `opponent`, to its end. Never raises for what the
     agent or Higgs did: that goes in the trace. `remembered` is ignored: last-session memory is not
     appended (#144). `prefs` still seeds the board when a case says so. `taps` maps a line to the rank of
     the pin the renter taps instead of speaking it. `reader` (a text model) turns on the bridge's catch-up
-    for a line in another script answered with no tool; replays leave it off."""
+    for a line in another script answered with no tool; replays leave it off. `earlier` makes the renter
+    a phone caller with those listing calls in an earlier session, which listing_status reads (A-14)."""
     sid = f"s_sim_{case_id}_{run}"          # ids come from code, never from the model
     runtime = SessionRuntime(catalogue)
     await runtime.start(SessionStarted(session_id=sid, at=datetime.now(UTC), idem_key=f"{sid}:started",
-                                       channel="judge"))
+                                       channel="phone" if earlier else "judge",
+                                       caller_phone=SIM_PHONE if earlier else None))
     if prefs:   # a case can start the board already narrowed; this is not last-session memory
         await runtime.emit(PreferencesUpdated(session_id=sid, at=datetime.now(UTC),
                                               idem_key=f"{sid}:remembered", delta=PreferenceDelta(**prefs)))
     trace = Trace(case_id=case_id, run=run, session_id=sid)
     ctx = tools.ToolContext(session_id=sid, call_id=f"c_sim_{case_id}_{run}", runtime=runtime)
+    if earlier:
+        ctx.history = EarlierCalls(earlier, datetime.now(UTC))
     higgs: Recorded | None = None
     try:
         instructions, start = opening(remembered)   # ignored (#144)

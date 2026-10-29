@@ -15,10 +15,11 @@ from landline.api import admin, browser_audio, me, twilio
 from landline.api.demo import DemoSessions
 from landline.api.judge import JudgeLines, StartLimit
 from landline.api.routes import router
+from landline.api.viewings import router as viewing_page
 from landline.config import Settings
 from landline.db.catalogue import Catalogue
 from landline.db.pool import Database
-from landline.orchestrator import SessionRuntime, memory, viewings
+from landline.orchestrator import SessionRuntime, calendar, memory, viewings
 from landline.voice import outbound
 from landline.voice.avatar_clip import Clips, gender_of_voice
 from landline.voice.calls import RenterCalls
@@ -83,6 +84,8 @@ def create_app(settings: Settings | None = None, catalogue: Catalogue | None = N
         # Each listing call's facts, mirrored to SurrealDB Agent Memory after its outcome commits (O-09a), and
         # read back as a call is dialled, for the Caller to confirm (O-09b). None without the SPECTRON_* keys.
         app.state.memory = memory.install(app.state.runtime, settings)
+        # listing_status (A-14) adds what other calls heard about a place, from the same client.
+        app.state.runtime.memory = app.state.memory
         # Map taps and background re-ranks, to the live Concierge between turns (A-02, voice/line.py).
         app.state.lines = Lines(app.state.runtime)
         app.state.judges = JudgeLines(settings.higgs_max_sessions)
@@ -98,6 +101,11 @@ def create_app(settings: Settings | None = None, catalogue: Catalogue | None = N
         # A booked viewing: its confirmation row, and the confirm link texted to the number the call dialled
         # (O-08b).
         app.state.confirm_links = viewings.ConfirmLinks(app.state.runtime, settings, app.state.texter)
+        # The agent's answer to that link (O-08c): the invites through Google Calendar (None without its
+        # keys, and the renter gets an add-to-calendar link), and the renter's text. The /v page calls it.
+        app.state.viewing_calendar = calendar.from_settings(settings)
+        app.state.viewing_decisions = viewings.Decisions(app.state.runtime, settings, app.state.texter,
+                                                         app.state.viewing_calendar)
         # The hand-off (A-06): a brief that ends with a plan has its calls queued and run. A judge's calls
         # always go to the Caller talking to landlord personas in text (A-03), with no phone. A phone renter's
         # go over Twilio with TRANSPORT=voice (A-02), to the personas with TRANSPORT=sim, and otherwise stay
@@ -126,6 +134,8 @@ def create_app(settings: Settings | None = None, catalogue: Catalogue | None = N
         await app.state.runtime.close()
         if app.state.memory is not None:
             await app.state.memory.close()
+        if app.state.viewing_calendar is not None:
+            await app.state.viewing_calendar.close()
         await app.state.clips.aclose()
         if db is not None:
             await db.close()
@@ -144,6 +154,7 @@ def create_app(settings: Settings | None = None, catalogue: Catalogue | None = N
     )
     app.include_router(router)
     app.include_router(me.router)
+    app.include_router(viewing_page)   # /v/<token>, the listing agent's confirm page (O-08d)
     app.include_router(admin.router)
     app.include_router(twilio.router)
     app.include_router(browser_audio.router)

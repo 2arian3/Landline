@@ -108,6 +108,7 @@ class CallStateChanged(EventBase):
     call_id: str
     state: CallState
     twilio_status: str | None = None
+    listing_id: str | None = None   # A-13b: a listing agent's callback joins as a new call for this listing
 
 
 class FactRecorded(EventBase):
@@ -134,6 +135,17 @@ class ViewingBooked(EventBase):
     slot_text: str
 
 
+class ViewingDecided(EventBase):
+    """The listing agent's answer to a booked viewing, from its confirm page (O-08c). Code decided it once in
+    viewing_confirmations; this flips the card's viewing. The listing is the call's, and `starts_at` is the
+    time the agent answered for."""
+    type: Literal["ViewingDecided"] = "ViewingDecided"
+    call_id: str
+    listing_id: str
+    starts_at: datetime
+    status: Literal["confirmed", "declined"]
+
+
 class CallEnded(EventBase):
     type: Literal["CallEnded"] = "CallEnded"
     call_id: str
@@ -153,7 +165,7 @@ class CallsCompleted(EventBase):
 Event = Annotated[
     SessionStarted | PreferencesUpdated | FeedbackGiven | ListingFocused | AreaFocused | AnchorResolved
     | CommuteResolved | CallsRequested | SessionEnded | CallsScheduled | CallStateChanged | FactRecorded
-    | QuestionNoted | ViewingBooked | CallEnded | OutcomeReady | CallsCompleted,
+    | QuestionNoted | ViewingBooked | CallEnded | OutcomeReady | CallsCompleted | ViewingDecided,
     Field(discriminator="type"),
 ]
 EVENT: TypeAdapter[Event] = TypeAdapter(Event)
