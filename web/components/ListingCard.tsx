@@ -3,25 +3,26 @@
 import { Money } from "./Money";
 import { money, photoAt, specLine } from "@/lib/format";
 import type { Unheard } from "@/lib/outcome";
+import { type Stage, statusOf, toneColor } from "@/lib/status";
 import type { Card } from "@/lib/types";
-import { viewingStatus } from "@/lib/viewing";
 
-export const STATUS: Partial<Record<Card["status"], { word: string; color: string }>> = {
-  calling: { word: "On the phone", color: "var(--color-live)" },
-  verified: { word: "Checked by phone", color: "var(--color-real)" },
-  suspect: { word: "Something's off", color: "var(--color-dead)" },
-  dead: { word: "Already rented", color: "var(--color-ink-3)" },
-  no_answer: { word: "No answer yet", color: "var(--color-ink-3)" },
-  booked: { word: "Viewing booked", color: "var(--color-real)" },
+/** Where a planned place stands before its call has a result (lib/status.ts `Stage`). */
+export type Mark = Stage;
+
+// Shims for the detail's header line until it reads statusOf itself (Lucent PR7): the same words and
+// colours, built from lib/status.ts so they can't drift from the card's.
+type Said = { word: string; color: string };
+const said = (card: Partial<Card>, stage: Stage | null = null): Said => {
+  const s = statusOf({ red_flags: [], ...card } as Card, { stage });
+  return { word: s.words, color: toneColor(s.tone) };
 };
-
-/** Where a planned place stands before its call has a result: picked, queued after hang-up, ringing. */
-export type Mark = "will_call" | "queued" | "ringing";
-
-export const MARK: Record<Mark, { word: string; color: string }> = {
-  will_call: { word: "Will call", color: "var(--color-ink)" },
-  queued: { word: "Queued", color: "var(--color-ink-3)" },
-  ringing: { word: "Ringing", color: "var(--color-live)" },
+export const STATUS: Partial<Record<Card["status"], Said>> = Object.fromEntries(
+  (["calling", "verified", "suspect", "dead", "no_answer", "booked"] as const).map((k) => [k, said({ status: k })]),
+);
+export const MARK: Record<Mark, Said> = {
+  will_call: said({ status: "pending" }, "will_call"),
+  queued: said({ status: "pending" }, "queued"),
+  ringing: said({ status: "pending" }, "ringing"),
 };
 
 /** "Up 2", "Down 1" or "New" for a few seconds after a re-rank; null when nothing moved. */
@@ -47,14 +48,12 @@ export function ListingCard({
   onSelect: (id: string) => void;
   onHover: (id: string | null) => void;
 }) {
-  // A viewing says more than "Viewing booked": when, and whether the agent has confirmed it (O-08e).
-  const status = mark
-    ? MARK[mark]
-    : card.viewing
-      ? viewingStatus(card.viewing)
-      : ended
-        ? { word: ended.word, color: "var(--color-ink-3)" }
-        : STATUS[card.status];
+  // One status from lib/status.ts, as the pin and the detail say it. Until Board hands the card its call
+  // (Lucent PR5), LiveBoard's mark and the end reason it worked out stand in for it.
+  const s = statusOf(card, { stage: mark ?? null, ended: ended?.reason ?? null });
+  // The red flag has its own line below, so its status line is the words alone.
+  const sub = s.kind === "flagged" ? null : s.sub;
+  const status = s.words ? { word: sub ? `${s.words} · ${sub}` : s.words, color: toneColor(s.tone) } : null;
   const dead = card.status === "dead";
   const flag = card.red_flags[0];
   // What a person said on the phone. A red flag outranks it here; the detail shows both.
@@ -154,7 +153,7 @@ export function ListingCard({
             {/* Beside the first line when a viewing wraps to two. */}
             <span
               aria-hidden
-              className={`mt-[6px] h-1.5 w-1.5 shrink-0 rounded-full ${card.status === "calling" || mark === "ringing" ? "live-dot" : ""}`}
+              className={`mt-[6px] h-1.5 w-1.5 shrink-0 rounded-full ${s.tone === "live" ? "live-dot" : ""}`}
               style={{ background: status.color }}
             />
             {status.word}
