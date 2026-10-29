@@ -2,14 +2,10 @@
 
 The model passes only the renter's words (`listing_ref`); code finds the listing and builds the reply from
 stored outcomes, never the model (hard rule 3): whether the agent was reached, the facts heard with their
-day, red flags, and the viewing with its status. Where it looks:
+day, red flags, and the viewing with its status. It looks only at this session: the board (`refs.match`)
+and the calls it has made. A renter's earlier sessions are never read, so the Concierge knows nothing about
+them from earlier calls; a place this call has nothing on is NOT_FOUND.
 
-1. This session: the board (`refs.match`) and the calls it has made.
-2. A phone caller's earlier sessions, found by the number the call came from (never by an argument): the
-   listings in their past call plans, read from each session's stored snapshot the way /api/me/listings
-   reads them (api/me.py `listings`). A browser or judge session has no number, so it answers from itself.
-
-Nothing from earlier sessions reaches the call except this reply, and only when the renter asks (#144).
 The reply is spoken: at most 25 words, the most important first (rented, a red flag, the viewing, then
 the facts). When more was heard than fits, a phone caller is offered the rest by text, and `text_rest`
 (their yes) texts all of it, with the agents' own words, to the number the call came from.
@@ -31,7 +27,7 @@ from typing import TYPE_CHECKING, Any
 from landline.agents.concierge import refs
 from landline.api.admin import Place
 from landline.api.me import HeardFact, MyListing, MyViewing, listings
-from landline.contracts import SessionView, as_e164
+from landline.contracts import SessionView
 from landline.contracts.tools import ListingStatus
 from landline.orchestrator.memory import Known
 from landline.orchestrator.narrator import MAX_WORDS, TORONTO, _fact, _when
@@ -42,9 +38,8 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-HISTORY_WAIT_S = 2.0   # the caller's earlier sessions, from Postgres; slower, and this session answers alone
 OTHERS_WAIT_S = 1.0    # what other calls heard (O-09b); slower, and the reply goes without it
-NOT_FOUND = "I don't see that one in your calls."
+NOT_FOUND = "I don't have anything on that one yet."
 OFFER = "Want the rest by text?"
 NO_TEXT = "I can't text from this call."
 TEXT_CHARS = 1500   # a text stays under Twilio's 1,600 characters
@@ -88,8 +83,7 @@ async def listing_status(args: ListingStatus, ctx: ToolContext, meta: dict) -> s
     state = runtime.state(sid)
     view = runtime.get(sid)
     place = _place_of(runtime.catalogue)
-    db = ctx.history if ctx.history is not None else runtime.db
-    history = _this_session(state, view, place, now) + await _earlier(db, state, place)
+    history = _this_session(state, view, place, now)
     found = resolve(args.listing_ref, view, history, place)
     if isinstance(found, str):
         return found
@@ -124,26 +118,6 @@ def _this_session(state: SessionState, view: SessionView, place: Callable[[str],
              for c in state.calls.values() if c.call_id in settled]
     snapshot = {"state": state.model_dump(mode="json"), "view": view.model_dump(mode="json")}
     return listings([{"session_id": sid, "snapshot": snapshot}], calls, place)
-
-
-async def _earlier(db: Any, state: SessionState, place: Callable[[str], Place]) -> list[MyListing]:
-    """A phone caller's earlier sessions, by the number this call came from. None for a browser or judge
-    session, without a database, or when Postgres doesn't answer within HISTORY_WAIT_S."""
-    if state.channel != "phone" or not state.caller_phone or db is None:
-        return []
-    try:
-        async with asyncio.timeout(HISTORY_WAIT_S):
-            user = await db.users.by_phone(as_e164(state.caller_phone) or state.caller_phone)
-            if user is None:
-                return []
-            sessions = [s for s in await db.admin.sessions(user.user_id)
-                        if s["session_id"] != state.session_id]
-            calls = await db.admin.calls([s["session_id"] for s in sessions]) if sessions else []
-    except Exception:
-        log.exception("listing_status: the earlier sessions of %s weren't read; this session answers alone",
-                      state.session_id)
-        return []
-    return listings(sessions, calls, place)
 
 
 async def _others(runtime: Any, found: Status) -> list[Known]:
