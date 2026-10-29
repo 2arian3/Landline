@@ -19,6 +19,7 @@ from landline.contracts.events import (
     SessionEnded,
     SessionStarted,
     ViewingBooked,
+    ViewingDecided,
 )
 from landline.contracts.listing import Fee, Listing, Provenance, monthly_cost
 from landline.contracts.phone import as_e164
@@ -94,6 +95,7 @@ __all__ = [
     "Turn",
     "Shareable",
     "ViewingBooked",
+    "ViewingDecided",
     "Viewing",
     "Window",
     "as_e164",

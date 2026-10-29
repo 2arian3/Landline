@@ -106,7 +106,7 @@ class PhoneCaller:
         known = await asyncio.shield(self.recall(dial))   # a prepare cut short never cancels the read
         listing = self.runtime.catalogue.by_id[dial.listing_id]
         b = brief(listing, dial.plan, wants(self._preferences(dial.session_id)), known=known,
-                  now=self.clock(), texts_confirm=await self._texts_confirm(dial))
+                  now=self.clock(), texts_confirm=await self._texts_confirm(dial), callback=dial.callback)
         text, start = opening(instructions(b), recorded=self.record_audio, first=disclosure(b))
         config = session_config(instructions=text, tools=caller_tools.TOOLS, voice=self.voice,
                                 audio_format=PCMU)

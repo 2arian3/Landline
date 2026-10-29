@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+from collections.abc import Sequence
 from typing import Any
 from xml.sax.saxutils import escape, quoteattr
 
@@ -25,6 +26,15 @@ def twiml_say_hangup(text: str) -> str:
 
 def twiml_hangup() -> str:
     return f"{XML_HEAD}<Response><Hangup/></Response>"
+
+
+def twiml_gather(text: str, action: str, hints: Sequence[str] = ()) -> str:
+    """Says `text` and waits for a key or a few words, which Twilio posts to `action`, also when nothing came
+    (actionOnEmptyResult). `hints` help its speech recognition with the words expected, like addresses."""
+    hint = f" hints={quoteattr(', '.join(hints))}" if hints else ""
+    return (f'{XML_HEAD}<Response><Gather input="dtmf speech" numDigits="1" timeout="6" speechTimeout="auto" '
+            f'actionOnEmptyResult="true" method="POST" action={quoteattr(action)}{hint}>'
+            f"<Say>{escape(text)}</Say></Gather></Response>")
 
 
 def signature(auth_token: str, url: str, params: dict[str, str]) -> str:

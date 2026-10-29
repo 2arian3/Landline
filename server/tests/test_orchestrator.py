@@ -366,3 +366,71 @@ async def test_optional_parking_counts_only_for_a_renter_who_needs_it(rt):
     await rt.emit(PreferencesUpdated(session_id=SID, at=_at(11), idem_key=f"{SID}:car",
                                      delta=PreferenceDelta(must_have=["parking"])))
     assert next(c for c in rt.get(SID).board if c.listing_id == "t:1").monthly_cost == 2175
+
+
+# A-13b: a listing agent who calls back joins the session as a new call (CallStateChanged.listing_id).
+
+
+async def _missed_all(rt: SessionRuntime, call_ids, listing_ids) -> None:
+    """Every call reached a voicemail, and the plan is done."""
+    for n, (cid, lid) in enumerate(zip(call_ids, listing_ids, strict=True)):
+        await rt.emit(CallEnded(session_id=SID, at=_at(4 + n), idem_key=f"{cid}:ended", call_id=cid,
+                                reason="voicemail"))
+        out = CallOutcome(call_id=cid, listing_id=lid, end_reason="voicemail")
+        await rt.emit(OutcomeReady(session_id=SID, at=_at(4 + n), idem_key=f"{cid}:outcome", outcome=out))
+    await rt.emit(CallsCompleted(session_id=SID, at=_at(9), idem_key=f"{SID}:completed",
+                                 call_ids=list(call_ids)))
+
+
+BACK = "c_orchback01"
+
+
+def _back(state: str = "live", listing_id: str | None = "t:1", key: str = "live", call_id: str = BACK):
+    return CallStateChanged(session_id=SID, at=_at(20), idem_key=f"{call_id}:{key}", call_id=call_id,
+                            state=state, listing_id=listing_id)
+
+
+async def test_a_callback_joins_a_done_session_as_a_new_call_and_its_facts_and_outcome_land(rt):
+    await _started(rt)
+    c1, c2 = await _calling(rt)
+    await _missed_all(rt, (c1, c2), ("t:1", "t:2"))
+    joined = await rt.emit(_back())
+    assert joined.phase == "done"   # the session stays done; the callback is one more call in it
+    back = joined.calls[-1]
+    assert (back.call_id, back.listing_id, back.state, back.started_at) == (BACK, "t:1", "live", _at(20))
+    await rt.emit(FactRecorded(session_id=SID, at=_at(21), idem_key=f"{BACK}:fact0", call_id=BACK,
+                               field="pets", value="dogs ok", quote="Dogs are fine.", turn_idx=1))
+    await rt.emit(CallEnded(session_id=SID, at=_at(22), idem_key=f"{BACK}:end", call_id=BACK, reason="done"))
+    after = await rt.emit(_outcome(BACK, "t:1"))
+    calls = {c.call_id: c for c in after.calls}
+    assert calls[BACK].outcome.end_reason == "done" and calls[c1].outcome is None   # matched per call
+    assert [f.quote for f in _card(after, "t:1").facts] == ["Parking is one eighty."]
+
+
+async def test_a_replayed_or_repeated_callback_join_is_a_no_op(rt):
+    await _started(rt)
+    c1, c2 = await _calling(rt)
+    await _missed_all(rt, (c1, c2), ("t:1", "t:2"))
+    joined = await rt.emit(_back())
+    assert (await rt.emit(_back())).version == joined.version                  # the same event again
+    again = await rt.emit(_back(key="live-again"))                              # the same state, another key
+    assert again.version == joined.version and len(again.calls) == 3
+
+
+async def test_a_callback_for_a_listing_outside_the_plan_or_before_the_calls_is_refused(rt):
+    await _started(rt)
+    with pytest.raises(Refused):   # no plan yet: the brief is still open
+        await rt.emit(_back(key="early"))
+    c1, _ = await _calling(rt)
+    with pytest.raises(Refused):   # not a listing this session called
+        await rt.emit(_back(listing_id="t:3", key="other"))
+    with pytest.raises(Refused):   # a call the session knows, said to be about another listing
+        await rt.emit(_back(listing_id="t:2", key="moved", call_id=c1))
+    assert len(rt.get(SID).calls) == 2
+
+
+async def test_without_a_listing_id_an_unknown_call_is_refused_as_before(rt):
+    await _started(rt)
+    await _calling(rt)
+    with pytest.raises(Refused):
+        await rt.emit(_back(listing_id=None, key="none"))

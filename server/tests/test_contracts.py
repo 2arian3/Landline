@@ -42,6 +42,7 @@ from landline.contracts import (
     SessionStarted,
     SessionView,
     ViewingBooked,
+    ViewingDecided,
     as_e164,
     caller_tools,
     concierge_tools,
@@ -110,6 +111,7 @@ SAMPLE_EVENTS = [
     _event(OutcomeReady, outcome=CallOutcome(call_id=CID, listing_id=LID, end_reason="done")),
     _event(CallsCompleted, call_ids=[CID]),
     _event(CommuteResolved, label="King and Bay", lat=43.6487, lng=-79.3817),
+    _event(ViewingDecided, call_id=CID, listing_id=LID, starts_at=AT, status="confirmed"),
 ]
 
 
@@ -133,7 +135,7 @@ def test_availability_keeps_the_from_key():
 def test_tools_match_the_spec():
     assert list(CONCIERGE_TOOLS) == [
         "update_preferences", "give_feedback", "focus_listing", "focus_area", "ask_maps", "call_listings",
-        "remember_me", "forget_me", "end_session",
+        "listing_status", "remember_me", "forget_me", "end_session",
     ]
     assert list(CALLER_TOOLS) == ["record_fact", "record_available_from", "note_question", "book_viewing",
                                   "end_call"]
