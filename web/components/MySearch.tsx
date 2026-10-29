@@ -33,9 +33,10 @@ const BEDS = [
   ["5", "5+ bedrooms"],
 ] as const;
 
+// Lucent's field: 44 px, 12 px corners, a hairline, and the page's 3 px ink focus ring (globals.css).
 const control =
-  "mt-1.5 block min-h-11 w-full rounded-[var(--radius-control)] bg-ground px-3 text-support text-ink outline-none placeholder:text-ink-3 focus-visible:outline-2 focus-visible:outline-ink";
-const hairline = { boxShadow: "0 0 0 1px var(--color-hair)" };
+  "t-callout mt-1.5 block min-h-11 w-full rounded-[var(--radius-sm)] bg-surface px-3 text-ink placeholder:text-ink-secondary";
+const hairline = { boxShadow: "0 0 0 1px var(--color-hairline)" };
 
 /**
  * "My search" on /me (U-12b): the renter edits the search Landline keeps, chooses what it may tell listing
@@ -68,9 +69,9 @@ export function MySearch({ getToken }: { getToken: () => Promise<string | null> 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  if (saved === null) return <p className="text-support text-ink-3">Loading…</p>;
+  if (saved === null) return <p className="t-callout c-2">Loading…</p>;
   if (isMeRefusal(saved) || !form) {
-    return <p className="text-support text-ink-2">Can&rsquo;t load your search right now.</p>;
+    return <p className="t-callout c-2">Can&rsquo;t load your search right now.</p>;
   }
 
   const base = savedFrom(saved);
@@ -250,10 +251,10 @@ export function MySearch({ getToken }: { getToken: () => Promise<string | null> 
       </div>
 
       <fieldset>
-        <legend className="text-meta font-label text-ink-3">What Landline may tell listing agents</legend>
+        <legend className="t-caption c-2">What Landline may tell listing agents</legend>
         <div className="mt-1.5 grid gap-x-4 sm:grid-cols-2">
           {SHAREABLE.map((s) => (
-            <label key={s} className="flex min-h-11 items-center gap-3 text-support text-ink">
+            <label key={s} className="t-callout flex min-h-11 items-center gap-3">
               <input
                 type="checkbox"
                 className="h-5 w-5 accent-[var(--color-ink)]"
@@ -270,10 +271,10 @@ export function MySearch({ getToken }: { getToken: () => Promise<string | null> 
 
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p id="me-next-call" className="text-support text-ink">
+          <p id="me-next-call" className="t-callout">
             Start my next call from this search
           </p>
-          <p className="text-meta text-ink-3">
+          <p className="t-caption c-2">
             {form.use_saved_search ? "On: your next call starts from it." : "Off: every call starts fresh."}
           </p>
         </div>
@@ -283,8 +284,9 @@ export function MySearch({ getToken }: { getToken: () => Promise<string | null> 
           aria-checked={form.use_saved_search}
           aria-labelledby="me-next-call"
           onClick={() => set({ use_saved_search: !form.use_saved_search })}
-          className="relative mt-0.5 inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
-          style={{ background: form.use_saved_search ? "var(--color-ink)" : "var(--color-ink-3)" }}
+          // Off is ink-secondary, not Lucent's 20% control-off: a track needs 3:1 against the white card.
+          className="relative mt-0.5 inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors"
+          style={{ background: form.use_saved_search ? "var(--color-ink)" : "var(--color-ink-secondary)" }}
         >
           <span
             aria-hidden
@@ -298,12 +300,12 @@ export function MySearch({ getToken }: { getToken: () => Promise<string | null> 
         <button
           type="submit"
           disabled={!dirty || status === "saving"}
-          className="min-h-11 rounded-[var(--radius-control)] bg-ink px-5 text-support font-label text-white disabled:opacity-40"
+          className="btn btn-primary disabled:opacity-45"
         >
           {status === "saving" ? "Saving…" : "Save"}
         </button>
         {/* Always there, so a status never moves the form. */}
-        <p role="status" aria-live="polite" className="min-h-5 text-support">
+        <p role="status" aria-live="polite" className="t-callout min-h-[var(--text-callout--line-height)]">
           {status === "saved" && <span className="text-real">Saved.</span>}
           {status === "failed" && <span className="text-dead">{failedWhy}</span>}
         </p>
@@ -327,11 +329,11 @@ function Labelled({
   const described = `${id}-note`;
   return (
     <div>
-      <label htmlFor={id} className="block text-meta font-label text-ink-3">
+      <label htmlFor={id} className="t-caption c-2 block">
         {label}
       </label>
       {children(id, described)}
-      <p id={described} className={`mt-1 text-meta ${error ? "text-dead" : "text-ink-3"}`}>
+      <p id={described} className={`t-caption mt-1 ${error ? "text-dead" : "c-2"}`}>
         {error ?? hint}
       </p>
     </div>
