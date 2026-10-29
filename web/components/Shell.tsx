@@ -16,11 +16,11 @@ export const SPLIT = "(min-width: 1024px), (orientation: landscape) and (max-hei
 export const SHORT = "(max-height: 520px)";
 
 /**
- * The split layout's panel (Lucent's `.panel`): glass, floating 16px in from the top, right and bottom of a
- * full-bleed map. 440px on a desktop, narrower on a tablet or a phone on its side, and 560px from 1600px (a
- * projector), where its type also steps up a size. The `!` keeps these over `.panel`'s own fixed width.
+ * The split layout's panel (Lucent's `.panel`, which leaves its place to us): glass, floating 16px in from the
+ * top, right and bottom of a full-bleed map. 440px on a desktop, narrower on a tablet or a phone on its
+ * side, and 560px from 1600px (a projector), where its type also steps up a size.
  */
-export const PANEL = "panel glass top-4! right-4! bottom-4! w-[clamp(340px,42vw,440px)]! min-[1600px]:w-[560px]!";
+export const PANEL = "panel glass absolute top-4 right-4 bottom-4 z-10 w-[clamp(340px,42vw,440px)] min-[1600px]:w-[560px]";
 
 /** Clear of a phone's notch when it's held sideways. */
 export const PANEL_STYLE: CSSProperties = { marginRight: "env(safe-area-inset-right)" };
