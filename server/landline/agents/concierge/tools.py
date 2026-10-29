@@ -56,7 +56,8 @@ from landline.orchestrator.maps_mcp import (
     Weather,
     metres,
 )
-from landline.orchestrator.places import load_stations
+from landline.orchestrator.places import Point, Unplaced, load_stations, place_of
+from landline.orchestrator.runtime import PLACE_TIMEOUT_S
 from landline.scoring.reasons import to_station
 from landline.voice.dispatch import TORONTO, until_open
 
@@ -85,7 +86,8 @@ NOT_CAUGHT = "Sorry, I didn't catch that. Could you say it again?"
 WHICH = "Which one do you mean? You can say its street or its number on the list."
 BROKEN = "Sorry, something went wrong on my side."
 # A place no data holds: the agent asks for one it can find, instead of saying "got it" to nothing.
-ASK_PLACE = "Ask the renter for a nearby main street or subway station."
+ASK_PLACE = "Ask the renter for a nearby main street, intersection or subway station."
+PLACE_LOST = "[place not found]"   # the note a place looked up after the reply comes in, when it isn't placed
 # give_feedback with no listing_ref and nothing focused: the renter usually did say which ("the second
 # one"), and the agent left it out. Asking them again would annoy them; the agent can fix it itself.
 NO_REF = "Not saved: no listing_ref. Call give_feedback again now with listing_ref set to the number or " \
@@ -206,7 +208,7 @@ async def update_preferences(args: PreferenceDelta, ctx: ToolContext, meta: dict
     """The places the renter named are found in code first (`_places`), and their points go in the same
     commit, so the board has moved by the time the agent hears the reply. (A phone caller's board link is
     texted when the call connects: voice/bridge.py.)"""
-    args, points, lost = _places(args, ctx)
+    args, points, lost, asked = _places(args, ctx)
     sid = ctx.session_id
     version = ctx.runtime.get(sid).version
     async with ctx.runtime.session_tx(sid) as tx:
@@ -217,20 +219,24 @@ async def update_preferences(args: PreferenceDelta, ctx: ToolContext, meta: dict
                                           lat=spot.lat, lng=spot.lng))
     view = ctx.runtime.get(sid)
     # With nothing changed, agent_says is still the last commit's line; only the missing place is news.
-    said = " ".join(filter(None, [view.agent_says if view.version != version or not lost else None,
-                                  _not_found(lost, ctx), _top_three(ctx, view)]))
+    said = " ".join(filter(None, [view.agent_says if view.version != version or not (lost or asked) else None,
+                                  _not_found(lost, ctx), *(_unplaced(u.label, u) for u in asked),
+                                  _top_three(ctx, view)]))
+    _watch(ctx, lost)
     return said
 
 
 def _places(args: PreferenceDelta, ctx: ToolContext) -> tuple[PreferenceDelta, list[tuple[str, refs.Spot]],
-                                                                list[str]]:
-    """Finds each area and anchor the renter named (`refs.area`). A City neighbourhood stays an area, under
-    the City's name, which is what the ranker matches. Anything else found (a street, a station, a
-    building) becomes an anchor with its point. An area left as said and never matched would do nothing
-    while the agent said "got it" ("around Queens"). A place nothing here holds ("King and Bay") is kept
-    as an anchor, so the geocoder can still place it, and the reply says the list doesn't use it yet."""
+                                                                list[str], list[Unplaced]]:
+    """Finds each area and anchor the renter named: one of the big workplaces and campuses Places lists
+    ("Cohere", "UofT"), else `refs.area`. A City neighbourhood stays an area, under the City's name, which
+    is what the ranker matches. Anything else found (a street, a station, a building) becomes an anchor with
+    its point. An area left as said and never matched would do nothing while the agent said "got it"
+    ("around Queens"). A place nothing here holds ("King and Bay") is kept as an anchor, so the geocoder can
+    still place it, and the reply says the list doesn't use it yet. A chain named alone ("TD Bank") is left
+    out, and the reply asks which branch; when it's all they named, the search keeps its places."""
     if not args.areas and not args.anchors:
-        return args, [], []
+        return args, [], [], []
     runtime = ctx.runtime
     before = runtime.state(ctx.session_id).preferences
     known = before.anchors
@@ -242,12 +248,19 @@ def _places(args: PreferenceDelta, ctx: ToolContext) -> tuple[PreferenceDelta, l
     anchors: list[str] = [a.label for a in known] if keep else []
     points: list[tuple[str, refs.Spot]] = []
     lost: list[str] = []
+    asked: list[Unplaced] = []
     named = [(a, True) for a in args.areas or []] + [(a.label, False) for a in args.anchors or []]
     for label, is_area in named:
         if label.lower() in placed:
             anchors.append(label)
             continue
-        spot = refs.area(label, runtime.matrix.named, _stations(), runtime.catalogue)
+        listed = runtime.places.known(label)
+        if isinstance(listed, Unplaced):
+            asked.append(listed)
+            continue
+        # "Starbucks on Ossington" is looked for as Ossington (place_of).
+        spot = refs.Spot(listed.lat, listed.lng, listed.how) if listed is not None else \
+            refs.area(place_of(label), runtime.matrix.named, _stations(), runtime.catalogue)
         if spot is not None and spot.hoods and is_area:
             areas += spot.hoods
         elif spot is not None:
@@ -256,9 +269,11 @@ def _places(args: PreferenceDelta, ctx: ToolContext) -> tuple[PreferenceDelta, l
         else:
             lost.append(label)
             anchors.append(label)
+    if asked and len(asked) == len(named):   # only a chain: nothing replaces the places the search has
+        areas, anchors = list(before.areas), [a.label for a in known]
     update = {"areas": list(dict.fromkeys(areas)),
               "anchors": [AnchorRef(label=x) for x in dict.fromkeys(anchors)]}
-    return args.model_copy(update=update), points, lost
+    return args.model_copy(update=update), points, lost, asked
 
 
 _ADDS_PLACE = re.compile(r"\b(also|as well|both|either|in addition|plus)\b|"
@@ -291,6 +306,47 @@ def _not_found(lost: list[str], ctx: ToolContext) -> str | None:
     if ctx.runtime.places.contact:   # the geocoder tries it in the background (D-04)
         return f"Looking up {_join(lost)} on the map; the list moves if it's found."
     return f"Couldn't find {_join(lost)} on the map, so the list doesn't use it yet. {ASK_PLACE}"
+
+
+def _unplaced(label: str, why: Unplaced | None) -> str:
+    """What the agent hears about a place left off the map, and what to ask the renter instead."""
+    if why is None:
+        return f"Couldn't find {label} on the map, so the list doesn't use it. {ASK_PLACE}"
+    if why.reason == "chain":
+        return f"{label} has many branches, so it isn't on the map. {why.ask}"
+    return f"{label} isn't on the map. {why.ask}"
+
+
+def _watch(ctx: ToolContext, lost: list[str]) -> None:
+    """Each place being looked up in the background (_not_found): if it isn't found, or the map's answer is
+    held back (places.hold), the Concierge hears it between turns, to ask the renter."""
+    if ctx.note is None or not ctx.runtime.places.contact:
+        return
+    for label in lost:
+        task = asyncio.create_task(_tell_unplaced(ctx, label, ctx.runtime.place(ctx.session_id, label),
+                                                  anchor=True))
+        ctx.lookups.add(task)
+        task.add_done_callback(ctx.lookups.discard)
+
+
+async def _tell_unplaced(ctx: ToolContext, label: str, lookup: Awaitable[Point | Unplaced | None], *,
+                         anchor: bool) -> None:
+    """The place's answer, when it lands: nothing when it was placed (AnchorResolved moved the board, and
+    the Line says so), else a note through the call's Line. Not once the call is ending, nor when the
+    renter has since moved on from the place (`anchor`: it is no longer an unplaced anchor)."""
+    try:
+        point = await asyncio.wait_for(lookup, PLACE_TIMEOUT_S)
+    except TimeoutError:
+        point = None
+    except (Refused, UnknownSession):
+        return
+    if isinstance(point, Point) or ctx.note is None or ctx.hang_up or not ctx.runtime.has(ctx.session_id):
+        return
+    state = ctx.runtime.state(ctx.session_id)
+    still = any(a.label == label and a.lat is None for a in state.preferences.anchors)
+    if state.phase != "open" or (anchor and not still):
+        return
+    await ctx.note(f"{PLACE_LOST} {_unplaced(label, point)}")
 
 
 @cache
@@ -337,15 +393,19 @@ def about(card: Card, listing: Listing | None) -> list[str]:
 
 
 async def focus_area(args: FocusArea, ctx: ToolContext, meta: dict) -> str:
-    """Found in code first (`refs.area`: a City neighbourhood, a street, a station, a building). Anything
-    else goes to Places (D-04), whose intersection and geocoder steps use the network: the turn waits
-    PLACE_WAIT_S at most, and a slower lookup carries on and moves the map when it lands."""
+    """Found in code first (Places' landmarks, then `refs.area`: a City neighbourhood, a street, a station, a
+    building). Anything else goes to Places (D-04), whose intersection and geocoder steps use the network:
+    the turn waits PLACE_WAIT_S at most, and a slower lookup carries on and moves the map when it lands. A
+    chain named alone, or a far geocoder answer (places.hold), changes nothing and asks the renter."""
     runtime = ctx.runtime
-    spot = refs.area(args.place, runtime.matrix.named, _stations(), runtime.catalogue)
+    listed = runtime.places.known(args.place)
+    if isinstance(listed, Unplaced):
+        return f"{_unplaced(args.place, listed)} Nothing changed."
+    spot = listed or refs.area(place_of(args.place), runtime.matrix.named, _stations(), runtime.catalogue)
     if spot is not None:
         await _show_area(ctx, meta, args.place, spot.lat, spot.lng)
         return await _showing(ctx, meta, args.place, spot.lat, spot.lng)
-    lookup = asyncio.ensure_future(runtime.places.resolve(args.place))
+    lookup = asyncio.ensure_future(runtime.place(ctx.session_id, args.place))
     try:
         point = await asyncio.wait_for(asyncio.shield(lookup), PLACE_WAIT_S)
     except TimeoutError:
@@ -355,6 +415,8 @@ async def focus_area(args: FocusArea, ctx: ToolContext, meta: dict) -> str:
         return f"Finding {args.place} on the map. It'll show in a moment."
     if point is None:
         return f"Couldn't find {args.place} on the map. Nothing changed. {ASK_PLACE}"
+    if isinstance(point, Unplaced):
+        return f"{_unplaced(args.place, point)} Nothing changed."
     await _show_area(ctx, meta, args.place, point.lat, point.lng)
     return await _showing(ctx, meta, args.place, point.lat, point.lng)
 
@@ -382,10 +444,13 @@ async def _showing(ctx: ToolContext, meta: dict, place: str, lat: float, lng: fl
 
 async def _show_when_found(ctx: ToolContext, meta: dict, place: str, lookup: asyncio.Future) -> None:
     try:
-        if (point := await lookup) is not None:
+        if isinstance(point := await lookup, Point):
             await _show_area(ctx, meta, place, point.lat, point.lng)
+            return
     except (Refused, UnknownSession) as exc:   # the session ended while the lookup ran
         log.info("call %s: %r was found too late (%s)", ctx.call_id, place, exc)
+        return
+    await _tell_unplaced(ctx, place, lookup, anchor=False)
 
 
 async def _show_area(ctx: ToolContext, meta: dict, place: str, lat: float, lng: float) -> None:
