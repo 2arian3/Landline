@@ -2,7 +2,8 @@
 
 import { AnimatePresence, LayoutGroup, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
-import { ListingCard, type Mark, type Move } from "./ListingCard";
+import { ListingCard, type Move } from "./ListingCard";
+import type { Stage } from "@/lib/status";
 import type { Unheard } from "@/lib/outcome";
 import type { CallView, Card } from "@/lib/types";
 
@@ -31,7 +32,7 @@ export function Board({
   loading: boolean;
   focusId: string | null;
   hoverId: string | null;
-  marks?: Record<string, Mark>;
+  marks?: Record<string, Stage>;
   ended?: Record<string, Unheard>;
   /** The session's calls, oldest first: each card gets its place's latest (a callback is a newer call). */
   calls?: CallView[];
