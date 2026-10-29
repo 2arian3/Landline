@@ -139,10 +139,19 @@ export function MapView({
     // Bottom right, so the legend has the bottom left. Under the sheet layout it's the (i) alone, riding on the
     // sheet (the canvas's M flows); MapView remounts when the layout changes, so this holds for its life.
     m.addControl(new AttributionControl(split() ? {} : { compact: true }), "bottom-right");
+    // MapLibre opens a compact attribution on its first load; the board keeps it to the (i) until it's tapped.
+    if (!split()) {
+      m.once("load", () => {
+        const box = m.getContainer().querySelector(".maplibregl-ctrl-attrib");
+        box?.classList.remove("maplibregl-compact-show");
+        box?.removeAttribute("open");
+      });
+    }
     map.current = m;
 
     m.on("load", () => {
       const colour = colours();
+      const dot = window.matchMedia("(min-width: 1600px)").matches ? 10 / 7 : 1;
       tuneStyle(m, colour);
       m.addSource("catalogue", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
       m.addLayer({
@@ -151,10 +160,11 @@ export function MapView({
         source: "catalogue",
         paint: {
           "circle-color": colour.ink,
-          "circle-radius": ["interpolate", ["linear"], ["zoom"], 10, 2, 13, 3.5, 16, 5.5],
-          "circle-opacity": ["case", ["get", "match"], 0.34, 0.07],
+          // The canvas's .cdot: 7px at the city's scale with a 1px white rim, 10px and 1.5px on a projector.
+          "circle-radius": ["interpolate", ["linear"], ["zoom"], 10, 2.5 * dot, 13, 3.5 * dot, 16, 5 * dot],
+          "circle-opacity": ["case", ["get", "match"], 0.38, 0.07],
           "circle-opacity-transition": { duration: 600, delay: 0 },
-          "circle-stroke-width": ["case", ["get", "match"], 0.75, 0],
+          "circle-stroke-width": ["case", ["get", "match"], dot > 1 ? 1.5 : 1, 0],
           "circle-stroke-color": "#ffffff",
         },
       });
@@ -280,39 +290,52 @@ export function MapView({
     if (!m || !ready) return;
     const located = board.filter((c) => onMap(c.lat, c.lng));
     if (!located.length) return;
-    const key = `${boardKey}|${anchorKey}`;
-    // Only the padding changed (the phone sheet moved to another stop): leave the map alone unless a pin
-    // would now sit under the sheet, so dragging the sheet doesn't set off an 800 ms fit every time.
-    if (!force && framed.current === key && !located.some((c) => underSheet(m, c, padding))) return;
+    const places = `${boardKey}|${anchorKey}`;
+    const room = `${padding.top},${padding.right},${padding.bottom},${padding.left}`;
+    const key = `${places}|${room}`;
+    if (!force && framed.current === key) return;
+    // Only the room changed (the phone's sheet settled on another stop, the capsule or the panel moved): with a
+    // place in focus, keep it in view in the new room rather than pulling back to the whole board.
+    const moved = framed.current?.startsWith(`${places}|`) ?? false;
     framed.current = key;
+    if (!force && moved && focusId && focusOn(m)) return;
     const bounds = new LngLatBounds();
     located.forEach((c) => bounds.extend([c.lng!, c.lat!]));
     placed.forEach((a) => bounds.extend([a.lng, a.lat])); // the place they named stays in the frame
     m.resize(); // a layout change (the panel, the sheet, a rotation) may have resized the map since its last frame
     // The legend, where it shows (split layout), takes the map's bottom left: keep the pins clear of it.
     const clear = legend.current?.offsetParent ? legend.current.offsetHeight + 16 + PIN_GAP / 2 : 0;
-    const room = { ...padding, bottom: Math.max(padding.bottom, clear) };
-    m.fitBounds(bounds, { padding: room, maxZoom: 14, duration: reducedMotion() ? 0 : 800 });
+    m.fitBounds(bounds, {
+      padding: { ...padding, bottom: Math.max(padding.bottom, clear) },
+      maxZoom: 14,
+      duration: reducedMotion() ? 0 : 800,
+    });
   };
   fitRef.current = () => frame(true);
   useEffect(() => {
     frame(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, boardKey, anchorKey, padding.bottom, padding.right]);
+  }, [ready, boardKey, anchorKey, padding.top, padding.right, padding.bottom, padding.left]);
 
   // ── bring the focused listing into view ─────────────────────────────────
-  useEffect(() => {
-    const m = map.current;
-    if (!m || !ready || !focusId) return;
+  // Centred in the room the capsule, the sheet or the panel leave (the same padding as the fit). False when the
+  // focused place has no point on the map.
+  function focusOn(m: MapLibre): boolean {
     const card = board.find((c) => c.listing_id === focusId);
     const pt = card ?? points.find((p) => p.listing_id === focusId);
-    if (!pt || !onMap(pt.lat, pt.lng)) return;
+    if (!pt || !onMap(pt.lat, pt.lng)) return false;
     m.easeTo({
       center: [pt.lng!, pt.lat!],
       zoom: Math.max(m.getZoom(), m.getContainer().clientWidth < NARROW_PX ? FOCUS_ZOOM_NARROW : FOCUS_ZOOM),
       padding,
       duration: reducedMotion() ? 0 : 600,
     });
+    return true;
+  }
+  useEffect(() => {
+    const m = map.current;
+    if (!m || !ready || !focusId) return;
+    focusOn(m);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, focusId]);
 
@@ -411,15 +434,6 @@ function makeAnchor(m: MapLibre, a: Located): Marker {
   el.style.zIndex = "5"; // under every board pin (20 − rank)
   // The dot (28px) sits on the point; the name runs to its right.
   return new Marker({ element: el, anchor: "left", offset: [-14, 0] }).setLngLat([a.lng, a.lat]).addTo(m);
-}
-
-/**
- * Whether a card's pin would sit under the phone sheet (the bottom padding). Only the sheet moves the
- * padding, so only the bottom edge counts, with a pixel to spare: a fit leaves the outermost pins right
- * on the padding's edge.
- */
-function underSheet(m: MapLibre, card: Card, p: Padding): boolean {
-  return m.project([card.lng!, card.lat!]).y > m.getContainer().clientHeight - p.bottom + 1;
 }
 
 /**
