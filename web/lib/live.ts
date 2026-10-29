@@ -24,7 +24,9 @@ import type { CataloguePoint, SessionView } from "./types";
  *     what's still in flight for the session the page left is cancelled
  * Until the first snapshot is in, it's asked for every POLL_MS even while the
  * stream is up. With no snapshot and no word from the server for
- * UNREACHABLE_MS, `unreachable` says so, and the asking carries on.
+ * UNREACHABLE_MS, `unreachable` says so, and the asking carries on. A 404
+ * with no board is an answer, not silence: `missing` says the link matches no
+ * call (lib/pill.ts words the rest), and it's never called offline.
  */
 const STALE_MS = 6500;
 const POLL_MS = 1500;
@@ -48,6 +50,7 @@ export function useLiveSession(sessionId: string | null) {
   const [view, setView] = useState<SessionView | null>(null);
   const [stale, setStale] = useState(false);
   const [unreachable, setUnreachable] = useState(false);
+  const [missing, setMissing] = useState(false);
   const current = useRef<SessionView | null>(null);
   const lastOk = useRef(Date.now());
 
@@ -55,6 +58,7 @@ export function useLiveSession(sessionId: string | null) {
     // Another session (judge mode's "Start again") starts from nothing: versions count per session.
     current.current = null;
     setUnreachable(false);
+    setMissing(false);
     // Judge mode mounts the board before a session exists: nothing to follow yet.
     if (!sessionId) return;
     // Everything below belongs to this session. Leaving it cancels what's still in flight, so an answer for
@@ -78,11 +82,19 @@ export function useLiveSession(sessionId: string | null) {
           cache: "no-store",
           signal: AbortSignal.any([left.signal, AbortSignal.timeout(4000)]),
         });
+        if (res.status === 404 && !current.current && !left.signal.aborted) {
+          // The server answered: this id matches no call. Not "Reconnecting", not "Offline".
+          lastOk.current = Date.now();
+          setStale(false);
+          setMissing(true);
+          return;
+        }
         if (!res.ok) return;
         const data = (await res.json()) as SessionView;
         if (left.signal.aborted) return;
         lastOk.current = Date.now();
         setStale(false);
+        setMissing(false);
         const cur = current.current;
         if (cur && data.version < cur.version) return;
         if (cur && data.board.length === 0 && cur.board.length > 0 && data.version <= cur.version) return;
@@ -168,7 +180,7 @@ export function useLiveSession(sessionId: string | null) {
   }, [sessionId]);
 
   // Until the new session's first snapshot, the old one's board isn't shown under its id.
-  return { view: view?.session_id === sessionId ? view : null, stale, unreachable };
+  return { view: view?.session_id === sessionId ? view : null, stale, unreachable, missing };
 }
 
 export function useCatalogue() {
@@ -196,15 +208,24 @@ export function useCatalogue() {
   return points;
 }
 
-export async function postJSON<T>(path: string, body: unknown): Promise<T | null> {
+/** A tap's answer: the server's new snapshot, or why it wasn't saved, so the page can put it back and say so. */
+export type Tapped<T> = { ok: true; value: T } | { ok: false; why: "refused" | "unreachable" };
+
+export async function tap<T>(path: string, body: unknown): Promise<Tapped<T>> {
   try {
     const res = await fetch(api(path), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(8000),
     });
-    return res.ok ? ((await res.json()) as T) : null;
+    return res.ok ? { ok: true, value: (await res.json()) as T } : { ok: false, why: "refused" };
   } catch {
-    return null;
+    return { ok: false, why: "unreachable" };
   }
+}
+
+export async function postJSON<T>(path: string, body: unknown): Promise<T | null> {
+  const got = await tap<T>(path, body);
+  return got.ok ? got.value : null;
 }
