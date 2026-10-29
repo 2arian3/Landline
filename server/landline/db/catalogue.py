@@ -22,6 +22,7 @@ select listing_id, source, source_id, url, first_seen, last_seen, status, addres
   geocode_precision, neighbourhood, rent, fees, monthly_cost, beds::float, dens, baths::float, sqft, floor,
   unit_type, building_type, furnished, available_from, parking, parking_cost, pets, laundry, ac,
   utilities_included, amenities, light_score, transit_walk_min, red_flags, title, photos, provenance,
+  grocery_name, grocery_walk_min, pharmacy_name, pharmacy_walk_min,
   (select s.name from stations s where s.id = transit_station_id) as transit_station
 from listings where status = 'active'
 """

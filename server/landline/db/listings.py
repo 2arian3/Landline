@@ -19,7 +19,8 @@ listing_id, source, source_id, url, first_seen, last_seen, status, address, unit
 postal_code, ST_Y(geom::geometry) as lat, ST_X(geom::geometry) as lng, geocode_precision, neighbourhood, rent,
 fees, monthly_cost, beds::float, dens, baths::float, sqft, floor, unit_type, building_type, furnished,
 available_from, parking, parking_cost, pets, laundry, ac, utilities_included, amenities, light_score,
-transit_walk_min, red_flags, title, photos, provenance
+transit_walk_min, red_flags, title, photos, provenance, grocery_name, grocery_walk_min, pharmacy_name,
+pharmacy_walk_min
 """
 
 
