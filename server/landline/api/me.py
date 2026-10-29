@@ -9,7 +9,7 @@ CORS_ORIGIN_REGEX matches. A native app's token (the Expo app, U-13) has none, s
 the Origin header and native requests send no Origin; our instance's signature is the proof there. Anything
 else is 401. Without CLERK_SECRET_KEY, sign-in is off (404).
 
-POST /api/me {phone} is the hackathon's way in, where the number is the login. With CLERK_SECRET_KEY set it
+POST /api/me {phone} is the original way in, where the number is the login. With CLERK_SECRET_KEY set it
 answers 401, since a typed number proves nothing; without it (local dev, CI) it works as before.
 
 GET /api/me/listings (U-12c), signed in the same way: every listing Landline called for the renter, newest
