@@ -338,6 +338,7 @@ export function LiveBoard({
             <ListingDetail
               id={selected}
               card={selectedCard}
+              places={board.length}
               mark={marks[selected]}
               call={view?.calls.filter((c) => c.listing_id === selected).pop()}
               results={view?.phase === "done" ? view.results : null}
