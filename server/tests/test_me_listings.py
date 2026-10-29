@@ -15,7 +15,8 @@ T0 = datetime(2026, 10, 24, 16, 0, tzinfo=UTC)
 
 
 def _place(lid: str) -> Place:
-    return Place(listing_id=lid, address=f"{lid[-1]} Main St", unit_label="Unit 4" if lid == "t:3" else None)
+    return Place(listing_id=lid, address=f"{lid[-1]} Main St", unit_label="Unit 4" if lid == "t:3" else None,
+                 monthly_cost=2970 if lid == "t:1" else None)
 
 
 def _call(cid: str, lid: str, minutes: int, **kw) -> dict:
@@ -79,6 +80,13 @@ def test_a_viewing_without_a_stored_status_reads_as_booked():
                                                                "slot_text": "Sunday at two"}}}}
     [x] = listings([{"session_id": "s_1", "snapshot": snapshot}], [_call("c_1", "t:1", 1)], _place)
     assert x.viewing is not None and x.viewing.status == "booked"
+
+
+def test_each_listing_carries_its_monthly_cost_from_the_catalogue_or_none():
+    """The price the board shows, computed in code from the catalogue; none for a listing that left it."""
+    calls = [_call("c_1", "t:1", 1), _call("c_2", "t:2", 3)]
+    got = {x.listing_id: x.monthly_cost for x in listings(SESSIONS, calls, _place)}
+    assert got == {"t:1": 2970, "t:2": None}
 
 
 def test_a_renter_with_no_calls_has_no_listings():

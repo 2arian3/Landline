@@ -218,6 +218,24 @@ def test_a_renter_edits_only_their_own_profile(url, clerk):
         assert (r.status_code, r.json()["detail"]) == (404, "unknown number")
 
 
+def test_an_email_edit_leaves_the_saved_search_alone(url, clerk):
+    """U-12a review: an email-only PATCH created a profile row and marked it updated."""
+    neighbour = "+14165550166"
+    with psycopg.connect(url, autocommit=True) as conn:
+        conn.execute("insert into users (phone_e164) values (%s)", (neighbour,))
+    settings = Settings(database_url=url, web_url="http://localhost:3000", transport="stub",
+                        clerk_secret_key="sk_test_throwaway", clerk_jwt_key=clerk.pem)
+    them = {"Authorization": f"Bearer {clerk.token(phone=neighbour)}"}
+    with TestClient(create_app(settings, Catalogue(LISTINGS, "test"))) as c:
+        edit = {"email": "x@y.ca", "use_saved_search": True}
+        p = c.patch("/api/me/profile", headers=them, json=edit).json()
+        assert (p["email"], p["use_saved_search"], p["updated_at"]) == ("x@y.ca", True, None)
+    with psycopg.connect(url) as conn:
+        rows = conn.execute("select count(*) from user_profiles p join users u using (user_id) "
+                            "where u.phone_e164 = %s", (neighbour,)).fetchone()
+    assert rows == (0,)
+
+
 OTHER = "+14165550199"
 
 
@@ -241,7 +259,7 @@ def test_my_listings_shows_only_the_signed_in_renters_calls(url, clerk, other_re
         got = {x["listing_id"]: x for x in mine(PHONE).json()}
         assert set(got) == {"t:1", "t:2"}
         booked, unanswered = got["t:1"], got["t:2"]
-        assert (booked["address"], booked["ended"]) == ("1 Admin St", "talked")
+        assert (booked["address"], booked["ended"], booked["monthly_cost"]) == ("1 Admin St", "talked", 2100)
         assert booked["call_id"] == LISTING_CALLS[0]
         assert [(f["field"], f["value"], f["quote"]) for f in booked["facts"]] == [
             ("parking_cost", "$180 a month per spot", "Parking is $180 a month.")]
