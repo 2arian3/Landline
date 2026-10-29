@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
 import { Icon, type IconName, Mark } from "./Icon";
 import { heardLine } from "@/lib/format";
 import { unheardCounts } from "@/lib/outcome";
@@ -92,13 +93,56 @@ export function Brand({
   );
 }
 
+const PHONE_PATH =
+  "M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z";
+
+/** The plan's still to come: before the renter hangs up, and after it until the calls are scheduled (A-06). */
+const planShown = (view: SessionView) =>
+  view.plan.length > 0 && (view.phase === "open" || (view.phase === "calling" && !view.calls.length));
+
 /**
- * What the agents are doing right now, counted from the card statuses the
- * server sent. Nothing here is guessed: no "dialing", no ETAs. With no calls
- * yet it says how many places fit.
+ * The calls the renter picked, before they start: "Will call 2 places when you hang up", and each place by
+ * its number and address, as the board shows them. Nothing about when or how is promised beyond that.
+ */
+export function Plan({ view }: { view: SessionView | null }) {
+  if (!view || !planShown(view)) return null;
+  const n = view.plan.length;
+  const places = view.plan.map((id) => view.board.find((c) => c.listing_id === id)).filter((c) => c !== undefined);
+  return (
+    <section className="results" aria-live="polite">
+      <div className="flex items-center gap-3.5">
+        <span aria-hidden className="grid size-10 shrink-0 place-items-center rounded-full bg-ink text-white">
+          <svg className="i size-5" viewBox="0 0 24 24">
+            <path d={PHONE_PATH} />
+          </svg>
+        </span>
+        <p className="t-title">
+          Will call {n} {n === 1 ? "place" : "places"}
+          {view.phase === "open" && " when you hang up"}
+        </p>
+      </div>
+      {places.length > 0 && (
+        <ul className="chips" aria-label="The places Landline will call">
+          {places.map((c) => (
+            <li key={c.listing_id} className="chip gap-2 pl-1.5" data-s="picked">
+              <span className="pin-face size-7! border-0! text-[14px]! shadow-none!">{c.rank}</span>
+              {c.address}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+/**
+ * What the agents are doing right now, counted from the calls and the card statuses the server sent, in the
+ * words the cards use ("1 on the phone · 1 ringing"). Nothing here is guessed: no ETAs. With no calls yet it
+ * says how many places fit. The pill above already says how many places are being called.
  */
 export function Activity({ view, compact = false }: { view: SessionView | null; compact?: boolean }) {
   if (!view) return <div className="h-[18px] w-1/2 rounded bg-press" aria-hidden />;
+  if (planShown(view)) return null;   // the plan says it
   const n = count(view.board);
   const done: string[] = [];
   if (n.booked) done.push(`${n.booked} ${n.booked === 1 ? "viewing" : "viewings"} booked`);
@@ -106,67 +150,40 @@ export function Activity({ view, compact = false }: { view: SessionView | null; 
   if (n.suspect) done.push(`${n.suspect} flagged`);
   for (const [word, k] of unheardCounts(view.board, view.calls)) done.push(`${k} ${word}`);   // like the badges
   if (n.dead) done.push(`${n.dead} already rented`);
-  const queued = view.calls.filter((c) => c.state === "queued").length;
-  const rest = compact ? "min-w-0 truncate" : "";
+  const by = (states: string[]) => view.calls.filter((c) => states.includes(c.state)).length;
+  const going = [
+    [by(["live"]), "on the phone"],
+    [by(["dialing", "ringing"]), "ringing"],
+    [by(["voicemail"]), "leaving a message"],
+    [by(["queued"]), "queued"],
+  ]
+    .filter(([k]) => k)
+    .map(([k, word]) => `${k} ${word}`);
+  const wrap = compact ? "min-w-0 truncate" : "";
 
-  // The plan, before the renter hangs up, and after it until the calls are scheduled (A-06).
-  if (view.plan.length && (view.phase === "open" || (view.phase === "calling" && !view.calls.length))) {
+  if (going.length) {
     return (
-      <p className="flex items-baseline gap-x-1.5 text-meta" aria-live="polite">
-        <span aria-hidden className="h-2 w-2 shrink-0 self-center rounded-full bg-ink" />
-        <span className={`font-label text-ink ${rest}`}>
-          Will call {view.plan.length} {view.plan.length === 1 ? "place" : "places"}
-          {view.phase === "open" && " when you hang up"}
-        </span>
+      <p className="activity tnum text-ink" aria-live="polite">
+        <span aria-hidden className="pill-dot text-live" />
+        <span className={wrap}>{[...going, ...done].join(" · ")}</span>
       </p>
     );
   }
-
-  if (n.calling || queued) {
-    const now = [n.calling && `Calling ${n.calling} ${n.calling === 1 ? "place" : "places"}`, queued && `${queued} queued`]
-      .filter(Boolean)
-      .join(" · ");
-    const label = (
-      <span className={`shrink-0 whitespace-nowrap font-label ${n.calling ? "text-live" : "text-ink-2"}`}>{now}</span>
-    );
-    const dot = n.calling ? (
-      <span aria-hidden className="live-dot h-2 w-2 shrink-0 self-center rounded-full bg-live" />
-    ) : (
-      <span aria-hidden className="h-2 w-2 shrink-0 self-center rounded-full bg-ink-3" />
-    );
-    if (compact) {
-      return (
-        <p className="flex items-baseline gap-x-1.5 text-meta" aria-live="polite">
-          {dot}
-          {label}
-          {done.length > 0 && <span className={`text-ink-2 ${rest}`}>· {done.join(" · ")}</span>}
-        </p>
-      );
-    }
-    return (
-      <div aria-live="polite">
-        <p className="flex items-baseline gap-x-1.5 text-meta">
-          {dot}
-          {label}
-        </p>
-        {done.length > 0 && <p className="pl-3.5 text-meta text-ink-2">{capitalize(done.join(" · "))}</p>}
-      </div>
-    );
-  }
+  // Once the calls are done, What the calls found says it, with its tally.
+  if (view.phase === "done" && view.results) return null;
   if (done.length) {
-    // The calls' tally is the demo's payoff, so on a phone it wraps rather than losing its end.
     return (
-      <p className="flex items-baseline gap-x-1.5 text-meta" aria-live="polite">
-        <span aria-hidden className="h-2 w-2 shrink-0 self-center rounded-full bg-real" />
-        <span className="font-label text-ink">{capitalize(done.join(" · "))}</span>
+      <p className="activity text-ink" aria-live="polite">
+        <span aria-hidden className="pill-dot text-real" />
+        {capitalize(done.join(" · "))}
       </p>
     );
   }
   const shown = view.board.length;
   return (
-    <p className={`text-meta text-ink-3 tnum ${compact ? "truncate" : ""}`}>
+    <p className={`activity tnum ${compact ? "truncate" : ""}`}>
       {view.matches.length.toLocaleString("en-CA")} {view.matches.length === 1 ? "place fits" : "places fit"}
-      {shown > 0 && ` · the best ${shown} are numbered on the map`}
+      {shown > 0 && ` · the best ${shown} ${shown === 1 ? "is" : "are"} on the map`}
     </p>
   );
 }
@@ -215,11 +232,36 @@ const saysNothingFits = (view: SessionView) => !view.board.length && /^Nothing f
 /** Landline's last line is the returning renter's welcome: the panel shows it once, as the welcome. */
 const opensWithWelcome = (view: SessionView) => view.returning && /^welcome back/i.test(view.agent_says ?? "");
 
+/** A chip just heard wears an ink ring for 2s, then settles (the canvas's "What Landline heard"). The chips
+ *  there when the page opened aren't new. */
+function useJustHeard(chips: string[] | null): Set<string> {
+  const seen = useRef<Set<string> | null>(null);
+  const timers = useRef<number[]>([]);
+  const [fresh, setFresh] = useState<Set<string>>(() => new Set());
+  const key = chips?.join("\n") ?? null;
+  useEffect(() => {
+    if (key === null) return;
+    const now = key ? key.split("\n") : [];
+    if (seen.current === null) {
+      seen.current = new Set(now);
+      return;
+    }
+    const added = now.filter((c) => !seen.current?.has(c));
+    for (const c of now) seen.current.add(c);
+    if (!added.length) return;
+    setFresh((f) => new Set([...f, ...added]));
+    timers.current.push(
+      window.setTimeout(() => setFresh((f) => new Set([...f].filter((c) => !added.includes(c)))), 2000),
+    );
+  }, [key]);
+  useEffect(() => () => timers.current.forEach((t) => window.clearTimeout(t)), []);
+  return fresh;
+}
+
 /**
- * What Landline heard and what it last said: the renter's half of the call, on
- * screen. `compact` (phones) keeps it to one line so the first place shows
- * above the fold of the sheet; the renter is hearing Landline already. `wrap`
- * lets that line wrap once the sheet is raised and there's room.
+ * What Landline heard, as chips, and what it last said: the renter's half of the call, on screen. At the
+ * phone sheet's lowest stop (`compact` without `wrap`) it's one line, so the first place shows above the
+ * fold; once the sheet is raised the chips show, a size smaller.
  */
 export function Heard({
   view,
@@ -230,7 +272,9 @@ export function Heard({
   compact?: boolean;
   wrap?: boolean;
 }) {
-  if (!view) {
+  const chips = view ? heardLine(view.preferences).map(capitalize) : null;
+  const fresh = useJustHeard(chips);
+  if (!view || !chips) {
     return (
       <div className="space-y-2" aria-hidden>
         <div className="h-4 w-2/3 rounded bg-press" />
@@ -238,35 +282,46 @@ export function Heard({
       </div>
     );
   }
-  const heard = capitalize(heardLine(view.preferences).join(" · "));
 
-  if (compact) {
-    return (
-      <div className="min-w-0">
-        {heard && (
-          <p className={`text-support text-ink ${wrap ? "" : "truncate"}`}>
-            <span className="text-ink-3">Heard </span>
-            {heard.charAt(0).toLowerCase() + heard.slice(1)}
-          </p>
-        )}
-      </div>
-    );
+  if (compact && !wrap) {
+    return chips.length ? (
+      <p className="truncate px-1 text-support text-ink">
+        <span className="text-ink-3">Heard </span>
+        {chips.join(" · ")}
+      </p>
+    ) : null;
   }
 
   return (
-    <div className="space-y-3">
-      {heard && (
-        <div>
-          <p className="text-meta text-ink-3">What I heard</p>
-          <p className="text-support text-ink">{heard}</p>
-        </div>
+    <div className="flex flex-col gap-4">
+      {chips.length > 0 && (
+        <section className="flex flex-col gap-2.5">
+          <p className="label">
+            <svg className="i" viewBox="0 0 24 24" aria-hidden>
+              <path d="M6 8.5a6.5 6.5 0 1 1 13 0c0 6-6 6-6 10a3.5 3.5 0 1 1-7 0" />
+              <path d="M15 8.5a2.5 2.5 0 0 0-5 0v1a2 2 0 1 1 0 4" />
+            </svg>
+            What I heard
+          </p>
+          {/* A <p>, read as one line ("Up to $2,200 a month2+ bedroom…") by check-stalled-stream. */}
+          <p className="chips">
+            {chips.map((c) => (
+              <span
+                key={c}
+                className={`chip${fresh.has(c) ? " is-new" : ""}${compact ? " h-8! px-3! text-[14px]!" : ""}`}
+              >
+                {c}
+              </span>
+            ))}
+          </p>
+        </section>
       )}
       {/* What Landline said during the brief: stale once the calls start. With nothing on the board, its
           stock "Nothing fits yet" is what the list's empty state says already; anything else it said shows. */}
-      {view.agent_says && view.phase === "open" && !saysNothingFits(view) && !opensWithWelcome(view) && (
-        <blockquote className="m-0 border-0 p-0">
-          <p className="text-meta text-ink-3">Landline said</p>
-          <p className="text-fact">“{view.agent_says}”</p>
+      {!compact && view.agent_says && view.phase === "open" && !saysNothingFits(view) && !opensWithWelcome(view) && (
+        <blockquote className="m-0 flex flex-col gap-1.5 border-0 p-0">
+          <p className="label">Landline said</p>
+          <p className="said">“{view.agent_says}”</p>
         </blockquote>
       )}
     </div>
