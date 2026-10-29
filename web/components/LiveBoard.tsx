@@ -2,11 +2,13 @@
 
 import { AnimatePresence, motion } from "motion/react";
 import dynamic from "next/dynamic";
+import { notFound } from "next/navigation";
 import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Drawer } from "vaul";
 import { AvatarClips } from "./AvatarClips";
 import { Board } from "./Board";
 import { DemoControls } from "./DemoControls";
+import { Icon } from "./Icon";
 import type { Mark } from "./ListingCard";
 import { ListingDetail, type Reaction } from "./ListingDetail";
 import type { Padding } from "./MapView";
@@ -27,7 +29,9 @@ import { type Opened, follows } from "@/lib/follow";
 import { nothingHeard } from "@/lib/format";
 import { type Unheard, unheard } from "@/lib/outcome";
 import { useAvatarClips } from "@/lib/avatars";
-import { api, postJSON, useCatalogue, useLiveSession } from "@/lib/live";
+import { api, postJSON, tap, useCatalogue, useLiveSession } from "@/lib/live";
+import { OFFLINE } from "@/lib/pill";
+import type { SessionView } from "@/lib/types";
 import { useMedia } from "@/lib/useMedia";
 
 // MapLibre is a 1 MB chunk. Loading it after the panel lets the places paint first on a slow phone;
@@ -62,7 +66,7 @@ export function LiveBoard({
   dock?: ReactNode;
   line?: string | null;
 }) {
-  const { view, stale, unreachable } = useLiveSession(sessionId);
+  const { view, stale, unreachable, missing } = useLiveSession(sessionId);
   const clips = useAvatarClips(sessionId, view?.phase ?? null);
   const points = useCatalogue();
   const desktop = useMedia(SPLIT);
@@ -185,16 +189,23 @@ export function LiveBoard({
     void postJSON(`/api/sessions/${encodeURIComponent(sessionId)}/focus`, { listing_id: id });
   }
 
+  // A tap shows at once; one the server didn't save puts the card back, so it never pretends it worked.
   const react = useCallback(
-    (id: string, reaction: Reaction, reason: string | null) => {
+    async (id: string, reaction: Reaction, reason: string | null) => {
       if (!sessionId) return;
       const said = reason ?? (reaction === "like" ? "like it" : "not for me");
       setMine((m) => ({ ...m, [id]: said }));
-      void postJSON(`/api/sessions/${encodeURIComponent(sessionId)}/feedback`, {
+      const got = await tap<SessionView>(`/api/sessions/${encodeURIComponent(sessionId)}/feedback`, {
         listing_id: id,
         reaction,
         reason: reason ?? undefined,
       });
+      if (!got.ok) {
+        setMine((m) => {
+          const { [id]: _drop, ...rest } = m;
+          return rest;
+        });
+      }
     },
     [sessionId],
   );
@@ -234,9 +245,13 @@ export function LiveBoard({
   // No snapshot at all for a while (the API is down or unreachable): say so plainly instead of skeletons
   // that never fill. Polling carries on, and the first answer brings the board in.
   const list = unreachable ? (
-    <p role="status" className="text-support text-ink-2">
-      Can&rsquo;t reach Landline right now. Trying again&hellip;
-    </p>
+    <div className="banner" role="status">
+      <Icon name="wifi-off" size={20} />
+      <div>
+        <p className="w6">{OFFLINE.title}</p>
+        <p className="c-2">{OFFLINE.body}</p>
+      </div>
+    </div>
   ) : (
     <div className={desktop ? "space-y-4" : "space-y-3"}>
       <Welcome view={view} compact={compact} />
@@ -321,13 +336,16 @@ export function LiveBoard({
       </AnimatePresence>
     );
 
+  // A link that matches no call, found out after the page's own check: the same not-found page.
+  if (missing) notFound();
+
   // Until the browser says which layout this is, show the shell the server sent.
   // Both are `fixed inset-0`: nothing can scroll the page itself, not even
   // focus or scrollIntoView on something inside the panel.
   if (desktop === null) return <Shell idle={!!intro && !sessionId} />;
 
   const idle = !!intro && !sessionId;
-  const status = { view, stale, connected: !!view, offline: unreachable, idle, line };
+  const status = { view, stale, unreachable, idle, line };
   const full = snap === 1;
   const sheet = sheetLook(full);
 

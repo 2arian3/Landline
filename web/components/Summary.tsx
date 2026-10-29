@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Icon, type IconName, Mark } from "./Icon";
 import { heardLine } from "@/lib/format";
 import { unheardCounts } from "@/lib/outcome";
-import { type Pill, pill } from "@/lib/pill";
+import { type Pill, type PillKind, pill } from "@/lib/pill";
 import { resultsByPlace } from "@/lib/results";
 import type { Card, SessionView } from "@/lib/types";
 import { splitWelcome } from "@/lib/welcome";
@@ -19,31 +19,42 @@ export function Wordmark() {
   );
 }
 
-const PILL_ICON: Record<Exclude<Pill["icon"], "waiting">, IconName> = {
-  wave: "audio-lines",
-  phone: "phone",
-  check: "check",
+/** The glyph for each of the pill's kinds; Connecting and Reconnecting wait with dots instead. */
+const PILL_ICON: Record<PillKind, IconName> = {
+  connecting: "refresh-cw",
+  reconnecting: "refresh-cw",
   offline: "wifi-off",
+  listening: "audio-lines",
+  calling: "phone",
+  finished: "check",
   ended: "x",
+  line: "phone",
 };
 
-/** What the call is doing (lib/pill.ts), as Lucent's pill: its icon and words, never colour alone. */
+/** What the call is doing (lib/pill.ts), as Lucent's pill: its glyph and its words, never colour alone. */
 export function PhasePill({ pill: p }: { pill: Pill }) {
   return (
-    <span className={`pill${p.tone === "listening" ? "" : ` is-${p.tone}`}`} aria-live="polite">
-      {p.icon === "waiting" ? (
+    <span className={`pill${p.tone === "plain" ? "" : ` is-${p.tone}`}`} aria-live="polite">
+      {p.waiting ? (
         <span className="dots" aria-hidden>
           <i />
           <i />
           <i />
         </span>
       ) : (
-        <Icon name={PILL_ICON[p.icon]} size={16} />
+        <Icon name={PILL_ICON[p.kind]} size={16} />
       )}
       {p.words}
     </span>
   );
 }
+
+/** The calls still going: everything that hasn't ended or been blocked. */
+const GOING = new Set(["queued", "dialing", "ringing", "live", "voicemail"]);
+
+/** How many places the pill says are being called: the calls still going, or the plan before they're queued. */
+export const calling = (view: SessionView | null) =>
+  !view ? 0 : view.calls.length ? view.calls.filter((c) => GOING.has(c.state)).length : view.plan.length;
 
 /**
  * The header's two ends: the wordmark, and the pill saying what the call is doing. On a phone the capsule
@@ -53,25 +64,24 @@ export function PhasePill({ pill: p }: { pill: Pill }) {
 export function Brand({
   view = null,
   stale,
-  connected,
-  offline = false,
+  unreachable = false,
   idle = false,
   line = null,
   yourCalls = false,
 }: {
   view?: SessionView | null;
   stale: boolean;
-  connected: boolean;
-  offline?: boolean;
+  unreachable?: boolean;
   idle?: boolean;
   line?: string | null;
   yourCalls?: boolean;
 }) {
+  const p = pill({ phase: view?.phase ?? null, calls: calling(view), stale, unreachable, line });
   return (
     <>
       <Wordmark />
       <div className="flex min-w-0 items-center gap-0.5">
-        {!idle && <PhasePill pill={pill(view, { connected, stale, offline, line })} />}
+        {!idle && <PhasePill pill={p} />}
         {yourCalls && (
           <Link href="/me" className="btn btn-quiet btn-icon" aria-label="Your calls">
             <Icon name="user" size={20} />

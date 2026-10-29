@@ -109,7 +109,7 @@ Only into the Concierge, only between turns, as one `user` `input_text` item, qu
 
 | Method | Path | Returns |
 |---|---|---|
-| GET | `/api/sessions/{id}` | `SessionView` |
+| GET | `/api/sessions/{id}` | `SessionView`. 404 `unknown session` for an id in the minted shape (`s_` + 10) that no live or stored session has: a link that matches no call. Any other id is a demo session, made on first sight. The stream and the taps answer the same 404 |
 | GET | `/api/sessions/{id}/stream` | SSE: `{"version": n}` on every commit; a heartbeat every 15 s |
 | POST | `/api/sessions/{id}/focus` | `{listing_id}` → `ListingFocused` |
 | POST | `/api/sessions/{id}/feedback` | `{listing_id, reaction, reason?}` → `FeedbackGiven` |
