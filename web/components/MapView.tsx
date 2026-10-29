@@ -14,6 +14,7 @@ import { type Stage, type Status, statusOf } from "@/lib/status";
 import type { Anchor, Area, Card, CataloguePoint } from "@/lib/types";
 import { glyphElement, type IconName } from "./Icon";
 import { Legend } from "./Legend";
+import { SPLIT } from "./Shell";
 
 // Copied there by `npm install` (scripts/copy-maplibre-worker.mjs); the bundler
 // can't resolve MapLibre's own worker path.
@@ -135,8 +136,9 @@ export function MapView({
       pixelRatio: Math.min(window.devicePixelRatio || 1, 2),
     });
     m.touchZoomRotate.disableRotation();
-    // Bottom right, so the legend has the bottom left; compact on a narrow map.
-    m.addControl(new AttributionControl(), "bottom-right");
+    // Bottom right, so the legend has the bottom left. Under the sheet layout it's the (i) alone, riding on the
+    // sheet (the canvas's M flows); MapView remounts when the layout changes, so this holds for its life.
+    m.addControl(new AttributionControl(split() ? {} : { compact: true }), "bottom-right");
     map.current = m;
 
     m.on("load", () => {
@@ -188,7 +190,8 @@ export function MapView({
   const fitRef = useRef<() => void>(() => {});
   useEffect(() => {
     const m = map.current;
-    if (!m || !showZoom) return;
+    // The split layout only: the phone's board has no map buttons (pinch and the list do the work).
+    if (!m || !showZoom || !split()) return;
     const ctl = new MapButtons(() => fitRef.current());
     m.addControl(ctl, "top-right");
     return () => {
@@ -331,7 +334,12 @@ export function MapView({
   return (
     // Where the panel floats over the map (its fit padding is the panel plus 16 + 64), the map's corners keep
     // clear of it: the map buttons and attribution sit 16px left of the glass, and the legend wraps short of it.
-    <div className="absolute inset-0" style={{ "--map-chrome-right": `${Math.max(0, padding.right - 64)}px` } as CSSProperties}>
+    <div className="absolute inset-0" style={{
+        "--map-chrome-right": `${Math.max(0, padding.right - 64)}px`,
+        // Under the sheet layout, its visible height (the fit padding less 20px, less the 32px the sheet's top
+        // stop leaves transparent above its edge): the (i) rides 16px above the glass.
+        "--map-chrome-bottom": `${Math.max(0, padding.bottom - 52)}px`,
+      } as CSSProperties}>
       <div ref={container} className="h-full w-full" aria-label="Map of matching rentals" />
       {ready && <Legend ref={legend} shapes={shown} named={placed.length > 0} />}
     </div>
@@ -445,6 +453,8 @@ function spread(m: MapLibre, pins: Map<string, Pin>, cards: Card[]) {
     pin.marker.setOffset([spot.x - at.x, spot.y - at.y]);
   }
 }
+
+const split = () => typeof window !== "undefined" && window.matchMedia(SPLIT).matches;
 
 function reducedMotion(): boolean {
   return typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
