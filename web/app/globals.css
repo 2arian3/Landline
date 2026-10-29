@@ -357,7 +357,7 @@
 }
 
 /* ── Lucent's components (landline.css, the design canvas "Landline demo polish") ───────────────
-   Every class the canvas uses, on the app's token names. The tabs build the board on these. */
+   Every class the canvas uses (v2, with the forms, /me, the app and /v), on the app's token names. */
 
 @layer components {
   /* ── base ───────────────────────────────────────────────────────────────── */
@@ -405,7 +405,7 @@
   .map-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
   .attrib {
     position: absolute; display: inline-flex; align-items: center; height: 26px; padding: 0 10px; border-radius: 999px;
-    font: 500 11px/1 var(--font-text); color: var(--color-ink-secondary); white-space: nowrap;
+    font: 500 13px/1 var(--font-text); color: var(--color-ink-secondary); white-space: nowrap;
   }
 
   /* ── pins: a 44px target, a face that carries rank, a ring and a badge for status ── */
@@ -423,8 +423,9 @@
     transition: transform 220ms var(--ease-settle), background-color 300ms var(--ease-settle), color 300ms var(--ease-settle), border-color 300ms var(--ease-settle), box-shadow 220ms var(--ease-settle);
   }
   .pin-ring { position: absolute; inset: 2px; border-radius: 999px; border: 2px solid transparent; pointer-events: none; }
+  /* the badge sits off the face's corner, clear of a two-digit rank */
   .pin-badge {
-    position: absolute; top: -6px; right: -7px; width: 18px; height: 18px; border-radius: 999px;
+    position: absolute; top: -8px; right: -10px; width: 18px; height: 18px; border-radius: 999px;
     display: grid; place-items: center; background: #fff; color: var(--color-ink);
     box-shadow: 0 0 0 1px rgba(25, 25, 24, 0.1), 0 1px 3px rgba(25, 25, 24, 0.22);
   }
@@ -440,8 +441,9 @@
   [data-s="calling"] .pin-face { background: var(--color-live); }
   [data-s="calling"] .pin-badge { color: var(--color-live); }
   [data-s="calling"] .pin-ring { border-color: var(--color-live); animation: pin-ring 2.4s var(--ease-settle) infinite; }
-  [data-s="checked"] .pin-face, [data-s="booked"] .pin-face, [data-s="confirmed"] .pin-face { background: var(--color-real); }
-  [data-s="checked"] .pin-badge, [data-s="booked"] .pin-badge { color: var(--color-real); }
+  [data-s="checked"] .pin-face, [data-s="confirmed"] .pin-face { background: var(--color-real); }
+  [data-s="checked"] .pin-badge { color: var(--color-real); }
+  [data-s="booked"] .pin-badge { color: var(--color-ink); }  /* booked: ink face, calendar badge, until the agent confirms */
   [data-s="confirmed"] .pin-badge { background: var(--color-real); color: #fff; box-shadow: 0 0 0 2px #fff, 0 1px 3px rgba(25, 25, 24, 0.25); }
   [data-s="flagged"] .pin-face, [data-s="declined"] .pin-face { background: #fff; color: var(--color-dead); border-color: var(--color-dead); }
   [data-s="flagged"] .pin-badge { background: var(--color-dead); color: #fff; box-shadow: 0 0 0 2px #fff, 0 1px 3px rgba(25, 25, 24, 0.25); }
@@ -453,13 +455,12 @@
   /* A mini pin, for legends and status tables. */
   .mini { position: relative; display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 999px; background: var(--color-ink); border: 1.5px solid #fff; box-shadow: 0 0 0 1px rgba(25, 25, 24, 0.14); flex: none; }
   .mini[data-s="calling"] { background: var(--color-live); box-shadow: 0 0 0 1px rgba(25, 25, 24, 0.1), 0 0 0 3.5px rgba(147, 90, 17, 0.35); }
-  .mini[data-s="checked"], .mini[data-s="booked"], .mini[data-s="confirmed"] { background: var(--color-real); }
+  .mini[data-s="checked"], .mini[data-s="confirmed"] { background: var(--color-real); }
   .mini[data-s="flagged"] { background: #fff; border-color: var(--color-dead); box-shadow: none; }
   .mini[data-s="noanswer"] { background: var(--color-quiet); box-shadow: 0 0 0 1px #fff, 0 0 0 2.5px var(--color-quiet); }
   .mini[data-s="gone"] { background: #fff; border-color: var(--color-quiet); box-shadow: none; }
-  .mini[data-s="declined"] { background: #fff; border-color: var(--color-dead); box-shadow: none; }
-  .mini.is-anchor { background: #fff; box-shadow: 0 0 0 2px var(--color-ink); }
   .mini .i { width: 9px; height: 9px; stroke-width: 3; color: #fff; }
+  .mini[data-s="queued"] { box-shadow: 0 0 0 1px #fff, 0 0 0 2.5px var(--color-ink); }
   .mini[data-s="flagged"] .i { color: var(--color-dead); }
 
   /* The renter's named place ("near King and Bay"): an anchor, not a listing. */
@@ -469,7 +470,7 @@
   .anchor-label { height: 30px; padding: 0 12px; border-radius: 999px; display: inline-flex; align-items: center; font: 600 var(--text-caption)/1 var(--font-text); white-space: nowrap; }
 
   /* Catalogue dots over a basemap, where an artboard draws its own. */
-  .cdot { position: absolute; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; border-radius: 999px; background: rgba(25, 25, 24, 0.34); box-shadow: 0 0 0 0.75px #fff; }
+  .cdot { position: absolute; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; border-radius: 999px; background: rgba(25, 25, 24, 0.38); box-shadow: 0 0 0 1px #fff; }
 
   /* ── the panel (split layout) and the phone's floating parts ─────────────── */
 
@@ -515,11 +516,9 @@
   .pill.is-quiet { color: var(--color-ink-secondary); }
   .pill-dot { width: 8px; height: 8px; border-radius: 999px; background: currentColor; flex: none; }
 
-  /* Lucent's loading dots: three, pulsing softly, width held. */
+  /* Lucent's loading dots, held still here: the only loop on the board is a live call's ring. */
   .dots { display: inline-flex; gap: 3px; align-items: center; }
-  .dots i { width: 4px; height: 4px; border-radius: 999px; background: currentColor; opacity: 0.3; animation: dots 1.2s var(--ease-settle) infinite; }
-  .dots i:nth-child(2) { animation-delay: 0.15s; }
-  .dots i:nth-child(3) { animation-delay: 0.3s; }
+  .dots i { width: 4px; height: 4px; border-radius: 999px; background: currentColor; opacity: 0.55; }
 
   /* ── what Landline heard ────────────────────────────────────────────────── */
 
@@ -552,7 +551,7 @@
   .card-nophoto { width: 100%; height: 100%; border-radius: 8px; background: var(--color-fill-muted); display: grid; place-items: center; color: var(--color-ink-secondary); font: 500 var(--text-caption)/1 var(--font-text); }
   .card-rank { position: absolute; top: -7px; left: -7px; }
   .card-rank .pin-face { width: 28px; height: 28px; font-size: 13px; box-shadow: 0 1px 3px rgba(25, 25, 24, 0.24); }
-  .card-rank .pin-badge { top: -5px; right: -6px; }
+  .card-rank .pin-badge { top: -7px; right: -9px; }
   .card-body { min-width: 0; display: flex; flex-direction: column; }
   .card-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
   .price { display: inline-flex; align-items: baseline; gap: 4px; white-space: nowrap; }
@@ -570,6 +569,7 @@
   .status { display: flex; align-items: flex-start; gap: 7px; font: 600 var(--text-callout)/var(--text-callout--line-height) var(--font-text); }
   .status .i { width: 18px; height: 18px; margin-top: calc((var(--text-callout--line-height) - 18px) / 2); }
   .status .sub { font-weight: 400; color: var(--color-ink-secondary); }
+  /* the projector reads a call's state from the back row: status lines step up to the address's size */
   .status.is-live { color: var(--color-live); }
   .status.is-real { color: var(--color-real); }
   .status.is-dead { color: var(--color-dead); }
@@ -668,15 +668,120 @@
     from { opacity: 0; transform: translateY(8px); }
     to { opacity: 1; transform: none; }
   }
-  @keyframes dots {
-    0%, 80%, 100% { opacity: 0.3; }
-    40% { opacity: 1; }
-  }
   @media (prefers-reduced-motion: reduce) {
     [data-s="calling"] .pin-ring { animation: none; transform: scale(1.14); opacity: 1; }
-    .dots i, .line.is-new { animation: none; opacity: 1; }
+    .line.is-new { animation: none; opacity: 1; }
     .pin-face, .card, .btn { transition-duration: 150ms; }
   }
+
+
+  /* Legend swatches carry the pin's shape, not just its colour. */
+  .mini[data-s="booked"] { background: var(--color-ink); }
+  .mini[data-s="noanswer"] { box-shadow: none; outline: 1.5px dashed var(--color-quiet); outline-offset: 1.5px; }
+  .mini.is-anchor { background: #fff; border-color: #fff; box-shadow: 0 0 0 1.5px var(--color-ink); }
+  .mini.is-anchor .i { color: var(--color-ink); stroke-width: 2.6; }
+
+  /* ── accounts: /me, the app and the agent's confirm page ─────────────────── */
+
+  /* A field: label above, a soft pill, one hint line that a mistake replaces (so nothing below jumps). */
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field-label { font: 500 var(--text-caption)/var(--text-caption--line-height) var(--font-text); color: var(--color-ink-secondary); }
+  .input {
+    display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 0 18px; border-radius: 999px;
+    background: var(--color-surface); box-shadow: 0 0 0 1px var(--color-hairline);
+    font: 400 var(--text-body)/1 var(--font-text); color: var(--color-ink); letter-spacing: -0.01em;
+  }
+  .input .ph { color: var(--color-ink-secondary); }
+  .input .pre, .input .suf { color: var(--color-ink-secondary); font-weight: 500; flex: none; }
+  .input .val { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .input.is-focus { box-shadow: 0 0 0 2px var(--color-ink); }
+  .input.is-error { box-shadow: 0 0 0 2px var(--color-dead); }
+  .input.is-locked { background: var(--color-surface-raised); color: var(--color-ink-secondary); }
+  .caret { width: 2px; height: 22px; border-radius: 1px; background: var(--color-ink); flex: none; }
+  .hint { font: 400 var(--text-caption)/var(--text-caption--line-height) var(--font-text); color: var(--color-ink-secondary); min-height: 18px; }
+  .hint.is-error { color: var(--color-dead); font-weight: 500; }
+
+  /* The six-digit code: one box per digit, the active one ringed. */
+  .otp { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
+  .otp span { height: 58px; border-radius: 16px; display: grid; place-items: center; background: var(--color-surface); box-shadow: 0 0 0 1px var(--color-hairline); font: 600 24px/1 var(--font-display); font-variant-numeric: tabular-nums; }
+  .otp span.is-on { box-shadow: 0 0 0 2px var(--color-ink); }
+
+  .btn-block { width: 100%; min-height: 52px; }
+
+  /* Lucent's switch: ink when on; the knob stretches as it travels. */
+  .switch { position: relative; width: 51px; height: 31px; border-radius: 999px; background: var(--color-control-off); flex: none; transition: background-color 240ms var(--ease-settle); }
+  .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 999px; background: #fff; box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15), 0 1px 1px rgba(0, 0, 0, 0.16); transition: transform 320ms var(--spring-lens); }
+  .switch.is-on { background: var(--color-ink); }
+  .switch.is-on::after { transform: translateX(20px); }
+
+  /* A tick: a soft square, ink when on. */
+  .tick { width: 24px; height: 24px; border-radius: 7px; flex: none; display: grid; place-items: center; background: var(--color-surface); box-shadow: inset 0 0 0 1.5px rgba(55, 53, 47, 0.35); color: #fff; }
+  .tick .i { width: 16px; height: 16px; stroke-width: 3; opacity: 0; }
+  .tick.is-on { background: var(--color-ink); box-shadow: none; }
+  .tick.is-on .i { opacity: 1; }
+
+  /* Settings-style rows inside one solid group. */
+  .group { border-radius: var(--radius-md); background: var(--color-surface); box-shadow: 0 0 0 1px var(--color-hairline); overflow: hidden; }
+  .grow { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 14px; min-height: 56px; padding: 10px 16px; }
+  .grow + .grow { border-top: 1px solid var(--color-hairline); }
+  .grow .t { font: 500 var(--text-body)/var(--text-body--line-height) var(--font-text); letter-spacing: -0.01em; }
+  .grow .d { font: 400 var(--text-caption)/var(--text-caption--line-height) var(--font-text); color: var(--color-ink-secondary); }
+  .grow.is-tick { grid-template-columns: 24px minmax(0, 1fr); column-gap: 12px; align-items: start; }
+
+  /* The save bar: one place that says where the form stands. */
+  .savebar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 10px 10px 18px; border-radius: 999px; }
+  .savebar .state { display: inline-flex; align-items: center; gap: 8px; font: 500 var(--text-callout)/1 var(--font-text); color: var(--color-ink-secondary); }
+  .savebar .state .i { width: 18px; height: 18px; }
+
+  /* Page chrome for /me (desktop) */
+  .me-top { display: flex; align-items: center; justify-content: space-between; height: 72px; padding: 0 40px; border-bottom: 1px solid var(--color-hairline); background: rgba(251, 251, 250, 0.86); }
+  .tabs { display: inline-grid; grid-auto-flow: column; gap: 0; padding: 4px; border-radius: 999px; background: var(--color-accent-tint); }
+  .tabs a { min-height: 44px; padding: 0 18px; border-radius: 999px; display: inline-flex; align-items: center; font: 600 var(--text-callout)/1 var(--font-text); color: var(--color-ink); text-decoration: none; }
+  .tabs a.is-on { background: var(--color-surface); box-shadow: 0 1px 2px rgba(25, 25, 24, 0.1), 0 3px 8px rgba(25, 25, 24, 0.06); }
+
+  /* The app's tab bar: glass, floating, three places. */
+  .tabbar { position: absolute; left: 50%; bottom: 26px; transform: translateX(-50%); display: grid; grid-auto-flow: column; gap: 4px; padding: 6px; border-radius: 999px; z-index: 20; }
+  .tabbar a { width: 96px; height: 54px; border-radius: 999px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font: 600 13px/1 var(--font-text); color: var(--color-ink-secondary); text-decoration: none; }
+  .tabbar a .i { width: 22px; height: 22px; }
+  .tabbar a.is-on { color: var(--color-ink); background: var(--color-accent-tint); }
+
+  /* A listing the renter's calls checked, on /me and in the app: money first, then what happened, then what was heard. */
+  .acard { display: flex; flex-direction: column; gap: 4px; padding: 18px 20px 8px; border-radius: var(--radius-md); background: var(--color-surface); box-shadow: 0 0 0 1px var(--color-hairline); }
+  .acard-top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+  .how { display: inline-flex; align-items: center; gap: 6px; font: 500 var(--text-caption)/var(--text-caption--line-height) var(--font-text); color: var(--color-ink-secondary); white-space: nowrap; }
+  .how .i { width: 15px; height: 15px; }
+  .acard .addr { margin-top: 0; }
+  .acard .addr .unit { font-weight: 400; color: var(--color-ink-secondary); }
+  .meta { font: 400 var(--text-caption)/var(--text-caption--line-height) var(--font-text); color: var(--color-ink-secondary); }
+  .acard .status { margin-top: 8px; }
+  .acard .flag { margin-top: 6px; }
+  .afacts { margin-top: 8px; border-top: 1px solid var(--color-hairline); }
+  .afact { display: grid; grid-template-columns: 20px minmax(0, 1fr) 18px; column-gap: 10px; align-items: start; min-height: 44px; padding: 11px 0; }
+  .afact + .afact { border-top: 1px solid var(--color-hairline); }
+  .afact > .i { width: 18px; height: 18px; color: var(--color-ink-secondary); margin-top: 1px; }
+  .afact .v { font: 400 var(--text-callout)/var(--text-callout--line-height) var(--font-text); }
+  .afact .v b { font-weight: 600; }
+  .afact .s { font: 500 var(--text-caption)/var(--text-callout--line-height) var(--font-text); color: var(--color-ink-secondary); white-space: nowrap; }
+  .afact .q { margin-top: 6px; padding-left: 12px; border-left: 2px solid var(--color-hairline); font: 400 var(--text-callout)/var(--text-callout--line-height) var(--font-text); color: var(--color-ink); }
+  .afact .q span { display: block; margin-top: 2px; font: 500 var(--text-caption)/var(--text-caption--line-height) var(--font-text); color: var(--color-ink-secondary); }
+  .afact .chev { width: 18px; height: 18px; color: var(--color-ink-secondary); margin-top: 2px; transition: transform 300ms var(--spring-lens); }
+  .afact.is-open .chev { transform: rotate(90deg); }
+
+  /* The app: iOS large titles on paper, content on solid cards, glass only on the tab bar. */
+  .app { position: relative; width: 393px; height: 852px; overflow: hidden; background: var(--color-ground); }
+  .app-status { height: 54px; display: flex; align-items: center; justify-content: space-between; padding: 0 30px 0 34px; font: 600 17px/1 var(--font-text); }
+  .app-status .sys { display: inline-flex; gap: 6px; align-items: center; }
+  .app-status .sys i { display: block; border-radius: 3px; background: var(--color-ink); }
+  .app-body { padding: 6px 20px 120px; display: flex; flex-direction: column; gap: 16px; }
+  .large-title { font: 700 34px/41px var(--font-display); letter-spacing: -0.022em; }
+  .app-sub { font: 400 var(--text-callout)/var(--text-callout--line-height) var(--font-text); color: var(--color-ink-secondary); }
+  .sec-title { font: 600 20px/25px var(--font-display); letter-spacing: -0.012em; }
+  .home-hello { display: flex; flex-direction: column; gap: 6px; padding: 20px; border-radius: var(--radius-lg); background: var(--color-surface); box-shadow: 0 0 0 1px var(--color-hairline); }
+  .stats { display: flex; gap: 8px; margin-top: 8px; }
+  .stats span { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: 999px; background: var(--color-accent-tint); font: 600 var(--text-caption)/1 var(--font-text); }
+  .stats .i { width: 15px; height: 15px; }
+  .call-cta { display: flex; flex-direction: column; gap: 10px; }
+  .call-cta .btn { min-height: 56px; font-size: 18px; }
 
   /* The projector (1600px and wider): the canvas's .proj sizes. */
   @media (min-width: 1600px) {
@@ -684,13 +789,17 @@
     .i-18 { width: 20px; height: 20px; }
     .mark { width: 32px; height: 32px; border-radius: 9px; }
     .mark svg { width: 26px; height: 26px; }
-    .pin-face { width: 34px; height: 34px; font-size: 15px; }
-    .pin-ring { inset: 0; }
-    .pin-badge { width: 20px; height: 20px; top: -7px; right: -8px; }
-    .pin-badge .i { width: 12px; height: 12px; }
+    .pin { width: 52px; height: 52px; }
+    .pin-face { width: 40px; height: 40px; font-size: 18px; }
+    .pin-ring { inset: 1px; }
+    .pin-badge { width: 22px; height: 22px; top: -9px; right: -12px; }
+    .pin-badge .i { width: 13px; height: 13px; }
+    .mini { width: 20px; height: 20px; border-width: 2px; }
+    .mini .i { width: 11px; height: 11px; }
+    .cdot { width: 10px; height: 10px; margin: -5px 0 0 -5px; box-shadow: 0 0 0 1.5px #fff; }
     .panel-list { gap: 12px; }
-    .pill { height: 38px; padding: 0 16px 0 13px; gap: 8px; }
-    .pill .i { width: 18px; height: 18px; }
+    .pill { height: 42px; padding: 0 18px 0 14px; gap: 8px; font-size: 18px; }
+    .pill .i { width: 20px; height: 20px; }
     .label .i { width: 17px; height: 17px; }
     .chip { height: 40px; padding: 0 16px; }
     .card { grid-template-columns: 104px minmax(0, 1fr); column-gap: 16px; padding: 14px; border-radius: 22px; }
@@ -698,13 +807,23 @@
     .card-rank .pin-face { width: 32px; height: 32px; font-size: 15px; }
     .move { height: 28px; padding: 0 10px 0 8px; }
     .status .i { width: 20px; height: 20px; margin-top: calc((var(--text-callout--line-height) - 20px) / 2); }
+    .status { font-size: var(--text-headline); line-height: var(--text-headline--line-height); }
+    .status .i { margin-top: calc((var(--text-headline--line-height) - 20px) / 2); }
     .fact { grid-template-columns: 20px minmax(0, 1fr); column-gap: 10px; }
     .fact .i { width: 20px; height: 20px; margin-top: calc((var(--text-callout--line-height) - 20px) / 2); }
+    .legend { height: 48px; padding: 0 20px; gap: 20px; font-size: 17px; }
+    .legend span { gap: 9px; }
     .results { padding: 18px; border-radius: 22px; }
     .result { grid-template-columns: 32px minmax(0, 1fr); }
     .result .pin-face { width: 32px; height: 32px; font-size: 15px; }
     .tally span { height: 34px; padding: 0 14px; }
   }
+}
+
+/* The app's own, beside the kit: the legend's mark for a declined viewing, which the kit doesn't draw. */
+@layer components {
+  .mini[data-s="declined"] { background: #fff; border-color: var(--color-dead); box-shadow: none; }
+  .mini[data-s="declined"] .i { color: var(--color-dead); }
 }
 
 /* MapLibre's corners: the map buttons (MapView's MapButtons, the kit's .mapctl on clear glass) top right, the
