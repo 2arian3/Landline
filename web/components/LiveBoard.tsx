@@ -26,7 +26,7 @@ import {
   panelRoom,
   sheetLook,
 } from "./Shell";
-import { Activity, Brand, Heard, Plan, Results, Welcome } from "./Summary";
+import { Activity, Brand, Heard, Opening, Plan, Results, Welcome } from "./Summary";
 import { type Opened, follows } from "@/lib/follow";
 import { nothingHeard } from "@/lib/format";
 import { type Unheard, unheard } from "@/lib/outcome";
@@ -100,8 +100,8 @@ export function LiveBoard({
   // The server's focus and area when the page opened (below): followed once they change after that.
   const openingFocus = useRef<Opened<string | null>["current"]>(undefined);
   const openingArea = useRef<Opened<string | null>["current"]>(undefined);
-  // Each place's viewing status as last seen, for the confirmed toast; null until the first board.
-  const viewings = useRef<Map<string, string> | null>(null);
+  // The places whose viewing was ever seen confirmed this session, for the toast; null until the first board.
+  const viewings = useRef<Set<string> | null>(null);
   // Another session (judge mode's "Start again") opens with nothing selected or tapped, and frames its own
   // board. Reset while rendering, so not even one frame shows the last session's selection.
   const [shownSession, setShownSession] = useState(sessionId);
@@ -210,7 +210,9 @@ export function LiveBoard({
         reason: reason ?? undefined,
       });
       if (!got.ok) {
+        // Only if it's still this tap on screen: a newer one ("not for me" after "like it") stays.
         setMine((m) => {
+          if (m[id] !== said) return m;
           const { [id]: _drop, ...rest } = m;
           return rest;
         });
@@ -220,16 +222,17 @@ export function LiveBoard({
     [sessionId, toast],
   );
 
-  // An agent confirming a viewing from the texted link: a toast over the map, once. What the board showed
-  // when it opened isn't news.
+  // An agent confirming a viewing from the texted link: a toast over the map, once per place for the whole
+  // session, even if the card leaves the board and comes back. What was confirmed when it opened isn't news.
   useEffect(() => {
     if (!view) return;
-    const was = viewings.current;
-    viewings.current = new Map(view.board.flatMap((c) => (c.viewing ? [[c.listing_id, c.viewing.status]] : [])));
-    if (!was) return;
+    const confirmed = view.board.filter((c) => c.viewing?.status === "confirmed").map((c) => c.listing_id);
+    const known = viewings.current;
+    viewings.current = new Set([...(known ?? []), ...confirmed]);
+    if (!known) return;
     for (const c of view.board) {
-      if (c.viewing?.status === "confirmed" && was.get(c.listing_id) !== "confirmed") {
-        toast({ text: `Confirmed: ${viewingWhen(c.viewing)}`, icon: "calendar-check", tone: "real" });
+      if (c.viewing?.status === "confirmed" && !known.has(c.listing_id)) {
+        toast({ text: `The agent confirmed ${viewingWhen(c.viewing)} at ${c.address}`, icon: "calendar-check", tone: "real" });
       }
     }
   }, [view, toast]);
@@ -293,7 +296,7 @@ export function LiveBoard({
       )}
       <Results view={view} compact={compact} />
       {blank ? (
-        <p className="text-support text-ink">{view?.agent_says || "Tell Landline what you\u2019re looking for."}</p>
+        <Opening view={view} compact={compact} peek={!desktop && snap === PEEK} />
       ) : (
         <>
           <Plan view={view} />

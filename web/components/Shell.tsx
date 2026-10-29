@@ -80,8 +80,8 @@ export function Shell({ idle = false }: { idle?: boolean }) {
       {[0, 1, 2].map((i) => (
         <div
           key={i}
-          className="h-[110px] rounded-[var(--radius-card)] bg-surface"
-          style={{ boxShadow: "0 0 0 1px var(--color-hair)" }}
+          className="h-[110px] rounded-[var(--radius-md)] bg-surface"
+          style={{ boxShadow: "0 0 0 1px var(--color-hairline)" }}
         />
       ))}
     </div>
