@@ -8,6 +8,7 @@ import { Drawer } from "vaul";
 import { AvatarClips } from "./AvatarClips";
 import { Board } from "./Board";
 import { DemoControls } from "./DemoControls";
+import { Toasts, useToasts } from "./Toast";
 import { Icon } from "./Icon";
 import type { Mark } from "./ListingCard";
 import { ListingDetail, type Reaction } from "./ListingDetail";
@@ -21,6 +22,7 @@ import {
   SHORT,
   SPLIT,
   Shell,
+  SheetSpring,
   panelRoom,
   sheetLook,
 } from "./Shell";
@@ -30,7 +32,8 @@ import { nothingHeard } from "@/lib/format";
 import { type Unheard, unheard } from "@/lib/outcome";
 import { useAvatarClips } from "@/lib/avatars";
 import { api, postJSON, tap, useCatalogue, useLiveSession } from "@/lib/live";
-import { OFFLINE } from "@/lib/pill";
+import { OFFLINE, unsaved } from "@/lib/pill";
+import { viewingWhen } from "@/lib/time";
 import type { SessionView } from "@/lib/types";
 import { useMedia } from "@/lib/useMedia";
 
@@ -96,6 +99,8 @@ export function LiveBoard({
   // The server's focus and area when the page opened (below): followed once they change after that.
   const openingFocus = useRef<Opened<string | null>["current"]>(undefined);
   const openingArea = useRef<Opened<string | null>["current"]>(undefined);
+  // Each place's viewing status as last seen, for the confirmed toast; null until the first board.
+  const viewings = useRef<Map<string, string> | null>(null);
   // Another session (judge mode's "Start again") opens with nothing selected or tapped, and frames its own
   // board. Reset while rendering, so not even one frame shows the last session's selection.
   const [shownSession, setShownSession] = useState(sessionId);
@@ -105,6 +110,7 @@ export function LiveBoard({
     setMine({});
     openingFocus.current = undefined;
     openingArea.current = undefined;
+    viewings.current = null;
   }
 
   // Judge mode: the intro needs the whole sheet; once talking, the map gets it back.
@@ -190,6 +196,7 @@ export function LiveBoard({
   }
 
   // A tap shows at once; one the server didn't save puts the card back, so it never pretends it worked.
+  const { toasts, toast, dismiss } = useToasts();
   const react = useCallback(
     async (id: string, reaction: Reaction, reason: string | null) => {
       if (!sessionId) return;
@@ -205,10 +212,26 @@ export function LiveBoard({
           const { [id]: _drop, ...rest } = m;
           return rest;
         });
+        toast({ text: unsaved(said), icon: "circle-alert", retry: () => void react(id, reaction, reason) });
       }
     },
-    [sessionId],
+    [sessionId, toast],
   );
+
+  // An agent confirming a viewing from the texted link: a toast over the map, once. What the board showed
+  // when it opened isn't news.
+  useEffect(() => {
+    if (!view) return;
+    const was = viewings.current;
+    viewings.current = new Map(view.board.flatMap((c) => (c.viewing ? [[c.listing_id, c.viewing.status]] : [])));
+    if (!was) return;
+    for (const c of view.board) {
+      if (c.viewing?.status === "confirmed" && was.get(c.listing_id) !== "confirmed") {
+        toast({ text: `Confirmed: ${viewingWhen(c.viewing)}`, icon: "calendar-check", tone: "real" });
+      }
+    }
+  }, [view, toast]);
+
 
   const padding: Padding = desktop
     ? { top: 64, right: panelRoom(panelWidth), bottom: 64, left: 64 }
@@ -363,6 +386,7 @@ export function LiveBoard({
           </header>
         )}
       </main>
+      <Toasts toasts={toasts} dismiss={dismiss} desktop={desktop} />
       {desktop ? (
         <aside ref={panelShown} className={PANEL} style={PANEL_STYLE} aria-label="Places Landline found">
           <div className="panel-head">
@@ -398,6 +422,7 @@ export function LiveBoard({
           setActiveSnapPoint={setSnap}
         >
           <Drawer.Portal>
+            <SheetSpring />
             <Drawer.Content
               aria-describedby={undefined}
               className={`bottom-0 z-20 flex h-[96dvh] flex-col outline-none ${sheet.className}`}
