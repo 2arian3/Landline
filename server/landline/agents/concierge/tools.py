@@ -56,7 +56,7 @@ from landline.orchestrator.maps_mcp import (
     Weather,
     metres,
 )
-from landline.orchestrator.places import Point, Unplaced, load_stations, place_of
+from landline.orchestrator.places import Places, Point, Unplaced, load_stations, place_of
 from landline.orchestrator.runtime import PLACE_TIMEOUT_S
 from landline.scoring.reasons import to_station
 from landline.voice.dispatch import TORONTO, until_open
@@ -469,9 +469,10 @@ async def _show_area(ctx: ToolContext, meta: dict, place: str, lat: float, lng: 
 #
 # How far, how close and how many: the walks to the nearest subway station (D-10a) and to the nearest
 # grocery store and pharmacy (D-10b) are stored on the listing, so those answers ask Google nothing. A place
-# the renter names is found first (place()), then routed to from the listing. The verdict ("very close",
-# "walkable", "not walking distance"), the km and the count within 1 km are computed here, from Google's
-# numbers.
+# the renter names is one of our landmarks or TTC stations when Places knows it (Union, U of T, Cohere),
+# routed to by its point; a chain named alone is its closest branch; anything else is found on Google first
+# (place(), around downtown), then routed to. The verdict ("very close", "walkable", "not walking distance"),
+# the km and the count within 1 km are computed here, from Google's numbers.
 
 _MODE = {"walk": "WALK", "drive": "DRIVE", "transit": "TRANSIT"}
 _BY = {"WALK": "on foot", "DRIVE": "by car", "TRANSIT": "by TTC"}
@@ -520,7 +521,7 @@ async def ask_maps(args: AskMaps, ctx: ToolContext, meta: dict) -> str:
         return f"I don't have {card.address} on the map."
     ctx.maps_asks += 1
     ask = ctx.maps_asks
-    work = asyncio.ensure_future(_answer(maps, args, listing, card.address))
+    work = asyncio.ensure_future(_answer(maps, ctx.runtime.places, args, listing, card.address))
     done, _ = await asyncio.wait({work}, timeout=MAPS_WAIT_S)
     if done:
         return _deliver(ctx, work.result())
@@ -528,7 +529,7 @@ async def ask_maps(args: AskMaps, ctx: ToolContext, meta: dict) -> str:
     return CHECKING_MAP
 
 
-async def _answer(maps: Any, args: AskMaps, listing: Listing, address: str) -> _Said:
+async def _answer(maps: Any, places: Places, args: AskMaps, listing: Listing, address: str) -> _Said:
     """The answer in words: from the listing's stored walks when they answer it, else from Google. Nothing but
     Google's names, minutes and summaries, the stored fields, and code's verdicts and counts goes in it."""
     if args.kind == "weather":
@@ -539,9 +540,11 @@ async def _answer(maps: Any, args: AskMaps, listing: Listing, address: str) -> _
     store = _store(words)   # "how far is the nearest pharmacy?" is the closest one, however it's asked
     if store and not store[1] and (said := _stored_store(listing, store[0], words, address)):
         return said
-    if args.kind == "nearby" or store:
+    known = places.known(words)   # a landmark's point, or a chain named alone (Unplaced), with no network
+    if args.kind == "nearby" or store or isinstance(known, Unplaced):   # a chain: its closest branch
         return await _nearby(maps, words, listing, address, store)
-    return await _trip(maps, _MODE[args.kind], words, address, listing.lat, listing.lng)
+    ours = known if isinstance(known, Point) else places.station(words)
+    return await _trip(maps, _MODE[args.kind], words, address, listing.lat, listing.lng, ours)
 
 
 async def _nearby(maps: Any, what: str, listing: Listing, address: str,
@@ -569,26 +572,35 @@ async def _nearby(maps: Any, what: str, listing: Listing, address: str,
                  walking=n.minutes is not None)
 
 
-async def _trip(maps: Any, mode: str, to: str, address: str, lat: float, lng: float) -> _Said:
-    """How far a place the renter named is from the listing: the place is found first, then routed to.
-    Transit is also how a question that doesn't say how comes, so it gets the walk too when the place is
-    within WALK_TOO_KM in a straight line."""
-    place: Place | None = await maps.place(lat, lng, to)
-    if place is None:
-        return _Said(f"I couldn't find {to} on Google Maps.", None)
-    name = place.name or f"the place Google found for {to}"
-    km = metres(lat, lng, place.lat, place.lng) / 1000 if place.lat is not None and place.lng is not None \
-        else None
+async def _trip(maps: Any, mode: str, to: str, address: str, lat: float, lng: float,
+                ours: Point | None) -> _Said:
+    """How far a place the renter named is from the listing. A landmark or a TTC station from our own lists
+    (`ours`: Places' landmarks and stations) is routed to by its point, one call to Google; anything else is
+    found on Google first (place(), looked for around downtown), then routed to by its id. Transit is also
+    how a question that doesn't say how comes, so it gets the walk too when the place is within WALK_TOO_KM
+    in a straight line."""
+    place: Place | None = None
+    if ours is not None:
+        name = ours.name if ours.how != "station" else f"{ours.name} station"
+        name, at = name or to, (ours.lat, ours.lng)
+    else:
+        place = await maps.place(to)
+        if place is None:
+            return _Said(f"I couldn't find {to} on Google Maps.", None)
+        name = place.name or f"the place Google found for {to}"
+        at = (place.lat, place.lng) if place.lat is not None and place.lng is not None else None
+    km = metres(lat, lng, *at) / 1000 if at is not None else None
     modes = [mode] + (["WALK"] if mode == "TRANSIT" and (km is None or km < WALK_TOO_KM) else [])
     routes: dict[str, Route | None] = dict(zip(modes, await asyncio.gather(
-        *(maps.route((lat, lng), place, m) for m in modes)), strict=True))
+        *(maps.route((lat, lng), place or at, m) for m in modes)), strict=True))
     walk, ride = routes.get("WALK"), routes.get(mode) if mode != "WALK" else None
     spoken = _how_far(address, name, walk, ride, km)
     if spoken is None:
         return _Said(f"I couldn't get a time {_BY[mode]} to {name} from Google Maps.", None)
     said_walk = walk is not None and (ride is None or walk.minutes < WALK_TOO_MIN)
-    texted = _text(spoken, place.attribution, place.maps_url or place.attribution_url,
-                   WALK_WARNING if said_walk else None)
+    source = place or ride or walk   # our own place has no Google page: the route's attribution is the source
+    texted = _text(spoken, source.attribution, place.maps_url or place.attribution_url if place
+                   else source.attribution_url, WALK_WARNING if said_walk else None)
     return _Said(spoken, texted, walking=said_walk)
 
 
