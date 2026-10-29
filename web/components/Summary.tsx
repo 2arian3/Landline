@@ -3,44 +3,92 @@
 import Link from "next/link";
 import { heardLine } from "@/lib/format";
 import { unheardCounts } from "@/lib/outcome";
+import { type Pill, pill } from "@/lib/pill";
 import { resultsByPlace } from "@/lib/results";
 import type { Card, SessionView } from "@/lib/types";
 import { splitWelcome } from "@/lib/welcome";
 
+/** Landline's mark (a map pin, white on ink) and its name: the canvas's wordmark. */
+export function Wordmark() {
+  return (
+    <p className="wordmark">
+      <span className="mark" aria-hidden>
+        <svg viewBox="0 0 32 32">
+          <path d="M16 5.5c-4.1 0-7.5 3.3-7.5 7.4 0 5.3 7.5 13.6 7.5 13.6s7.5-8.3 7.5-13.6c0-4.1-3.4-7.4-7.5-7.4zm0 10.2a2.8 2.8 0 1 1 0-5.6 2.8 2.8 0 0 1 0 5.6z" />
+        </svg>
+      </span>
+      Landline
+    </p>
+  );
+}
+
+const PILL_ICON: Record<Exclude<Pill["icon"], "waiting">, string> = {
+  wave: "M2 10v3M6 6v11M10 3v18M14 8v7M18 5v13M22 10v3",
+  phone:
+    "M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z",
+  check: "M20 6 9 17l-5-5",
+  offline:
+    "M12 20h.01M8.5 16.43a5 5 0 0 1 7 0M2 8.82a15 15 0 0 1 4.17-2.65M10.66 5c4.01-.36 8.14.9 11.34 3.76M16.85 11.25a10 10 0 0 1 2.22 1.68M5 13a10 10 0 0 1 5.24-2.76M2 2l20 20",
+  ended: "M18 6 6 18M6 6l12 12",
+};
+
+/** What the call is doing (lib/pill.ts), as Lucent's pill: its icon and words, never colour alone. */
+export function PhasePill({ pill: p }: { pill: Pill }) {
+  return (
+    <span className={`pill${p.tone === "listening" ? "" : ` is-${p.tone}`}`} aria-live="polite">
+      {p.icon === "waiting" ? (
+        <span className="dots" aria-hidden>
+          <i />
+          <i />
+          <i />
+        </span>
+      ) : (
+        <svg className="i" viewBox="0 0 24 24" aria-hidden>
+          <path d={PILL_ICON[p.icon]} />
+        </svg>
+      )}
+      {p.words}
+    </span>
+  );
+}
+
+/**
+ * The header's two ends: the wordmark, and the pill saying what the call is doing. On a phone the capsule
+ * also has "Your calls" as a 44px button (`yourCalls`); in the split layout it sits in the panel's foot.
+ * Judge mode passes the voice line's state while it isn't live (`line`), and its intro shows no pill (`idle`).
+ */
 export function Brand({
+  view = null,
   stale,
   connected,
+  offline = false,
   idle = false,
   line = null,
+  yourCalls = false,
 }: {
+  view?: SessionView | null;
   stale: boolean;
   connected: boolean;
+  offline?: boolean;
   idle?: boolean;
   line?: string | null;
+  yourCalls?: boolean;
 }) {
-  // Judge mode passes the voice line's state while it isn't live, so the header never says "Live" over a
-  // dropped call. Otherwise it's the board's own connection.
-  const label = line ?? (!connected ? "Connecting…" : stale ? "Reconnecting…" : "Live");
-  const color = !line && connected && !stale ? "var(--color-real)" : "var(--color-ink-3)";
   return (
-    <div className="flex items-center justify-between gap-3">
-      <div className="flex min-w-0 items-baseline gap-2">
-        <p className="text-fact font-strong tracking-[-0.01em]">Landline</p>
-        {/* A 44px tap target that keeps the brand line's height: the margins give back what min-h-11 adds. */}
-        <Link
-          href="/me"
-          className="-my-[13px] inline-flex min-h-11 shrink-0 items-center text-meta text-ink-3 underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-ink"
-        >
-          Your calls
-        </Link>
+    <>
+      <Wordmark />
+      <div className="flex min-w-0 items-center gap-0.5">
+        {!idle && <PhasePill pill={pill(view, { connected, stale, offline, line })} />}
+        {yourCalls && (
+          <Link href="/me" className="btn btn-quiet btn-icon" aria-label="Your calls">
+            <svg className="i" viewBox="0 0 24 24" aria-hidden>
+              <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
+              <circle cx="12" cy="7" r="4" />
+            </svg>
+          </Link>
+        )}
       </div>
-      {!idle && (
-        <p className="flex items-center gap-1.5 text-meta text-ink-2" aria-live="polite">
-          <span aria-hidden className="h-2 w-2 rounded-full" style={{ background: color }} />
-          {label}
-        </p>
-      )}
-    </div>
+    </>
   );
 }
 
