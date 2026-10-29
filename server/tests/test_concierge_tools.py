@@ -295,28 +295,80 @@ ASKED = "Would you like me to book a viewing if they have a time that works?"
 TOMORROW_9_5 = [{"day": "tomorrow", "from": "09:00", "to": "17:00"}]
 
 
-# The renter's line decides may_book, and the call's timing leads the reply (#154).
+BOOKS = "booking a viewing in your times"
+
+
+# Every plan books a viewing, whatever the model sent, unless the renter says not to; the call's timing
+# leads the reply (#154). The 14:35 demo run recorded may_book false on "please call their listing agent".
 @pytest.mark.parametrize(("renter", "agent", "args", "stored", "says"), [
     ("I really like the first one. Let's call the landlord to see if it's available tomorrow for a check.",
-     None, {"listing_refs": ["1"], "may_book": True, "availability": TOMORROW_9_5}, False,
-     "Booking: not allowed yet. Ask whether you may book a viewing."),
+     None, {"listing_refs": ["1"], "may_book": True, "availability": TOMORROW_9_5}, True, BOOKS),
+    ("Please call their listing agent. I'm also available for a visit tomorrow from 9 to 5.", None,
+     {"listing_refs": ["1"], "may_book": False, "availability": TOMORROW_9_5}, True, BOOKS),
     ("Call them and book a viewing Saturday afternoon.", None, {"listing_refs": ["1"], "may_book": True},
-     True, "Booking: I may book one."),
-    ("Yes, go ahead and book it.", ASKED, {"listing_refs": ["1"], "may_book": True}, True,
-     "Booking: I may book one."),
+     True, BOOKS),
+    ("Yes, go ahead and book it.", ASKED, {"listing_refs": ["1"], "may_book": True}, True, BOOKS),
     ("No, just ask, don't book.", ASKED, {"listing_refs": ["1"], "may_book": False}, False,
-     "Booking: I won't book."),
-    ("Call the top three.", None, {}, False, "right after you hang up"),
-    ("Tomorrow 9 to 5.", None, {"listing_refs": ["1"], "availability": TOMORROW_9_5}, False,
+     "Booking: I won't book, as they asked."),
+    ("Call the first one, just ask about parking, don't book anything.", None,
+     {"listing_refs": ["1"], "may_book": True}, False, "Booking: I won't book, as they asked."),
+    ("Call the top three.", None, {}, True, BOOKS),
+    ("Tomorrow 9 to 5.", None, {"listing_refs": ["1"], "availability": TOMORROW_9_5}, True,
      "Viewing window: tomorrow 9 am to 5 pm."),
 ])
-async def test_call_listings_books_only_with_the_renters_yes_and_says_the_calls_go_out_now(
-        ctx, renter, agent, args, stored, says):
+async def test_call_listings_always_books_unless_the_renter_says_not_to(ctx, renter, agent, args, stored,
+                                                                        says):
     ctx.renter_said, ctx.agent_said = renter, agent
     reply = await _say(ctx, "call_listings", json.dumps(args))
     assert ctx.runtime.state(SID).request.may_book is stored
     assert reply.startswith("Calling ") and " right after you hang up, " in reply and says in reply
-    assert "9 am to 5 pm, " not in reply.split(".")[0]   # never a time of day for the calls themselves
+    assert "Ask whether you may book" not in reply and "9 am to 5 pm, " not in reply.split(".")[0]
+
+
+async def test_no_viewing_times_gets_the_default_window_and_the_renters_times_replace_it(ctx):
+    """With no times from the renter, the plan books in the next 3 days, 10 to 6 Toronto, and the reply
+    still says to ask for times. Their times, said later, replace the defaults."""
+    from datetime import UTC, datetime
+
+    from landline.agents.caller.brief import brief, instructions
+    from landline.voice.dispatch import freeze
+    ctx.renter_said = "Call the first one."
+    reply = await _say(ctx, "call_listings", '{"listing_refs": ["1"]}')
+    request = ctx.runtime.state(SID).request
+    assert request.may_book is True
+    assert [(a.from_, a.to) for a in request.availability] == [tools.DEFAULT_HOURS] * tools.DEFAULT_DAYS
+    assert request.availability[0].day == "tomorrow"
+    assert "ask when they could go to a viewing" in reply and "next 3 days, 10 am to 6 pm" in reply
+    assert "plan is complete" not in reply
+    plan = freeze(ctx.runtime.state(SID), datetime.now(UTC))
+    assert plan.may_book and len(plan.windows) == tools.DEFAULT_DAYS
+    # The Caller needs no change: its viewing item comes with may_book and windows.
+    text = instructions(brief(ctx.runtime.catalogue.by_id[request.listing_ids[0]], plan))
+    assert "a viewing inside the renter's times, booked with book_viewing" in text
+    # A later answer with no times keeps the defaults, still unsaid as the renter's.
+    ctx.renter_said = "Also ask about parking."
+    again = await _say(ctx, "call_listings", '{"extra_questions": ["is there parking"]}', "fc_2")
+    assert ctx.runtime.state(SID).request.availability == request.availability
+    assert "Viewing window" not in again
+    ctx.renter_lines = ["Call the first one.", "Tomorrow 9 to 5."]
+    ctx.renter_said = "Tomorrow 9 to 5."
+    done = await _say(ctx, "call_listings", json.dumps({"availability": TOMORROW_9_5}), "fc_3")
+    assert [(a.day, a.from_, a.to) for a in ctx.runtime.state(SID).request.availability] == \
+        [("tomorrow", "09:00", "17:00")]
+    assert "Viewing window: tomorrow 9 am to 5 pm." in done and "book a viewing in their times" in done
+
+
+async def test_a_no_to_booking_earlier_on_the_call_stays_until_they_ask_for_one(ctx):
+    ctx.renter_lines = ["Don't book anything, I just want to know about parking.", "Call the first one."]
+    ctx.renter_said = ctx.renter_lines[-1]
+    await _say(ctx, "call_listings", '{"listing_refs": ["1"], "may_book": true}')
+    request = ctx.runtime.state(SID).request
+    assert request.may_book is False and request.availability == []
+    ctx.renter_lines.append("Actually, go ahead and book a viewing tomorrow.")
+    ctx.renter_said = ctx.renter_lines[-1]
+    tomorrow = '{"availability": [{"day": "tomorrow", "from": "09:00", "to": "18:00"}]}'
+    await _say(ctx, "call_listings", tomorrow, "fc_2")
+    assert ctx.runtime.state(SID).request.may_book is True
 
 
 async def test_a_day_alone_keeps_default_bounds_and_is_never_spoken_as_hours(ctx):
@@ -367,7 +419,7 @@ async def test_a_booking_allowed_earlier_stays_when_a_later_call_leaves_it_out(c
     await _say(ctx, "call_listings", '{"listing_refs": ["1"], "may_book": true}')
     ctx.renter_said = "Also ask if parking is included."
     reply = await _say(ctx, "call_listings", '{"extra_questions": ["Is parking included?"]}', "fc_2")
-    assert ctx.runtime.state(SID).request.may_book and reply.endswith("Booking: I may book one.")
+    assert ctx.runtime.state(SID).request.may_book and "booking a viewing in your times" in reply
 
 
 async def test_a_phone_renters_calls_after_hours_go_out_at_9_am():
@@ -378,7 +430,8 @@ async def test_a_phone_renters_calls_after_hours_go_out_at_9_am():
         night = datetime(2026, 10, 24, 21, 30, tzinfo=tools.TORONTO)
         meta = {"session_id": SID, "at": night, "idem_key": f"{SID}:night"}
         reply = await tools.call_listings(tools.CallListings(), ctx, meta)
-        assert " at 9 am tomorrow, when calling hours start, and texting you" in reply
+        assert " at 9 am tomorrow, when calling hours start, booking a viewing in your times, and texting " \
+               "you" in reply
     finally:
         await runtime.close()
 
@@ -392,9 +445,10 @@ async def test_call_listings_plans_the_top_three_and_reads_them_back(ctx):
     assert request.may_book and request.availability[0].from_ == "13:00"
     addresses = [CATALOGUE.by_id[lid].address for lid in top]
     assert reply == f"Calling {addresses[0]}, {addresses[1]} and {addresses[2]} right after you hang up, " \
-                    "and texting you what they say. Viewing window: Saturday 1 pm to 5 pm. " \
-                    "Booking: I may book one. The plan is complete: tell them you'll call as soon as you " \
-                    "hang up and text the results, say goodbye, and call end_session."
+                    "booking a viewing in your times, and texting you what they say. Viewing window: " \
+                    "Saturday 1 pm to 5 pm. The plan is complete: tell them you'll call as soon as you " \
+                    "hang up, book a viewing in their times, and text the results, say goodbye, and call " \
+                    "end_session."
     assert await _say(ctx, "call_listings", '{"listing_refs": ["Spadina"]}', "fc_2") == tools.WHICH
 
 
@@ -438,10 +492,10 @@ async def test_calling_again_updates_the_plan_instead_of_replacing_it(ctx):
                                              '"to": "20:30"}]}', "fc_2")
     request = ctx.runtime.state(SID).request
     assert request.listing_ids == [board[1].listing_id]          # not the top three
-    assert request.questions == ["Is parking included?"] and not request.may_book
-    # New times, and nothing said about booking (#189): the agent asks.
-    assert reply.endswith("Viewing window: Tuesday 6 pm to 8:30 pm. Booking: not allowed yet. Ask whether "
-                          "you may book a viewing in that window.")
+    assert request.questions == ["Is parking included?"] and request.may_book
+    # New times, and nothing said about booking: Landline books in them, and never asks whether it may.
+    assert "Viewing window: Tuesday 6 pm to 8:30 pm. The plan is complete" in reply
+    assert "Ask whether" not in reply
     await _say(ctx, "call_listings", '{"may_book": true, "extra_questions": ["Dogs ok?"]}', "fc_3")
     request = ctx.runtime.state(SID).request
     assert request.may_book and request.availability[0].day == "tuesday"
@@ -586,9 +640,10 @@ def test_the_prompt_wraps_up_once_the_brief_is_done():
     from landline.agents.concierge.prompt import INSTRUCTIONS
     text = " ".join(INSTRUCTIONS.split())
     assert ("When call_listings' reply says to say goodbye, the brief is done: don't wait for them to "
-            "say bye. In that same turn say \"I'll call them as soon as we hang up and text you what they "
-            "say. Bye for now!\", then call end_session. If they add something first, handle it, then do "
-            "this.") in text
+            "say bye. In that same turn say what its reply tells you to, for example \"I'll call them right "
+            "after you hang up, book a viewing in your times, and text you what they say. Bye for now!\", "
+            "then call end_session. If they add something first, handle it, then do this.") in text
+    assert "whether you may book" not in text.replace("Don't ask whether you may book", "")
     assert ("When the renter's words are only bye or goodbye, call end_session and say nothing. Don't "
             "answer again.") in text
     assert "Never say goodbye more than once." in text

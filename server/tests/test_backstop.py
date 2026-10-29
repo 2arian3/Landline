@@ -372,21 +372,26 @@ async def test_a_catch_up_that_lands_after_a_newer_save_is_dropped():
     assert ctx.runtime.state(SID).preferences.max_monthly == 3500
 
 
+def _defaults() -> list[tuple[str, str, str]]:
+    return [(a.day, a.from_, a.to) for a in tools.default_windows(datetime.now(UTC))]
+
+
 # #174: "set up a visit tomorrow" recorded a call with no viewing window and no leave to book, so nothing
-# was booked. The call catch-up reads the whole ask; call_listings keeps only times the renter said.
+# was booked. The call catch-up reads the whole ask; call_listings keeps only times the renter said, books
+# unless they said not to, and books in the default window when they gave no times.
 @pytest.mark.parametrize(("said", "refs", "window", "may_book"), [
     ("Can you call the first option landlord to us set up a visit tomorrow?", [1],
      [("tomorrow", "09:00", "18:00")], True),
     ("Call the top two and book a viewing Saturday afternoon", [1, 2],
      [("saturday", "12:00", "17:00")], True),
-    # A time to see it is its window; "see it" alone isn't leave to book (#154's "see if it's available").
     ("Call the first one, I can see it tomorrow between 1 and 5", [1],
-     [("tomorrow", "13:00", "17:00")], False),
-    ("Call the first one and ask if it's available", [1], [], False),
+     [("tomorrow", "13:00", "17:00")], True),
+    ("Call the first one and ask if it's available", [1], "defaults", True),
     ("Call the second one, don't book anything", [2], [], False),
-    ("Go ahead and call the best ones for me.", [1, 2, 3], [], False),
+    ("Go ahead and call the best ones for me.", [1, 2, 3], "defaults", True),
 ])
 async def test_the_call_catch_up_reads_the_whole_ask(said, refs, window, may_book):
+    window = _defaults() if window == "defaults" else window
     ctx = await _ctx()
     ctx.renter_said = said
     ctx.renter_lines.append(said)
@@ -429,7 +434,8 @@ async def test_call_listings_keeps_only_viewing_times_the_renter_said():
     window = [{"day": "tomorrow", "from": "09:00", "to": "17:00"}]
     reply = await _call(ctx, listing_refs=["1"], availability=window)
     plan = ctx.runtime.state(SID).request
-    assert plan.availability == [] and "Ask when they are free for a viewing." in reply
+    assert [(a.day, a.from_, a.to) for a in plan.availability] == _defaults()   # never the model's times
+    assert "ask when they could go to a viewing" in reply
     assert len(plan.listing_ids) == 3   # "the best ones": the top three, not the one the model picked
     ctx.renter_lines.append("I can view on Sunday from noon to 4.")
     ctx.renter_said = ctx.renter_lines[-1]
@@ -441,40 +447,38 @@ async def test_call_listings_keeps_only_viewing_times_the_renter_said():
     assert len(ctx.runtime.state(SID).request.availability) == 1
 
 
-async def test_new_viewing_times_with_nothing_said_about_booking_ask_whether_to_book():
-    """#189: the renter gave tomorrow, nothing was said about booking, and the Concierge never asked."""
+async def test_new_viewing_times_with_nothing_said_about_booking_book_in_them():
+    """#189: the renter gave tomorrow and nothing was said about booking. Landline books in those times and
+    never asks whether it may; only "don't book" turns it off."""
     tomorrow = [{"day": "tomorrow", "from": "09:00", "to": "17:00"}]
     ctx = await _ctx()
     ctx.renter_lines = ["Call the first one, I can come see it tomorrow."]
     ctx.renter_said = ctx.renter_lines[-1]
     reply = await _call(ctx, listing_refs=["1"], availability=tomorrow)
-    assert reply.endswith("Ask whether you may book a viewing in that window.")
-    reply = await _call(ctx, availability=tomorrow)   # the same times again: asked once
-    assert reply.endswith("Booking: I won't book.")
+    assert ctx.runtime.state(SID).request.may_book and "Ask whether" not in reply
     ctx = await _ctx()
     ctx.renter_lines = ["Call the first one tomorrow, but don't book anything."]
     ctx.renter_said = ctx.renter_lines[-1]
     reply = await _call(ctx, listing_refs=["1"], availability=tomorrow)
-    assert "Ask whether" not in reply and "Booking: I won't book." in reply
+    assert not ctx.runtime.state(SID).request.may_book
+    assert "Ask whether" not in reply and "Booking: I won't book, as they asked." in reply
 
 
 async def test_a_complete_plan_tells_the_agent_to_say_goodbye_and_end_the_call():
-    """Mahyar's test: the agent waited for the renter's bye. Listings, viewing times, and booking allowed or
-    turned down make the plan complete; until then the reply asks for what's missing."""
+    """Mahyar's test: the agent waited for the renter's bye. Listings and viewing times, or booking turned
+    down, make the plan complete; until then the reply asks for the times."""
     friday = [{"day": "friday", "from": "17:00", "to": "20:00"}]
-    done = ("The plan is complete: tell them you'll call as soon as you hang up and text the results, say "
-            "goodbye, and call end_session.")
+    done = ("The plan is complete: tell them you'll call as soon as you hang up, book a viewing in their "
+            "times, and text the results, say goodbye, and call end_session.")
     ctx = await _ctx()
     ctx.renter_lines = ["Can you call the top two places?"]
     ctx.renter_said = ctx.renter_lines[-1]
-    assert done not in await _call(ctx, listing_refs=["1", "2"])                    # no times yet
+    assert "The plan is complete" not in await _call(ctx, listing_refs=["1", "2"])   # no times yet
     ctx.renter_lines.append("Friday evening works for me, from 5 to 8.")
     ctx.renter_said = ctx.renter_lines[-1]
-    reply = await _call(ctx, availability=friday)
-    assert done not in reply and "Ask whether you may book" in reply               # booking not asked yet
-    ctx.renter_lines.append("Sure, book a viewing if they can do that time.")
-    ctx.renter_said = ctx.renter_lines[-1]
-    assert (await _call(ctx, may_book=True)).endswith(done)
+    assert (await _call(ctx, availability=friday)).endswith(done)                  # booking never asked
+    done = ("The plan is complete: tell them you'll call as soon as you hang up and text the results, say "
+            "goodbye, and call end_session.")
     ctx = await _ctx()
     ctx.renter_lines = ["Call the first one, I'm free Sunday noon to 4, but don't book anything."]
     ctx.renter_said = ctx.renter_lines[-1]
@@ -498,9 +502,31 @@ async def test_a_plain_yes_to_the_agents_booking_question_books_that_time():
     assert turn.call_line() == "Yes."
 
 
-async def test_a_viewing_the_reply_promised_records_its_times_and_asks_before_booking():
+async def test_a_no_to_booking_with_no_call_listings_stops_the_plan_booking():
+    """call-named-no-book-parking: "Don't book anything yet, just find out and text me." got "Got it, I won't
+    book anything." and no tool. Every plan books, so code turns it off; the times stay."""
+    ctx = await _ctx()
+    ctx.renter_lines = ["Please call the first one.", "I'm free Tuesday evening, from 6 to 8."]
+    ctx.renter_said = ctx.renter_lines[-1]
+    await _call(ctx, listing_refs=["1"], availability=[{"day": "tuesday", "from": "18:00", "to": "20:00"}])
+    assert ctx.runtime.state(SID).request.may_book
+    line = "Don't book anything yet, just find out and text me."
+    ctx.renter_lines.append(line)
+    ctx.renter_said = line
+    turn = Turn()
+    _answered(turn, line)
+    turn.agent_said("Got it, I won't book anything.")
+    assert turn.call_line() == line
+    reply = await catch_up_calls(line, ctx)
+    plan = ctx.runtime.state(SID).request
+    assert reply is not None and "I won't book" in reply and not plan.may_book
+    assert [(a.day, a.from_, a.to) for a in plan.availability] == [("tuesday", "18:00", "20:00")]
+    assert await catch_up_calls(line, ctx) is None   # once
+
+
+async def test_a_viewing_the_reply_promised_is_booked_in_the_times_the_renter_said():
     """#174's row: "Yeah, that's true." got "Great, I'll set up the viewing for tomorrow." and no tool.
-    The times are kept (the renter said tomorrow); leave to book is asked for, never assumed."""
+    The times are kept (the renter said tomorrow), and the plan books in them; nothing new to record."""
     ctx = await _ctx()
     first = "Can you call the first one? I could see it tomorrow."
     ctx.renter_lines, ctx.renter_said = [first], first
@@ -510,7 +536,7 @@ async def test_a_viewing_the_reply_promised_records_its_times_and_asks_before_bo
     ctx.agent_said = "Great, I'll set up the viewing for tomorrow."
     reply = await catch_up_calls("Yeah, that's true.", ctx)
     plan = ctx.runtime.state(SID).request
-    assert reply is not None and "Ask whether you may book a viewing." in reply and not plan.may_book
+    assert reply is None and plan.may_book
     assert [(a.day, a.from_, a.to) for a in plan.availability] == [("tomorrow", "09:00", "18:00")]
     turn = Turn()
     _answered(turn, "Yeah, that's true.")

@@ -125,8 +125,7 @@ class ToolContext:
     note: Callable[[str], Awaitable[None]] | None = None
     maps_disclosed: bool = False
     maps_asks: int = 0
-    # listing_status (A-14): where a phone caller's earlier sessions are read. None reads the runtime's
-    # database; the eval's returning callers set an in-memory one (evals/sim/driver.py).
+    # Not read: listing_status (A-14) answers from this session only. Kept for evals/sim/driver.py.
     history: Any | None = None
 
 
@@ -780,8 +779,9 @@ def _distance(route: Route) -> str:
 
 async def call_listings(args: CallListings, ctx: ToolContext, meta: dict) -> str:
     """Records the plan, or updates the one already recorded: what this call leaves out (the listings,
-    the viewing times, the permission to book) stays as it was, and extra questions add up. The reply
-    says the whole plan as it now stands, so the agent reads back what was saved."""
+    the viewing times) stays as it was, and extra questions add up. Every plan books a viewing unless the
+    renter said not to (_may_book). The reply says the whole plan as it now stands, so the agent reads back
+    what was saved."""
     view = ctx.runtime.get(ctx.session_id)
     board = view.board
     before = ctx.runtime.state(ctx.session_id).request
@@ -815,13 +815,15 @@ async def call_listings(args: CallListings, ctx: ToolContext, meta: dict) -> str
         availability = list(before.availability) if before else []
     else:
         availability = args.availability or (list(before.availability) if before else [])
-    may_book = args.may_book if args.may_book is not None else bool(before and before.may_book)
-    asked = ctx.agent_before or ctx.agent_said   # the line the renter's latest answers
-    unasked = args.may_book is True and not _agrees_to_book(ctx.renter_said, asked)
-    if unasked:   # the model set it, but the renter didn't say yes to a booking (#154)
-        may_book = bool(before and before.may_book)
+    may_book = _may_book(args, ctx, before)
+    defaults = default_windows(meta["at"])
+    if availability == defaults:
+        availability = []   # an earlier reply's defaults: the renter still hasn't given times
+    # No times from the renter: the plan still gets a window, so the Caller can book (the 14:35 run
+    # recorded none and booked nothing).
+    windows = availability or (defaults if may_book else [])
     await ctx.runtime.emit(CallsRequested(**meta, listing_ids=ids, extra_questions=questions,
-                                          availability=availability, may_book=may_book))
+                                          availability=windows, may_book=may_book))
     addresses = [_told_apart(ctx, lid, board) for lid in ids]
     # The call's timing comes first, so a viewing window is never read back as when the calls go out.
     # A day alone names the day and no clock (#218): the default bounds stay in the plan, unsaid.
@@ -830,54 +832,62 @@ async def call_listings(args: CallListings, ctx: ToolContext, meta: dict) -> str
                  "They gave no hours, so don't name any.")
     elif availability:
         times = f"Viewing window: {_join([_window(a) for a in availability])}."
+    elif may_book:
+        times = (f"No viewing times from them yet: ask when they could go to a viewing. If they give none, "
+                 f"I'll book one in the next {DEFAULT_DAYS} days, {_clock(DEFAULT_HOURS[0])} to "
+                 f"{_clock(DEFAULT_HOURS[1])}.")
     else:
-        times = f"No viewing times yet.{' Ask when they are free for a viewing.' if invented else ''}"
-    # New viewing times and nothing said about booking (#189): the landlord said "yes, tomorrow" and the
-    # Caller couldn't take a time, so the Concierge asks. Not after a "don't book", nor for the same times.
-    ask = not may_book and args.may_book is None and bool(availability) and \
-        availability != (before.availability if before else []) and books(ctx.renter_said or "") is not False
-    booking = ("Booking: not allowed yet. Ask whether you may book a viewing." if unasked and not may_book
-               else "Booking: not allowed yet. Ask whether you may book a viewing in that window." if ask
-               else "Booking: I may book one." if may_book else "Booking: I won't book.")
+        times = "No viewing times yet."
+    booking = "" if may_book else " Booking: I won't book, as they asked."
     go = _calls_go_out(ctx, meta["at"])
-    # Listings, viewing times, and booking allowed or turned down: nothing is left to ask, so the agent ends
-    # the call instead of waiting for the renter's bye (Mahyar's test).
-    declined = args.may_book is False or books(ctx.renter_said or "") is False
-    done = bool(availability) and not (invented or unasked or ask) and (may_book or declined)
+    # Listings and viewing times, or booking turned down: nothing is left to ask, so the agent ends the
+    # call instead of waiting for the renter's bye (Mahyar's test).
+    done = not invented and (bool(availability) or not may_book)
     when = "as soon as you hang up" if go.startswith("right") else go
-    end = (f" The plan is complete: tell them you'll call {when} and text the results, say goodbye, and call "
-           "end_session.") if done else ""
-    return f"Calling {_join(addresses)} {go}, and texting you what they say. {times} {booking}{end}"
+    book = ", book a viewing in their times," if may_book else ""
+    end = (f" The plan is complete: tell them you'll call {when}{book} and text the results, say goodbye, "
+           "and call end_session.") if done else ""
+    also = ", booking a viewing in your times," if may_book else ","
+    return f"Calling {_join(addresses)} {go}{also} and texting you what they say. {times}{booking}{end}"
 
 
-# A renter's line that agrees to a booking, or turns one down. Checked in code: the model set may_book on
-# "see if it's available tomorrow for a check" (#154).
+# When the renter gave no viewing times, the plan books in these: the next DEFAULT_DAYS days from
+# tomorrow, DEFAULT_HOURS Toronto time.
+DEFAULT_DAYS = 3
+DEFAULT_HOURS = ("10:00", "18:00")
+
+
+def default_windows(now: datetime) -> list[Availability]:
+    today = now.astimezone(TORONTO).weekday()
+    days = ["tomorrow", *(_WEEKDAYS[(today + i) % 7] for i in range(2, DEFAULT_DAYS + 1))]
+    return [Availability(day=d, **{"from": DEFAULT_HOURS[0]}, to=DEFAULT_HOURS[1]) for d in days]
+
+
+def _may_book(args: CallListings, ctx: ToolContext, before: Any) -> bool:
+    """Landline books a viewing whenever the renter asks for calls, whatever the model sent: only the
+    renter saying not to book ("don't book", "just ask, don't book") turns it off, and asking for a booking
+    later on the call turns it back on. The renter's latest word on booking counts. With no transcript, an
+    earlier "don't book" stays; in another script, which code can't read, the model's false stands."""
+    from landline.agents.concierge.backstop import foreign  # backstop imports this module
+    lines = list(ctx.renter_lines or ([ctx.renter_said] if ctx.renter_said else []))
+    for line in reversed(lines):
+        if (said := books(line)) is not None:
+            return said
+    if lines and foreign(lines[-1]) and args.may_book is False:
+        return False
+    if before is not None and not before.may_book and args.may_book is not True:
+        return False
+    return True
+
+
+# A renter's line that turns a booking down ("don't book", "just ask, don't book"), or a plain yes.
 _NO_BOOKING = re.compile(r"\b(don'?t|do not|no need to|not|without)\b[^.?!]{0,25}\b(book|reserv|schedul)",
                          re.I)
-_BOOKING = re.compile(r"\b(book|reserv)\w*|\bgo ahead\b|"
-                      r"\b(schedule|arrange|set up)\b[^.?!]{0,12}\b(viewing|visit|tour|showing)", re.I)
 _PLAIN_YES = re.compile(r"^\W*(yes|yeah|yep|yup|sure|please|ok(ay)?|go ahead|do it|sounds good|s[ií]|oui)\b",
                         re.I)
 
 
-def _agrees_to_book(renter: str | None, agent: str | None) -> bool:
-    """Whether the renter's latest line says yes to booking a viewing: it asks for one ("book a viewing",
-    "go ahead and book it"), or it's a plain yes right after the agent asked about booking. With no line to
-    go by (not on the phone, or the transcript isn't in yet), or a line in another script, the model's
-    word stands, rather than asking the same thing in a loop."""
-    from landline.agents.concierge.backstop import foreign  # backstop imports this module
-    if not renter or foreign(renter):
-        return True
-    if _NO_BOOKING.search(renter):
-        return False
-    if _BOOKING.search(renter):
-        return True
-    asked = bool(agent) and "?" in agent and re.search(r"\bbook|\bviewing", agent, re.I) is not None
-    return asked and _PLAIN_YES.search(renter) is not None
-
-
-# A line that asks for a booking itself, for the call catch-up (#174). Not "go ahead and call", which says
-# yes only right after the agent asked about booking (_agrees_to_book).
+# A line that asks for a booking itself (#174). Not "go ahead and call", which is only a yes to a question.
 _ASKS_TO_BOOK = re.compile(r"\b(book|reserv)\w*|"
                            r"\b(schedule|arrange|set up)\b[^.?!]{0,12}\b(viewing|visit|tour|showing)", re.I)
 
@@ -989,7 +999,7 @@ def _windows_from(lines: list[str]) -> list[Availability]:
 
 def _named_when(ctx: ToolContext) -> bool:
     """Whether the renter named a day or a time on this call, so viewing times aren't the model's guess.
-    With no line to go by, or a line in another script, the model's word stands, as in _agrees_to_book."""
+    With no line to go by, or a line in another script, the model's word stands."""
     lines = _when_lines(ctx)
     if lines is None:
         return True
