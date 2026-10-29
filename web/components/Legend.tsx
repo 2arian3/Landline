@@ -40,7 +40,7 @@ export function Legend({ shapes, named, ref }: { shapes: Set<PinShape>; named: b
       role="list"
       aria-label="Map key"
       // On the phone it shows only before anything is ranked (M1), just above the sheet; the cards say the rest.
-      className={`legend glass-clear proj pointer-events-none absolute z-10 h-auto min-h-10 flex-wrap gap-y-1.5 py-2 split:bottom-4 split:left-4 split:inline-flex ${
+      className={`legend glass-clear proj pointer-events-none absolute z-10 h-auto min-h-10 flex-wrap min-[1600px]:min-h-12 gap-y-1.5 py-2 split:bottom-4 split:left-4 split:inline-flex ${
         empty ? "bottom-[calc(var(--map-chrome-bottom,0px)+16px)] left-3 inline-flex" : "hidden"
       }`}
       // Short of the attribution, bottom right (about 410px with its margins), and of a panel floating over the
