@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "@/lib/live";
 import type { CallState, CallView } from "@/lib/types";
 
@@ -62,7 +62,9 @@ export function LiveLines({ call }: { call: CallView }) {
   if (!onLine || !turns.length) return null;
   const shown = turns.slice(-2);
   return (
-    <span className="lines" aria-live="polite">
+    // Seen, not read out: with several calls on at once a screen reader would hear every line of every call.
+    // The open detail's captions announce its one call.
+    <span className="lines" aria-hidden>
       {shown.map((t, i) => (
         <span
           key={t.idx}
@@ -77,51 +79,87 @@ export function LiveLines({ call }: { call: CallView }) {
   );
 }
 
-/** A call's lines from GET /api/calls/{id}/turns, polled while it's on and a few times after it ends. */
+/**
+ * One poller per call, shared by everything showing it (its card's live lines and the open detail), so a
+ * call is asked for its lines once a second however many places show them. It asks while the call is on,
+ * then a few more times once it's over (the last lines can be written just after it ends), and stops when
+ * nothing shows the call any more. Only the lines a call already said are kept, nothing about the session.
+ */
+type Feed = {
+  turns: Turn[];
+  last: number;
+  over: boolean;
+  unknown: boolean; // a 404: the API doesn't know this call (it restarted)
+  busy: boolean;
+  asksAfter: number; // asks left once the call is over
+  timer: ReturnType<typeof setInterval> | null;
+  ctl: AbortController;
+  subs: Set<() => void>;
+};
+const FEEDS = new Map<string, Feed>();
+
+function feedFor(callId: string): Feed {
+  let f = FEEDS.get(callId);
+  if (!f) {
+    f = { turns: [], last: -1, over: false, unknown: false, busy: false, asksAfter: 3, timer: null,
+      ctl: new AbortController(), subs: new Set() };
+    FEEDS.set(callId, f);
+  }
+  return f;
+}
+
+async function pull(callId: string, f: Feed) {
+  if (f.busy || f.unknown) return;
+  f.busy = true;
+  try {
+    const res = await fetch(api(`/api/calls/${encodeURIComponent(callId)}/turns?after=${f.last}`), {
+      cache: "no-store",
+      signal: f.ctl.signal,
+    });
+    f.unknown = res.status === 404;
+    if (!res.ok) return;
+    const fresh = ((await res.json()) as Turn[]).filter((t) => t.idx > f.last);
+    if (f.ctl.signal.aborted || !fresh.length) return;
+    f.last = fresh[fresh.length - 1].idx;
+    f.turns = [...f.turns, ...fresh];
+    f.subs.forEach((notify) => notify());
+  } catch {
+    // keep what's shown; the next ask tries again
+  } finally {
+    f.busy = false;
+  }
+}
+
+function watch(callId: string, onLine: boolean, over: boolean, notify: () => void): () => void {
+  const f = feedFor(callId);
+  f.subs.add(notify);
+  if (over) f.over = true;
+  if ((onLine || over) && !f.timer) {
+    void pull(callId, f);
+    f.timer = setInterval(() => {
+      if (f.over && f.asksAfter-- <= 0) {
+        clearInterval(f.timer!);
+        f.timer = null;
+        return;
+      }
+      void pull(callId, f);
+    }, POLL_MS);
+  }
+  return () => {
+    f.subs.delete(notify);
+    if (f.subs.size) return;
+    if (f.timer) clearInterval(f.timer);
+    f.ctl.abort();
+    FEEDS.delete(callId);
+  };
+}
+
+/** A call's lines from GET /api/calls/{id}/turns, from the call's shared poller. */
 function useTurns(call: CallView): { turns: Turn[]; onLine: boolean } {
-  const [turns, setTurns] = useState<Turn[]>([]);
-  const last = useRef(-1);
   const onLine = ON_THE_LINE.includes(call.state);
   const over = call.state === "ended" || call.state === "voicemail";
-
-  useEffect(() => {
-    if (!onLine && !over) return;
-    const ctl = new AbortController();
-    let busy = false;
-    let unknown = false; // a 404: the API doesn't know this call (it restarted)
-    const pull = async () => {
-      if (busy || unknown) return;
-      busy = true;
-      try {
-        const res = await fetch(api(`/api/calls/${encodeURIComponent(call.call_id)}/turns?after=${last.current}`), {
-          cache: "no-store",
-          signal: ctl.signal,
-        });
-        unknown = res.status === 404;
-        if (!res.ok) return;
-        const fresh = ((await res.json()) as Turn[]).filter((t) => t.idx > last.current);
-        if (ctl.signal.aborted || !fresh.length) return;
-        last.current = fresh[fresh.length - 1].idx;
-        setTurns((shown) => [...shown, ...fresh]);
-      } catch {
-        // keep what's shown; the next ask tries again
-      } finally {
-        busy = false;
-      }
-    };
-    void pull();
-    // Once it's over, three more asks: the last lines can be written just after the call ends, and an ask
-    // that failed gets another go.
-    let asks = 0;
-    const tick = setInterval(() => {
-      if (over && ++asks > 3) return clearInterval(tick);
-      void pull();
-    }, POLL_MS);
-    return () => {
-      clearInterval(tick);
-      ctl.abort();
-    };
-  }, [call.call_id, onLine, over]);
-
-  return { turns, onLine };
+  const [, redraw] = useState(0);
+  const id = call.call_id;
+  useEffect(() => watch(id, onLine, over, () => redraw((n) => n + 1)), [id, onLine, over]);
+  return { turns: FEEDS.get(id)?.turns ?? [], onLine };
 }

@@ -8,6 +8,7 @@ import type { Fact } from "./types.ts";
 /** Icon names (components/Icon.tsx) for a fact's subject. */
 export type FactGlyph =
   | "circle-check"
+  | "x"
   | "calendar"
   | "square-parking"
   | "paw-print"
@@ -35,6 +36,7 @@ const SUBJECTS: Record<string, { key: string; glyph: FactGlyph; label: string | 
   utilities_included: { key: "utilities", glyph: "plug", label: "Utilities" },
   laundry: { key: "laundry", glyph: "washing-machine", label: "Laundry" },
 };
+const GONE = /\b(not|no longer|rented|taken|gone|unavailable)\b|^no\b/i;
 const ORDER = ["available", "parking", "fees", "pets", "utilities", "laundry"];
 
 /** The facts for the card: the newest per subject, in the renter's order, `most` at most. */
@@ -46,7 +48,10 @@ export function cardFacts(facts: Fact[], most = 3): CardFact[] {
     const f = newest.get(k)!;
     const s = subject(f);
     const v = f.value.trim().replace(/\.$/, "");
-    if (f.field === "available") return { key: k, glyph: s.glyph, label: null, text: sentence(v) };
+    // The glyph follows the answer: a check would say the opposite of "Not available".
+    if (f.field === "available") {
+      return { key: k, glyph: GONE.test(v) ? "x" : s.glyph, label: null, text: sentence(v) };
+    }
     if (f.field === "available_from") {
       return { key: k, glyph: s.glyph, label: null, text: v.toLowerCase() === "now" ? "Available now" : `Free from ${v}` };
     }

@@ -56,3 +56,10 @@ test("a value that already names its subject isn't labelled twice", () => {
   assert.deepEqual(cardFacts([fact("pets", "pets are welcome")]).map((f) => [f.label, f.text]),
     [[null, "Pets are welcome"]]);
 });
+
+test("a place that isn't available gets an x, never a check", () => {
+  for (const v of ["not available", "No, it's rented", "no longer available", "already taken"]) {
+    assert.equal(cardFacts([fact("available", v)])[0].glyph, "x", v);
+  }
+  assert.equal(cardFacts([fact("available", "still available")])[0].glyph, "circle-check");
+});
