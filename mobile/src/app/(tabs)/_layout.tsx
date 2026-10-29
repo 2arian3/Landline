@@ -4,6 +4,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Floating, Glyph, tabBarBottom } from "@/components/ui";
+import { ListingsProvider } from "@/lib/listingsContext";
 import { color } from "@/lib/theme";
 
 /** The three tabs, their words and their SF Symbols (outline, and filled once chosen where SF Symbols has one). */
@@ -16,12 +17,14 @@ const TABS: Record<string, { title: string; icon: SFSymbol; on: SFSymbol }> = {
 /** Signed in: Home, My listings and My search, under one glass tab bar floating over the bottom of the screen. */
 export default function TabsLayout() {
   return (
-    <Tabs
-      tabBar={(props) => <TabBar {...props} />}
-      screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: color.ground } }}
-    >
-      {Object.entries(TABS).map(([name, t]) => <Tabs.Screen key={name} name={name} options={{ title: t.title }} />)}
-    </Tabs>
+    <ListingsProvider>
+      <Tabs
+        tabBar={(props) => <TabBar {...props} />}
+        screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: color.ground } }}
+      >
+        {Object.entries(TABS).map(([name, t]) => <Tabs.Screen key={name} name={name} options={{ title: t.title }} />)}
+      </Tabs>
+    </ListingsProvider>
   );
 }
 

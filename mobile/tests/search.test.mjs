@@ -5,7 +5,7 @@ import { existsSync } from "node:fs";
 import { test } from "node:test";
 
 import {
-  bedOptions, edit, formFrom, parseBudget, problems, problemsFrom422, savedFrom, splitList,
+  bedOptions, edit, formFrom, rebase, parseBudget, problems, problemsFrom422, savedFrom, splitList,
 } from "../src/lib/search.ts";
 
 const profile = {
@@ -105,3 +105,19 @@ test("the app's form answers as the web's does", { skip: !existsSync(WEB) && "we
     }
     assert.deepEqual(formFrom(saved), web.formFrom(web.savedFrom(profile)));
   });
+
+test("a reload or a save moves the form onto the new values, keeping only what the renter changed", () => {
+  const before = formFrom(savedFrom(profile));
+  // The renter changed the areas; meanwhile a call saved a new budget.
+  const typed = { ...before, areas: "Annex, Leslieville" };
+  const after = formFrom(savedFrom({ ...profile, preferences: { ...profile.preferences, max_monthly: 3000 } }));
+  const now = rebase(typed, before, after);
+  assert.equal(now.budget, "3000");                 // the call's budget, never the old one sent back
+  assert.equal(now.areas, "Annex, Leslieville");    // the renter's edit kept
+  assert.deepEqual(rebase(before, before, after), after);   // nothing typed: the server's values
+  // Typed while a save ran: the sent form is `before`, so only the new typing survives the save.
+  const sent = { ...before, pets: "cat" };
+  const during = { ...sent, must_have: "parking, laundry" };
+  const saved = formFrom(savedFrom({ ...profile, preferences: { ...profile.preferences, pets: ["cat"] } }));
+  assert.deepEqual(rebase(during, sent, saved), { ...saved, must_have: "parking, laundry" });
+});
