@@ -6,6 +6,7 @@
  *   no snapshot yet          Connecting       quiet, dots
  *   none for UNREACHABLE_MS  Offline          plain, with OFFLINE below (the header stops saying Connecting)
  *   a board, quiet 6.5 s     Reconnecting     quiet, dots: the last board stays exactly as it was
+ *   a board, quiet 9 s       Offline          plain, with OFFLINE: the board comes back with the next answer
  *   phase open               Listening        plain
  *   phase calling            Calling N places live
  *   phase done               Calls finished   real
@@ -30,7 +31,7 @@ export type PillInput = {
   phase: Phase | null;
   calls?: number; // calls in the plan's run, or the plan's length before they're queued
   stale: boolean; // no word from the server for 6.5 s, with a board on screen
-  unreachable: boolean; // no snapshot and no word for 9 s
+  unreachable: boolean; // no word for 9 s (and no snapshot yet, or a board gone quiet)
   line?: string | null; // judge mode's voice line, while it isn't live: it wins, so the pill never says Listening over a dropped call
 };
 
@@ -41,6 +42,7 @@ export function pill({ phase, calls = 0, stale, unreachable, line = null }: Pill
       ? { kind: "offline", words: "Offline", tone: "plain", waiting: false }
       : { kind: "connecting", words: "Connecting", tone: "quiet", waiting: true };
   }
+  if (unreachable) return { kind: "offline", words: "Offline", tone: "plain", waiting: false };
   if (stale) return { kind: "reconnecting", words: "Reconnecting", tone: "quiet", waiting: true };
   switch (phase) {
     case "open":

@@ -24,8 +24,9 @@ import type { CataloguePoint, SessionView } from "./types";
  *   - a new session id starts from nothing: versions count per session, and
  *     what's still in flight for the session the page left is cancelled
  * Until the first snapshot is in, it's asked for every POLL_MS even while the
- * stream is up. With no snapshot and no word from the server for
- * UNREACHABLE_MS, `unreachable` says so, and the asking carries on. A 404
+ * stream is up. With no word from the server for UNREACHABLE_MS (and, before
+ * the first snapshot, none of that either), `unreachable` says so, and the
+ * asking carries on: the board in memory comes back with the next answer. A 404
  * with no board is an answer, not silence: `missing` says the link matches no
  * call (lib/pill.ts words the rest), and it's never called offline.
  */
@@ -170,8 +171,13 @@ export function useLiveSession(sessionId: string | null) {
       }
       if (quiet && now - openedAt >= REOPEN_MS) open();
       setStale(now - lastOk.current > STALE_MS);
-      // No snapshot yet, and no word from the server either: a stream that's up means it's there.
-      setUnreachable(!current.current && now - since > UNREACHABLE_MS && now - lastOk.current > STALE_MS);
+      // No snapshot yet, and no word from the server either: a stream that's up means it's there. With a board,
+      // Reconnecting turns to Offline once nothing at all has been heard for UNREACHABLE_MS (the Status board).
+      setUnreachable(
+        current.current
+          ? now - lastOk.current > UNREACHABLE_MS
+          : now - since > UNREACHABLE_MS && now - lastOk.current > STALE_MS,
+      );
     }, 500);
     const onVisible = () => {
       if (document.visibilityState !== "visible") return;

@@ -13,6 +13,13 @@ test("before the first snapshot it's connecting, and after 9 s with none, offlin
   assert.match(OFFLINE.title, /Can.t reach Landline/);
 });
 
+test("a board quiet for 9 s turns from reconnecting to offline, whatever its phase", () => {
+  for (const phase of ["open", "calling", "done", "closed"] as const) {
+    assert.equal(pill({ phase, stale: true, unreachable: false }).words, "Reconnecting", phase); // 6.5 s
+    assert.deepEqual(pill({ phase, stale: true, unreachable: true }), { kind: "offline", words: "Offline", tone: "plain", waiting: false }, phase);
+  }
+});
+
 test("a board that's gone quiet says reconnecting, whatever its phase, and keeps the board", () => {
   for (const phase of ["open", "calling", "done", "closed"] as const) {
     assert.equal(pill({ phase, stale: true, unreachable: false }).kind, "reconnecting", phase);
