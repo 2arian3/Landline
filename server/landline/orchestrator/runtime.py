@@ -48,7 +48,7 @@ from landline.orchestrator import board, handlers, narrator
 from landline.orchestrator.calllog import CallLog
 from landline.orchestrator.commute import Commute
 from landline.orchestrator.maps_mcp import MapsMCP
-from landline.orchestrator.places import Places
+from landline.orchestrator.places import Places, Point, Unplaced
 from landline.orchestrator.profiles import SAVED_SEARCH, Profiles, delta_of, is_saved_search
 from landline.orchestrator.state import SessionState
 from landline.scoring import FeatureMatrix
@@ -274,16 +274,29 @@ class SessionRuntime:
                     await tx.apply(AnchorResolved(session_id=sid, at=at, idem_key=f"{sid}:place:{key}",
                                                   label=anchor.label, lat=anchor.lat, lng=anchor.lng))
 
+    async def place(self, session_id: str, label: str) -> Point | Unplaced | None:
+        """Where a place this session's renter named is (Places), with their other places to judge a far
+        geocoder answer by (places.hold)."""
+        return await self.places.resolve(label, self._near(self.state(session_id).preferences, label))
+
+    def _near(self, preferences: Preferences, label: str) -> list[tuple[float, float]]:
+        """The renter's other places: the anchors already placed, and the middles of their areas."""
+        anchors = [(a.lat, a.lng) for a in preferences.anchors
+                   if a.lat is not None and a.lng is not None and a.label != label]
+        return anchors + [(h.lat, h.lng) for h in self.matrix.named(preferences.areas)]
+
     async def _resolve_places(self, event: Event, view: SessionView) -> None:
         for anchor in view.preferences.anchors:
             if anchor.lat is not None:
                 continue
+            near = self._near(view.preferences, anchor.label)
             try:
-                point = await asyncio.wait_for(self.places.resolve(anchor.label), PLACE_TIMEOUT_S)
+                point = await asyncio.wait_for(self.places.resolve(anchor.label, near), PLACE_TIMEOUT_S)
             except TimeoutError:
                 point = None
-            if point is None:
-                log.info("place %r stays unresolved for %s", anchor.label, event.session_id)
+            if not isinstance(point, Point):   # not found, or a question for the renter (the tool asks it)
+                log.info("place %r stays unresolved for %s%s", anchor.label, event.session_id,
+                         f" ({point.reason})" if point else "")
                 continue
             if point.line and not self.matrix.has_line(point.lat, point.lng):
                 # A street (#102): every listing's distance to its nearest point, worked out off the event
