@@ -96,6 +96,64 @@ export function Brand({
   );
 }
 
+const STEPS = [
+  ["Say what you need", "The best places are numbered on the map as you talk."],
+  ["Pick the ones to call", "Landline phones their agents once you hang up."],
+  ["Hear what they said", "Each agent’s answers, in their own words, and any viewing it booked, land here."],
+] as const;
+
+/**
+ * Before the renter has said anything (P1, M1): what Landline last said, where what it hears will land, and
+ * what happens next. At the phone sheet's lowest stop (`peek`) the steps wait for a pull up.
+ */
+export function Opening({ view, compact = false, peek = false }: { view: SessionView | null; compact?: boolean; peek?: boolean }) {
+  const said = view?.agent_says?.trim();
+  const quote = compact
+    ? "text-[22px] leading-[28px] tracking-[-0.015em]"
+    : "text-[24px] leading-[30px] tracking-[-0.02em] min-[1600px]:text-[30px] min-[1600px]:leading-[38px]";
+  return (
+    <div className={`flex flex-col ${compact ? "gap-2.5" : "gap-6"}`}>
+      <section className={`flex flex-col gap-2.5 ${compact ? "" : "pt-3"}`}>
+        {said && <p className="label">Landline said</p>}
+        <p className={`said font-medium ${quote}`} style={{ fontFamily: "var(--font-display)" }}>
+          {said ? `“${said}”` : "Tell Landline what you’re looking for."}
+        </p>
+      </section>
+      {compact ? (
+        <p className="t-callout c-2">
+          What you ask for lands here, and every dot that doesn’t fit fades out.{peek && " Pull up for what happens next."}
+        </p>
+      ) : (
+        <section className="results gap-3!">
+          <p className="label">
+            <Icon name="ear" />
+            What Landline heard
+          </p>
+          <p className="t-callout c-2">Nothing yet. What you ask for lands here, and every dot that doesn’t fit fades out.</p>
+        </section>
+      )}
+      {!peek && (
+        <section className="flex flex-col gap-4 px-1 pt-1">
+          <p className="label">What happens next</p>
+          <ol className="m-0 flex list-none flex-col gap-3.5 p-0">
+            {STEPS.map(([title, line], i) => (
+              <li key={title} className="grid grid-cols-[34px_minmax(0,1fr)] items-start gap-x-3.5">
+                <span aria-hidden className="grid size-[34px] place-items-center rounded-full bg-fill-muted text-[15px] font-semibold text-ink">
+                  {i + 1}
+                </span>
+                <div>
+                  <p className="t-headline">{title}</p>
+                  <p className="t-callout c-2">{line}</p>
+                </div>
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
+    </div>
+  );
+}
+
 /** Lucent's enter: 700ms on the settle curve (--dur-enter, --ease-settle). */
 const ENTER = { duration: 0.7, ease: [0.22, 1, 0.36, 1] } as const;
 
@@ -222,15 +280,8 @@ export function Results({ view, compact = false }: { view: SessionView | null; c
       {...enter(0)}
     >
       <div className="flex items-center justify-between gap-2">
-        {/* On a phone: a one-line title and the button, nothing more (M7). */}
-        {compact ? (
-          <p className="t-headline">What the calls found</p>
-        ) : (
-          <div>
-            <p className="t-title">What the calls found</p>
-            <p className="t-caption c-2">The same words Landline texted you</p>
-          </div>
-        )}
+        {/* A title and the button. No "texted to you": a renter in the browser gets no text. */}
+        <p className={compact ? "t-headline" : "t-title"}>What the calls found</p>
         <button
           type="button"
           className={`btn btn-quiet btn-small ${compact ? "-mr-2.5 px-2.5! text-[15px]!" : "-mr-2"}`}
@@ -269,6 +320,7 @@ export function Results({ view, compact = false }: { view: SessionView | null; c
             {!compact && card.facts.length > 0 && (
               <p className="t-callout c-2 mt-1">
                 {card.facts.slice(0, 3).map((f) => factLine(f.field, f.value)).join(" · ")}
+                <span className="t-caption"> · Agent heard</span>
               </p>
             )}
           </div>
@@ -298,8 +350,8 @@ export function Welcome({ view, compact = false }: { view: SessionView | null; c
   const { greeting, news } = splitWelcome(opensWithWelcome(view) ? view.agent_says : "", view.user_name);
   return (
     <div className="space-y-0.5">
-      <p className={`font-label text-ink ${compact ? "text-support" : "text-fact"}`}>{greeting}</p>
-      {news && <p className="text-support text-ink-2">{news}</p>}
+      <p className={`font-label text-ink ${compact ? "text-callout" : "text-body"}`}>{greeting}</p>
+      {news && <p className="text-callout text-ink-secondary">{news}</p>}
     </div>
   );
 }
@@ -366,8 +418,8 @@ export function Heard({
 
   if (compact && !wrap) {
     return chips.length ? (
-      <p className="truncate px-1 text-support text-ink">
-        <span className="text-ink-3">Heard </span>
+      <p className="truncate px-1 text-callout text-ink">
+        <span className="text-ink-secondary">Heard </span>
         {chips.join(" · ")}
       </p>
     ) : null;
@@ -379,7 +431,7 @@ export function Heard({
         <section className="flex flex-col gap-2.5">
           <p className="label">
             <Icon name="ear" />
-            What I heard
+            What Landline heard
           </p>
           {/* A <p>, read as one line ("Up to $2,200 a month2+ bedroom…") by check-stalled-stream. */}
           <p className="chips">
