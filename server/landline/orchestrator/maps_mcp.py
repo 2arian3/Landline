@@ -6,8 +6,10 @@ may answer with JSON or with an SSE stream for that one request; `_call` reads b
 within 3 s, an HTTP or JSON-RPC error, a tool's `isError`, such as the 403 a missing or wrong key gets) is one
 log line and None. The key is never logged.
 
-Three helpers return plain dataclasses for O-07b's `ask_maps`:
-- `nearby(lat, lng, what)`: the closest of Google's top 3 matches around a point, and the walk to it;
+Four helpers return plain dataclasses for O-07b's `ask_maps`:
+- `nearby(lat, lng, what)`: the closest of Google's top 5 matches around a point, the walk to it, and how many
+  of the 5 are within 1 km in a straight line;
+- `place(lat, lng, words)`: the place the renter named ("Cohere", "U of T"), Google's first match in Toronto;
 - `route(origin, destination, mode)`: minutes and km by DRIVE, WALK, BICYCLE or TRANSIT;
 - `weather(lat, lng, day)`: a one-line daily forecast, today to 9 days ahead.
 
@@ -48,7 +50,9 @@ URL = "https://mapstools.googleapis.com/mcp"
 PROTOCOL = "2026-07-28"          # MCP's stateless revision
 TIMEOUT_S = 3.0
 NEARBY_RADIUS_M = 1500
-NEARBY_RESULTS = 3               # search_places returns at most 5
+NEARBY_RESULTS = 5               # search_places returns at most 5; all of them count towards NEAR_M
+NEAR_M = 1000                    # "3 within 1 km", in a straight line from the listing
+PLACE_RADIUS_M = 5000            # a named place is looked for around the listing, but not only there
 REGION = "CA"
 MODES = ("DRIVE", "WALK", "BICYCLE", "TRANSIT")
 FORECAST_DAYS = 10               # daily forecasts cover today and the next 9 days
@@ -78,19 +82,26 @@ class Answer:
 
 
 @dataclass(frozen=True, kw_only=True)
-class Nearby(Answer):
-    """A place near a point, and the walk to it. `name` is None when Google's summary doesn't make it
-    clear; `minutes` and `distance_m` are None when Google found no walk. `lat`/`lng` are for our own use,
-    not for our map (option B)."""
+class Place(Answer):
+    """A place Google found. `name` is None when Google's summary doesn't make it clear. `lat`/`lng` are for
+    our own use, such as routing, not for our map (option B)."""
     name: str | None
     place_id: str
     lat: float | None
     lng: float | None
     maps_url: str | None          # the place on Google Maps: the source link to give with the answer
     summary: str                  # Google's own words about the search, citations and all
+
+
+@dataclass(frozen=True, kw_only=True)
+class Nearby(Place):
+    """The closest place of a kind near a point, and the walk to it. `minutes` and `distance_m` are None when
+    Google found no walk. `within_1km` counts Google's matches (at most NEARBY_RESULTS, the closest among
+    them) within NEAR_M of the point in a straight line."""
     minutes: int | None
     distance_m: int | None
     warning: str | None           # WALK_WARNING whenever there are walking minutes
+    within_1km: int = 0
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -112,8 +123,8 @@ class Weather(Answer):
     precip_pct: int | None
 
 
-# A waypoint: (lat, lng), an address in words, or a place nearby() found.
-Point = tuple[float, float] | str | Nearby
+# A waypoint: (lat, lng), an address in words, or a place nearby() or place() found.
+Point = tuple[float, float] | str | Place
 
 
 class MapsMCP:
@@ -136,33 +147,38 @@ class MapsMCP:
         what = " ".join((what or "").split())
         if not what:
             return None
-        found = await self._call("search_places", {
-            "textQuery": what,
-            "locationBias": {"circle": {"center": _latlng(lat, lng), "radiusMeters": NEARBY_RADIUS_M}},
-            "regionCode": REGION,
-            "pageSize": NEARBY_RESULTS,
-        })
+        found = await self._search(what, lat, lng, NEARBY_RADIUS_M, NEARBY_RESULTS)
         if found is None:
             return None
-        places = found.get("places") if isinstance(found.get("places"), list) else []
+        places, summary = found
         i = _closest(places, lat, lng)
         if i is None:
             log.info("maps mcp search_places: no match near %.4f,%.4f", lat, lng)
             return None
-        place = places[i]
-        pid = _place_id(place)
-        loc = place.get("location") if isinstance(place.get("location"), dict) else {}
-        links = place.get("googleMapsLinks") if isinstance(place.get("googleMapsLinks"), dict) else {}
-        attribution, attribution_url = _attribution(place)
-        summary = found.get("summary") if isinstance(found.get("summary"), str) else ""
-        walk = await self._route({"latLng": _latlng(lat, lng)}, {"placeId": pid}, "WALK")
-        return Nearby(
-            name=place_name(summary, i, what), place_id=pid,
-            lat=_number(loc.get("latitude")), lng=_number(loc.get("longitude")),
-            maps_url=links.get("placeUrl") or attribution_url, summary=summary,
-            minutes=to_minutes(walk[0]) if walk else None, distance_m=walk[1] if walk else None,
-            warning=WALK_WARNING if walk else None,
-            attribution=attribution, attribution_url=attribution_url, fetched_at=self._now())
+        near = sum(1 for p in places
+                   if _place_id(p) and (at := _location(p)) and metres(lat, lng, *at) <= NEAR_M)
+        found_place = self._place(places[i], i, summary, what)
+        walk = await self._route({"latLng": _latlng(lat, lng)}, {"placeId": found_place.place_id}, "WALK")
+        return Nearby(**vars(found_place), minutes=to_minutes(walk[0]) if walk else None,
+                      distance_m=walk[1] if walk else None, warning=WALK_WARNING if walk else None,
+                      within_1km=near)
+
+    async def place(self, lat: float, lng: float, words: str) -> Place | None:
+        """The place the renter named ("Cohere", "U of T", "171 John St"): Google's first match for their
+        words in Toronto, looked for around (lat, lng). None when Google can't be asked or finds nothing."""
+        words = " ".join((words or "").split())
+        if not words:
+            return None
+        query = words if "toronto" in words.lower() else f"{words} Toronto"
+        found = await self._search(query, lat, lng, PLACE_RADIUS_M, 1)
+        if found is None:
+            return None
+        places, summary = found
+        i = next((k for k, p in enumerate(places) if _place_id(p)), None)
+        if i is None:
+            log.info("maps mcp search_places: no place for the words near %.4f,%.4f", lat, lng)
+            return None
+        return self._place(places[i], i, summary, words)
 
     async def route(self, origin: Point, destination: Point, mode: str = "WALK") -> Route | None:
         """Minutes and km from origin to destination. An address is read near whichever end is coordinates.
@@ -211,6 +227,31 @@ class MapsMCP:
         attribution, attribution_url = _attribution(w if isinstance(w.get("attribution"), dict) else out)
         return Weather(day=day, summary=line, condition=condition, high_c=high, low_c=low, precip_pct=pct,
                        attribution=attribution, attribution_url=attribution_url, fetched_at=self._now())
+
+    async def _search(self, query: str, lat: float, lng: float, radius_m: int,
+                      results: int) -> tuple[list[Any], str] | None:
+        """search_places around (lat, lng): (the places, Google's summary), or None."""
+        found = await self._call("search_places", {
+            "textQuery": query,
+            "locationBias": {"circle": {"center": _latlng(lat, lng), "radiusMeters": radius_m}},
+            "regionCode": REGION,
+            "pageSize": results,
+        })
+        if found is None:
+            return None
+        places = found.get("places") if isinstance(found.get("places"), list) else []
+        summary = found.get("summary") if isinstance(found.get("summary"), str) else ""
+        return places, summary
+
+    def _place(self, place: dict, i: int, summary: str, query: str) -> Place:
+        """Place `i` of a search, named from the summary as `place_name` reads it."""
+        loc = _location(place)
+        links = place.get("googleMapsLinks") if isinstance(place.get("googleMapsLinks"), dict) else {}
+        attribution, attribution_url = _attribution(place)
+        return Place(name=place_name(summary, i, query), place_id=_place_id(place),
+                     lat=loc[0] if loc else None, lng=loc[1] if loc else None,
+                     maps_url=links.get("placeUrl") or attribution_url, summary=summary,
+                     attribution=attribution, attribution_url=attribution_url, fetched_at=self._now())
 
     async def _route(self, origin: dict, destination: dict, mode: str,
                      bias: dict | None = None) -> tuple[float, int, dict] | None:
@@ -403,18 +444,20 @@ def _closest(places: list[Any], lat: float, lng: float) -> int | None:
     """The index of the place closest to (lat, lng) in a straight line, among those with an id; the first
     of them when none has a location."""
     ids = [i for i, p in enumerate(places) if _place_id(p)]
-    located = []
-    for i in ids:
-        loc = places[i].get("location")
-        if isinstance(loc, dict) and _number(loc.get("latitude")) is not None \
-                and _number(loc.get("longitude")) is not None:
-            located.append((_metres(lat, lng, loc["latitude"], loc["longitude"]), i))
+    located = [(metres(lat, lng, *at), i) for i in ids if (at := _location(places[i]))]
     if located:
         return min(located)[1]
     return ids[0] if ids else None
 
 
-def _metres(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+def _location(place: dict) -> tuple[float, float] | None:
+    loc = place.get("location") if isinstance(place.get("location"), dict) else {}
+    lat, lng = _number(loc.get("latitude")), _number(loc.get("longitude"))
+    return (lat, lng) if lat is not None and lng is not None else None
+
+
+def metres(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    """The straight-line distance between two points, in metres."""
     p1, p2 = math.radians(lat1), math.radians(lat2)
     dlng = math.radians(lng2 - lng1)
     a = math.sin((p2 - p1) / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dlng / 2) ** 2
@@ -430,7 +473,7 @@ def _latlng(lat: float, lng: float) -> dict[str, float]:
 
 
 def _waypoint(p: Point) -> dict[str, Any]:
-    if isinstance(p, Nearby):
+    if isinstance(p, Place):
         return {"placeId": p.place_id}
     if isinstance(p, str):
         return {"address": p}
