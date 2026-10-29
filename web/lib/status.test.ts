@@ -119,3 +119,13 @@ test("the tally word is the status's own, lower case: a left message and not get
   assert.equal(statusOf(card({ status: "suspect", red_flags: ["x"] })).tally, "flagged");
   assert.equal(statusOf(card()).tally, "not called yet");
 });
+
+test("the legend word names the pin's shape", () => {
+  assert.equal(statusOf(card()).legend, "Ranked");
+  assert.equal(statusOf(card(), { planned: true, call: call("ringing") }).legend, "Calling");
+  assert.equal(statusOf(card({ status: "calling" })).legend, "Calling");
+  assert.equal(statusOf(card({ status: "no_answer" }), { ended: "voicemail" }).legend, "No answer");
+  assert.equal(statusOf(card({ status: "booked", viewing: viewing("booked") })).legend, "Booked");
+  assert.equal(statusOf(card({ status: "booked", viewing: viewing("confirmed") })).legend, "Confirmed");
+  assert.equal(statusOf(card({ status: "dead" })).legend, "Rented");
+});
