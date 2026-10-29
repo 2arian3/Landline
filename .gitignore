@@ -14,7 +14,7 @@ __pycache__/
 .mypy_cache/
 
 # web
-node_modules/
+node_modules
 web/.next/
 web/out/
 web/tsconfig.tsbuildinfo
