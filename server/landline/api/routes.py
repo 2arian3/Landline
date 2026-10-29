@@ -5,6 +5,7 @@ import asyncio
 import contextlib
 import json
 import math
+import re
 import secrets
 from datetime import UTC, datetime
 from typing import Literal
@@ -37,6 +38,10 @@ router = APIRouter()
 HEARTBEAT_S = 5   # well inside the page's 6.5 s "Reconnecting…" threshold
 BUSY = "All lines are busy. Try again in a minute."
 CLOSED = "Judge mode opens soon."
+# A session id code minted for a call (voice/calls.py `mint`, judge.py): `s_` + 10 url-safe characters. One
+# the runtime doesn't hold and Postgres never stored is a link to no call, so it's 404, not a new demo board.
+MINTED = re.compile(r"s_[A-Za-z0-9_-]{10}")
+UNKNOWN_SESSION = "unknown session"
 
 
 @router.get("/", include_in_schema=False)
@@ -81,6 +86,7 @@ async def session(session_id: str, request: Request, dev: bool = False) -> Sessi
         return request.app.state.runtime.get(session_id)
     if (stored := await _stored(request, session_id)) is not None:
         return stored
+    _not_a_lost_call(request, session_id)
     return request.app.state.sessions.get(session_id, dev=dev)
 
 
@@ -90,6 +96,8 @@ async def stream(session_id: str, request: Request) -> StreamingResponse:
     few seconds so the page can tell a quiet session from a dead connection. A stored session never
     changes: its version once, then pings."""
     stored = await _stored(request, session_id)
+    if stored is None:
+        _not_a_lost_call(request, session_id)
     sessions = _store(request, session_id)
 
     async def events():
@@ -336,10 +344,19 @@ async def _stored(request: Request, session_id: str) -> SessionView | None:
     return SessionView.model_validate(view) if view else None
 
 
+def _not_a_lost_call(request: Request, session_id: str) -> None:
+    """404 for a minted id the runtime doesn't hold and that isn't stored: the link matches no call. Any
+    other id (`demo-…` from /map) is a demo session, made on first sight."""
+    if MINTED.fullmatch(session_id) and not _live(request, session_id) \
+            and session_id not in request.app.state.sessions.views:
+        raise HTTPException(404, UNKNOWN_SESSION)
+
+
 async def _not_stored(request: Request, session_id: str) -> None:
-    """Nothing writes to a stored session, and the demo store never takes its id."""
+    """Nothing writes to a stored session, and the demo store never takes its id, nor a lost call's."""
     if await _stored(request, session_id) is not None:
         raise HTTPException(409, "this session has ended")
+    _not_a_lost_call(request, session_id)
 
 
 def _store(request: Request, session_id: str):
