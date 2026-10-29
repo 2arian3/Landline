@@ -6,7 +6,7 @@ Call it and say what you want, in whatever language you speak. A live map of Tor
 
 Built on Boson AI's **Higgs Realtime** (the renter's call and every listing call, transcribed by Higgs speech-to-text), with a Higgs Avatar clip of each call, by Team AAMEL.
 
-![The ?dev=1 demo: the board re-ranks, four calls go out at once, and a viewing comes back booked](media/landline-demo.gif)
+![The scripted demo (?dev=1): the brief re-ranks the map, Call the top 4 starts four calls at once, What the calls found comes back with a viewing booked, and a card opens into its detail](media/landline-demo.gif)
 
 ## Try it
 
@@ -15,6 +15,15 @@ Built on Boson AI's **Higgs Realtime** (the renter's call and every listing call
 - **No microphone?** https://landline-mu.vercel.app/?dev=1 runs a scripted demo: **Say it** → **Call the top 4** → **Hang up**.
 
 Status, Sat 24 Oct, on about 1,080 real Toronto listings: call the number and you're texted a link to your live map as the call connects. When you hang up, Landline phones the places you picked over Twilio from the same number, but only to the team's own allowlisted phones (`DEMO_AGENT_PHONES`), with teammates playing the listing agents, and only between 09:00 and 20:00 Toronto time; a call queued outside those hours waits for 9:00. The results come back by text. On `/try` and in the browser, the listing calls go to simulated landlords, each a second Higgs session, and no phone rings. See [BACKLOG.md](BACKLOG.md) and [Known limitations](#known-limitations).
+
+## What it looks like
+
+| | |
+|---|---|
+| ![The board on a 1920 px projector after the calls: What the calls found in the glass panel, and pins whose shape and badge say how each call went](media/lucent-projector.png) | ![The board on a phone, 375 px wide: the map under a glass header, and the sheet raised with what Landline heard and the ranked places](media/lucent-phone.png) |
+| **On a projector:** after the calls, the panel leads with what each one found, and each pin's shape and badge say how it went. | **On a phone:** the map under a glass header, and a sheet with what Landline heard and the places it ranked. |
+| ![/me signed in: the renter's calls with what each agent said, what they want, and the number to call](media/lucent-me.png) | ![The Expo app's Home on an iPhone: the tally, Call Landline, the latest result and the glass tab bar](media/lucent-app.png) |
+| **Your calls (`/me`):** sign in with your phone number to see every place Landline called, each agent's words, and edit what you want. | **The app (`mobile/`):** the same calls and search on an iPhone, with a button that calls Landline. |
 
 ## How it works
 
@@ -30,7 +39,7 @@ Everything else is plain code that manages the session:
 - A deterministic **orchestrator** routes every event, keeps one writer per session, and ends every call exactly once.
 - The **Matcher** ranks listings from typed features: location (PostGIS, with the City of Toronto's 158 neighbourhoods), real monthly cost, size, floor, natural light, parking, pets, laundry, and the walk to the nearest TTC subway station. Facts heard on a call update a listing's features and re-rank it. It explains each rank in plain words.
 - The **Dispatcher** dials one call per picked listing after the renter hangs up; **Profiles** keep each renter's last brief for the team (the next call starts fresh); the **Narrator** fills the templates for what the agent says and texts.
-- The **web app** shows a live map and list that follow the conversation; tapping a listing tells the agent what you're looking at.
+- The **web app** is a full-screen live map with a glass panel beside it (a bottom sheet on a phone) that follows the conversation: each pin's shape, badge and words say how its call is going, and tapping a listing tells the agent what you're looking at. On **`/me`** a renter signs in with their phone number to see their calls and edit their search; the **app** (`mobile/`, Expo) does the same on an iPhone. See [mobile/README.md](mobile/README.md).
 
 Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · [docs/DATA.md](docs/DATA.md) · [docs/SCORING.md](docs/SCORING.md) · [docs/CONTRACTS.md](docs/CONTRACTS.md)
 
@@ -133,7 +142,7 @@ Base URL `https://landline.134.87.8.230.sslip.io`. Payload shapes are in [docs/C
 |---|---|---|
 | Arian Boukani | [@2arian3](https://github.com/2arian3) | Data pipeline, database, orchestrator, scoring, the VM |
 | Danial Kordmodanlou | [@Danial-Kord](https://github.com/Danial-Kord) | Voice agents, call dispatcher, evals |
-| Mahyar Jaberi | [@mahyar-jbr](https://github.com/mahyar-jbr) | Web app, live map, API read side, Vercel, video |
+| Mahyar Jaberi | [@mahyar-jbr](https://github.com/mahyar-jbr) | Web app, live map, the Expo app, API read side, Vercel, video |
 
 ## Known limitations
 
