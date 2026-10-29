@@ -4,7 +4,7 @@
 
 Call it and say what you want, in whatever language you speak. A live map of Toronto listings re-ranks while you talk. Pick the places you like and hang up: it phones those listing agents in parallel to find out what listings never say (is it still available, what does parking really cost, are dogs allowed, how much light does it get), books a viewing when you said it could, and texts you what it learned. Every fact on the map shows who said it.
 
-Built on Boson AI's **Higgs Realtime** (the renter's call and every listing call, transcribed by Higgs speech-to-text), with a Higgs Avatar clip of each call, by Team AAMEL.
+Built by Team AAMEL.
 
 ![The scripted demo (?dev=1): the brief re-ranks the map, Call the top 4 starts four calls at once, What the calls found comes back with a viewing booked, and a card opens into its detail](media/landline-demo.gif)
 
