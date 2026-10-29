@@ -4,9 +4,11 @@ import { SignIn, useAuth } from "@clerk/nextjs";
 import Link from "next/link";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { duration, phoneLabel, type CallRow, type ChosenPlace, type SessionRow, type UserDetail, when } from "@/lib/admin";
+import { formatWhen, viewingWhen } from "@/lib/time";
 import { bedsLabel, heardLine, money } from "@/lib/format";
-import { WENT, factLine, viewingLine } from "@/lib/heard";
+import { WENT, factLine } from "@/lib/heard";
 import { isMeRefusal, loadMe, loadMyListings, loadSignedIn, type MeRefusal, type MyListing } from "@/lib/me";
+import { Icon, Mark } from "./Icon";
 import { Money } from "./Money";
 import { MySearch } from "./MySearch";
 
@@ -46,8 +48,9 @@ const ENDED: Record<string, string> = {
   done: "finished",
 };
 
-const card = "rounded-[var(--radius-card)] bg-surface";
-const hairline = { boxShadow: "0 0 0 1px var(--color-hair)" };
+// Solid, not glass: everything on /me is read, and there's no map behind it.
+const card = "rounded-[var(--radius-md)] bg-surface";
+const hairline = { boxShadow: "0 0 0 1px var(--color-hairline)" };
 
 /** /me: sign in with the phone you call from (an SMS code proves it's yours), then its calls and places. */
 export function Account() {
@@ -108,7 +111,7 @@ function SignedInAccount() {
 function Loading() {
   return (
     <div className="fixed inset-0 grid place-items-center bg-ground">
-      <p className="text-support text-ink-3">Loading…</p>
+      <p className="t-callout c-2">Loading…</p>
     </div>
   );
 }
@@ -118,13 +121,12 @@ function PhoneSignIn() {
   return (
     <div className="fixed inset-0 grid place-items-center overflow-y-auto bg-ground px-4 py-6">
       <div className={`${card} w-full max-w-sm p-5`} style={hairline}>
-        <p className="text-fact font-strong tracking-[-0.01em]">
-          <Link href="/" className="focus-visible:outline-2 focus-visible:outline-ink">
-            Landline
-          </Link>
-        </p>
-        <h1 className="mt-3 text-title font-strong">Your calls</h1>
-        <p className="mt-1 text-support text-ink-2">
+        <Link href="/" className="wordmark w-fit">
+          <Mark />
+          Landline
+        </Link>
+        <h1 className="t-title mt-5">Your calls</h1>
+        <p className="t-callout c-2 mt-1">
           Sign in with the number you call Landline from. We text it a code, so only you see its calls.
         </p>
         <div className="mt-4">
@@ -136,15 +138,18 @@ function PhoneSignIn() {
   );
 }
 
-/** Clerk's form in the page's look: no card of its own, the ink as the accent, the page's type and radius. */
+/** Clerk's form in Lucent's look: no card of its own, ink as the accent, the system type, Lucent's fields
+ * (12 px corners) and pill buttons, every one 44 px tall. */
 const CLERK_LOOK = {
   // The development instance's orange strip reads at 3.0:1 and means nothing to a renter. "Secured by Clerk"
   // stays. (Clerk 7 calls this `options`; it was `layout` before.)
   options: { unsafe_disableDevelopmentModeWarnings: true },
   variables: {
-    colorPrimary: "#1a1815",
-    colorText: "#1a1815",
+    colorPrimary: "#191918",
+    colorText: "#191918",
+    colorTextSecondary: "#6b6a66",
     colorBackground: "#ffffff",
+    colorInputBackground: "#ffffff",
     fontFamily: "inherit",
     fontSize: "15px",
     borderRadius: "12px",
@@ -161,7 +166,14 @@ const CLERK_LOOK = {
     footer: { background: "transparent" },
     // A thumb's height on a phone: Clerk's own are 35 px.
     formFieldInput: { minHeight: "44px" },
-    formButtonPrimary: { minHeight: "44px" },
+    formButtonPrimary: {
+      minHeight: "44px",
+      borderRadius: "999px",
+      fontSize: "17px",
+      fontWeight: 600,
+      letterSpacing: "-0.01em",
+      textTransform: "none",
+    },
   },
 };
 
@@ -169,13 +181,9 @@ function Refused({ refusal, onSignOut }: { refusal: MeRefusal; onSignOut: () => 
   return (
     <div className="fixed inset-0 grid place-items-center bg-ground px-4">
       <div className={`${card} w-full max-w-sm p-5`} style={hairline}>
-        <h1 className="text-title font-strong">Your calls</h1>
-        <p className="mt-2 text-support text-ink-2">{REFUSED[refusal]}</p>
-        <button
-          type="button"
-          onClick={onSignOut}
-          className="mt-4 min-h-11 w-full rounded-[var(--radius-control)] bg-ink px-4 text-support font-label text-white"
-        >
+        <h1 className="t-title">Your calls</h1>
+        <p className="t-callout c-2 mt-2">{REFUSED[refusal]}</p>
+        <button type="button" onClick={onSignOut} className="btn btn-primary mt-4 w-full">
           Sign out
         </button>
       </div>
@@ -268,16 +276,15 @@ function Login({ refusal, onPhone }: { refusal: MeRefusal | null; onPhone: (phon
           if (value.trim()) onPhone(value.trim());
         }}
       >
-        <p className="text-fact font-strong tracking-[-0.01em]">
-          <Link href="/" className="focus-visible:outline-2 focus-visible:outline-ink">
-            Landline
-          </Link>
-        </p>
-        <h1 className="mt-3 text-title font-strong">Your calls</h1>
-        <p className="mt-1 text-support text-ink-2">
+        <Link href="/" className="wordmark w-fit">
+          <Mark />
+          Landline
+        </Link>
+        <h1 className="t-title mt-5">Your calls</h1>
+        <p className="t-callout c-2 mt-1">
           Enter the number you call Landline from. This shows the profile, places and calls saved for it.
         </p>
-        <label htmlFor="me-phone" className="mt-4 block text-meta font-label text-ink-3">
+        <label htmlFor="me-phone" className="t-caption c-2 mt-4 block">
           Your number
         </label>
         <input
@@ -289,15 +296,11 @@ function Login({ refusal, onPhone }: { refusal: MeRefusal | null; onPhone: (phon
           placeholder="416 555 0123"
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          className="mt-1.5 block min-h-11 w-full rounded-[var(--radius-control)] bg-ground px-3 text-support text-ink outline-none placeholder:text-ink-3 focus-visible:outline-2 focus-visible:outline-ink"
+          className="t-callout mt-1.5 block min-h-11 w-full rounded-[var(--radius-sm)] bg-surface px-3 text-ink placeholder:text-ink-secondary"
           style={hairline}
         />
-        {refusal && <p className="mt-2 text-support text-dead">{REFUSED[refusal]}</p>}
-        <button
-          type="submit"
-          disabled={!value.trim()}
-          className="mt-4 min-h-11 w-full rounded-[var(--radius-control)] bg-ink px-4 text-support font-label text-white disabled:opacity-40"
-        >
+        {refusal && <p className="t-callout mt-2 text-dead">{REFUSED[refusal]}</p>}
+        <button type="submit" disabled={!value.trim()} className="btn btn-primary mt-4 w-full disabled:opacity-45">
           Show my calls
         </button>
       </form>
@@ -306,6 +309,16 @@ function Login({ refusal, onPhone }: { refusal: MeRefusal | null; onPhone: (phon
 }
 
 const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+// Every time on /me as the board writes it: "Tue, Oct 27 · 5:10 PM", Toronto (lib/time.ts).
+const at = (iso: string | null | undefined) => formatWhen(iso) ?? when(iso ?? null);
+
+/** A viewing in the board's words (lib/status.ts): who it waits on, or how the agent answered. */
+function viewingWords(v: { starts_at: string; slot_text: string; status: string }): string {
+  const t = viewingWhen(v);
+  if (v.status === "confirmed") return `Viewing confirmed \u00b7 ${t}`;
+  if (v.status === "declined") return `The agent can\u2019t do ${t}`;
+  return `Viewing ${t} \u00b7 waiting for the agent to confirm`;
+}
 
 function History({
   user,
@@ -328,28 +341,22 @@ function History({
         style={{ paddingTop: "max(12px, env(safe-area-inset-top))" }}
       >
         <div className="flex items-center justify-between gap-3">
-          <Link
-            href="/map"
-            className="-ml-2 inline-flex min-h-11 items-center rounded-[var(--radius-control)] px-2 text-support text-ink-2 hover:bg-press focus-visible:outline-2 focus-visible:outline-ink"
-          >
-            ← Map
+          <Link href="/map" className="back -ml-2 hover:bg-[var(--color-accent-tint)]">
+            <Icon name="chevron-left" size={20} />
+            Map
           </Link>
-          <button
-            type="button"
-            onClick={onLeave}
-            className="inline-flex min-h-11 items-center rounded-[var(--radius-control)] px-2 text-support text-ink-2 hover:bg-press focus-visible:outline-2 focus-visible:outline-ink"
-          >
+          <button type="button" onClick={onLeave} className="btn btn-quiet -mr-3 hover:bg-[var(--color-accent-tint)]">
             {leave}
           </button>
         </div>
 
         <header>
-          <h1 className="tnum text-title font-strong">{phoneLabel(user.phone)}</h1>
-          <p className="mt-0.5 text-support text-ink-2">
+          <h1 className="t-title tnum">{phoneLabel(user.phone)}</h1>
+          <p className="t-callout c-2 mt-0.5">
             {[user.name, user.language && `speaks ${user.language}`].filter(Boolean).join(" · ") || "No name saved"}
           </p>
-          <p className="mt-1 text-meta text-ink-3">
-            First call {when(user.created_at)} · last call {when(user.last_seen_at ?? user.created_at)}
+          <p className="t-caption c-2 mt-1">
+            First call {at(user.created_at)} · last call {at(user.last_seen_at ?? user.created_at)}
           </p>
         </header>
 
@@ -362,20 +369,20 @@ function History({
         ) : (
           <Section title="What you want">
             {wants.length ? (
-              <p className="text-fact">{capital(wants.join(" · "))}</p>
+              <p className="t-body">{capital(wants.join(" · "))}</p>
             ) : (
-              <p className="text-support text-ink-2">Nothing saved yet.</p>
+              <p className="t-callout c-2">Nothing saved yet.</p>
             )}
-            {user.summary && <p className="mt-2 text-support text-ink-2">{user.summary}</p>}
+            {user.summary && <p className="t-callout c-2 mt-2">{user.summary}</p>}
           </Section>
         )}
 
         {listings !== undefined && (
           <Section title="My listings">
             {listings === null ? (
-              <p className="text-support text-ink-3">Loading…</p>
+              <p className="t-callout c-2">Loading…</p>
             ) : isMeRefusal(listings) ? (
-              <p className="text-support text-ink-2">Can&rsquo;t load your listings right now.</p>
+              <p className="t-callout c-2">Can&rsquo;t load your listings right now.</p>
             ) : listings.length ? (
               <ul className="space-y-3">
                 {listings.map((x) => (
@@ -383,7 +390,7 @@ function History({
                 ))}
               </ul>
             ) : (
-              <p className="text-support text-ink-2">Landline hasn&rsquo;t called any places for you yet.</p>
+              <p className="t-callout c-2">Landline hasn&rsquo;t called any places for you yet.</p>
             )}
           </Section>
         )}
@@ -396,7 +403,7 @@ function History({
               ))}
             </ul>
           ) : (
-            <p className="text-support text-ink-2">No places liked, turned down or called yet.</p>
+            <p className="t-callout c-2">No places liked, turned down or called yet.</p>
           )}
         </Section>
 
@@ -408,7 +415,7 @@ function History({
               ))}
             </ol>
           ) : (
-            <p className="text-support text-ink-2">No calls stored yet.</p>
+            <p className="t-callout c-2">No calls stored yet.</p>
           )}
         </Section>
       </article>
@@ -419,8 +426,8 @@ function History({
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section>
-      <h2 className="text-meta font-label text-ink-3">{title}</h2>
-      <div className="mt-2">{children}</div>
+      <h2 className="t-headline">{title}</h2>
+      <div className="mt-3">{children}</div>
     </section>
   );
 }
@@ -431,41 +438,43 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
  */
 function ListingItem({ listing: x }: { listing: MyListing }) {
   const went = WENT[x.ended] ?? x.ended;
-  const unit = x.unit_label ? <span className="font-normal text-ink-2">, unit {x.unit_label}</span> : null;
+  const unit = x.unit_label ? <span className="font-normal c-2">, unit {x.unit_label}</span> : null;
   return (
     <li className={`${card} p-4`} style={hairline}>
       {x.monthly_cost != null ? (
         <>
           <div className="flex items-start justify-between gap-3">
             <Money rent={x.monthly_cost} monthly={x.monthly_cost} />
-            <p className="mt-1 shrink-0 text-meta text-ink-3">{went}</p>
+            <p className="t-caption c-2 mt-1 shrink-0">{went}</p>
           </div>
-          <p className="mt-1 min-w-0 text-fact font-label">
+          <p className="t-headline mt-1 min-w-0">
             {x.address}
             {unit}
           </p>
         </>
       ) : (
         <div className="flex items-baseline justify-between gap-3">
-          <p className="min-w-0 text-fact font-strong">
+          <p className="t-headline min-w-0">
             {x.address}
             {unit}
           </p>
-          <p className="shrink-0 text-meta text-ink-3">{went}</p>
+          <p className="t-caption c-2 shrink-0">{went}</p>
         </div>
       )}
-      <p className="text-meta text-ink-3">Called {when(x.called_at)}</p>
+      <p className="t-caption c-2">Called {at(x.called_at)}</p>
       {x.viewing && (
-        <p
-          className="mt-2 text-support"
-          style={{ color: x.viewing.status === "declined" ? "var(--color-dead)" : "var(--color-real)" }}
-        >
-          {viewingLine(x.viewing)}
+        <p className={`status mt-2 ${x.viewing.status === "declined" ? "is-dead" : x.viewing.status === "confirmed" ? "is-real" : "is-ink"}`}>
+          <Icon
+            name={x.viewing.status === "declined" ? "calendar-x" : x.viewing.status === "confirmed" ? "calendar-check" : "calendar"}
+            size={18}
+          />
+          <span>{viewingWords(x.viewing)}</span>
         </p>
       )}
       {x.red_flags.map((f) => (
-        <p key={f} className="mt-2 text-support text-dead">
-          Watch out: {f}
+        <p key={f} className="status is-dead mt-2">
+          <Icon name="triangle-alert" size={18} />
+          <span>Watch out: {f}</span>
         </p>
       ))}
       {x.facts.length > 0 && (
@@ -473,11 +482,11 @@ function ListingItem({ listing: x }: { listing: MyListing }) {
           {x.facts.map((f, n) => (
             <li key={`${f.field}-${n}`}>
               <details>
-                <summary className="cursor-pointer text-support text-ink marker:text-ink-3">
-                  {factLine(f.field, f.value)} <span className="text-meta text-ink-3">· Agent heard</span>
+                <summary className="t-callout cursor-pointer marker:text-ink-secondary">
+                  {factLine(f.field, f.value)} <span className="t-caption c-2 whitespace-nowrap">· Agent heard</span>
                 </summary>
-                <p className="mt-0.5 pl-4 text-meta text-ink-2">
-                  &ldquo;{f.quote}&rdquo;{f.at ? ` · ${when(f.at)}` : ""}
+                <p className="t-caption c-2 mt-0.5 pl-4">
+                  &ldquo;{f.quote}&rdquo;{f.at ? ` · ${at(f.at)}` : ""}
                 </p>
               </details>
             </li>
@@ -492,23 +501,23 @@ function PlaceItem({ place }: { place: ChosenPlace }) {
   return (
     <li className={`${card} p-4`} style={hairline}>
       <div className="flex items-baseline justify-between gap-3">
-        <p className="min-w-0 text-fact font-strong">
+        <p className="t-headline min-w-0">
           {place.address}
-          {place.unit_label ? <span className="font-normal text-ink-2">, unit {place.unit_label}</span> : null}
+          {place.unit_label ? <span className="font-normal c-2">, unit {place.unit_label}</span> : null}
         </p>
-        {place.monthly_cost != null && <p className="tnum shrink-0 text-fact">{money(place.monthly_cost)}</p>}
+        {place.monthly_cost != null && <p className="t-headline tnum shrink-0">{money(place.monthly_cost)}</p>}
       </div>
-      <p className="mt-1 text-support">
+      <p className="t-callout mt-1">
         {place.actions.map((a, n) => (
-          <span key={a} style={{ color: ACTION[a]?.color ?? "var(--color-ink-2)" }}>
-            {n > 0 && <span className="text-ink-3"> · </span>}
+          <span key={a} style={{ color: ACTION[a]?.color ?? "var(--color-ink-secondary)" }}>
+            {n > 0 && <span className="c-2"> · </span>}
             {ACTION[a]?.label ?? a}
           </span>
         ))}
-        {place.reason && <span className="text-ink-2"> ({place.reason})</span>}
+        {place.reason && <span className="c-2"> ({place.reason})</span>}
       </p>
-      <p className="mt-0.5 text-meta text-ink-3">
-        {[place.beds != null ? bedsLabel(place.beds) : null, when(place.last_at)].filter(Boolean).join(" · ")}
+      <p className="t-caption c-2 mt-0.5">
+        {[place.beds != null ? bedsLabel(place.beds) : null, at(place.last_at)].filter(Boolean).join(" · ")}
       </p>
     </li>
   );
@@ -519,21 +528,21 @@ function SessionItem({ session }: { session: SessionRow }) {
   return (
     <li className={`${card} p-4`} style={hairline}>
       <p className="flex items-baseline justify-between gap-3">
-        <span className="text-fact font-strong">{CHANNEL[session.channel] ?? session.channel}</span>
-        <span className="shrink-0 text-meta text-ink-3">{PHASE[session.phase] ?? session.phase}</span>
+        <span className="t-headline">{CHANNEL[session.channel] ?? session.channel}</span>
+        <span className="t-caption c-2 shrink-0">{PHASE[session.phase] ?? session.phase}</span>
       </p>
-      <p className="text-meta text-ink-3">
-        {when(session.started_at)}
-        {session.ended_at ? ` to ${when(session.ended_at)}` : ""}
+      <p className="t-caption c-2">
+        {at(session.started_at)}
+        {session.ended_at ? ` to ${at(session.ended_at)}` : ""}
       </p>
-      {wants.length > 0 && <p className="mt-2 text-support text-ink-2">Asked for {wants.join(", ")}</p>}
+      {wants.length > 0 && <p className="t-callout c-2 mt-2">Asked for {wants.join(", ")}</p>}
       {session.plan.length > 0 && (
-        <p className="mt-1 text-support text-ink-2">Picked to call: {session.plan.map((p) => p.address).join(", ")}</p>
+        <p className="t-callout c-2 mt-1">Picked to call: {session.plan.map((p) => p.address).join(", ")}</p>
       )}
       {session.results && (
         <div className="mt-3">
-          <p className="text-meta font-label text-ink-3">What the calls found</p>
-          <p className="mt-1 text-support text-ink">{session.results}</p>
+          <p className="t-caption c-2">What the calls found</p>
+          <p className="t-callout mt-1">{session.results}</p>
         </div>
       )}
       {session.calls.length > 0 && (
@@ -557,9 +566,9 @@ function CallLine({ call }: { call: CallRow }) {
     .filter(Boolean)
     .join(" · ");
   return (
-    <li className="rounded-[var(--radius-control)] bg-ground px-3 py-2">
-      <p className="text-support font-label text-ink">{who}</p>
-      <p className="text-meta text-ink-3">{how}</p>
+    <li className="rounded-[var(--radius-sm)] bg-surface-raised px-3 py-2">
+      <p className="t-callout w6">{who}</p>
+      <p className="t-caption c-2">{how}</p>
     </li>
   );
 }
