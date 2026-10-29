@@ -6,3 +6,4 @@ export function sessionPath(sessionId: string, search: string): string {
   const path = `/api/sessions/${encodeURIComponent(sessionId)}`;
   return new URLSearchParams(search).get("dev") === "1" ? `${path}?dev=1` : path;
 }
+

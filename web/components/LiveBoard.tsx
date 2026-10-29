@@ -1,22 +1,41 @@
 "use client";
 
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react";
 import dynamic from "next/dynamic";
+import { notFound } from "next/navigation";
 import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Drawer } from "vaul";
 import { AvatarClips } from "./AvatarClips";
 import { Board } from "./Board";
 import { DemoControls } from "./DemoControls";
-import type { Mark } from "./ListingCard";
+import { Toasts, useToasts } from "./Toast";
+import { Icon } from "./Icon";
+import type { Stage } from "@/lib/status";
 import { ListingDetail, type Reaction } from "./ListingDetail";
 import type { Padding } from "./MapView";
-import { PANEL_STYLE, PANEL_WIDTH, PEEK, PanelHeader, SHORT, SPLIT, Shell } from "./Shell";
-import { Activity, Brand, Heard, Results, Welcome } from "./Summary";
+import {
+  CAPSULE_STYLE,
+  PANEL,
+  PANEL_STYLE,
+  PEEK,
+  PanelFoot,
+  SHORT,
+  SPLIT,
+  Shell,
+  SheetSpring,
+  panelRoom,
+  sheetLook,
+} from "./Shell";
+import { Activity, Brand, Heard, Opening, Plan, Results, Welcome } from "./Summary";
 import { type Opened, follows } from "@/lib/follow";
 import { nothingHeard } from "@/lib/format";
 import { type Unheard, unheard } from "@/lib/outcome";
 import { useAvatarClips } from "@/lib/avatars";
-import { api, postJSON, useCatalogue, useLiveSession } from "@/lib/live";
+import { api, postJSON, tap, useCatalogue, useLiveSession } from "@/lib/live";
+import { EXIT, REDUCED } from "@/lib/motion";
+import { OFFLINE, unsaved } from "@/lib/pill";
+import { viewingWhen } from "@/lib/time";
+import type { SessionView } from "@/lib/types";
 import { useMedia } from "@/lib/useMedia";
 
 // MapLibre is a 1 MB chunk. Loading it after the panel lets the places paint first on a slow phone;
@@ -29,13 +48,12 @@ const MapView = dynamic(() => import("./MapView").then((m) => m.MapView), {
 const SNAPS: (string | number)[] = [PEEK, 0.56, 1];
 
 /**
- * The whole screen. Desktops, tablets on their side and phones held sideways
- * (SPLIT): the map fills the left, a panel on the right (440px, narrower on
- * smaller screens, 560px on a projector) holds what's happening, what Landline
- * heard and the ranked places. Phones and tablets upright: the map fills the
- * screen and the panel becomes a bottom sheet with
- * three stops; at the lowest stop the renter sees the activity line, one line
- * of what was heard, and the top place.
+ * The whole screen: the map fills it, and what's happening, what Landline heard and the ranked places float
+ * over it. Desktops, tablets on their side and phones held sideways (SPLIT): a glass panel inset 16px on the
+ * right (440px, narrower on smaller screens, 560px on a projector), and the map frames the board in the room
+ * it leaves. Phones and tablets upright: a glass capsule for the header and a bottom sheet with three stops,
+ * glass at the low and half stops and solid at full; at the lowest the renter sees the activity line, one
+ * line of what was heard, and the top place.
  *
  * Judge mode reuses it: `intro` replaces the panel until a session exists,
  * `dock` (the voice controls) stays pinned to the panel, and `line` puts the
@@ -52,7 +70,7 @@ export function LiveBoard({
   dock?: ReactNode;
   line?: string | null;
 }) {
-  const { view, stale, unreachable } = useLiveSession(sessionId);
+  const { view, stale, unreachable, missing } = useLiveSession(sessionId);
   const clips = useAvatarClips(sessionId, view?.phase ?? null);
   const points = useCatalogue();
   const desktop = useMedia(SPLIT);
@@ -66,11 +84,24 @@ export function LiveBoard({
   const [snap, setSnap] = useState<string | number | null>(PEEK);
   const [dev, setDev] = useState(false);
   const [vh, setVh] = useState(800);
+  // The split panel's width, measured, so the map frames the board in the room the panel leaves.
+  const [panelWidth, setPanelWidth] = useState(440);
+  const measured = useRef<ResizeObserver | null>(null);
+  const panelShown = useCallback((el: HTMLElement | null) => {
+    measured.current?.disconnect();
+    measured.current = null;
+    if (!el) return;
+    setPanelWidth(el.offsetWidth);
+    measured.current = new ResizeObserver(() => setPanelWidth(el.offsetWidth));
+    measured.current.observe(el);
+  }, []);
   // What the renter tapped, shown at once; the server's card.reaction wins once it arrives.
   const [mine, setMine] = useState<Record<string, string>>({});
   // The server's focus and area when the page opened (below): followed once they change after that.
   const openingFocus = useRef<Opened<string | null>["current"]>(undefined);
   const openingArea = useRef<Opened<string | null>["current"]>(undefined);
+  // The places whose viewing was ever seen confirmed this session, for the toast; null until the first board.
+  const viewings = useRef<Set<string> | null>(null);
   // Another session (judge mode's "Start again") opens with nothing selected or tapped, and frames its own
   // board. Reset while rendering, so not even one frame shows the last session's selection.
   const [shownSession, setShownSession] = useState(sessionId);
@@ -80,6 +111,7 @@ export function LiveBoard({
     setMine({});
     openingFocus.current = undefined;
     openingArea.current = undefined;
+    viewings.current = null;
   }
 
   // Judge mode: the intro needs the whole sheet; once talking, the map gets it back.
@@ -109,7 +141,7 @@ export function LiveBoard({
   // Where each planned place stands until its call has a result: picked during the brief, queued
   // once the renter hangs up, then ringing. Live and finished calls speak through the card's status.
   const marks = useMemo(() => {
-    const m: Record<string, Mark> = {};
+    const m: Record<string, Stage> = {};
     for (const id of view?.plan ?? []) m[id] = "will_call";
     for (const call of view?.calls ?? []) {
       if (call.state === "queued") m[call.listing_id] = "queued";
@@ -164,23 +196,53 @@ export function LiveBoard({
     void postJSON(`/api/sessions/${encodeURIComponent(sessionId)}/focus`, { listing_id: id });
   }
 
+  // A tap shows at once; one the server didn't save puts the card back, so it never pretends it worked.
+  const { toasts, toast, dismiss } = useToasts();
+  const reduced = useReducedMotion();
   const react = useCallback(
-    (id: string, reaction: Reaction, reason: string | null) => {
+    async (id: string, reaction: Reaction, reason: string | null) => {
       if (!sessionId) return;
       const said = reason ?? (reaction === "like" ? "like it" : "not for me");
       setMine((m) => ({ ...m, [id]: said }));
-      void postJSON(`/api/sessions/${encodeURIComponent(sessionId)}/feedback`, {
+      const got = await tap<SessionView>(`/api/sessions/${encodeURIComponent(sessionId)}/feedback`, {
         listing_id: id,
         reaction,
         reason: reason ?? undefined,
       });
+      if (!got.ok) {
+        // Only if it's still this tap on screen: a newer one ("not for me" after "like it") stays.
+        setMine((m) => {
+          if (m[id] !== said) return m;
+          const { [id]: _drop, ...rest } = m;
+          return rest;
+        });
+        toast({ text: unsaved(said), icon: "circle-alert", retry: () => void react(id, reaction, reason) });
+      }
     },
-    [sessionId],
+    [sessionId, toast],
   );
 
+  // An agent confirming a viewing from the texted link: a toast over the map, once per place for the whole
+  // session, even if the card leaves the board and comes back. What was confirmed when it opened isn't news.
+  useEffect(() => {
+    if (!view) return;
+    const confirmed = view.board.filter((c) => c.viewing?.status === "confirmed").map((c) => c.listing_id);
+    const known = viewings.current;
+    viewings.current = new Set([...(known ?? []), ...confirmed]);
+    if (!known) return;
+    for (const c of view.board) {
+      if (c.viewing?.status === "confirmed" && !known.has(c.listing_id)) {
+        toast({ text: `The agent confirmed ${viewingWhen(c.viewing)} at ${c.address}`, icon: "calendar-check", tone: "real" });
+      }
+    }
+  }, [view, toast]);
+
+
+  // On a phone, pins frame below the capsule: it ends at 64 (12 down, 52 tall), then 16 clear and half a
+  // 44px pin, so a pin's centre sits at 104 or lower.
   const padding: Padding = desktop
-    ? { top: 64, right: 64, bottom: 64, left: 64 }
-    : { top: 84, right: 28, bottom: snap === PEEK ? 216 : Math.round(vh * 0.58), left: 28 };
+    ? { top: 64, right: panelRoom(panelWidth), bottom: 64, left: 64 }
+    : { top: 104, right: 28, bottom: snap === PEEK ? 216 : Math.round(vh * 0.58), left: 28 };
 
   // The map's chunk waits for the first board, so on a slow line the places and their photos don't
   // queue behind a megabyte of map. With no session to wait for (judge mode's intro), or once the API
@@ -201,6 +263,10 @@ export function LiveBoard({
       hoverId={hover}
       marks={marks}
       focusArea={focusArea}
+      anchors={view?.preferences.anchors ?? []}
+      calls={view?.calls}
+      plan={view?.plan}
+      ended={ended}
       padding={padding}
       showZoom={mouse === true}
       onSelect={select}
@@ -213,9 +279,13 @@ export function LiveBoard({
   // No snapshot at all for a while (the API is down or unreachable): say so plainly instead of skeletons
   // that never fill. Polling carries on, and the first answer brings the board in.
   const list = unreachable ? (
-    <p role="status" className="text-support text-ink-2">
-      Can&rsquo;t reach Landline right now. Trying again&hellip;
-    </p>
+    <div className="banner" role="status">
+      <Icon name="wifi-off" size={20} />
+      <div>
+        <p className="w6">{OFFLINE.title}</p>
+        <p className="c-2">{OFFLINE.body}</p>
+      </div>
+    </div>
   ) : (
     <div className={desktop ? "space-y-4" : "space-y-3"}>
       <Welcome view={view} compact={compact} />
@@ -229,11 +299,12 @@ export function LiveBoard({
       )}
       <Results view={view} compact={compact} />
       {blank ? (
-        <p className="text-support text-ink">{view?.agent_says || "Tell Landline what you\u2019re looking for."}</p>
+        <Opening view={view} compact={compact} peek={!desktop && snap === PEEK} />
       ) : (
         <>
-          <Activity view={view} compact={compact} />
-          <Heard view={view} compact={compact} wrap={!desktop && snap !== PEEK} />
+          <Plan view={view} />
+          <Heard key={sessionId} view={view} compact={compact} wrap={!desktop && snap !== PEEK} />
+          <Activity view={view} />
           <Board
             board={board}
             loading={!view}
@@ -241,6 +312,8 @@ export function LiveBoard({
             hoverId={hover}
             marks={marks}
             ended={ended}
+            calls={view?.calls}
+            plan={view?.plan}
             onSelect={select}
             onHover={setHover}
           />
@@ -264,41 +337,49 @@ export function LiveBoard({
     intro && !sessionId ? (
       <div className="px-4 pb-8 pt-1">{intro}</div>
     ) : (
-      <AnimatePresence mode="wait" initial={false}>
-        {selected ? (
-          <motion.div
-            key="detail"
-            ref={detailShown}
-            initial={{ opacity: 0, x: 24 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 24 }}
-            transition={{ duration: 0.22, ease: [0.23, 1, 0.32, 1] }}
-          >
-            <ListingDetail
-              id={selected}
-              card={selectedCard}
-              mark={marks[selected]}
-              call={view?.calls.filter((c) => c.listing_id === selected).pop()}
-              results={view?.phase === "done" ? view.results : null}
-              onBack={() => setSelected(null)}
-              onReact={(reaction, reason) => react(selected, reaction, reason)}
-            />
-          </motion.div>
-        ) : (
-          <motion.div
-            key="list"
-            ref={listShown}
-            initial={{ opacity: 0, x: -24 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -24 }}
-            transition={{ duration: 0.22, ease: [0.23, 1, 0.32, 1] }}
-            className="px-4 pb-8 pt-1"
-          >
-            {list}
-          </motion.div>
-        )}
-      </AnimatePresence>
+      // The card opens into its place: its photo, price and address travel on the detail spring (their
+      // layoutIds in ListingCard and ListingDetail), and the rest fades up 160ms later; back reverses it.
+      // Both stay mounted for the swap so the shared parts have somewhere to travel from. Reduced motion:
+      // a short cross-fade.
+      <LayoutGroup>
+        <AnimatePresence mode="popLayout" initial={false}>
+          {selected ? (
+            <motion.div
+              key="detail"
+              ref={detailShown}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1, transition: reduced ? REDUCED : { duration: 0.3, delay: 0.16 } }}
+              exit={{ opacity: 0, transition: reduced ? REDUCED : EXIT }}
+            >
+              <ListingDetail
+                id={selected}
+                card={selectedCard}
+                places={board.length}
+                mark={marks[selected]}
+                call={view?.calls.filter((c) => c.listing_id === selected).pop()}
+                results={view?.phase === "done" ? view.results : null}
+                onBack={() => setSelected(null)}
+                onReact={(reaction, reason) => react(selected, reaction, reason)}
+              />
+            </motion.div>
+          ) : (
+            <motion.div
+              key="list"
+              ref={listShown}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1, transition: reduced ? REDUCED : { duration: 0.3, delay: 0.16 } }}
+              exit={{ opacity: 0, transition: reduced ? REDUCED : EXIT }}
+              className="px-4 pb-8 pt-1"
+            >
+              {list}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </LayoutGroup>
     );
+
+  // A link that matches no call, found out after the page's own check: the same not-found page.
+  if (missing) notFound();
 
   // Until the browser says which layout this is, show the shell the server sent.
   // Both are `fixed inset-0`: nothing can scroll the page itself, not even
@@ -306,36 +387,29 @@ export function LiveBoard({
   if (desktop === null) return <Shell idle={!!intro && !sessionId} />;
 
   const idle = !!intro && !sessionId;
-  const brand = <Brand stale={stale} connected={!!view} idle={idle} line={line} />;
+  const status = { view, stale, unreachable, idle, line };
+  const full = snap === 1;
+  const sheet = sheetLook(full);
 
   // One tree for both layouts, with the map in the same place in it, so a phone turning between the sheet
   // and the split layout keeps its map: the WebGL context, the tiles and where the renter had panned.
   return (
-    <div className="fixed inset-0 flex overflow-hidden">
-      <main className="relative min-w-0 flex-1">
+    <div className="fixed inset-0 overflow-hidden">
+      <main className="absolute inset-0">
         {map}
-        {/* At the sheet's top stop the header would peek, cut in half, above it. */}
-        {!desktop && !idle && snap !== 1 && (
-          <header
-            className="pointer-events-none absolute inset-x-0 top-0 z-10 px-3"
-            style={{ paddingTop: "max(12px, env(safe-area-inset-top))" }}
-          >
-            <div
-              className="pointer-events-auto rounded-[var(--radius-card)] bg-surface/95 px-4 py-2.5"
-              style={{ boxShadow: "0 0 0 1px var(--color-line), 0 4px 16px rgba(26,24,21,.08)" }}
-            >
-              {brand}
-            </div>
+        {/* At the sheet's top stop the capsule steps into the sheet, which covers it. */}
+        {!desktop && !idle && !full && (
+          <header className="cap glass" style={CAPSULE_STYLE}>
+            <Brand {...status} yourCalls />
           </header>
         )}
       </main>
+      <Toasts toasts={toasts} dismiss={dismiss} desktop={desktop} />
       {desktop ? (
-        <aside
-          className={`flex ${PANEL_WIDTH} shrink-0 flex-col bg-ground`}
-          style={PANEL_STYLE}
-          aria-label="Places Landline found"
-        >
-          <PanelHeader brand={brand} />
+        <aside ref={panelShown} className={PANEL} style={PANEL_STYLE} aria-label="Places Landline found">
+          <div className="panel-head">
+            <Brand {...status} />
+          </div>
           <div
             ref={scroller}
             className="relative min-h-0 flex-1 overflow-y-auto"
@@ -354,6 +428,7 @@ export function LiveBoard({
               {dock}
             </div>
           )}
+          <PanelFoot />
         </aside>
       ) : (
         <Drawer.Root
@@ -365,12 +440,13 @@ export function LiveBoard({
           setActiveSnapPoint={setSnap}
         >
           <Drawer.Portal>
+            <SheetSpring />
             <Drawer.Content
               aria-describedby={undefined}
-              className="fixed inset-x-0 bottom-0 z-20 flex h-[96dvh] flex-col rounded-t-[22px] bg-ground outline-none"
+              className={`bottom-0 z-20 flex h-[96dvh] flex-col outline-none ${sheet.className}`}
               style={
                 {
-                  boxShadow: "0 -1px 0 var(--color-line), 0 -8px 28px rgba(26,24,21,.10)",
+                  ...sheet.style,
                   // vaul starts a sheet with snap points off screen and slides it to the first stop. Starting
                   // at the stop (the offset vaul computes: the viewport less PEEK) puts the panel on screen
                   // in its first frame, so the places paint where they'll stay.
@@ -379,10 +455,14 @@ export function LiveBoard({
               }
             >
               <Drawer.Title className="sr-only">Places Landline found</Drawer.Title>
-              <div aria-hidden className="mx-auto mb-2 mt-2.5 h-1 w-10 shrink-0 rounded-full bg-ink/20" />
-              {/* At the top stop the floating header steps aside, so its status (live, reconnecting, the
-                  voice line) shows here instead. */}
-              {!idle && snap === 1 && <div className="shrink-0 px-4 pb-2">{brand}</div>}
+              <span aria-hidden className="grabber" />
+              {/* At the top stop the capsule steps into the sheet, so its status (the pill, the voice line)
+                  and "Your calls" show here instead. */}
+              {!idle && full && (
+                <div className="flex shrink-0 items-center justify-between gap-2 px-4 pb-2">
+                  <Brand {...status} yourCalls />
+                </div>
+              )}
               {dock && sessionId && <div className="shrink-0 px-4 pb-3">{dock}</div>}
               <div
                 ref={scroller}

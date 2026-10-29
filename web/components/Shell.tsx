@@ -1,4 +1,5 @@
-import type { CSSProperties, ReactNode } from "react";
+import Link from "next/link";
+import type { CSSProperties } from "react";
 import { Brand } from "./Summary";
 
 /** How much of the phone sheet shows at its lowest stop. */
@@ -15,25 +16,54 @@ export const SPLIT = "(min-width: 1024px), (orientation: landscape) and (max-hei
 export const SHORT = "(max-height: 520px)";
 
 /**
- * The split layout's panel: 440px on a desktop, narrower on a tablet or a phone on its side, and 560px from
- * 1600px (a projector), where its type also steps up a size (`.panel` in app/globals.css).
+ * The split layout's panel (Lucent's `.panel`, which leaves its place to us): glass, floating 16px in from the
+ * top, right and bottom of a full-bleed map. 440px on a desktop, narrower on a tablet or a phone on its
+ * side, and 560px from 1600px (a projector), where its type also steps up a size.
  */
-export const PANEL_WIDTH = "panel w-[clamp(340px,42vw,440px)] min-[1600px]:w-[560px]";
+export const PANEL = "panel glass absolute top-4 right-4 bottom-4 z-10 w-[clamp(340px,42vw,440px)] min-[1600px]:w-[560px]";
 
-/** The split layout's panel, clear of a phone's notch when it's held sideways. */
-export const PANEL_STYLE: CSSProperties = {
-  boxShadow: "-1px 0 0 var(--color-line)",
-  paddingRight: "env(safe-area-inset-right)",
-};
+/** Clear of a phone's notch when it's held sideways. */
+export const PANEL_STYLE: CSSProperties = { marginRight: "env(safe-area-inset-right)" };
 
-/** The split layout's panel header: the brand line, and the tagline where there's room for it. */
-export function PanelHeader({ brand }: { brand: ReactNode }) {
+/** The room the map leaves the panel when it frames the board: its width and 16px inset, then the same 64px
+ *  the map keeps clear on its other edges, so the outermost pin never touches the glass. */
+export const panelRoom = (width: number) => width + 16 + 64;
+
+/** The phone's header: one glass capsule floating over the map, clear of the notch. */
+export const CAPSULE_STYLE: CSSProperties = { top: "max(12px, env(safe-area-inset-top))" };
+
+/** The panel's foot: the tagline, and "Your calls" (a phone has it as a button in its capsule instead). */
+export function PanelFoot() {
   return (
-    <div className="px-4 pb-4 pt-5 short:pb-1 short:pt-3">
-      {brand}
-      <p className="mt-0.5 text-meta text-ink-3 short:hidden">Toronto rentals, checked by phone</p>
+    <div className="flex shrink-0 items-center justify-between gap-3 border-t border-line py-1.5 pl-5 pr-3">
+      <p className="t-caption c-2 short:hidden">Toronto rentals, checked by phone</p>
+      <Link href="/me" className="btn btn-quiet btn-small ml-auto">
+        Your calls
+      </Link>
     </div>
   );
+}
+
+/** The phone sheet's two looks: glass floating 8px in at its low and half stops, solid edge to edge at full. */
+export function sheetLook(full: boolean): { className: string; style: CSSProperties } {
+  return full
+    ? { className: "bg-ground", style: { position: "fixed", left: 0, right: 0, borderRadius: 0 } }
+    : { className: "glass", style: { position: "fixed", left: 8, right: 8, borderRadius: "34px 34px 0 0" } };
+}
+
+/**
+ * The sheet settling on a stop on Lucent's sheet spring (400/38, about 490ms; lib/motion.ts's SPRING_SHEET),
+ * sampled as a CSS curve. vaul sets the transition inline as the finger lets go; this changes only its curve
+ * and length, so while dragging (vaul's `transition: none`) the sheet still follows the finger. Under reduced
+ * motion it goes straight to the stop.
+ */
+const SHEET_SETTLE =
+  "[data-vaul-drawer]{transition-duration:490ms!important;transition-timing-function:" +
+  "linear(0,.159,.42,.64,.792,.886,.941,.971,.986,.994,.998,.999,1,1,1)!important}" +
+  "@media (prefers-reduced-motion:reduce){[data-vaul-drawer]{transition-duration:0s!important}}";
+
+export function SheetSpring() {
+  return <style>{SHEET_SETTLE}</style>;
 }
 
 /**
@@ -50,46 +80,38 @@ export function Shell({ idle = false }: { idle?: boolean }) {
       {[0, 1, 2].map((i) => (
         <div
           key={i}
-          className="h-[110px] rounded-[var(--radius-card)] bg-surface"
-          style={{ boxShadow: "0 0 0 1px var(--color-hair)" }}
+          className="h-[110px] rounded-[var(--radius-md)] bg-surface"
+          style={{ boxShadow: "0 0 0 1px var(--color-hairline)" }}
         />
       ))}
     </div>
   );
+  const sheet = sheetLook(false);
 
   return (
     <div className="fixed inset-0 overflow-hidden bg-map-land" aria-busy="true">
-      <div className="hidden h-full split:flex">
-        <div className="min-w-0 flex-1" />
-        <aside className={`flex ${PANEL_WIDTH} shrink-0 flex-col bg-ground`} style={PANEL_STYLE}>
-          <PanelHeader brand={<Brand stale={false} connected={false} idle={idle} />} />
-          {places}
+      <div className="hidden split:block">
+        <aside className={PANEL} style={PANEL_STYLE}>
+          <div className="panel-head">
+            <Brand stale={false} idle={idle} />
+          </div>
+          <div className="min-h-0 flex-1">{places}</div>
+          <PanelFoot />
         </aside>
       </div>
 
       <div className="split:hidden">
         {!idle && (
-          <header
-            className="absolute inset-x-0 top-0 z-10 px-3"
-            style={{ paddingTop: "max(12px, env(safe-area-inset-top))" }}
-          >
-            <div
-              className="rounded-[var(--radius-card)] bg-surface/95 px-4 py-2.5"
-              style={{ boxShadow: "0 0 0 1px var(--color-line), 0 4px 16px rgba(26,24,21,.08)" }}
-            >
-              <Brand stale={false} connected={false} idle={idle} />
-            </div>
+          <header className="cap glass" style={CAPSULE_STYLE}>
+            <Brand stale={false} idle={idle} yourCalls />
           </header>
         )}
         {/* Where LiveBoard's sheet starts: the viewport less PEEK, as vaul computes it. */}
         <div
-          className="fixed inset-x-0 bottom-0 z-20 h-[96dvh] rounded-t-[22px] bg-ground"
-          style={{
-            boxShadow: "0 -1px 0 var(--color-line), 0 -8px 28px rgba(26,24,21,.10)",
-            transform: `translate3d(0, calc(100dvh - ${PEEK}), 0)`,
-          }}
+          className={`bottom-0 z-20 flex h-[96dvh] flex-col ${sheet.className}`}
+          style={{ ...sheet.style, transform: `translate3d(0, calc(100dvh - ${PEEK}), 0)` }}
         >
-          <div aria-hidden className="mx-auto mb-2 mt-2.5 h-1 w-10 rounded-full bg-ink/20" />
+          <span aria-hidden className="grabber" />
           {places}
         </div>
       </div>

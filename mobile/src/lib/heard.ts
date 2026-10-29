@@ -63,3 +63,45 @@ export function phoneLabel(e164: string): string {
   const m = /^\+1(\d{3})(\d{3})(\d{4})$/.exec(e164);
   return m ? `+1 ${m[1]} ${m[2]} ${m[3]}` : e164;
 }
+
+const NBSP = " ";
+
+/** A date part in Toronto time, from a plain formatter, with its spaces made no-break so it can't wrap inside. */
+function part(t: Date, options: Intl.DateTimeFormatOptions): string {
+  return new Intl.DateTimeFormat("en-US", { timeZone: "America/Toronto", ...options }).format(t).replace(/\s+/g, NBSP);
+}
+
+/**
+ * The board's one way to write a time, "Sat, Oct 31 · 2:00 PM" in Toronto (web/lib/time.ts's formatWhen: keep
+ * the two in step). Null when it doesn't parse. Built from three plain formatters rather than formatToParts,
+ * whose part types Hermes gets wrong (the hour and minute come back as "literal", which read as "12:"). A phone
+ * without time zone data gets `when`'s wording instead.
+ */
+export function formatWhen(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const t = new Date(iso);
+  if (Number.isNaN(t.getTime())) return null;
+  try {
+    const weekday = part(t, { weekday: "short" });
+    const date = part(t, { month: "short", day: "numeric" });
+    const clock = part(t, { hour: "numeric", minute: "2-digit", hour12: true });
+    return `${weekday},${NBSP}${date}${NBSP}· ${clock}`;
+  } catch {
+    return when(iso) || null;
+  }
+}
+
+/** A viewing as the board's statusOf says it (web/lib/status.ts): booked in ink, waiting on the agent;
+ *  confirmed in green; declined in red. The time is the code's; the agent's words only when there's none. */
+export function viewingStatus(v: { starts_at?: string | null; slot_text?: string | null; status: string }): {
+  words: string;
+  sub: string | null;
+  tone: "ink" | "real" | "dead";
+} {
+  const at = formatWhen(v.starts_at) ?? (v.slot_text?.trim() || null);
+  if (v.status === "confirmed") return { words: at ? `Viewing confirmed · ${at}` : "Viewing confirmed", sub: null, tone: "real" };
+  if (v.status === "declined") {
+    return { words: at ? `The agent can’t do ${at}` : "The agent can’t make the viewing", sub: null, tone: "dead" };
+  }
+  return { words: at ? `Viewing ${at}` : "Viewing booked", sub: "Waiting for the agent to confirm", tone: "ink" };
+}

@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { callNotes, unheard, unheardCounts } from "./outcome.ts";
+import { callNotes, unheard } from "./outcome.ts";
 import type { CallView, Card, EndReason } from "./types.ts";
 
 const card = (address: string) => ({ address }) as Card;
@@ -120,7 +120,7 @@ const ended = (end_reason: EndReason, facts: unknown[] = [], call_id = "c_1", li
 
 test("a call that learned nothing is worded from how it ended", () => {
   const words: Record<EndReason, string> = {
-    no_answer: "No answer", busy: "No answer", voicemail: "Left a message", hangup: "Hung up early",
+    no_answer: "Didn\u2019t get through", busy: "Didn\u2019t get through", voicemail: "Left a message", hangup: "Hung up early",
     timeout: "Call dropped", failed: "Call dropped", blocked: "Couldn’t call", done: "Reached, nothing new",
     refused: "Wouldn’t answer", wrong_number: "Wrong number",
   };
@@ -140,12 +140,4 @@ test("a card that heard facts, another status, or no outcome yet is left as it i
 
 test("the latest call to the place decides", () => {
   assert.equal(unheard(noAnswer(), [ended("no_answer", [], "c_1"), ended("voicemail", [], "c_2")])?.word, "Left a message");
-});
-
-test("the summary counts cards whose calls learned nothing in the badges' words", () => {
-  const board = [noAnswer("t:1"), noAnswer("t:2"), noAnswer("t:3"), { listing_id: "t:4", status: "verified" } as Card];
-  const calls = [ended("hangup", [], "c_1", "t:1"), ended("done", [], "c_2", "t:2")];   // t:3 has no outcome yet
-  assert.deepEqual(unheardCounts(board, calls), [["hung up early", 1], ["reached, nothing new", 1], ["no answer", 1]]);
-  assert.deepEqual(unheardCounts([noAnswer("t:1"), noAnswer("t:2")], [ended("busy", [], "c_1", "t:1")]), [["no answer", 2]]);
-  assert.deepEqual(unheardCounts([], []), []);
 });

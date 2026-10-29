@@ -1,68 +1,161 @@
 @import "tailwindcss";
 
 /* ─────────────────────────────────────────────────────────────────────────
-   Landline: the live surface.
+   Landline on Lucent: the live surface.
 
    A calm map of places someone actually checked. The renter is on the phone
    while this fills in; the screen confirms what they hear and never competes
-   with it. Tokens carried over from Realest, where they survived two design
-   audits:
-     · Warm-neutral ink on a warm ground. Ink is the primary action and the focus ring.
-     · Colour means status and nothing else: checked, live, gone.
-     · Money is the largest thing on a card, set in the sans with tabular figures.
+   with it. Lucent gives the ground, the ink, the glass, the corners, the type
+   and the springs; Landline adds three status hues, which carry a call's state
+   and nothing else, and the map. The names follow the design canvas
+   ("Landline demo polish", landline.css), so its classes move straight in.
+     · Warm-neutral ink on a near-white ground. Ink is the primary action and the focus ring.
+     · Colour means status and nothing else, always with a shape and a word.
+     · Money is the largest thing on a card, with tabular figures.
      · Every fact says where it came from.
-   Every text colour is at least 4.5:1 on white; no text under 13px.
+   Every text colour is at least 4.5:1 on surface; no UI text under 13px.
    ───────────────────────────────────────────────────────────────────────── */
 
 @theme static {
-  --color-ground: #f6f4f0;
+  /* Lucent: grounds and ink */
+  --color-ground: #fbfbfa;            /* the page (Lucent's --bg) */
   --color-surface: #ffffff;
-  --color-press: #f1efea;
-  --color-ink: #1a1815;      /* 17.7:1 */
-  --color-ink-2: #55524e;    /*  7.8:1 */
-  --color-ink-3: #6c6864;    /*  5.5:1, the quietest text there is */
-  --color-line: rgba(26, 24, 21, 0.1);
-  --color-hair: rgba(26, 24, 21, 0.06);
+  --color-surface-raised: #f7f6f3;
+  --color-fill-muted: #ecebe7;        /* photo wells, skeletons */
+  --color-ink: #191918;               /* 17.6:1 on surface */
+  --color-ink-secondary: #6b6a66;     /*  5.4:1 on surface, 5.0:1 on surface-raised */
+  --color-hairline: rgba(55, 53, 47, 0.12);
+  --color-accent: #191918;
+  --color-on-accent: #ffffff;
+  --color-accent-tint: rgba(55, 53, 47, 0.08);   /* pills, chips, hover */
+  --color-control-off: rgba(55, 53, 47, 0.2);
+  --color-dot: rgba(55, 53, 47, 0.16);
+  --color-tag-gray: #f1f1ef;
 
-  /* status, the only colour on the page */
-  --color-real: #216a49;     /* checked by phone */
-  --color-live: #935a11;     /* on the phone now */
-  --color-dead: #af2b25;     /* gone, or over budget */
+  /* The names the app's components use today, kept as Lucent values until each moves to the names above. */
+  --color-press: var(--color-fill-muted);
+  --color-ink-2: var(--color-ink-secondary);
+  --color-ink-3: var(--color-ink-secondary);
+  --color-line: var(--color-hairline);
+  --color-hair: var(--color-accent-tint);
 
-  /* the map, tuned to sit under the ink */
+  /* Landline: status, the only colour in the UI. Deeper than Lucent's success and danger so they hold on a
+     projector. Always with a shape and a word. */
+  --color-real: #216a49;     /* checked by phone, booked, confirmed · 6.5:1 */
+  --color-live: #935a11;     /* on the phone now · 5.7:1 */
+  --color-dead: #af2b25;     /* flagged, declined · 6.6:1 */
+  --color-quiet: #6b6a66;    /* no answer, already rented */
+
+  /* Landline: the basemap, tuned to sit under the ink. MapView reads these. */
   --color-map-land: #efece6;
   --color-map-water: #cad7dc;
   --color-map-park: #dfe5d4;
 
-  --font-sans: var(--font-instrument), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-plex), ui-monospace, monospace;
+  /* Lucent: type families, the system's own (SF Pro on Apple devices). --font-sans, which Tailwind and the
+     page use, is the text family. */
+  --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-text: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-sans: var(--font-text);
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
+  /* Type ramp, phone and desktop. The projector steps each one up (.panel, below). */
   --text-price-lead: 28px;
-  --text-price-lead--line-height: 32px;
+  --text-price-lead--line-height: 34px;
   --text-price-lead--letter-spacing: -0.02em;
   --text-price: 22px;
-  --text-price--line-height: 26px;
+  --text-price--line-height: 28px;
   --text-price--letter-spacing: -0.015em;
   --text-title: 20px;
   --text-title--line-height: 25px;
   --text-title--letter-spacing: -0.012em;
-  --text-fact: 17px;
-  --text-fact--line-height: 22px;
+  --text-headline: 17px;
+  --text-headline--line-height: 22px;
+  --text-headline--letter-spacing: -0.01em;
+  --text-body: 17px;
+  --text-body--line-height: 24px;
+  --text-body--letter-spacing: -0.01em;
+  --text-callout: 15px;
+  --text-callout--line-height: 21px;
+  --text-callout--letter-spacing: -0.003em;
+  --text-caption: 13px;
+  --text-caption--line-height: 18px;
+  /* Lucent's Display group, for the cover only (the board's largest type is the price): title-1 for its one
+     headline, title-2 for its sections. */
+  --text-title-1: 44px;
+  --text-title-1--line-height: 48px;
+  --text-title-1--letter-spacing: -0.025em;
+  --text-title-1--font-weight: 700;
+  --text-title-2: 28px;
+  --text-title-2--line-height: 34px;
+  --text-title-2--letter-spacing: -0.015em;
+  --text-title-2--font-weight: 600;
+  /* Today's names: fact = headline's size, support = callout, meta = caption. */
+  --text-fact: var(--text-headline);
+  --text-fact--line-height: var(--text-headline--line-height);
   --text-fact--letter-spacing: -0.01em;
-  --text-support: 15px;
-  --text-support--line-height: 20px;
-  --text-support--letter-spacing: -0.005em;
-  --text-meta: 13px;
-  --text-meta--line-height: 18px;
+  --text-support: var(--text-callout);
+  --text-support--line-height: var(--text-callout--line-height);
+  --text-support--letter-spacing: -0.003em;
+  --text-meta: var(--text-caption);
+  --text-meta--line-height: var(--text-caption--line-height);
 
-  --font-weight-label: 540;
-  --font-weight-strong: 580;
+  --font-weight-label: 500;
+  --font-weight-strong: 600;
 
-  --radius-card: 16px;
-  --radius-control: 12px;
-  --radius-photo: 10px;
+  /* Lucent: corners */
+  --radius-sm: 12px;
+  --radius-md: 20px;
+  --radius-lg: 28px;
+  --radius-xl: 40px;
+  --radius-pill: 999px;
+  --radius-card: var(--radius-md);
+  --radius-control: var(--radius-sm);
+  --radius-photo: 8px;
 
-  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  /* Lucent: depth */
+  --shadow-hairline: 0 0 0 1px var(--color-hairline);
+  --shadow-glass: 0 0 0 1px rgba(15, 15, 15, 0.04), 0 3px 6px rgba(15, 15, 15, 0.05), 0 12px 32px rgba(15, 15, 15, 0.08);
+  --shadow-lift: 0 0 0 1px rgba(15, 15, 15, 0.05), 0 8px 16px rgba(15, 15, 15, 0.08), 0 28px 60px rgba(15, 15, 15, 0.14);
+  --shadow-rim: inset 0 1px 0 rgba(255, 255, 255, 0.95), inset 0 -1px 0 rgba(55, 53, 47, 0.06);
+  --shadow-pin: 0 1px 2px rgba(25, 25, 24, 0.22), 0 4px 10px rgba(25, 25, 24, 0.16);
+
+  /* Lucent: motion. Exits are faster than entrances; nothing loops except a live call's ring. The springs
+     (rank, sheet, lens, jelly, detail) are in lib/motion.ts, for motion/react. */
+  --ease-settle: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  --ease-press: cubic-bezier(0.3, 0, 0.4, 1);
+  --ease-out: var(--ease-settle);
+}
+
+:root {
+  /* Lucent: space. 4 · 8 chips and gaps between cards · 12 card padding · 16 panel padding and glass inset ·
+     24 between sections · 32 artboard gutters. Tailwind's 4px scale spells the same steps (p-3 = 12px). */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* Lucent: durations */
+  --dur-press: 110ms;
+  --dur-exit: 180ms;
+  --dur-jelly: 560ms;
+  --dur-morph: 640ms;
+  --dur-enter: 700ms;
+  --dur-stagger: 60ms;
+  --dur-toast: 2800ms;
+
+  /* Lucent: glass. Only where a control floats over the map; solid everywhere else. */
+  --glass-fill: rgba(255, 255, 255, 0.5);
+  --glass-fill-strong: rgba(255, 255, 255, 0.76);
+  --glass-stroke: rgba(255, 255, 255, 0.85);
+  --glass-specular: rgba(255, 255, 255, 0.95);
+  --glass-shade: rgba(55, 53, 47, 0.08);
+  --blur-thin: 10px;
+  --blur-regular: 24px;
+  --blur-thick: 44px;
+  --glass-saturate: 180%;
 }
 
 /* The split layout (map left, panel right): desktops, tablets on their side, and phones held sideways,
@@ -98,7 +191,7 @@
   :where(s, del) { text-decoration-thickness: 1.5px; }
   ::selection { background: var(--color-ink); color: #fff; }
   button:not(:disabled), [role="button"], a[href] { cursor: pointer; }
-  :focus-visible { outline: 2px solid var(--color-ink); outline-offset: 2px; }
+  :focus-visible { outline: 3px solid var(--color-accent); outline-offset: 3px; }
 }
 
 .tnum { font-variant-numeric: lining-nums tabular-nums; }
@@ -106,13 +199,27 @@
 /* A projector (1920 x 1080 on stage): the split layout's panel widens to 560px (PANEL_WIDTH) and its type
    steps up one size, so the story reads from the back of the room. Below 1600px nothing changes. */
 @media (min-width: 1600px) {
-  .panel {
-    --text-price-lead: 32px;
-    --text-price-lead--line-height: 36px;
+  /* .panel is the board's panel; .proj marks anything else on the map that steps up with it (a legend). */
+  .panel, .proj {
+    --text-price-lead: 34px;
+    --text-price-lead--line-height: 40px;
     --text-price: 26px;
-    --text-price--line-height: 30px;
+    --text-price--line-height: 32px;
     --text-title: 24px;
     --text-title--line-height: 30px;
+    --text-headline: 20px;
+    --text-headline--line-height: 26px;
+    --text-body: 20px;
+    --text-body--line-height: 28px;
+    --text-callout: 17px;
+    --text-callout--line-height: 23px;
+    --text-caption: 15px;
+    --text-caption--line-height: 20px;
+    --text-title-1: 52px;
+    --text-title-1--line-height: 56px;
+    --text-title-2: 34px;
+    --text-title-2--line-height: 40px;
+    /* today's names, resolved again here (a var() resolves where it's declared, on :root) */
     --text-fact: 20px;
     --text-fact--line-height: 26px;
     --text-support: 17px;
@@ -122,130 +229,648 @@
   }
 }
 
-/* ── map pins ─────────────────────────────────────────────────────────── */
+@layer components {
+  /* ── glass (Lucent): blur + fill + rim + refraction edge + depth ────────── */
 
-/* The button is the 44 px tap target; the 30 px face inside it is what shows. */
-.pin {
-  display: grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
-  padding: 0;
-  border: 0;
-  border-radius: 999px; /* a round target: no corners reaching into the map or a neighbour */
-  background: none;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-.pin:focus-visible { outline: none; }
-.pin-face {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 999px;
-  background: var(--color-ink);
-  color: #fff;
-  font: 580 13px/1 var(--font-sans);
-  font-variant-numeric: tabular-nums;
-  border: 2px solid #fff;
-  box-shadow: 0 1px 2px rgba(26, 24, 21, 0.18), 0 4px 10px rgba(26, 24, 21, 0.12);
-  transition: transform 220ms var(--ease-out), box-shadow 220ms var(--ease-out);
-}
-.pin:focus-visible .pin-face { outline: 2px solid var(--color-ink); outline-offset: 2px; }
-.pin:hover .pin-face, .pin[data-hover="true"] .pin-face { transform: scale(1.12); }
-.pin[data-focus="true"] .pin-face {
-  transform: scale(1.22);
-  box-shadow: 0 0 0 2px var(--color-ink), 0 6px 16px rgba(26, 24, 21, 0.25);
-}
-.pin[data-status="verified"] .pin-face { background: var(--color-real); }
-.pin[data-status="calling"] .pin-face { background: var(--color-live); }
-.pin[data-status="calling"] .pin-face::after {
-  content: "";
-  position: absolute;
-  inset: -6px;
-  border-radius: 999px;
-  border: 2px solid var(--color-live);
-  animation: ring 1.8s var(--ease-out) infinite;
-}
-/* No answer: the ring of a call that stopped, dashed and still. It reads apart from pending (no
-   ring), calling (a pulsing ring) and gone (hollow) without relying on colour. */
-.pin[data-status="no_answer"] .pin-face::after {
-  content: "";
-  position: absolute;
-  inset: -6px;
-  border-radius: 999px;
-  border: 2px dashed var(--color-ink-3);
-}
-.pin[data-status="dead"] .pin-face { background: #fff; color: var(--color-ink-3); border-color: var(--color-ink-3); }
-/* Suspect: outlined in red with a mark, so it reads without colour too. */
-.pin[data-status="suspect"] .pin-face { background: #fff; color: var(--color-dead); border-color: var(--color-dead); }
-.pin[data-status="booked"] .pin-face { background: var(--color-real); }
-.pin[data-status="suspect"] .pin-face::before,
-.pin[data-status="booked"] .pin-face::before,
-.pin[data-mark="will_call"] .pin-face::before,
-.pin[data-mark="queued"] .pin-face::before {
-  position: absolute;
-  top: -7px;
-  right: -7px;
-  display: grid;
-  place-items: center;
-  width: 16px;
-  height: 16px;
-  border-radius: 999px;
-  border: 1.5px solid #fff;
-  color: #fff;
-  font: 700 10px/1 var(--font-sans);
-}
-.pin[data-status="suspect"] .pin-face::before { content: "!"; background: var(--color-dead); }
-.pin[data-status="booked"] .pin-face::before { content: "★"; background: var(--color-ink); font-size: 9px; }
-/* Picked to call, until it dials (the card says "Will call", then "Queued"): a check, the renter's own pick. */
-.pin[data-mark="will_call"] .pin-face::before,
-.pin[data-mark="queued"] .pin-face::before { content: "✓"; background: var(--color-ink); }
+  /* Only on what floats over the map: the panel, the phone's sheet and cap, the legend, map controls.
+     .glass is the strong fill on the thickest blur; .glass-clear lets more map through; .glass-thin
+     is for small floating pills. Reduce Transparency, a browser without backdrop blur, or .is-solid
+     gives the same shape, solid. */
+  .glass, .glass-clear, .glass-thin {
+    position: relative;
+    isolation: isolate;
+    background: var(--glass-fill-strong);
+    -webkit-backdrop-filter: blur(var(--blur-thick)) saturate(var(--glass-saturate));
+    backdrop-filter: blur(var(--blur-thick)) saturate(var(--glass-saturate));
+    box-shadow: var(--shadow-rim), var(--shadow-glass);
+  }
+  .glass-clear {
+    background: var(--glass-fill);
+    -webkit-backdrop-filter: blur(var(--blur-regular)) saturate(var(--glass-saturate));
+    backdrop-filter: blur(var(--blur-regular)) saturate(var(--glass-saturate));
+  }
+  .glass-thin {
+    -webkit-backdrop-filter: blur(var(--blur-thin)) saturate(var(--glass-saturate));
+    backdrop-filter: blur(var(--blur-thin)) saturate(var(--glass-saturate));
+  }
+  /* the refraction edge: lit top-left, shaded bottom-right; a material edge, not a fill */
+  .glass::before, .glass-clear::before, .glass-thin::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    padding: 1px;
+    border-radius: inherit;
+    pointer-events: none;
+    background: linear-gradient(135deg, var(--glass-specular) 0%, rgba(255, 255, 255, 0.3) 30%, rgba(255, 255, 255, 0) 55%, var(--glass-shade) 100%);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    mask-composite: exclude;
+  }
+  /* the fixed sheen across the top, kept low so text below it reads the same */
+  .glass::after, .glass-clear::after, .glass-thin::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 0;
+    left: 0;
+    z-index: -1;
+    height: min(50%, 72px);
+    border-radius: inherit;
+    border-bottom-right-radius: 0;
+    border-bottom-left-radius: 0;
+    pointer-events: none;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.34), rgba(255, 255, 255, 0));
+  }
+  .glass.is-solid, .glass-clear.is-solid, .glass-thin.is-solid {
+    background: var(--color-surface);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  .glass.is-solid::after, .glass-clear.is-solid::after, .glass-thin.is-solid::after { display: none; }
+  @media (prefers-reduced-transparency: reduce) {
+    .glass, .glass-clear, .glass-thin {
+      background: var(--color-surface);
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+    .glass::after, .glass-clear::after, .glass-thin::after { display: none; }
+  }
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .glass, .glass-clear, .glass-thin { background: var(--color-surface); }
+  }
 
-@keyframes ring {
-  from { opacity: 0.7; transform: scale(0.85); }
-  to { opacity: 0; transform: scale(1.5); }
+  /* ── map pins ─────────────────────────────────────────────────────────── */
+
+  /* The button is the 44 px tap target; the 30 px face inside it is what shows. Every pin takes its shape
+     from data-s (lib/status.ts, the kit's rules below), the cover's drawn ones too. */
+  .pin {
+    padding: 0;
+    border: 0;
+    background: none;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .pin:focus-visible { outline: none; }
+  .pin:focus-visible .pin-face { outline: 3px solid var(--color-accent); outline-offset: 3px; }
+  .pin:hover .pin-face { transform: scale(1.12); }
+
+
+  /* The calling dot in the activity line breathes with the pin's ring. */
+  .live-dot { animation: breathe 1.8s var(--ease-out) infinite; }
+  @keyframes breathe {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+  }
+
+  /* Judge mode: the voice bar's bars while Landline's audio is actually playing. */
+  .meter-talk { height: 6px; animation: talk 900ms var(--ease-out) infinite alternate; }
+  @keyframes talk {
+    from { height: 4px; }
+    to { height: 16px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .pin-face, .pin-face::after, .live-dot { transition: none; animation: none; }
+    .meter-talk { animation: none; height: 12px; }
+  }
 }
 
-/* The calling dot in the activity line breathes with the pin's ring. */
-.live-dot { animation: breathe 1.8s var(--ease-out) infinite; }
-@keyframes breathe {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.35; }
+/* ── Lucent's components (landline.css, the design canvas "Landline demo polish") ───────────────
+   Every class the canvas uses (v2, with the forms, /me, the app and /v), on the app's token names. */
+
+@layer components {
+  /* ── base ───────────────────────────────────────────────────────────────── */
+
+  .tnum { font-variant-numeric: lining-nums tabular-nums; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+  /* ── type ───────────────────────────────────────────────────────────────── */
+
+  .t-price-lead { font: 600 var(--text-price-lead)/var(--text-price-lead--line-height) var(--font-display); letter-spacing: -0.02em; font-variant-numeric: lining-nums tabular-nums; }
+  .t-price { font: 600 var(--text-price)/var(--text-price--line-height) var(--font-display); letter-spacing: -0.015em; font-variant-numeric: lining-nums tabular-nums; }
+  .t-title { font: 600 var(--text-title)/var(--text-title--line-height) var(--font-display); letter-spacing: -0.012em; }
+  .t-headline { font: 600 var(--text-headline)/var(--text-headline--line-height) var(--font-text); letter-spacing: -0.01em; }
+  .t-body { font: 400 var(--text-body)/var(--text-body--line-height) var(--font-text); letter-spacing: -0.01em; }
+  .t-callout { font: 400 var(--text-callout)/var(--text-callout--line-height) var(--font-text); letter-spacing: -0.003em; }
+  .t-caption { font: 500 var(--text-caption)/var(--text-caption--line-height) var(--font-text); }
+  .per { font: 500 var(--text-caption)/1 var(--font-text); letter-spacing: 0; color: var(--color-ink-secondary); }
+  .c-2 { color: var(--color-ink-secondary); }
+  .c-real { color: var(--color-real); }
+  .c-live { color: var(--color-live); }
+  .c-dead { color: var(--color-dead); }
+  .w6 { font-weight: 600; }
+
+  /* ── glyphs ─────────────────────────────────────────────────────────────── */
+
+  .i {
+    width: 24px; height: 24px; flex: none; display: block;
+    fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+  }
+  .i-16 { width: 16px; height: 16px; }
+  .i-18 { width: 18px; height: 18px; }
+  .i-20 { width: 20px; height: 20px; }
+
+  /* The Landline mark: the favicon's pin in an ink squircle. */
+  .mark {
+    width: 28px; height: 28px; border-radius: 8px; background: var(--color-ink); color: #fff;
+    display: grid; place-items: center; flex: none;
+  }
+  .mark svg { width: 22px; height: 22px; fill: currentColor; }
+  .wordmark { display: flex; align-items: center; gap: 10px; font: 600 var(--text-title)/1 var(--font-display); letter-spacing: -0.015em; }
+
+  /* ── the map ────────────────────────────────────────────────────────────── */
+
+  .map { position: absolute; inset: 0; overflow: hidden; background: var(--color-map-land); }
+  .map-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .attrib {
+    position: absolute; display: inline-flex; align-items: center; height: 26px; padding: 0 10px; border-radius: 999px;
+    font: 500 13px/1 var(--font-text); color: var(--color-ink-secondary); white-space: nowrap;
+  }
+
+  /* ── pins: a 44px target, a face that carries rank, a ring and a badge for status ── */
+
+  .pin {
+    width: 44px; height: 44px;
+    display: grid; place-items: center; border-radius: 999px;
+  }
+  .pin-face {
+    position: relative; width: 30px; height: 30px; border-radius: 999px;
+    display: grid; place-items: center;
+    background: var(--color-ink); color: #fff; border: 2px solid #fff;
+    font: 600 13px/1 var(--font-text); font-variant-numeric: lining-nums tabular-nums;
+    box-shadow: var(--shadow-pin);
+    transition: transform 220ms var(--ease-settle), background-color 300ms var(--ease-settle), color 300ms var(--ease-settle), border-color 300ms var(--ease-settle), box-shadow 220ms var(--ease-settle);
+  }
+  .pin-ring { position: absolute; inset: 2px; border-radius: 999px; border: 2px solid transparent; pointer-events: none; }
+  /* the badge sits off the face's corner, clear of a two-digit rank */
+  .pin-badge {
+    position: absolute; top: -8px; right: -10px; width: 18px; height: 18px; border-radius: 999px;
+    display: grid; place-items: center; background: #fff; color: var(--color-ink);
+    box-shadow: 0 0 0 1px rgba(25, 25, 24, 0.1), 0 1px 3px rgba(25, 25, 24, 0.22);
+  }
+  .pin-badge .i { width: 11px; height: 11px; stroke-width: 2.8; }
+
+  .pin.is-hover .pin-face { transform: scale(1.12); }
+  .pin.is-focus { z-index: 30; }
+  .pin.is-focus .pin-face { transform: scale(1.22); box-shadow: 0 0 0 2px var(--color-ink), 0 6px 16px rgba(25, 25, 24, 0.3); }
+
+  /* status: fill + ring + badge; each reads without its colour */
+  [data-s="picked"] .pin-badge, [data-s="queued"] .pin-badge { color: var(--color-ink); }
+  [data-s="queued"] .pin-ring { border: 2px dotted var(--color-ink); }
+  [data-s="calling"] .pin-face { background: var(--color-live); }
+  [data-s="calling"] .pin-badge { color: var(--color-live); }
+  [data-s="calling"] .pin-ring { border-color: var(--color-live); animation: pin-ring 2.4s var(--ease-settle) infinite; }
+  [data-s="checked"] .pin-face, [data-s="confirmed"] .pin-face { background: var(--color-real); }
+  [data-s="checked"] .pin-badge { color: var(--color-real); }
+  [data-s="booked"] .pin-badge { color: var(--color-ink); }  /* booked: ink face, calendar badge, until the agent confirms */
+  [data-s="confirmed"] .pin-badge { background: var(--color-real); color: #fff; box-shadow: 0 0 0 2px #fff, 0 1px 3px rgba(25, 25, 24, 0.25); }
+  [data-s="flagged"] .pin-face, [data-s="declined"] .pin-face { background: #fff; color: var(--color-dead); border-color: var(--color-dead); }
+  [data-s="flagged"] .pin-badge { background: var(--color-dead); color: #fff; box-shadow: 0 0 0 2px #fff, 0 1px 3px rgba(25, 25, 24, 0.25); }
+  [data-s="declined"] .pin-badge { color: var(--color-dead); }
+  [data-s="noanswer"] .pin-face { background: var(--color-quiet); }
+  [data-s="noanswer"] .pin-ring { border: 2px dashed var(--color-quiet); }
+  [data-s="gone"] .pin-face { background: #fff; color: var(--color-quiet); border-color: var(--color-quiet); }
+
+  /* A mini pin, for legends and status tables. */
+  .mini { position: relative; display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 999px; background: var(--color-ink); border: 1.5px solid #fff; box-shadow: 0 0 0 1px rgba(25, 25, 24, 0.14); flex: none; }
+  .mini[data-s="calling"] { background: var(--color-live); box-shadow: 0 0 0 1px rgba(25, 25, 24, 0.1), 0 0 0 3.5px rgba(147, 90, 17, 0.35); }
+  .mini[data-s="checked"], .mini[data-s="confirmed"] { background: var(--color-real); }
+  .mini[data-s="flagged"] { background: #fff; border-color: var(--color-dead); box-shadow: none; }
+  .mini[data-s="noanswer"] { background: var(--color-quiet); box-shadow: 0 0 0 1px #fff, 0 0 0 2.5px var(--color-quiet); }
+  .mini[data-s="gone"] { background: #fff; border-color: var(--color-quiet); box-shadow: none; }
+  .mini .i { width: 9px; height: 9px; stroke-width: 3; color: #fff; }
+  .mini[data-s="queued"] { box-shadow: 0 0 0 1px #fff, 0 0 0 2.5px var(--color-ink); }
+  .mini[data-s="flagged"] .i { color: var(--color-dead); }
+
+  /* The renter's named place ("near King and Bay"): an anchor, not a listing. */
+  .anchor { position: absolute; display: flex; align-items: center; gap: 8px; transform: translate(-14px, -50%); }
+  .anchor-dot { width: 28px; height: 28px; border-radius: 999px; display: grid; place-items: center; background: #fff; color: var(--color-ink); box-shadow: 0 0 0 2px var(--color-ink), var(--shadow-pin); }
+  .anchor-dot .i { width: 14px; height: 14px; }
+  .anchor-label { height: 30px; padding: 0 12px; border-radius: 999px; display: inline-flex; align-items: center; font: 600 var(--text-caption)/1 var(--font-text); white-space: nowrap; }
+
+  /* Catalogue dots over a basemap, where an artboard draws its own. */
+  .cdot { position: absolute; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; border-radius: 999px; background: rgba(25, 25, 24, 0.38); box-shadow: 0 0 0 1px #fff; }
+
+  /* ── the panel (split layout) and the phone's floating parts ─────────────── */
+
+  /* Its place and width are set in Tailwind (inset 16 over the map; 440, or 560 from 1600px). */
+  .panel {
+    border-radius: var(--radius-lg); display: flex; flex-direction: column; overflow: hidden;
+  }
+  .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 20px 20px 14px; }
+  .panel-body { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 16px; padding: 4px 20px 20px; }
+  .panel-body > *, .sheet-body > * { flex-shrink: 0; }  /* the panel scrolls; its parts never squash */
+  .panel-list { display: flex; flex-direction: column; gap: 10px; }
+  .panel-fade { position: absolute; left: 0; right: 0; bottom: 0; height: 56px; pointer-events: none; background: linear-gradient(180deg, rgba(251, 251, 250, 0), rgba(251, 251, 250, 0.9)); border-radius: 0 0 var(--radius-lg) var(--radius-lg); }
+
+  .cap {
+    position: absolute; top: 12px; left: 12px; right: 12px; height: 52px; border-radius: 999px;
+    display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 8px 0 12px; z-index: 20;
+  }
+  .cap .wordmark { font-size: 18px; gap: 8px; }
+  .cap .mark { width: 26px; height: 26px; border-radius: 7px; }
+  .cap .mark svg { width: 20px; height: 20px; }
+
+  .sheet {
+    position: absolute; left: 8px; right: 8px; bottom: 8px; border-radius: 34px;
+    display: flex; flex-direction: column; overflow: hidden; z-index: 10;
+  }
+  .sheet.is-full { left: 0; right: 0; bottom: 0; top: 0; border-radius: 0; background: var(--color-ground); -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: none; }
+  .sheet.is-full::after, .sheet.is-full::before { display: none; }
+  .grabber { display: block; width: 36px; height: 5px; border-radius: 3px; background: rgba(55, 53, 47, 0.3); margin: 7px auto 3px; flex: none; }
+  .sheet-body { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 12px; padding: 6px 12px 12px; }
+  .scrim { position: absolute; inset: 0; background: rgba(25, 25, 24, 0.12); }
+
+  /* ── status pill (the board's phase) ────────────────────────────────────── */
+
+  .pill {
+    display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 13px 0 11px; border-radius: 999px;
+    background: var(--color-accent-tint); color: var(--color-ink); white-space: nowrap;
+    font: 600 var(--text-caption)/1 var(--font-text);
+  }
+  .pill .i { width: 16px; height: 16px; }
+  .pill.is-live { color: var(--color-live); }
+  .pill.is-real { color: var(--color-real); }
+  .pill.is-dead { color: var(--color-dead); }
+  .pill.is-quiet { color: var(--color-ink-secondary); }
+  .pill-dot { width: 8px; height: 8px; border-radius: 999px; background: currentColor; flex: none; }
+
+  /* Lucent's loading dots, held still here: the only loop on the board is a live call's ring. */
+  .dots { display: inline-flex; gap: 3px; align-items: center; }
+  .dots i { width: 4px; height: 4px; border-radius: 999px; background: currentColor; opacity: 0.55; }
+
+  /* ── what Landline heard ────────────────────────────────────────────────── */
+
+  .label { font: 500 var(--text-caption)/var(--text-caption--line-height) var(--font-text); color: var(--color-ink-secondary); display: flex; align-items: center; gap: 6px; }
+  .label .i { width: 15px; height: 15px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 13px; border-radius: 999px;
+    background: var(--color-surface); box-shadow: 0 0 0 1px var(--color-hairline);
+    font: 500 var(--text-callout)/1 var(--font-text); color: var(--color-ink); white-space: nowrap;
+  }
+  .chip.is-new { box-shadow: 0 0 0 1.5px var(--color-ink); }
+  .said { font: 400 var(--text-body)/var(--text-body--line-height) var(--font-text); letter-spacing: -0.01em; color: var(--color-ink); }
+  .activity { display: flex; align-items: center; gap: 8px; font: 500 var(--text-callout)/var(--text-callout--line-height) var(--font-text); color: var(--color-ink-secondary); }
+
+  /* ── the listing card ───────────────────────────────────────────────────── */
+
+  .card {
+    position: relative; display: grid; grid-template-columns: 88px minmax(0, 1fr); column-gap: 14px;
+    width: 100%; padding: 12px; border-radius: var(--radius-md); background: var(--color-surface);
+    box-shadow: 0 0 0 1px var(--color-hairline); text-align: left;
+    transition: transform var(--dur-jelly) var(--ease-settle), box-shadow var(--dur-jelly) var(--ease-settle);
+  }
+  .card.is-hover { transform: translateY(-2px); box-shadow: 0 0 0 1px var(--color-hairline), var(--shadow-lift); }
+  .card.is-focus { box-shadow: 0 0 0 2px var(--color-ink), var(--shadow-lift); }
+  .card.is-gone { background: var(--color-surface-raised); }
+  .card.is-gone .addr { text-decoration: line-through; text-decoration-thickness: 1.5px; color: var(--color-ink-secondary); }
+  .card-media { position: relative; width: 88px; height: 88px; }
+  .card-photo { width: 100%; height: 100%; border-radius: 8px; object-fit: cover; background: var(--color-fill-muted); }
+  .card-nophoto { width: 100%; height: 100%; border-radius: 8px; background: var(--color-fill-muted); display: grid; place-items: center; color: var(--color-ink-secondary); font: 500 var(--text-caption)/1 var(--font-text); }
+  .card-rank { position: absolute; top: -7px; left: -7px; }
+  .card-rank .pin-face { width: 28px; height: 28px; font-size: 13px; box-shadow: 0 1px 3px rgba(25, 25, 24, 0.24); }
+  .card-rank .pin-badge { top: -7px; right: -9px; }
+  .card-body { min-width: 0; display: flex; flex-direction: column; }
+  .card-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .price { display: inline-flex; align-items: baseline; gap: 4px; white-space: nowrap; }
+  .move { display: inline-flex; align-items: center; gap: 3px; height: 24px; padding: 0 8px 0 6px; border-radius: 999px; background: var(--color-accent-tint); font: 600 var(--text-caption)/1 var(--font-text); color: var(--color-ink); white-space: nowrap; }
+  .move .i { width: 13px; height: 13px; stroke-width: 2.6; }
+  .fee { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 6px; font: 500 var(--text-caption)/var(--text-caption--line-height) var(--font-text); color: var(--color-ink-secondary); }
+  .fee b { font-weight: 600; color: var(--color-ink); }
+  .addr { margin-top: 3px; font: 600 var(--text-headline)/var(--text-headline--line-height) var(--font-text); letter-spacing: -0.01em; }
+  .spec { font: 400 var(--text-callout)/var(--text-callout--line-height) var(--font-text); color: var(--color-ink-secondary); }
+  .reasons { margin-top: 2px; font: 400 var(--text-callout)/var(--text-callout--line-height) var(--font-text); color: var(--color-ink-secondary); }
+  .you { margin-top: 6px; font: 500 var(--text-callout)/var(--text-callout--line-height) var(--font-text); color: var(--color-ink); }
+  .you b { font-weight: 600; }
+
+  .card-foot { grid-column: 1 / -1; margin-top: 12px; padding-top: 11px; border-top: 1px solid var(--color-hairline); display: flex; flex-direction: column; gap: 10px; }
+  .status { display: flex; align-items: flex-start; gap: 7px; font: 600 var(--text-callout)/var(--text-callout--line-height) var(--font-text); }
+  .status .i { width: 18px; height: 18px; margin-top: calc((var(--text-callout--line-height) - 18px) / 2); }
+  .status .sub { font-weight: 400; color: var(--color-ink-secondary); }
+  /* the projector reads a call's state from the back row: status lines step up to the address's size */
+  .status.is-live { color: var(--color-live); }
+  .status.is-real { color: var(--color-real); }
+  .status.is-dead { color: var(--color-dead); }
+  .status.is-quiet { color: var(--color-ink-secondary); }
+  .status.is-ink { color: var(--color-ink); }
+
+  /* what was heard on the call, each with its source */
+  .facts { display: flex; flex-direction: column; gap: 7px; }
+  .fact { display: grid; grid-template-columns: 18px minmax(0, 1fr); column-gap: 9px; font: 400 var(--text-callout)/var(--text-callout--line-height) var(--font-text); }
+  .fact .i { width: 18px; height: 18px; color: var(--color-ink-secondary); margin-top: calc((var(--text-callout--line-height) - 18px) / 2); }
+  .fact b { font-weight: 600; }
+  .fact .q { display: block; color: var(--color-ink-secondary); }
+  .src { font: 500 var(--text-caption)/var(--text-caption--line-height) var(--font-text); color: var(--color-ink-secondary); white-space: nowrap; }
+  .flag { display: grid; grid-template-columns: 18px minmax(0, 1fr); column-gap: 9px; font: 500 var(--text-callout)/var(--text-callout--line-height) var(--font-text); color: var(--color-dead); }
+  .flag .i { width: 18px; height: 18px; margin-top: calc((var(--text-callout--line-height) - 18px) / 2); }
+
+  /* the call, line by line, while it's on */
+  .lines { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 14px; background: var(--color-surface-raised); }
+  .line { font: 400 var(--text-callout)/var(--text-callout--line-height) var(--font-text); color: var(--color-ink); }
+  .line .who { font-weight: 600; color: var(--color-ink-secondary); margin-right: 6px; }
+  .line.is-new { animation: rise-in var(--dur-enter) var(--ease-settle) both; }
+  .line.is-old { color: var(--color-ink-secondary); }
+
+  /* the viewing block, inside a card or the detail */
+  .viewing { display: grid; grid-template-columns: 22px minmax(0, 1fr); column-gap: 10px; padding: 12px 14px; border-radius: 14px; background: var(--color-surface-raised); }
+  .viewing .i { width: 22px; height: 22px; margin-top: 1px; }
+
+  /* ── controls ───────────────────────────────────────────────────────────── */
+
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 0 20px;
+    border-radius: 999px; font: 600 var(--text-headline)/1 var(--font-text); letter-spacing: -0.01em; white-space: nowrap;
+    transition: transform var(--dur-press) var(--ease-press), background-color var(--dur-jelly) var(--ease-settle);
+  }
+  .btn .i { width: 20px; height: 20px; }
+  .btn-primary { background: var(--color-accent); color: var(--color-on-accent); }
+  .btn-secondary { background: var(--color-surface); color: var(--color-ink); box-shadow: 0 0 0 1px var(--color-hairline); }
+  .btn-quiet { color: var(--color-ink); padding: 0 12px; }
+  .btn-quiet.is-hover, .btn-secondary.is-hover { background: var(--color-accent-tint); }
+  .btn.is-pressed { transform: scale(0.96); }
+  .btn.is-disabled { opacity: 0.45; }
+  /* The same states, live: hover changes the fill only; a press gives 4% and, let go, settles on Lucent's
+     jelly spring (460/16, lib/motion.ts's SPRING_JELLY, sampled as a CSS curve). */
+  @media (hover: hover) {
+    .btn-quiet:not(:disabled):hover, .btn-secondary:not(:disabled):hover { background: var(--color-accent-tint); }
+  }
+  .btn:not(:disabled):active { transform: scale(0.96); }
+  .btn:disabled { opacity: 0.45; cursor: default; }
+  @media (prefers-reduced-motion: no-preference) {
+    .btn:not(:active) {
+      transition-duration: var(--dur-jelly);
+      transition-timing-function: linear(0, 0.1484, 0.4677, 0.8142, 1.0878, 1.2423, 1.2791, 1.2299, 1.1378, 1.0419, 0.9724, 0.9309, 0.9221, 0.9367, 0.9628, 0.9895, 1.0096, 1.0201, 1.0216, 1.017, 1.0095, 1.0022, 0.9969, 0.9942, 0.994, 0.9955, 0.9976, 0.9996, 1.0009, 1.0016, 1.0017, 1.0012, 1.0006, 1.0001, 0.9997, 0.9995, 1), var(--ease-settle);
+    }
+  }
+  .btn-icon { width: 44px; padding: 0; }
+  .btn-small { min-height: 44px; padding: 0 16px; font-size: var(--text-callout); }
+  .back { display: inline-flex; align-items: center; gap: 2px; min-height: 44px; padding: 0 14px 0 8px; border-radius: 999px; font: 600 var(--text-callout)/1 var(--font-text); }
+  .back .i { width: 20px; height: 20px; }
+
+  .seg { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 0; padding: 4px; border-radius: 999px; background: var(--color-accent-tint); }
+  .seg button { min-height: 44px; border-radius: 999px; font: 600 var(--text-callout)/1 var(--font-text); color: var(--color-ink); text-align: center; }
+  .seg button.is-on { background: var(--color-surface); box-shadow: 0 1px 2px rgba(25, 25, 24, 0.1), 0 3px 8px rgba(25, 25, 24, 0.06); }
+
+  .reason-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .reason-chips button { min-height: 44px; padding: 0 16px; border-radius: 999px; background: var(--color-surface); box-shadow: 0 0 0 1px var(--color-hairline); font: 500 var(--text-callout)/1 var(--font-text); }
+  .reason-chips button.is-on { background: var(--color-accent-tint); box-shadow: 0 0 0 1.5px var(--color-accent); }
+
+  .mapctl { display: flex; flex-direction: column; border-radius: 22px; overflow: hidden; }
+  .mapctl button { width: 44px; height: 44px; display: grid; place-items: center; color: var(--color-ink); }
+  .mapctl button + button { border-top: 1px solid var(--color-hairline); }
+  .mapctl .i { width: 20px; height: 20px; }
+
+  .legend { display: inline-flex; align-items: center; gap: 16px; height: 40px; padding: 0 16px; border-radius: 999px; font: 500 var(--text-caption)/1 var(--font-text); white-space: nowrap; }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+
+  .toast { display: inline-flex; align-items: center; gap: 10px; min-height: 48px; padding: 0 20px 0 14px; border-radius: 999px; font: 500 var(--text-callout)/1.25 var(--font-text); }
+  .toast .i { width: 20px; height: 20px; }
+  .banner { display: grid; grid-template-columns: 20px minmax(0, 1fr); column-gap: 10px; padding: 12px 14px; border-radius: 16px; background: var(--color-surface); box-shadow: 0 0 0 1px var(--color-hairline); font: 400 var(--text-callout)/var(--text-callout--line-height) var(--font-text); }
+  .banner .i { width: 20px; height: 20px; margin-top: 1px; }
+
+  /* the results card, once the calls are done */
+  .results { padding: 16px; border-radius: var(--radius-md); background: var(--color-surface); box-shadow: 0 0 0 1px var(--color-hairline); display: flex; flex-direction: column; gap: 12px; }
+  .result { display: grid; grid-template-columns: 28px minmax(0, 1fr); column-gap: 12px; align-items: start; }
+  .result .pin-face { width: 28px; height: 28px; font-size: 13px; box-shadow: none; }
+  .tally { display: flex; flex-wrap: wrap; gap: 8px; }
+  .tally span { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: 999px; background: var(--color-accent-tint); font: 600 var(--text-caption)/1 var(--font-text); }
+
+  /* the detail */
+  .detail-photo { width: 100%; aspect-ratio: 4 / 3; border-radius: 16px; object-fit: cover; background: var(--color-fill-muted); }
+  .pager { display: flex; gap: 6px; justify-content: center; }
+  .pager i { width: 6px; height: 6px; border-radius: 999px; background: rgba(25, 25, 24, 0.22); }
+  .pager i.is-on { background: var(--color-ink); }
+  .section { display: flex; flex-direction: column; gap: 10px; }
+  .rows { display: flex; flex-direction: column; }
+  .row { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 12px; padding: 11px 0; border-top: 1px solid var(--color-hairline); }
+  .row:first-child { border-top: 0; padding-top: 2px; }
+  .row .k { font: 400 var(--text-callout)/var(--text-callout--line-height) var(--font-text); color: var(--color-ink-secondary); }
+  .row .v { font: 500 var(--text-callout)/var(--text-callout--line-height) var(--font-text); text-align: right; }
+  .quote { font: 400 var(--text-callout)/var(--text-callout--line-height) var(--font-text); color: var(--color-ink); padding-left: 12px; border-left: 2px solid var(--color-hairline); }
+  .grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 16px; }
+
+  /* ── motion ─────────────────────────────────────────────────────────────── */
+
+  @keyframes pin-ring {
+    0% { transform: scale(0.82); opacity: 0.85; }
+    70%, 100% { transform: scale(1.38); opacity: 0; }
+  }
+  @keyframes rise-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    [data-s="calling"] .pin-ring { animation: none; transform: scale(1.14); opacity: 1; }
+    .line.is-new { animation: none; opacity: 1; }
+    .pin-face, .card, .btn { transition-duration: 150ms; }
+  }
+
+
+  /* Legend swatches carry the pin's shape, not just its colour. */
+  .mini[data-s="booked"] { background: var(--color-ink); }
+  .mini[data-s="noanswer"] { box-shadow: none; outline: 1.5px dashed var(--color-quiet); outline-offset: 1.5px; }
+  .mini.is-anchor { background: #fff; border-color: #fff; box-shadow: 0 0 0 1.5px var(--color-ink); }
+  .mini.is-anchor .i { color: var(--color-ink); stroke-width: 2.6; }
+
+  /* ── accounts: /me, the app and the agent's confirm page ─────────────────── */
+
+  /* A field: label above, a soft pill, one hint line that a mistake replaces (so nothing below jumps). */
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field-label { font: 500 var(--text-caption)/var(--text-caption--line-height) var(--font-text); color: var(--color-ink-secondary); }
+  .input {
+    display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 0 18px; border-radius: 999px;
+    background: var(--color-surface); box-shadow: 0 0 0 1px var(--color-hairline);
+    font: 400 var(--text-body)/1 var(--font-text); color: var(--color-ink); letter-spacing: -0.01em;
+  }
+  .input .ph { color: var(--color-ink-secondary); }
+  .input .pre, .input .suf { color: var(--color-ink-secondary); font-weight: 500; flex: none; }
+  .input .val { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .input.is-focus { box-shadow: 0 0 0 2px var(--color-ink); }
+  .input.is-error { box-shadow: 0 0 0 2px var(--color-dead); }
+  .input.is-locked { background: var(--color-surface-raised); color: var(--color-ink-secondary); }
+  .caret { width: 2px; height: 22px; border-radius: 1px; background: var(--color-ink); flex: none; }
+  .hint { font: 400 var(--text-caption)/var(--text-caption--line-height) var(--font-text); color: var(--color-ink-secondary); min-height: 18px; }
+  .hint.is-error { color: var(--color-dead); font-weight: 500; }
+
+  /* The six-digit code: one box per digit, the active one ringed. */
+  .otp { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
+  .otp span { height: 58px; border-radius: 16px; display: grid; place-items: center; background: var(--color-surface); box-shadow: 0 0 0 1px var(--color-hairline); font: 600 24px/1 var(--font-display); font-variant-numeric: tabular-nums; }
+  .otp span.is-on { box-shadow: 0 0 0 2px var(--color-ink); }
+
+  .btn-block { width: 100%; min-height: 52px; }
+
+  /* Lucent's switch: ink when on; the knob stretches as it travels. */
+  .switch { position: relative; width: 51px; height: 31px; border-radius: 999px; background: var(--color-control-off); flex: none; transition: background-color 240ms var(--ease-settle); }
+  .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 999px; background: #fff; box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15), 0 1px 1px rgba(0, 0, 0, 0.16); transition: transform 320ms var(--spring-lens); }
+  .switch.is-on { background: var(--color-ink); }
+  .switch.is-on::after { transform: translateX(20px); }
+
+  /* A tick: a soft square, ink when on. */
+  .tick { width: 24px; height: 24px; border-radius: 7px; flex: none; display: grid; place-items: center; background: var(--color-surface); box-shadow: inset 0 0 0 1.5px rgba(55, 53, 47, 0.35); color: #fff; }
+  .tick .i { width: 16px; height: 16px; stroke-width: 3; opacity: 0; }
+  .tick.is-on { background: var(--color-ink); box-shadow: none; }
+  .tick.is-on .i { opacity: 1; }
+
+  /* Settings-style rows inside one solid group. */
+  .group { border-radius: var(--radius-md); background: var(--color-surface); box-shadow: 0 0 0 1px var(--color-hairline); overflow: hidden; }
+  .grow { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 14px; min-height: 56px; padding: 10px 16px; }
+  .grow + .grow { border-top: 1px solid var(--color-hairline); }
+  .grow .t { font: 500 var(--text-body)/var(--text-body--line-height) var(--font-text); letter-spacing: -0.01em; }
+  .grow .d { font: 400 var(--text-caption)/var(--text-caption--line-height) var(--font-text); color: var(--color-ink-secondary); }
+  .grow.is-tick { grid-template-columns: 24px minmax(0, 1fr); column-gap: 12px; align-items: start; }
+
+  /* The save bar: one place that says where the form stands. */
+  .savebar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 10px 10px 18px; border-radius: 999px; }
+  .savebar .state { display: inline-flex; align-items: center; gap: 8px; font: 500 var(--text-callout)/1 var(--font-text); color: var(--color-ink-secondary); }
+  .savebar .state .i { width: 18px; height: 18px; }
+
+  /* Page chrome for /me (desktop) */
+  .me-top { display: flex; align-items: center; justify-content: space-between; height: 72px; padding: 0 40px; border-bottom: 1px solid var(--color-hairline); background: rgba(251, 251, 250, 0.86); }
+  .tabs { display: inline-grid; grid-auto-flow: column; gap: 0; padding: 4px; border-radius: 999px; background: var(--color-accent-tint); }
+  .tabs a { min-height: 44px; padding: 0 18px; border-radius: 999px; display: inline-flex; align-items: center; font: 600 var(--text-callout)/1 var(--font-text); color: var(--color-ink); text-decoration: none; }
+  .tabs a.is-on { background: var(--color-surface); box-shadow: 0 1px 2px rgba(25, 25, 24, 0.1), 0 3px 8px rgba(25, 25, 24, 0.06); }
+
+  /* The app's tab bar: glass, floating, three places. */
+  .tabbar { position: absolute; left: 50%; bottom: 26px; transform: translateX(-50%); display: grid; grid-auto-flow: column; gap: 4px; padding: 6px; border-radius: 999px; z-index: 20; }
+  .tabbar a { width: 96px; height: 54px; border-radius: 999px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font: 600 13px/1 var(--font-text); color: var(--color-ink-secondary); text-decoration: none; }
+  .tabbar a .i { width: 22px; height: 22px; }
+  .tabbar a.is-on { color: var(--color-ink); background: var(--color-accent-tint); }
+
+  /* A listing the renter's calls checked, on /me and in the app: money first, then what happened, then what was heard. */
+  .acard { display: flex; flex-direction: column; gap: 4px; padding: 18px 20px 8px; border-radius: var(--radius-md); background: var(--color-surface); box-shadow: 0 0 0 1px var(--color-hairline); }
+  .acard-top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+  .how { display: inline-flex; align-items: center; gap: 6px; font: 500 var(--text-caption)/var(--text-caption--line-height) var(--font-text); color: var(--color-ink-secondary); white-space: nowrap; }
+  .how .i { width: 15px; height: 15px; }
+  .acard .addr { margin-top: 0; }
+  .acard .addr .unit { font-weight: 400; color: var(--color-ink-secondary); }
+  .meta { font: 400 var(--text-caption)/var(--text-caption--line-height) var(--font-text); color: var(--color-ink-secondary); }
+  .acard .status { margin-top: 8px; }
+  .acard .flag { margin-top: 6px; }
+  .afacts { margin-top: 8px; border-top: 1px solid var(--color-hairline); }
+  .afact { display: grid; grid-template-columns: 20px minmax(0, 1fr) 18px; column-gap: 10px; align-items: start; min-height: 44px; padding: 11px 0; }
+  .afact + .afact { border-top: 1px solid var(--color-hairline); }
+  .afact > .i { width: 18px; height: 18px; color: var(--color-ink-secondary); margin-top: 1px; }
+  .afact .v { font: 400 var(--text-callout)/var(--text-callout--line-height) var(--font-text); }
+  .afact .v b { font-weight: 600; }
+  .afact .s { font: 500 var(--text-caption)/var(--text-callout--line-height) var(--font-text); color: var(--color-ink-secondary); white-space: nowrap; }
+  .afact .q { margin-top: 6px; padding-left: 12px; border-left: 2px solid var(--color-hairline); font: 400 var(--text-callout)/var(--text-callout--line-height) var(--font-text); color: var(--color-ink); }
+  .afact .q span { display: block; margin-top: 2px; font: 500 var(--text-caption)/var(--text-caption--line-height) var(--font-text); color: var(--color-ink-secondary); }
+  .afact .chev { width: 18px; height: 18px; color: var(--color-ink-secondary); margin-top: 2px; transition: transform 300ms var(--spring-lens); }
+  .afact.is-open .chev { transform: rotate(90deg); }
+
+  /* The app: iOS large titles on paper, content on solid cards, glass only on the tab bar. */
+  .app { position: relative; width: 393px; height: 852px; overflow: hidden; background: var(--color-ground); }
+  .app-status { height: 54px; display: flex; align-items: center; justify-content: space-between; padding: 0 30px 0 34px; font: 600 17px/1 var(--font-text); }
+  .app-status .sys { display: inline-flex; gap: 6px; align-items: center; }
+  .app-status .sys i { display: block; border-radius: 3px; background: var(--color-ink); }
+  .app-body { padding: 6px 20px 120px; display: flex; flex-direction: column; gap: 16px; }
+  .large-title { font: 700 34px/41px var(--font-display); letter-spacing: -0.022em; }
+  .app-sub { font: 400 var(--text-callout)/var(--text-callout--line-height) var(--font-text); color: var(--color-ink-secondary); }
+  .sec-title { font: 600 20px/25px var(--font-display); letter-spacing: -0.012em; }
+  .home-hello { display: flex; flex-direction: column; gap: 6px; padding: 20px; border-radius: var(--radius-lg); background: var(--color-surface); box-shadow: 0 0 0 1px var(--color-hairline); }
+  .stats { display: flex; gap: 8px; margin-top: 8px; }
+  .stats span { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: 999px; background: var(--color-accent-tint); font: 600 var(--text-caption)/1 var(--font-text); }
+  .stats .i { width: 15px; height: 15px; }
+  .call-cta { display: flex; flex-direction: column; gap: 10px; }
+  .call-cta .btn { min-height: 56px; font-size: 18px; }
+
+  /* The projector (1600px and wider): the canvas's .proj sizes. */
+  @media (min-width: 1600px) {
+    .i-16 { width: 18px; height: 18px; }
+    .i-18 { width: 20px; height: 20px; }
+    .mark { width: 32px; height: 32px; border-radius: 9px; }
+    .mark svg { width: 26px; height: 26px; }
+    .pin { width: 52px; height: 52px; }
+    .pin-face { width: 40px; height: 40px; font-size: 18px; }
+    .pin-ring { inset: 1px; }
+    .pin-badge { width: 22px; height: 22px; top: -9px; right: -12px; }
+    .pin-badge .i { width: 13px; height: 13px; }
+    .mini { width: 20px; height: 20px; border-width: 2px; }
+    .mini .i { width: 11px; height: 11px; }
+    .cdot { width: 10px; height: 10px; margin: -5px 0 0 -5px; box-shadow: 0 0 0 1.5px #fff; }
+    .panel-list { gap: 12px; }
+    .pill { height: 42px; padding: 0 18px 0 14px; gap: 8px; font-size: 18px; }
+    .pill .i { width: 20px; height: 20px; }
+    .label .i { width: 17px; height: 17px; }
+    .chip { height: 40px; padding: 0 16px; }
+    .card { grid-template-columns: 104px minmax(0, 1fr); column-gap: 16px; padding: 14px; border-radius: 22px; }
+    .card-media { width: 104px; height: 104px; }
+    .card-rank .pin-face { width: 32px; height: 32px; font-size: 15px; }
+    .move { height: 28px; padding: 0 10px 0 8px; }
+    .status .i { width: 20px; height: 20px; margin-top: calc((var(--text-callout--line-height) - 20px) / 2); }
+    .status { font-size: var(--text-headline); line-height: var(--text-headline--line-height); }
+    .status .i { margin-top: calc((var(--text-headline--line-height) - 20px) / 2); }
+    .fact { grid-template-columns: 20px minmax(0, 1fr); column-gap: 10px; }
+    .fact .i { width: 20px; height: 20px; margin-top: calc((var(--text-callout--line-height) - 20px) / 2); }
+    .legend { height: 48px; padding: 0 20px; gap: 20px; font-size: 17px; }
+    .legend span { gap: 9px; }
+    .results { padding: 18px; border-radius: 22px; }
+    .result { grid-template-columns: 32px minmax(0, 1fr); }
+    .result .pin-face { width: 32px; height: 32px; font-size: 15px; }
+    .tally span { height: 34px; padding: 0 14px; }
+  }
 }
 
-/* Judge mode: the voice bar's bars while Landline's audio is actually playing. */
-.meter-talk { height: 6px; animation: talk 900ms var(--ease-out) infinite alternate; }
-@keyframes talk {
-  from { height: 4px; }
-  to { height: 16px; }
+/* The app's own, beside the kit: the legend's mark for a declined viewing, which the kit doesn't draw. */
+@layer components {
+  .mini[data-s="declined"] { background: #fff; border-color: var(--color-dead); box-shadow: none; }
+  .mini[data-s="declined"] .i { color: var(--color-dead); }
 }
 
+/* MapLibre's corners: the map buttons (MapView's MapButtons, the kit's .mapctl on clear glass) top right, the
+   attribution as a glass pill bottom right, both 16px in. Where the panel floats over the map, the page sets
+   --map-chrome-right to the panel's width plus its insets, so neither sits under it. */
+.maplibregl-ctrl-top-right .mapctl { margin: 16px 16px 0 0; }
+/* The group clips to its corners, so a button's focus ring sits inside it. */
+.mapctl button:focus-visible { outline-offset: -3px; }
+.maplibregl-ctrl-bottom-right .maplibregl-ctrl-attrib { margin: 0 16px 16px 0; }
+/* Under the sheet layout the attribution is its (i) alone, kept 16px above the sheet as it moves. */
+@media (max-width: 1023px) and (orientation: portrait), (max-width: 1023px) and (min-height: 521px) {
+  .maplibregl-ctrl-bottom-right { bottom: var(--map-chrome-bottom, 0px); transition: bottom var(--dur-morph) var(--ease-settle); }
+}
 @media (prefers-reduced-motion: reduce) {
-  .pin-face, .pin-face::after, .live-dot { transition: none; animation: none; }
-  .meter-talk { animation: none; height: 12px; }
+  .maplibregl-ctrl-bottom-right { transition: none; }
 }
-
-/* MapLibre's own controls, quieted to match */
-.maplibregl-ctrl-group {
-  border-radius: var(--radius-control) !important;
-  box-shadow: 0 0 0 1px var(--color-line), 0 2px 8px rgba(26, 24, 21, 0.06) !important;
+/* Collapsed, the compact attribution is its (i) alone: a 44px glass circle. Tapped, it opens to the text. */
+.maplibregl-ctrl-attrib.maplibregl-compact:not(.maplibregl-compact-show) {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  justify-content: center;
 }
-.maplibregl-ctrl-attrib { font: 400 11px/1.4 var(--font-sans); color: var(--color-ink-3); }
-/* On a phone the header card floats over the map's top (Shell, LiveBoard): the zoom buttons, shown where
+.maplibregl-ctrl-attrib.maplibregl-compact .maplibregl-ctrl-attrib-button {
+  top: 10px;
+  right: 10px;
+}
+.maplibregl-ctrl-attrib {
+  display: flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--glass-fill-strong);
+  -webkit-backdrop-filter: blur(var(--blur-thin)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--blur-thin)) saturate(var(--glass-saturate));
+  box-shadow: var(--shadow-rim), var(--shadow-glass);
+  font: 500 11px/1.3 var(--font-text);
+  color: var(--color-ink-secondary);
+}
+.maplibregl-ctrl-attrib a { color: var(--color-ink-secondary); }
+@media (prefers-reduced-transparency: reduce) {
+  .maplibregl-ctrl-attrib { background: var(--color-surface); -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+/* On a phone the header card floats over the map's top (Shell, LiveBoard): the map buttons, shown where
    there's a mouse, go below it rather than under its "Live" pill. The split layout has no floating header.
    Keep the media query in step with the split variant above. */
-.maplibregl-ctrl-top-right { top: calc(max(12px, env(safe-area-inset-top)) + 40px); }
+/* (the glass capsule: 12px down, 52px tall; the buttons' 16px margin then clears it by 16px) */
+.maplibregl-ctrl-top-right { top: calc(max(12px, env(safe-area-inset-top)) + 52px); }
 @media (min-width: 1024px), (orientation: landscape) and (max-height: 520px) {
   .maplibregl-ctrl-top-right { top: 0; }
+  .maplibregl-ctrl-top-right, .maplibregl-ctrl-bottom-right { right: var(--map-chrome-right, 0px); }
 }
-/* A finger needs 44px: below a desktop's width the zoom buttons, where they show, grow to it. */
-@media (max-width: 1023px) {
-  .maplibregl-ctrl-group button { width: 44px; height: 44px; }
-}
-.maplibregl-ctrl-attrib a { color: var(--color-ink-2); }
 
 /* vaul sheet */
 [data-vaul-drawer] { touch-action: none; }
