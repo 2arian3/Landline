@@ -320,6 +320,7 @@ export function Results({ view, compact = false }: { view: SessionView | null; c
             {!compact && card.facts.length > 0 && (
               <p className="t-callout c-2 mt-1">
                 {card.facts.slice(0, 3).map((f) => factLine(f.field, f.value)).join(" · ")}
+                <span className="t-caption"> · Agent heard</span>
               </p>
             )}
           </div>
@@ -349,8 +350,8 @@ export function Welcome({ view, compact = false }: { view: SessionView | null; c
   const { greeting, news } = splitWelcome(opensWithWelcome(view) ? view.agent_says : "", view.user_name);
   return (
     <div className="space-y-0.5">
-      <p className={`font-label text-ink ${compact ? "text-support" : "text-fact"}`}>{greeting}</p>
-      {news && <p className="text-support text-ink-2">{news}</p>}
+      <p className={`font-label text-ink ${compact ? "text-callout" : "text-body"}`}>{greeting}</p>
+      {news && <p className="text-callout text-ink-secondary">{news}</p>}
     </div>
   );
 }
@@ -417,8 +418,8 @@ export function Heard({
 
   if (compact && !wrap) {
     return chips.length ? (
-      <p className="truncate px-1 text-support text-ink">
-        <span className="text-ink-3">Heard </span>
+      <p className="truncate px-1 text-callout text-ink">
+        <span className="text-ink-secondary">Heard </span>
         {chips.join(" · ")}
       </p>
     ) : null;

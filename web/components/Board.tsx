@@ -53,14 +53,14 @@ export function Board({
     return (
       <ol className="m-0 list-none space-y-2 p-0" aria-hidden>
         {[0, 1, 2].map((i) => (
-          <li key={i} className="h-[110px] rounded-[var(--radius-card)] bg-surface" style={{ boxShadow: "0 0 0 1px var(--color-hair)" }} />
+          <li key={i} className="h-[110px] rounded-[var(--radius-md)] bg-surface" style={{ boxShadow: "0 0 0 1px var(--color-hairline)" }} />
         ))}
       </ol>
     );
   }
   if (!board.length) {
     return (
-      <p className="rounded-[var(--radius-card)] bg-surface p-4 text-support text-ink-2" style={{ boxShadow: "0 0 0 1px var(--color-hair)" }}>
+      <p className="rounded-[var(--radius-md)] bg-surface p-4 text-callout text-ink-secondary" style={{ boxShadow: "0 0 0 1px var(--color-hairline)" }}>
         Nothing fits yet. Widening the budget or the area usually finds a few.
       </p>
     );
