@@ -1,9 +1,9 @@
 import { useAuth } from "@clerk/expo";
 import { Redirect } from "expo-router";
-import { ActivityIndicator, StyleSheet, Text } from "react-native";
+import { ActivityIndicator } from "react-native";
 
 import { ListingCard } from "@/components/ListingCard";
-import { Back, Button, Calm, ErrorLine, NoCallsYet, Screen } from "@/components/ui";
+import { Button, Calm, ErrorLine, LargeTitle, NoCallsYet, Screen } from "@/components/ui";
 import { getListings, NO_CALLS_YET } from "@/lib/api";
 import { color } from "@/lib/theme";
 import { useLoad } from "@/lib/useLoad";
@@ -17,34 +17,26 @@ export default function Listings() {
   if (!isLoaded) return <Screen><ActivityIndicator color={color.ink} /></Screen>;
   if (!isSignedIn) return <Redirect href="/sign-in" />;
 
+  const sub = listings?.length
+    ? `${listings.length} ${listings.length === 1 ? "call" : "calls"}, newest first, with what each agent said.`
+    : undefined;
   return (
-    <Screen onRefresh={() => void refresh()} refreshing={refreshing}>
-      <Back />
-      <Text style={styles.title}>My listings</Text>
+    <Screen tabs gap={14} onRefresh={() => void refresh()} refreshing={refreshing}>
+      <LargeTitle title="My listings" sub={sub} />
       {error ? <ErrorLine>{error}</ErrorLine> : null}
       {listings ? (
         listings.length ? (
-          <>
-            <Text style={styles.meta}>
-              {listings.length} {listings.length === 1 ? "call" : "calls"}, newest first, with what each agent said.
-            </Text>
-            {listings.map((x) => <ListingCard key={x.call_id} listing={x} quotesOpen />)}
-          </>
+          listings.map((x) => <ListingCard key={x.call_id} listing={x} quotesOpen />)
         ) : (
           <Calm>{NO_CALLS_YET}</Calm>
         )
       ) : newNumber ? (
         <NoCallsYet />
       ) : error ? (
-        <Button label="Try again" onPress={() => void load()} quiet />
+        <Button label="Try again" kind="secondary" onPress={() => void load()} />
       ) : (
         <ActivityIndicator color={color.ink} />
       )}
     </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  title: { fontSize: 28, fontWeight: "600", color: color.ink },
-  meta: { fontSize: 15, color: color.ink3 },
-});
