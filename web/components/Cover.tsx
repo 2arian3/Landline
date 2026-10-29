@@ -1,9 +1,13 @@
 import Link from "next/link";
+import { statusOf, type Status } from "@/lib/status";
+import type { Card, CardViewing } from "@/lib/types";
+import { Icon, Mark } from "./Icon";
 
 /**
  * The cover page at `/`: what Landline is, and the three ways to try it. Everything it shows comes from
  * the scripted demo (server/landline/api/demo.py) and the README, so nothing here is made up: the four
- * pins are the demo's four calls as they end, and the quotes are its listing agents' words.
+ * pins are the demo's four calls as they end, and the quotes are its listing agents' words. Each status is
+ * statusOf's (lib/status.ts), so the cover says it exactly as the board does.
  */
 
 const PHONE = { label: "+1 (289) 512-2338", href: "tel:+12895122338" };
@@ -24,41 +28,47 @@ const STEPS = [
   },
 ];
 
-// Status words as the cards say them (STATUS in ListingCard.tsx).
+/** A drawn place's status, from the server's word for it, as the board would show it. */
+const drawn = (status: Card["status"], more: Partial<Pick<Card, "red_flags" | "viewing">> = {}): Status =>
+  statusOf({ status, red_flags: [], ...more } as Card);
+
+// The demo's booked viewing in the agent's words: the board shows its date and time, which a drawing can't.
+const SATURDAY: CardViewing = { starts_at: "", slot_text: "Saturday at 2 pm", status: "booked" };
+
 const RESULTS = [
   {
     rank: 1,
-    status: "verified",
-    word: "Checked by phone",
-    color: "var(--color-real)",
+    status: drawn("verified"),
     heard: "Parking is $180 a month, required. The monthly cost on its card goes up by $180.",
     quote: "Parking’s a hundred and eighty a month. It comes with the unit, it’s not optional.",
+    at: { x: 30, y: 28 },
   },
   {
     rank: 2,
-    status: "suspect",
-    word: "Something’s off",
-    color: "var(--color-dead)",
-    heard: "Wants a deposit by e-transfer before anyone sees the unit.",
+    // The demo's red flag, as its call reports it.
+    status: drawn("suspect", { red_flags: ["First and last month by e-transfer before a viewing"] }),
+    heard: null,
     quote: "I’ll need first and last by e-transfer before I can show it to you.",
+    at: { x: 71, y: 19 },
   },
   {
     rank: 3,
-    status: "booked",
-    word: "Viewing booked",
-    color: "var(--color-real)",
-    heard: "Dogs are fine. A viewing on Saturday at 2 pm, inside the renter’s afternoon.",
+    status: drawn("booked", { viewing: SATURDAY }),
+    heard: "Dogs are fine, and the viewing sits inside the renter’s Saturday afternoon.",
     quote: "Dogs are fine. There are a couple in the building already.",
+    at: { x: 58, y: 45 },
   },
   {
     rank: 4,
-    status: "no_answer",
-    word: "No answer yet",
-    color: "var(--color-ink-3)",
+    status: drawn("no_answer"),
     heard: "Nobody picked up. It says so, and doesn’t guess.",
     quote: null,
+    at: { x: 83, y: 62 },
   },
 ] as const;
+
+/** The place the cover's card opens: the booked one. */
+const BOOKED = RESULTS[2];
 
 // The call to the booked place, as its captions show it (README, "One call, start to finish").
 const CALL = [
@@ -71,28 +81,31 @@ const CALL = [
   ["Landline", "Saturday at 2 pm, then. I’ll let my client know."],
 ] as const;
 
-const hairline = { boxShadow: "0 0 0 1px var(--color-line)" };
-const floating = { boxShadow: "0 0 0 1px var(--color-line), 0 8px 28px rgba(26,24,21,.10)" };
-
 export function Cover() {
   return (
-    <div className="fixed inset-0 overflow-y-auto bg-ground">
+    // .proj: from 1600px (a projector) the type steps up one size, as the board's panel does.
+    <div className="proj fixed inset-0 overflow-y-auto bg-ground">
       <div
-        className="mx-auto max-w-6xl px-4 sm:px-6"
+        // The gutter is 16px on a phone and 24px from 640px, and never less than a notch's safe area.
+        className="mx-auto max-w-6xl [--gutter:16px] sm:[--gutter:24px] min-[1600px]:max-w-[1360px]"
         style={{
-          paddingTop: "max(12px, env(safe-area-inset-top))",
-          paddingLeft: "max(16px, env(safe-area-inset-left))",
-          paddingRight: "max(16px, env(safe-area-inset-right))",
+          paddingTop: "max(8px, env(safe-area-inset-top))",
+          paddingLeft: "max(var(--gutter), env(safe-area-inset-left))",
+          paddingRight: "max(var(--gutter), env(safe-area-inset-right))",
         }}
       >
-        <header className="flex min-h-14 items-center justify-between gap-3">
-          <p className="text-fact font-strong tracking-[-0.01em]">Landline</p>
-          <nav className="flex items-center gap-1 text-support text-ink-2">
-            <Link href="/me" className="inline-flex min-h-11 items-center rounded-[var(--radius-control)] px-2 hover:bg-press">
+        <header className="flex min-h-16 items-center justify-between gap-3">
+          <p className="wordmark">
+            <Mark />
+            Landline
+          </p>
+          <nav aria-label="Elsewhere" className="-mr-3 flex items-center">
+            <Link href="/me" className="btn btn-quiet btn-small">
               Your calls
             </Link>
-            <a href={REPO} className="inline-flex min-h-11 items-center rounded-[var(--radius-control)] px-2 hover:bg-press">
+            <a href={REPO} className="btn btn-quiet btn-small gap-1">
               Source
+              <Icon name="arrow-up-right" size={18} />
             </a>
           </nav>
         </header>
@@ -103,11 +116,10 @@ export function Cover() {
           <WhatComesBack />
         </main>
 
-        <footer className="mt-20 border-t border-line py-8 text-meta text-ink-3 sm:mt-28">
+        <footer className="t-caption c-2 mt-20 border-t border-hairline py-8 sm:mt-28">
           <p className="max-w-2xl">
             Built on Boson AI&rsquo;s Higgs Realtime, on the renter&rsquo;s call and every listing call, by Team AAMEL
-            (Arian Boukani, Danial Kordmodanlou, Mahyar Jaberi). About
-            1,080 real Toronto listings.
+            (Arian Boukani, Danial Kordmodanlou, Mahyar Jaberi). About 1,080 real Toronto listings.
           </p>
         </footer>
       </div>
@@ -117,41 +129,32 @@ export function Cover() {
 
 function Hero() {
   return (
-    <section className="grid items-center gap-12 pb-6 pt-8 sm:pt-14 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] lg:gap-16 lg:pt-20">
-      <div className="max-w-xl">
-        <p className="text-support text-ink-3">Toronto rentals, checked by phone</p>
-        <h1 className="mt-3 text-[40px] font-strong leading-[1.04] tracking-[-0.03em] sm:text-[56px] lg:text-[64px]">
-          The voice agent that works for renters, not brokerages.
-        </h1>
-        <p className="mt-5 text-fact text-ink-2 sm:text-[19px] sm:leading-[27px]">
+    <section className="grid items-center gap-10 pb-6 pt-6 sm:pt-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] lg:gap-16 lg:pt-16">
+      <div className="max-w-xl min-[1600px]:max-w-2xl">
+        <p className="t-callout c-2">Toronto rentals, checked by phone</p>
+        <h1 className="mt-3 text-title-1">The voice agent that works for renters, not brokerages.</h1>
+        <p className="t-body c-2 mt-5">
           Call it and say what you want, in any language. A live map of Toronto listings re-ranks while you talk.
           Pick the places you like and hang up: Landline phones those listing agents in parallel, asks what listings
           never say, books a viewing and texts you what it learned.
         </p>
 
         <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-          <Link
-            href="/try"
-            className="inline-flex h-12 items-center justify-center rounded-[var(--radius-control)] bg-ink px-5 text-support font-label text-white"
-          >
+          <Link href="/try" className="btn btn-primary">
+            <Icon name="audio-lines" size={20} />
             Talk in the browser
           </Link>
-          <a
-            href={PHONE.href}
-            className="tnum inline-flex h-12 items-center justify-center rounded-[var(--radius-control)] bg-surface px-5 text-support font-label text-ink hover:bg-press"
-            style={hairline}
-          >
+          <a href={PHONE.href} className="btn btn-secondary tnum">
+            <Icon name="phone" size={20} />
             Call {PHONE.label}
           </a>
         </div>
         {/* A full load, not a client navigation: the board reads ?dev=1 from the address when it mounts. */}
-        <a
-          href="/map?dev=1"
-          className="mt-3 inline-flex min-h-11 items-center text-support text-ink-2 underline underline-offset-2"
-        >
+        <a href="/map?dev=1" className="btn btn-quiet btn-small -ml-4 mt-2 gap-1 pr-2!">
           No microphone? Watch the scripted demo
+          <Icon name="chevron-right" size={18} />
         </a>
-        <p className="mt-2 max-w-md text-meta text-ink-3">
+        <p className="t-caption c-2 mt-1 max-w-md">
           In the browser the listing agents are simulated, so no phone rings. By phone, Landline calls only the
           team&rsquo;s own demo numbers.
         </p>
@@ -162,61 +165,90 @@ function Hero() {
   );
 }
 
+/** One of the drawn map's pins, dressed as MapView dresses the board's: the shape, the ring, the badge. */
+function DrawnPin({ rank, status, x, y, focus }: { rank: number; status: Status; x: number; y: number; focus?: boolean }) {
+  return (
+    <span
+      className={`pin absolute -translate-x-1/2 -translate-y-1/2 ${focus ? "is-focus" : ""}`}
+      data-s={status.pin}
+      style={{ left: `${x}%`, top: `${y}%` }}
+    >
+      <span className="pin-ring" />
+      <span className="pin-face">
+        {rank}
+        {status.badge && (
+          <span className="pin-badge">
+            <Icon name={status.badge} />
+          </span>
+        )}
+      </span>
+    </span>
+  );
+}
+
+/** A status line, as the card and the results write it. */
+function StatusLine({ status }: { status: Status }) {
+  return (
+    <p className={`status is-${status.tone}`}>
+      {status.glyph && <Icon name={status.glyph} />}
+      <span>
+        {status.words}
+        {status.sub && <span className="sub block">{status.sub}</span>}
+      </span>
+    </p>
+  );
+}
+
 /** The scripted demo's board once its four calls end, drawn rather than loaded: the cover stays light. */
 function DemoMap() {
   return (
     <figure className="relative">
-      <div className="relative aspect-[4/3] overflow-hidden rounded-[22px] bg-map-land" style={hairline} aria-hidden>
+      <div
+        className="relative aspect-[4/3] overflow-hidden rounded-[var(--radius-lg)] bg-map-land shadow-[var(--shadow-hairline)]"
+        aria-hidden
+      >
         <MapArt />
-        {PINS.map((p) => (
-          <span
-            key={p.rank}
-            className="pin pointer-events-none absolute -translate-x-1/2 -translate-y-1/2"
-            data-status={p.status}
-            data-focus={p.rank === 3 ? "true" : undefined}
-            style={{ left: `${p.x}%`, top: `${p.y}%` }}
-          >
-            <span className="pin-face">{p.rank}</span>
-          </span>
+        {RESULTS.map((r) => (
+          <DrawnPin key={r.rank} rank={r.rank} status={r.status} x={r.at.x} y={r.at.y} focus={r === BOOKED} />
         ))}
       </div>
 
-      <div
-        className="relative mx-3 -mt-14 rounded-[var(--radius-card)] bg-surface p-4 sm:mx-6 lg:absolute lg:bottom-0 lg:left-[-28px] lg:mx-0 lg:mt-0 lg:w-[330px]"
-        style={floating}
-      >
-        <p className="text-fact font-label">650 Briar Hill Avenue</p>
-        <p className="tnum mt-2 text-price font-strong">
-          $2,500<span className="text-support font-normal text-ink-3"> /mo</span>
-        </p>
-        <p className="mt-1 text-support text-ink-2">999 sq ft &middot; $300 under budget</p>
-        <p className="mt-2 flex items-center gap-1.5 text-support font-label" style={{ color: "var(--color-real)" }}>
-          <span aria-hidden>&#9733;</span> Viewing booked &middot; Saturday at 2 pm
-        </p>
-        <div className="mt-3 border-t border-hair pt-3">
-          <p className="text-support text-ink">
-            <span className="text-ink-3">Pets</span> Dogs are fine
+      {/* Solid, like every card; it hangs over the map's edge, so it takes Lucent's lift. */}
+      <div className="relative mx-3 -mt-14 rounded-[var(--radius-md)] bg-surface p-4 shadow-[var(--shadow-lift)] sm:mx-6 lg:absolute lg:bottom-0 lg:left-[-28px] lg:mx-0 lg:mt-0 lg:w-[340px] min-[1600px]:w-[400px]">
+        <div className="result" data-s={BOOKED.status.pin}>
+          <span className="pin-face" aria-hidden>
+            {BOOKED.rank}
+          </span>
+          <div className="min-w-0">
+            <p className="price">
+              <span className="t-price-lead">$2,500</span>
+              <span className="per">/mo</span>
+            </p>
+            <p className="addr mt-0!">650 Briar Hill Avenue</p>
+            <p className="spec">999 sq ft &middot; $300 under budget</p>
+          </div>
+        </div>
+        <div className="card-foot mt-3 pt-3">
+          <StatusLine status={BOOKED.status} />
+          <p className="fact">
+            <Icon name="paw-print" />
+            <span>
+              <b>Pets:</b> Dogs are fine
+            </span>
           </p>
-          <p className="mt-1 text-meta text-ink-3">
-            Agent heard: &ldquo;Dogs are fine. There are a couple in the building already.&rdquo;
+          <p className="quote">
+            &ldquo;{BOOKED.quote}&rdquo; <span className="src">Listing agent</span>
           </p>
         </div>
       </div>
 
       {/* Beside the card on a wide screen: the card hangs off the map's bottom left, level with this line. */}
-      <figcaption className="mt-3 px-3 text-meta text-ink-3 sm:px-6 lg:ml-[318px] lg:px-0">
-        The scripted demo once its four calls end. The pin colour and shape say how each call went.
+      <figcaption className="t-caption c-2 mt-3 px-3 sm:px-6 lg:ml-[328px] lg:px-0 min-[1600px]:ml-[388px]">
+        The scripted demo once its four calls end. Each pin&rsquo;s shape and badge say how its call went.
       </figcaption>
     </figure>
   );
 }
-
-const PINS = [
-  { rank: 1, status: "verified", x: 30, y: 28 },
-  { rank: 2, status: "suspect", x: 71, y: 19 },
-  { rank: 3, status: "booked", x: 58, y: 45 },
-  { rank: 4, status: "no_answer", x: 83, y: 62 },
-] as const;
 
 /** Catalogue dots, fixed so the server and the browser draw the same ones. */
 const DOTS = (() => {
@@ -247,8 +279,9 @@ function MapArt() {
           <line key={`vm${v}`} x1={v} y1="-300" x2={v} y2="760" strokeWidth="3" opacity="0.8" />
         ))}
       </g>
+      {/* The kit's catalogue dot (.cdot): ink at a third, on a hairline of white. */}
       {DOTS.map((d, i) => (
-        <circle key={i} cx={d.x} cy={d.y} r="3.5" fill="var(--color-ink-3)" opacity="0.32" />
+        <circle key={i} cx={d.x} cy={d.y} r="3.5" fill="rgb(25 25 24 / 0.34)" stroke="#fff" strokeWidth="0.75" />
       ))}
       <path d="M0 352 C 110 336, 200 366, 320 350 S 520 322, 600 338 L 600 460 L 0 460 Z" fill="var(--color-map-water)" />
       <path d="M250 398 C 290 386, 350 388, 392 400 C 360 408, 290 410, 250 398 Z" fill="var(--color-map-land)" />
@@ -259,20 +292,17 @@ function MapArt() {
 function HowItWorks() {
   return (
     <section className="mt-20 sm:mt-28" aria-labelledby="how">
-      <h2 id="how" className="text-title font-strong">
+      <h2 id="how" className="text-title-2">
         How it works
       </h2>
-      <ol className="mt-6 grid gap-4 md:grid-cols-3">
+      <ol className="mt-6 grid gap-3 md:gap-4 lg:grid-cols-3">
         {STEPS.map((s, i) => (
-          <li key={s.title} className="rounded-[var(--radius-card)] bg-surface p-5" style={hairline}>
-            <span
-              aria-hidden
-              className="tnum grid h-8 w-8 place-items-center rounded-full bg-ink text-meta font-strong text-white"
-            >
+          <li key={s.title} className="rounded-[var(--radius-md)] bg-surface p-5 shadow-[var(--shadow-hairline)]">
+            <span aria-hidden className="pin-face">
               {i + 1}
             </span>
-            <h3 className="mt-4 text-fact font-strong">{s.title}</h3>
-            <p className="mt-2 text-support text-ink-2">{s.body}</p>
+            <h3 className="t-headline mt-4">{s.title}</h3>
+            <p className="t-callout c-2 mt-1.5">{s.body}</p>
           </li>
         ))}
       </ol>
@@ -283,46 +313,48 @@ function HowItWorks() {
 function WhatComesBack() {
   return (
     <section className="mt-20 sm:mt-28" aria-labelledby="back">
-      <h2 id="back" className="text-title font-strong">
+      <h2 id="back" className="text-title-2">
         What the calls find out
       </h2>
-      <p className="mt-2 max-w-2xl text-support text-ink-2">
+      <p className="t-body c-2 mt-2 max-w-2xl">
         Is it still available, what does parking really cost, are dogs allowed: the things listings never say. Here
         are the four calls of the scripted demo, where the listing agents follow a script.
       </p>
 
-      <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
-        <ul className="rounded-[var(--radius-card)] bg-surface" style={hairline}>
+      <div className="mt-6 grid items-start gap-3 md:gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
+        <ul className="rounded-[var(--radius-md)] bg-surface shadow-[var(--shadow-hairline)]">
           {RESULTS.map((r) => (
-            <li key={r.rank} className="flex gap-3 border-t border-hair p-4 first:border-t-0 sm:p-5">
-              <span className="pin pointer-events-none -m-1.5 shrink-0" data-status={r.status} aria-hidden>
-                <span className="pin-face">{r.rank}</span>
+            <li key={r.rank} className="result border-t border-hairline p-4 first:border-t-0 sm:p-5" data-s={r.status.pin}>
+              <span className="pin-face" aria-hidden>
+                {r.rank}
               </span>
               <div className="min-w-0">
-                <p className="text-support font-label" style={{ color: r.color }}>
-                  {r.word}
-                </p>
-                <p className="mt-0.5 text-support text-ink">{r.heard}</p>
-                {r.quote && <p className="mt-1 text-meta text-ink-3">Agent heard: &ldquo;{r.quote}&rdquo;</p>}
+                <span className="sr">Number {r.rank}: </span>
+                <StatusLine status={r.status} />
+                {r.heard && <p className="t-callout mt-1">{r.heard}</p>}
+                {r.quote && (
+                  <p className="quote mt-2">
+                    &ldquo;{r.quote}&rdquo; <span className="src">Listing agent</span>
+                  </p>
+                )}
               </div>
             </li>
           ))}
         </ul>
 
-        <figure className="rounded-[var(--radius-card)] bg-surface p-5" style={hairline}>
-          <figcaption className="text-meta text-ink-3">The call to 650 Briar Hill Avenue, from its captions</figcaption>
-          <ol className="mt-3 space-y-2.5">
+        <figure className="rounded-[var(--radius-md)] bg-surface p-4 shadow-[var(--shadow-hairline)] sm:p-5">
+          <figcaption className="t-caption c-2">The call to 650 Briar Hill Avenue, from its captions</figcaption>
+          <ol className="lines mt-3">
             {CALL.map(([who, text], i) => (
-              <li key={i} className="text-support text-ink">
-                <span className="font-label text-ink-3">{who}</span> {text}
+              <li key={i} className="line">
+                <span className="who">{who}</span>
+                {text}
               </li>
             ))}
           </ol>
-          <a
-            href="/map?dev=1"
-            className="mt-4 inline-flex min-h-11 items-center text-support text-ink-2 underline underline-offset-2"
-          >
+          <a href="/map?dev=1" className="btn btn-secondary btn-small mt-4 gap-1 pr-3!">
             Run the scripted demo
+            <Icon name="chevron-right" size={18} />
           </a>
         </figure>
       </div>

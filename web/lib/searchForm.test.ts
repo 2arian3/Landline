@@ -2,7 +2,17 @@
 // Run with `npm test`.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { edit, formFrom, parseBudget, problems, problemsFrom422, type Saved, savedFrom, splitList } from "./searchForm.ts";
+import {
+  edit,
+  formFrom,
+  parseBudget,
+  problems,
+  problemsFrom422,
+  type Saved,
+  savedFrom,
+  splitList,
+  touched,
+} from "./searchForm.ts";
 
 const SAVED: Saved = {
   max_monthly: 2600,
@@ -95,6 +105,15 @@ test("the form keeps to U-12a's limits", () => {
   assert.ok(problems({ ...form, pets: "a".repeat(41) }).pets);
 });
 
+test("a budget runs from 1 to 20,000 dollars, so 0 is refused here instead of reaching the API's 422", () => {
+  const form = formFrom(SAVED);
+  const said = (budget: string) => problems({ ...form, budget }, touched({ ...form, budget }, SAVED)).budget;
+  for (const refused of ["0", "$0", "20001", "lots"]) {
+    assert.equal(said(refused), "Use a whole number of dollars, from 1 to 20,000.", refused);
+  }
+  for (const fine of ["1", "20000", "$20,000", ""]) assert.equal(said(fine), undefined, fine);
+});
+
 test("a 422 lands on the field it's about", () => {
   const body = {
     detail: [
@@ -112,4 +131,38 @@ test("a 422 lands on the field it's about", () => {
                              { loc: ["body", "move_in"], msg: "Value error, a date written as YYYY-MM-DD" }] };
   assert.deepEqual(problemsFrom422(checked), { email: "Not an email address", move_in: "A date written as YYYY-MM-DD" });
   assert.deepEqual(problemsFrom422({ detail: "sign in with your phone" }), {});
+});
+
+// What a call saved isn't always something the form can hold exactly: it's never rewritten or blocked unless
+// the renter changes that field.
+const FROM_A_CALL: Saved = {
+  ...SAVED,
+  min_beds: 1.5, // "one bedroom plus a den"
+  areas: Array.from({ length: 11 }, (_, n) => `Area ${n + 1}`), // more than the form allows
+  must_have: ["parking, ideally underground"], // a comma inside one item
+};
+
+test("a field left as loaded is never sent, even when the form can't hold its saved value exactly", () => {
+  const form = formFrom(FROM_A_CALL);
+  assert.deepEqual(touched(form, FROM_A_CALL), []);
+  assert.deepEqual(edit(form, FROM_A_CALL), {});
+  assert.deepEqual(edit({ ...form, budget: "2400" }, FROM_A_CALL), { max_monthly: 2400 });
+  assert.deepEqual(edit({ ...form, beds: "2" }, FROM_A_CALL), { min_beds: 2 });
+});
+
+test("only the fields the renter changed are checked", () => {
+  const form = formFrom(FROM_A_CALL);
+  assert.deepEqual(Object.keys(problems(form)), ["areas"]); // the saved list breaks the form's limit
+  assert.deepEqual(problems({ ...form, budget: "2400" }, touched({ ...form, budget: "2400" }, FROM_A_CALL)), {});
+  const more = { ...form, areas: `${form.areas}, Annex` };
+  assert.deepEqual(Object.keys(problems(more, touched(more, FROM_A_CALL))), ["areas"]);
+});
+
+test("a budget that isn't a number is a change to point out, even with no budget saved", () => {
+  const none = { ...SAVED, max_monthly: null };
+  const form = { ...formFrom(none), budget: "2.6k" };
+  assert.deepEqual(edit(form, none), {}); // nothing to send
+  assert.deepEqual(touched(form, none), ["budget"]);
+  assert.deepEqual(Object.keys(problems(form, touched(form, none))), ["budget"]); // so Save shows why
+  assert.deepEqual(touched({ ...form, budget: "" }, none), []); // typed and cleared: no change
 });
