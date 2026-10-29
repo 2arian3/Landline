@@ -233,9 +233,11 @@ export function LiveBoard({
   }, [view, toast]);
 
 
+  // On a phone, pins frame below the capsule: it ends at 64 (12 down, 52 tall), then 16 clear and half a
+  // 44px pin, so a pin's centre sits at 104 or lower.
   const padding: Padding = desktop
     ? { top: 64, right: panelRoom(panelWidth), bottom: 64, left: 64 }
-    : { top: 84, right: 28, bottom: snap === PEEK ? 216 : Math.round(vh * 0.58), left: 28 };
+    : { top: 104, right: 28, bottom: snap === PEEK ? 216 : Math.round(vh * 0.58), left: 28 };
 
   // The map's chunk waits for the first board, so on a slow line the places and their photos don't
   // queue behind a megabyte of map. With no session to wait for (judge mode's intro), or once the API
