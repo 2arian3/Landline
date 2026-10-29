@@ -63,7 +63,8 @@ export function ListingCard({
   // A place in the calls may still get a fee, so its card keeps the fee line's room until then.
   const inCalls = s.kind !== "ranked";
   const live = s.kind === "on_phone" && call?.state === "live" ? call : null;
-  const showStatus = !!s.words && s.kind !== "flagged";   // a flag says itself, in full, below
+  // A flag says itself, in full, below; a flagged place with no flag text still gets its status line.
+  const showStatus = !!s.words && !(s.kind === "flagged" && flag);
   const foot = facts.length > 0 || !!flag || showStatus || !!live;
   const moveWord = moved === "new" ? "New" : moved && moved > 0 ? `Up ${moved}` : moved && moved < 0 ? `Down ${-moved}` : null;
   const classes = ["card", focused && "is-focus", hovered && !focused && "is-hover", dead && "is-gone"];
@@ -171,8 +172,8 @@ export function ListingCard({
                   </span>
                 </span>
               ))}
-              {/* Their words, verbatim, where the room can read them: on the projector. Elsewhere every
-                  quote is a tap away in the detail. */}
+              {/* Every fact says where it came from (hard rule 3). On the projector, their words verbatim with
+                  who said them and when; elsewhere who said them, and every quote is a tap away in the detail. */}
               {quote && (
                 <span className="quote hidden min-[1600px]:block">
                   &ldquo;{quote.quote}&rdquo;{" "}
@@ -182,6 +183,10 @@ export function ListingCard({
                   </span>
                 </span>
               )}
+              <span className={`src block ${quote ? "min-[1600px]:hidden" : ""}`}>
+                {quoteSource(quote?.speaker ?? card.facts[0]?.speaker ?? "Agent heard")} heard on the call
+                {quote ? ", in their words in the detail" : ""}
+              </span>
             </span>
           )}
           {flag && (
