@@ -1,46 +1,94 @@
 "use client";
 
 import Link from "next/link";
+import { Icon, type IconName, Mark } from "./Icon";
 import { heardLine } from "@/lib/format";
 import { unheardCounts } from "@/lib/outcome";
+import { type Pill, type PillKind, pill } from "@/lib/pill";
 import { resultsByPlace } from "@/lib/results";
 import type { Card, SessionView } from "@/lib/types";
 import { splitWelcome } from "@/lib/welcome";
 
+/** Landline's mark and its name: the canvas's wordmark. */
+export function Wordmark() {
+  return (
+    <p className="wordmark">
+      <Mark />
+      Landline
+    </p>
+  );
+}
+
+/** The glyph for each of the pill's kinds; Connecting and Reconnecting wait with dots instead. */
+const PILL_ICON: Record<PillKind, IconName> = {
+  connecting: "refresh-cw",
+  reconnecting: "refresh-cw",
+  offline: "wifi-off",
+  listening: "audio-lines",
+  calling: "phone",
+  finished: "check",
+  ended: "x",
+  line: "phone",
+};
+
+/** What the call is doing (lib/pill.ts), as Lucent's pill: its glyph and its words, never colour alone. */
+export function PhasePill({ pill: p }: { pill: Pill }) {
+  return (
+    <span className={`pill${p.tone === "plain" ? "" : ` is-${p.tone}`}`} aria-live="polite">
+      {p.waiting ? (
+        <span className="dots" aria-hidden>
+          <i />
+          <i />
+          <i />
+        </span>
+      ) : (
+        <Icon name={PILL_ICON[p.kind]} size={16} />
+      )}
+      {p.words}
+    </span>
+  );
+}
+
+/** The calls still going: everything that hasn't ended or been blocked. */
+const GOING = new Set(["queued", "dialing", "ringing", "live", "voicemail"]);
+
+/** How many places the pill says are being called: the calls still going, or the plan before they're queued. */
+export const calling = (view: SessionView | null) =>
+  !view ? 0 : view.calls.length ? view.calls.filter((c) => GOING.has(c.state)).length : view.plan.length;
+
+/**
+ * The header's two ends: the wordmark, and the pill saying what the call is doing. On a phone the capsule
+ * also has "Your calls" as a 44px button (`yourCalls`); in the split layout it sits in the panel's foot.
+ * Judge mode passes the voice line's state while it isn't live (`line`), and its intro shows no pill (`idle`).
+ */
 export function Brand({
+  view = null,
   stale,
-  connected,
+  unreachable = false,
   idle = false,
   line = null,
+  yourCalls = false,
 }: {
+  view?: SessionView | null;
   stale: boolean;
-  connected: boolean;
+  unreachable?: boolean;
   idle?: boolean;
   line?: string | null;
+  yourCalls?: boolean;
 }) {
-  // Judge mode passes the voice line's state while it isn't live, so the header never says "Live" over a
-  // dropped call. Otherwise it's the board's own connection.
-  const label = line ?? (!connected ? "Connecting…" : stale ? "Reconnecting…" : "Live");
-  const color = !line && connected && !stale ? "var(--color-real)" : "var(--color-ink-3)";
+  const p = pill({ phase: view?.phase ?? null, calls: calling(view), stale, unreachable, line });
   return (
-    <div className="flex items-center justify-between gap-3">
-      <div className="flex min-w-0 items-baseline gap-2">
-        <p className="text-fact font-strong tracking-[-0.01em]">Landline</p>
-        {/* A 44px tap target that keeps the brand line's height: the margins give back what min-h-11 adds. */}
-        <Link
-          href="/me"
-          className="-my-[13px] inline-flex min-h-11 shrink-0 items-center text-meta text-ink-3 underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-ink"
-        >
-          Your calls
-        </Link>
+    <>
+      <Wordmark />
+      <div className="flex min-w-0 items-center gap-0.5">
+        {!idle && <PhasePill pill={p} />}
+        {yourCalls && (
+          <Link href="/me" className="btn btn-quiet btn-icon" aria-label="Your calls">
+            <Icon name="user" size={20} />
+          </Link>
+        )}
       </div>
-      {!idle && (
-        <p className="flex items-center gap-1.5 text-meta text-ink-2" aria-live="polite">
-          <span aria-hidden className="h-2 w-2 rounded-full" style={{ background: color }} />
-          {label}
-        </p>
-      )}
-    </div>
+    </>
   );
 }
 
