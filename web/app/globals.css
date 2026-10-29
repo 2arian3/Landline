@@ -51,11 +51,11 @@
   --color-map-water: #cad7dc;
   --color-map-park: #dfe5d4;
 
-  /* Lucent: type families (SF Pro on Apple devices). --font-sans stays Instrument Sans until app/layout.tsx
-     moves to the system stack. */
+  /* Lucent: type families, the system's own (SF Pro on Apple devices). --font-sans, which Tailwind and the
+     page use, is the text family. */
   --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", Helvetica, Arial, sans-serif;
   --font-text: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
-  --font-sans: var(--font-instrument), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-text);
   --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
   /* Type ramp, phone and desktop. The projector steps each one up (.panel, below). */

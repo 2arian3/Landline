@@ -1,13 +1,9 @@
 import type { Metadata, Viewport } from "next";
-import { IBM_Plex_Mono, Instrument_Sans } from "next/font/google";
 import "maplibre-gl/dist/maplibre-gl.css";
 import "./globals.css";
 
-// The full variable font, so the in-between weights (540, 580) render exactly.
-const instrument = Instrument_Sans({ subsets: ["latin"], variable: "--font-instrument" });
-
-// One job only: running call clocks.
-const plex = IBM_Plex_Mono({ subsets: ["latin"], variable: "--font-plex", weight: ["400", "500"] });
+// No web font: Lucent sets the board in the system's own (SF Pro on Apple devices, then Helvetica Neue and
+// Arial), named in app/globals.css (--font-text, --font-display), so nothing is fetched before the first paint.
 
 export const metadata: Metadata = {
   title: "Landline",
@@ -18,12 +14,12 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
-  themeColor: "#f6f4f0",
+  themeColor: "#fbfbfa",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${instrument.variable} ${plex.variable}`} style={{ colorScheme: "light" }}>
+    <html lang="en" style={{ colorScheme: "light" }}>
       <body>{children}</body>
     </html>
   );
