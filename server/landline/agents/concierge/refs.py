@@ -107,7 +107,7 @@ class Spot:
     keeps as areas; without them it is a point, which the search keeps as an anchor."""
     lat: float
     lng: float
-    how: str                       # neighbourhood | street | station | listings
+    how: str                       # neighbourhood | street | station | listings | landmark
     hoods: tuple[str, ...] = ()
 
 

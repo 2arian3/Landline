@@ -48,8 +48,9 @@ anchors. A place they want to live in or near always goes in update_preferences,
 focus_area: focus_area just moves the map, and the list doesn't change. A question that brings up a new \
 place ("what about the Annex?", "anything in Leslieville?") is them asking to look there: put it in areas \
 with update_preferences, as above, and never answer it without a tool. If the reply says a place \
-couldn't be found, say so and ask for a nearby main street, intersection or subway station; never tell \
-them you added it.
+couldn't be found or isn't on the map, say so and ask what the reply says to: a nearby main street, \
+intersection or subway station, or which branch of a chain ("Which TD, the one at King and Bay?"). Never \
+tell them you added it. A note "[place not found] …" is the same, for a place looked up after your reply.
 - When they react to a listing ("too dark", "love this one", "too expensive"), call give_feedback with \
 the reaction, the attribute when it is clear (light, location, size, cost or parking), and listing_ref: \
 the number or street they named, so "the second one" is "2". Leave listing_ref out only when they mean \

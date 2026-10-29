@@ -81,11 +81,11 @@ async def test_an_intersection_is_where_the_two_streets_meet():
 
 
 async def test_anything_else_goes_to_the_geocoder_bounded_to_toronto():
-    net = Net(nominatim=[{"lat": "43.6629", "lon": "-79.3957"}])
-    point = await _places(net).resolve("University of Toronto")
-    assert (point.lat, point.lng, point.how) == (43.6629, -79.3957, "geocoder")
+    net = Net(nominatim=[{"lat": "43.6645", "lon": "-79.4207"}])
+    point = await _places(net).resolve("Christie Pits")
+    assert (point.lat, point.lng, point.how) == (43.6645, -79.4207, "geocoder")
     params = dict(net.calls[0].url.params)
-    assert params["q"] == "University of Toronto, Toronto" and params["bounded"] == "1"
+    assert params["q"] == "Christie Pits, Toronto" and params["bounded"] == "1"
 
 
 async def test_an_intersection_with_no_meeting_point_falls_back_to_the_geocoder():
