@@ -840,6 +840,17 @@
 @media (prefers-reduced-motion: reduce) {
   .maplibregl-ctrl-bottom-right { transition: none; }
 }
+/* Collapsed, the compact attribution is its (i) alone: a 44px glass circle. Tapped, it opens to the text. */
+.maplibregl-ctrl-attrib.maplibregl-compact:not(.maplibregl-compact-show) {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  justify-content: center;
+}
+.maplibregl-ctrl-attrib.maplibregl-compact .maplibregl-ctrl-attrib-button {
+  top: 10px;
+  right: 10px;
+}
 .maplibregl-ctrl-attrib {
   display: flex;
   align-items: center;
