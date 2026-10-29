@@ -1,7 +1,7 @@
 // formatWhen: the board's one time format, in Toronto, never relative. Run with `npm test`.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { formatWhen, viewingWhen } from "./time.ts";
+import { formatClock, formatWhen, viewingWhen } from "./time.ts";
 
 const plain = (s: string | null) => s?.replace(/ /g, " ") ?? null;
 
@@ -33,4 +33,9 @@ test("a time that doesn't parse is null, and a viewing falls back to the agent's
   assert.equal(viewingWhen({ starts_at: "soon", slot_text: "Saturday at 2 pm" }), "Saturday at 2 pm");
   assert.equal(plain(viewingWhen({ starts_at: "2026-10-31T18:00:00Z", slot_text: "Saturday at 2 pm" })),
     "Sat, Oct 31 · 2:00 PM");
+});
+
+test("a quote's clock alone, in Toronto", () => {
+  assert.equal(plain(formatClock("2026-10-28T22:43:00Z")), "6:43 PM");
+  assert.equal(formatClock("soon"), null);
 });

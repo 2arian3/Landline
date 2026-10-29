@@ -36,3 +36,9 @@ export function formatWhen(iso: string | null | undefined): string | null {
 export function viewingWhen(v: { starts_at: string; slot_text: string }): string {
   return formatWhen(v.starts_at) ?? v.slot_text;
 }
+
+/** "6:43 PM" in Toronto, for when a quote was said; null when the time doesn't parse. */
+export function formatClock(iso: string | null | undefined): string | null {
+  const when = formatWhen(iso);
+  return when ? when.slice(when.indexOf("· ") + 2) : null;
+}

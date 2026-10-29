@@ -302,6 +302,8 @@ export function LiveBoard({
             hoverId={hover}
             marks={marks}
             ended={ended}
+            calls={view?.calls}
+            plan={view?.plan}
             onSelect={select}
             onHover={setHover}
           />
