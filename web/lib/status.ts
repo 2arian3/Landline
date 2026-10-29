@@ -70,13 +70,18 @@ export type Status = {
   badge: Glyph | null;
   /** What a screen reader hears for it, never empty. */
   spoken: string;
+  /** The short word the summary counts it by: "1 left a message · 2 didn't get through". */
+  tally: string;
 };
 
 /** What a call that reached nobody, or learned nothing, says about how it ended: the card's words and the
  * detail's sentence. The server's results text words these the same (orchestrator/narrator.py, #152). */
+/** No answer, or busy, with no message left. */
+export const NOT_THROUGH = "Didn\u2019t get through";
+
 export const UNHEARD: Record<EndReason, { word: string; line: string }> = {
-  no_answer: { word: "No answer", line: "Nobody picked up." },
-  busy: { word: "No answer", line: "Nobody picked up." },
+  no_answer: { word: NOT_THROUGH, line: "Nobody picked up." },
+  busy: { word: NOT_THROUGH, line: "Nobody picked up." },
   voicemail: { word: "Left a message", line: "Landline left a message for the agent." },
   hangup: { word: "Hung up early", line: "The agent hung up before Landline could ask anything." },
   timeout: { word: "Call dropped", line: "The call dropped before Landline learned anything." },
@@ -106,9 +111,25 @@ type Of = {
   ended?: EndReason | null;
 };
 
-const make = (s: Omit<Status, "spoken"> & { spoken?: string }): Status => ({
+const TALLY: Record<StatusKind, string> = {
+  ranked: "not called yet",
+  will_call: "will call",
+  queued: "queued",
+  ringing: "ringing",
+  on_phone: "on the phone",
+  checked: "checked by phone",
+  booked: "viewing booked",
+  confirmed: "viewing confirmed",
+  declined: "viewing declined",
+  flagged: "flagged",
+  unheard: NOT_THROUGH.toLowerCase(),
+  gone: "already rented",
+};
+
+const make = (s: Omit<Status, "spoken" | "tally"> & { spoken?: string; tally?: string }): Status => ({
   ...s,
   spoken: s.spoken ?? (s.sub ? `${s.words}. ${s.sub}` : s.words),
+  tally: s.tally ?? TALLY[s.kind],
 });
 
 /** The one status for a card, from the card, its latest call and its viewing. */
@@ -161,10 +182,10 @@ export function statusOf(card: Card, { call = null, planned = false, stage, ende
   if (card.status === "no_answer") {
     // Worded from how the call ended; a call that heard facts isn't "unheard" (the card shows them instead).
     const reason = ended ?? (call?.outcome && !call.outcome.facts.length ? call.outcome.end_reason : null);
-    const word = (reason && UNHEARD[reason]?.word) || "No answer";
+    const word = (reason && UNHEARD[reason]?.word) || NOT_THROUGH;
     // The voicemail glyph only when a message was left; any other way of not getting through is an x.
     return make({ kind: "unheard", words: word, sub: null, glyph: reason === "voicemail" ? "voicemail" : "x",
-      tone: "quiet", pin: "noanswer", badge: null });
+      tone: "quiet", pin: "noanswer", badge: null, tally: word.toLowerCase() });
   }
   return make({ kind: "ranked", words: "", sub: null, glyph: null, tone: "quiet", pin: "pending", badge: null,
     spoken: "Not called yet" });
