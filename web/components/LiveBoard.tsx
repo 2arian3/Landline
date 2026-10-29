@@ -233,6 +233,7 @@ export function LiveBoard({
       hoverId={hover}
       marks={marks}
       focusArea={focusArea}
+      anchors={view?.preferences.anchors ?? []}
       padding={padding}
       showZoom={mouse === true}
       onSelect={select}
