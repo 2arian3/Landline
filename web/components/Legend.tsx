@@ -2,36 +2,35 @@
 
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import type { Ref } from "react";
-import type { PinShape } from "@/lib/status";
+import type { PinShape, Status } from "@/lib/status";
 import { REDUCED, SPRING_LENS } from "@/lib/motion";
 import { Icon, type IconName } from "./Icon";
 
-/** Each pin shape, in the status board's order: the legend's words and the badge its mark carries (v2 boards). */
-const KEY: [PinShape, string, IconName | null][] = [
-  ["pending", "Ranked", null],
-  ["picked", "Will call", "phone"],
-  ["queued", "Queued", null],
-  ["calling", "Calling", null],
-  ["checked", "Checked", "check"],
-  ["booked", "Booked", "calendar"],
-  ["confirmed", "Confirmed", "check"],
-  ["declined", "Can’t make it", "x"],
-  ["flagged", "Flagged", "exclamation"],
-  ["noanswer", "No answer", null],
-  ["gone", "Already rented", null],
-];
+/** The pin shapes in the status board's order: the legend lists them this way. */
+const ORDER: PinShape[] = ["pending", "picked", "queued", "calling", "checked", "booked", "confirmed", "declined",
+  "flagged", "noanswer", "gone"];
 
 /**
  * The map's key, bottom left beside the map (the canvas's legend). It names only the shapes on the map now,
- * so the back of the room can read the pins without the panel; with no places ranked yet, it says what the
+ * in statusOf's own short words (lib/status.ts), so the pin, the key and the card can't disagree, and the back of
+ * the room can read the pins without the panel; with no places ranked yet, it says what the
  * dots are, which the phone shows too (above its sheet); otherwise the key is the split layout's alone.
  */
-export function Legend({ shapes, named, ref }: { shapes: Set<PinShape>; named: boolean; ref?: Ref<HTMLDivElement> }) {
+export function Legend({ statuses, named, ref }: { statuses: Status[]; named: boolean; ref?: Ref<HTMLDivElement> }) {
   const reduce = useReducedMotion();
   type Item = [string, string, IconName | null];
-  const empty = shapes.size === 0;
+  // One entry per shape on the map, in the board's order; a ringing call and a live one are both "Calling".
+  const byShape = new Map<PinShape, Status>();
+  for (const st of statuses) if (!byShape.has(st.pin)) byShape.set(st.pin, st);
+  const empty = byShape.size === 0;
   const items: Item[] = [
-    ...(empty ? [["dots", "Every dot is a place for rent", null] as Item] : KEY.filter(([shape]) => shapes.has(shape))),
+    ...(empty
+      ? [["dots", "Every dot is a place for rent", null] as Item]
+      : ORDER.filter((shape) => byShape.has(shape)).map((shape): Item => {
+          const st = byShape.get(shape)!;
+          // The mini carries the pin's badge, but a call's ring is its own sign.
+          return [shape, st.legend, shape === "calling" ? null : st.badge];
+        })),
     ...(named ? [["named", "The place you named", "map-pin"] as Item] : []),
   ];
   return (

@@ -373,7 +373,7 @@ export function MapView({
   // MapLibre sets `position: relative` on its container (unlayered CSS wins over
   // Tailwind's layered utilities), so the sizing lives on a wrapper.
   // The legend names only what's on the map.
-  const shown = new Set(board.filter((c) => onMap(c.lat, c.lng)).map((c) => statuses.get(c.listing_id)!.pin));
+  const shown = board.filter((c) => onMap(c.lat, c.lng)).map((c) => statuses.get(c.listing_id)!);
   return (
     // Where the panel floats over the map (its fit padding is the panel plus 16 + 64), the map's corners keep
     // clear of it: the map buttons and attribution sit 16px left of the glass, and the legend wraps short of it.
@@ -384,7 +384,7 @@ export function MapView({
         "--map-chrome-bottom": `${Math.max(0, padding.bottom - 52)}px`,
       } as CSSProperties}>
       <div ref={container} className="h-full w-full" aria-label="Map of matching rentals" />
-      {ready && <Legend ref={legend} shapes={shown} named={placed.length > 0} />}
+      {ready && <Legend ref={legend} statuses={shown} named={placed.length > 0} />}
     </div>
   );
 }
