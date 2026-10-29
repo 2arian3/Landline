@@ -5,6 +5,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Icon, type IconName, Mark } from "./Icon";
 import { heardLine } from "@/lib/format";
 import { factLine } from "@/lib/heard";
+import { LANDLINE_PHONE } from "@/lib/phone";
 import { type Pill, type PillKind, pill } from "@/lib/pill";
 import { calledPlaces, statuses, tally } from "@/lib/tally";
 import type { SessionView } from "@/lib/types";
@@ -135,9 +136,25 @@ export function Plan({ view }: { view: SessionView | null }) {
  * the phone · 1 ringing"). Nothing here is guessed: no ETAs. With no calls yet it says how many places fit.
  * The pill above already says how many places are being called.
  */
-export function Activity({ view, compact = false }: { view: SessionView | null; compact?: boolean }) {
+export function Activity({ view }: { view: SessionView | null }) {
   if (!view) return <div className="h-[18px] w-1/2 rounded bg-press" aria-hidden />;
   if (planShown(view)) return null;   // the plan says it
+  if (view.phase === "closed" && !view.plan.length) {
+    // The brief ended with nothing picked: say so, and how to start again. A second call starts fresh (#144).
+    return (
+      <div className="banner" role="status">
+        <Icon name="phone" size={20} />
+        <div>
+          <p className="w6">The call ended before any places were picked</p>
+          <p className="c-2">Call again to start a new search.</p>
+          <a href={LANDLINE_PHONE.href} className="btn btn-secondary btn-small mt-3">
+            <Icon name="phone" size={18} />
+            Call Landline
+          </a>
+        </div>
+      </div>
+    );
+  }
   // Once the calls are done, What the calls found says it, with its tally.
   if (view.phase === "done" && view.results) return null;
   const { going, done } = tally(statuses(view));
@@ -146,13 +163,13 @@ export function Activity({ view, compact = false }: { view: SessionView | null; 
     return (
       <p className="activity tnum text-ink" aria-live="polite">
         <span aria-hidden className={`pill-dot ${going.length ? "text-live" : "text-real"}`} />
-        <span className={compact ? "min-w-0 truncate" : ""}>{capitalize(line.join(" · "))}</span>
+        <span>{capitalize(line.join(" · "))}</span>
       </p>
     );
   }
   const shown = view.board.length;
   return (
-    <p className={`activity tnum ${compact ? "truncate" : ""}`}>
+    <p className="activity tnum">
       {view.matches.length.toLocaleString("en-CA")} {view.matches.length === 1 ? "place fits" : "places fit"}
       {shown > 0 && ` · the best ${shown} ${shown === 1 ? "is" : "are"} on the map`}
     </p>

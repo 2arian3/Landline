@@ -270,7 +270,7 @@ export function LiveBoard({
         <>
           <Plan view={view} />
           <Heard key={sessionId} view={view} compact={compact} wrap={!desktop && snap !== PEEK} />
-          <Activity view={view} compact={compact} />
+          <Activity view={view} />
           <Board
             board={board}
             loading={!view}
