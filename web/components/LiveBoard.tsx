@@ -10,7 +10,18 @@ import { DemoControls } from "./DemoControls";
 import type { Mark } from "./ListingCard";
 import { ListingDetail, type Reaction } from "./ListingDetail";
 import type { Padding } from "./MapView";
-import { PANEL_STYLE, PANEL_WIDTH, PEEK, PanelHeader, SHORT, SPLIT, Shell } from "./Shell";
+import {
+  CAPSULE_STYLE,
+  PANEL,
+  PANEL_STYLE,
+  PEEK,
+  PanelFoot,
+  SHORT,
+  SPLIT,
+  Shell,
+  panelRoom,
+  sheetLook,
+} from "./Shell";
 import { Activity, Brand, Heard, Results, Welcome } from "./Summary";
 import { type Opened, follows } from "@/lib/follow";
 import { nothingHeard } from "@/lib/format";
@@ -29,13 +40,12 @@ const MapView = dynamic(() => import("./MapView").then((m) => m.MapView), {
 const SNAPS: (string | number)[] = [PEEK, 0.56, 1];
 
 /**
- * The whole screen. Desktops, tablets on their side and phones held sideways
- * (SPLIT): the map fills the left, a panel on the right (440px, narrower on
- * smaller screens, 560px on a projector) holds what's happening, what Landline
- * heard and the ranked places. Phones and tablets upright: the map fills the
- * screen and the panel becomes a bottom sheet with
- * three stops; at the lowest stop the renter sees the activity line, one line
- * of what was heard, and the top place.
+ * The whole screen: the map fills it, and what's happening, what Landline heard and the ranked places float
+ * over it. Desktops, tablets on their side and phones held sideways (SPLIT): a glass panel inset 16px on the
+ * right (440px, narrower on smaller screens, 560px on a projector), and the map frames the board in the room
+ * it leaves. Phones and tablets upright: a glass capsule for the header and a bottom sheet with three stops,
+ * glass at the low and half stops and solid at full; at the lowest the renter sees the activity line, one
+ * line of what was heard, and the top place.
  *
  * Judge mode reuses it: `intro` replaces the panel until a session exists,
  * `dock` (the voice controls) stays pinned to the panel, and `line` puts the
@@ -66,6 +76,17 @@ export function LiveBoard({
   const [snap, setSnap] = useState<string | number | null>(PEEK);
   const [dev, setDev] = useState(false);
   const [vh, setVh] = useState(800);
+  // The split panel's width, measured, so the map frames the board in the room the panel leaves.
+  const [panelWidth, setPanelWidth] = useState(440);
+  const measured = useRef<ResizeObserver | null>(null);
+  const panelShown = useCallback((el: HTMLElement | null) => {
+    measured.current?.disconnect();
+    measured.current = null;
+    if (!el) return;
+    setPanelWidth(el.offsetWidth);
+    measured.current = new ResizeObserver(() => setPanelWidth(el.offsetWidth));
+    measured.current.observe(el);
+  }, []);
   // What the renter tapped, shown at once; the server's card.reaction wins once it arrives.
   const [mine, setMine] = useState<Record<string, string>>({});
   // The server's focus and area when the page opened (below): followed once they change after that.
@@ -179,7 +200,7 @@ export function LiveBoard({
   );
 
   const padding: Padding = desktop
-    ? { top: 64, right: 64, bottom: 64, left: 64 }
+    ? { top: 64, right: panelRoom(panelWidth), bottom: 64, left: 64 }
     : { top: 84, right: 28, bottom: snap === PEEK ? 216 : Math.round(vh * 0.58), left: 28 };
 
   // The map's chunk waits for the first board, so on a slow line the places and their photos don't
@@ -306,36 +327,28 @@ export function LiveBoard({
   if (desktop === null) return <Shell idle={!!intro && !sessionId} />;
 
   const idle = !!intro && !sessionId;
-  const brand = <Brand stale={stale} connected={!!view} idle={idle} line={line} />;
+  const status = { view, stale, connected: !!view, offline: unreachable, idle, line };
+  const full = snap === 1;
+  const sheet = sheetLook(full);
 
   // One tree for both layouts, with the map in the same place in it, so a phone turning between the sheet
   // and the split layout keeps its map: the WebGL context, the tiles and where the renter had panned.
   return (
-    <div className="fixed inset-0 flex overflow-hidden">
-      <main className="relative min-w-0 flex-1">
+    <div className="fixed inset-0 overflow-hidden">
+      <main className="absolute inset-0">
         {map}
-        {/* At the sheet's top stop the header would peek, cut in half, above it. */}
-        {!desktop && !idle && snap !== 1 && (
-          <header
-            className="pointer-events-none absolute inset-x-0 top-0 z-10 px-3"
-            style={{ paddingTop: "max(12px, env(safe-area-inset-top))" }}
-          >
-            <div
-              className="pointer-events-auto rounded-[var(--radius-card)] bg-surface/95 px-4 py-2.5"
-              style={{ boxShadow: "0 0 0 1px var(--color-line), 0 4px 16px rgba(26,24,21,.08)" }}
-            >
-              {brand}
-            </div>
+        {/* At the sheet's top stop the capsule steps into the sheet, which covers it. */}
+        {!desktop && !idle && !full && (
+          <header className="cap glass" style={CAPSULE_STYLE}>
+            <Brand {...status} yourCalls />
           </header>
         )}
       </main>
       {desktop ? (
-        <aside
-          className={`flex ${PANEL_WIDTH} shrink-0 flex-col bg-ground`}
-          style={PANEL_STYLE}
-          aria-label="Places Landline found"
-        >
-          <PanelHeader brand={brand} />
+        <aside ref={panelShown} className={PANEL} style={PANEL_STYLE} aria-label="Places Landline found">
+          <div className="panel-head">
+            <Brand {...status} />
+          </div>
           <div
             ref={scroller}
             className="relative min-h-0 flex-1 overflow-y-auto"
@@ -354,6 +367,7 @@ export function LiveBoard({
               {dock}
             </div>
           )}
+          <PanelFoot />
         </aside>
       ) : (
         <Drawer.Root
@@ -367,10 +381,10 @@ export function LiveBoard({
           <Drawer.Portal>
             <Drawer.Content
               aria-describedby={undefined}
-              className="fixed inset-x-0 bottom-0 z-20 flex h-[96dvh] flex-col rounded-t-[22px] bg-ground outline-none"
+              className={`bottom-0 z-20 flex h-[96dvh] flex-col outline-none ${sheet.className}`}
               style={
                 {
-                  boxShadow: "0 -1px 0 var(--color-line), 0 -8px 28px rgba(26,24,21,.10)",
+                  ...sheet.style,
                   // vaul starts a sheet with snap points off screen and slides it to the first stop. Starting
                   // at the stop (the offset vaul computes: the viewport less PEEK) puts the panel on screen
                   // in its first frame, so the places paint where they'll stay.
@@ -379,10 +393,14 @@ export function LiveBoard({
               }
             >
               <Drawer.Title className="sr-only">Places Landline found</Drawer.Title>
-              <div aria-hidden className="mx-auto mb-2 mt-2.5 h-1 w-10 shrink-0 rounded-full bg-ink/20" />
-              {/* At the top stop the floating header steps aside, so its status (live, reconnecting, the
-                  voice line) shows here instead. */}
-              {!idle && snap === 1 && <div className="shrink-0 px-4 pb-2">{brand}</div>}
+              <span aria-hidden className="grabber" />
+              {/* At the top stop the capsule steps into the sheet, so its status (the pill, the voice line)
+                  and "Your calls" show here instead. */}
+              {!idle && full && (
+                <div className="flex shrink-0 items-center justify-between gap-2 px-4 pb-2">
+                  <Brand {...status} yourCalls />
+                </div>
+              )}
               {dock && sessionId && <div className="shrink-0 px-4 pb-3">{dock}</div>}
               <div
                 ref={scroller}
