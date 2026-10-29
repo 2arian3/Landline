@@ -98,6 +98,16 @@ class CallListings(BaseModel):
     may_book: bool | None = Field(None, description="True if the renter allows booking a viewing")
 
 
+class ListingStatus(BaseModel):
+    """What Landline's calls heard about one listing, on this session or the renter's earlier ones (A-14).
+    Words only: code finds the listing on the board or in the renter's past call plans, and builds the reply
+    from what those calls stored."""
+    listing_ref: str = Field(description="The listing as the renter named it: its street, its number on the "
+                                         "list, or words about it, like 'the one with the balcony'")
+    text_rest: bool | None = Field(None, description="True only after the renter said yes to having the rest "
+                                                     "texted to them")
+
+
 class RememberMe(BaseModel):
     pass
 
@@ -165,6 +175,11 @@ CONCIERGE_TOOLS: dict[str, tuple[type[BaseModel], str]] = {
         CallListings,
         "Record which listings to call after the renter hangs up, their extra questions and when they can "
         "view. Nothing dials until the session ends. Read the addresses back from the reply.",
+    ),
+    "listing_status": (
+        ListingStatus,
+        "The renter asks what happened with a listing Landline called, on this call or an earlier one: "
+        "whether the agent answered, what they said, or the viewing. Say only what the reply says.",
     ),
     "remember_me": (RememberMe, "The renter agrees to be remembered by phone number next time."),
     "forget_me": (ForgetMe, "Delete everything remembered about the renter."),

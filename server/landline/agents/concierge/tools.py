@@ -62,7 +62,8 @@ from landline.voice.dispatch import TORONTO, until_open
 log = logging.getLogger(__name__)
 
 # remember_me / forget_me wait for profiles (O-05): until then there is nothing for them to change.
-DEFERRED = {"remember_me", "forget_me"}
+# listing_status waits for its handler (A-14).
+DEFERRED = {"remember_me", "forget_me", "listing_status"}
 # ask_maps (O-07b) is offered only when the runtime has Google's Maps MCP client (GOOGLE_MAPS_API_KEY).
 MAPS_TOOL = "ask_maps"
 TOOLS: list[dict[str, Any]] = [t for t in concierge_tools() if t["name"] not in DEFERRED | {MAPS_TOOL}]
