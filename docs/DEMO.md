@@ -16,43 +16,45 @@ Status of each beat: **verified live** means it worked on a real call or a live 
 
 | Role | Who | Phone | On screen |
 |---|---|---|---|
-| Presenter | Arian | none | Talks over the board. Owns the hook, the numbers and the close |
-| Renter | A teammate (Danial confirms, X-03e) | A third phone, **not** …3369 or …3462, on speaker. Signed in on `/me` with aryan.boukani2@gmail.com | The laptop on the projector opens the board link the renter is texted |
-| Agent A | Teammate | One allowed number, on speaker | Mirrored when tapping the confirm link |
-| Agent B | Teammate | The other allowed number, with carrier voicemail switched on | Only shown ringing |
-| Screen | Mahyar | none | Board full screen, the renter's inbox in a second tab, the backup video ready offline |
+| Renter and presenter | Arian | **+1 437 553 3369**, on speaker. Not on the allowlist. Its profile email is aryan.boukani2@gmail.com, set on `/me` | The laptop on the projector opens the board link the renter is texted |
+| Listing agent 1 | Teammate | **+1 437 559 3462**, on speaker, carrier voicemail on | Mirrored when it answers or taps the confirm link |
+| Listing agent 2 | Teammate | **+1 437 986 1383**, on speaker, carrier voicemail on | Mirrored when it answers or taps the confirm link |
+| Screen | Mahyar | none | Board full screen, the aryan.boukani2@gmail.com inbox in a second tab, the backup video ready offline |
+
+The two agent phones are the whole allowlist (`DEMO_AGENT_PHONES`), so Landline dials only those two. Each listing call takes one free phone, so which listing lands on which phone isn't fixed. **Whichever phone answers plays the agent who books, and the other lets it go to voicemail.** Decide on stage, not before.
 
 The renter calls Landline at `+1 289-512-2338`. Listing calls only run from 09:00 to 20:00, so the 18:00 slot is inside the window.
 
+**How the invites work:** after the booking, Landline texts the agent who answered a confirm link. They open it, type their own email and press Confirm. Calendar invites then go out from Landline's Google account, boukani.arian@gmail.com: one to the email the agent typed, and one to the renter's profile email, aryan.boukani2@gmail.com. Both arrive as real invite emails. Show the renter's on the inbox tab and the agent's on their phone. The viewing also appears on boukani.arian@gmail.com's own calendar, since it sent the invites.
+
 ### Before the doors open
 
-**By 12:00**
-- Final ship, tagged `demo-day`. No deploys after that: a restart between the renter's plan and the listing calls loses the memory fetched for the call.
-- Pause the refresh: `sudo systemctl stop landline-refresh.timer`. Start it again after the event.
-- Check Twilio's balance and send one test SMS.
+**Done:** the final ship (main through the demo doc), the two agent phones on the allowlist, and 3369 taken off it.
 
-**By the 15:00 rehearsal**
-- **Lock the brief.** Say the exact stage brief once and note which listing comes first. That's the one Agent A plays.
-- **Seed the memory.** Make one call to that listing in which the agent says "Parking is $150 a month." The stage call then confirms it. It needs a call within the last 7 days, and the fee must be recorded as parking.
-- **Clean renter phone.** No earlier Landline calls from it. Email set on `/me`.
-- Run the 3-minute script twice with no failures, over the hotspot.
+**Before the 15:00 rehearsal**
+- **Renter email:** sign in on `/me` with 437 553 3369 (Clerk texts a code) and set the email to aryan.boukani2@gmail.com. Without it, the renter gets an "Add to calendar" link by text instead.
+- **Lock the brief.** Say the exact stage brief once and note which two listings you pick. Use the same two on stage.
+- **Seed the memory for both picks.** Either phone may end up answering, so make one call to each of the two listings in which the agent says "Parking is $150 a month." The stage call then confirms it. It needs a call within the last 7 days, and the renter must say they drive so parking is on the list.
+- **Both agent phones:** ringer on, Do Not Disturb off, carrier voicemail set up. A phone with no voicemail just rings out as "no answer".
+- **Pause the refresh** on the VM: `sudo systemctl stop landline-refresh.timer`. Start it again after the event.
+- Run the script twice with no failures, over the hotspot. No deploy or restart after the rehearsal: a restart between the plan and the calls loses the fetched memory and the call-back routing.
 
-Rehearse the beats marked "first run at 15:00" first: the confirm link, the invites and the call-back have never run on a real phone yet. If one fails at 15:00, cut it from the stage script rather than fix it in the afternoon.
+The confirm link, the invites and the voicemail have never run on a real phone before today. Rehearse them first at 15:00, and cut any that fail rather than fixing them in the afternoon.
 
 ### The 3-minute script
 
 | Time | Said on stage | What the room sees | Shows | If it fails |
 |---|---|---|---|---|
-| 0:00 | **Presenter:** "Renting in Toronto means calling agents who never call back, about listings that leave out what matters. About one rental condo in a hundred is empty (CMHC, Dec 2025). Landline is a voice agent that works for the renter. Let's find a place." | The board, idle, over the map of Toronto | The problem | None needed |
-| 0:15 | **Renter, on speaker:** "Hi. Two bedrooms under twenty-six hundred. I work at Cohere, I have a dog, and I drive." | The board link arrives by text and opens on the projector. Pins re-sort with "min by TTC to Cohere" on the cards | Live map, commute ranking. Verified live | Board doesn't move: use "Near King and John" as the place |
-| 0:35 | **Renter:** "Is there a Shoppers near the first one?" | The agent may say "Checking the map…" first, then the name and the minutes. A text arrives with the Google Maps link | Google Maps MCP. Verified live | Skip it. Say "it answers area questions from Google Maps" |
-| 0:50 | **Renter:** "Call the top two. I'm free Saturday between one and five, and you can book." | The agent reads the plan back. The renter says "Thanks, bye" and hangs up | The brief becomes a plan. Verified live | No plan: "Call the first one and book Saturday afternoon" |
-| 1:05 | **Phones ring.** Agent A answers on speaker; Agent B lets it ring. Caller: "Hi, this is Landline. I'm an AI assistant calling for a renter about … This call is recorded." | Both pins start calling at the same moment. The detail view shows the live captions | Parallel real calls. Verified live | No ring in 15 s: switch to the backup video |
-| 1:20 | **Caller:** "Yesterday they said parking is $150 a month. Is that still right?" **Agent A:** "Yes, still 150. Dogs are fine. Saturday at two works." | Facts land on the card, each with the agent's words. The card shows the viewing, waiting for the agent | Agent memory (SurrealDB), booking. Verified live | No confirm line: say "on a second call it confirms what it heard" |
-| 1:45 | **Presenter:** "The second agent didn't pick up. Landline left a voicemail with a number to call back, and that call goes straight to the agent working this listing." | Agent B's phone, voicemail left. The pin shows no answer | Voicemail and call-back. First run at 15:00 | Don't place the call-back live in the 3-minute version |
-| 2:05 | **Agent A** taps the confirm link in the text, types an email, presses Confirm | The card flips to confirmed without a reload. Both calendar invites arrive, and the renter's tab shows it. The renter gets "Confirmed: …" | It acts end to end. First run at 15:00 | Link fails: "the agent confirms from a link, and both invites go out" |
-| 2:30 | **Presenter:** "The renter's text has what the calls found. Every fact says who said it, word for word. That's what makes it safe to act on." | The results text, and a card's facts with their quotes | Trust and provenance. Verified live | Show the card's facts instead |
-| 2:45 | **Presenter:** "In testing: 19 real listing calls, 49 facts, every one with the agent's exact words. Eleven to twenty-eight cents a search. Landline is the renter's agent. We're Team AAMEL." | The board with the booked, confirmed card | Numbers, close | None needed |
+| 0:00 | **Arian:** "Renting in Toronto means calling agents who never call back, about listings that leave out what matters. About one rental condo in a hundred is empty (CMHC, Dec 2025). Landline is a voice agent that works for the renter. I'll call it now." | The board, idle, over the map of Toronto | The problem | None needed |
+| 0:15 | **Arian, from 437 553 3369, on speaker:** "Hi. Two bedrooms under twenty-six hundred. I work at Cohere, I have a dog, and I drive." | The board link arrives by text and opens on the projector. Pins re-sort, with "min by TTC to Cohere" on the cards | Live map, commute ranking. Verified live | Board doesn't move: use "Near King and John" as the place |
+| 0:35 | **Arian:** "Is there a Shoppers near the first one?" | The agent may say "Checking the map…" first, then the name and the minutes. A text arrives with the Google Maps link | Google Maps MCP. Verified live | Skip it. Say "it answers area questions from Google Maps" |
+| 0:50 | **Arian picks two:** "Call the first and the second. Ask if dogs are allowed and whether parking is included. I'm free Saturday between one and five, and you can book." | The agent reads the plan back: both addresses, the questions, the window, permission to book. Arian says "Thanks, bye" and hangs up | The brief becomes a plan. Verified live | No plan: "Call the first one and book Saturday afternoon" |
+| 1:05 | **Both agent phones ring** (3462 and 1383). One answers on speaker; the other lets it ring. Caller: "Hi, this is Landline. I'm an AI assistant calling for a renter about … This call is recorded." | Both pins start calling at the same moment. The detail view shows the live captions | Two real calls in parallel. Verified live | No ring in 15 s: switch to the backup video |
+| 1:20 | **Caller:** "Yesterday they said parking is $150 a month. Is that still right?" Then Arian's questions: dogs and parking. **Agent:** "Yes, still 150. Dogs are fine. Saturday at two works." **Caller:** "I'll text you a link to confirm, and you'll get a calendar invite." | Facts land on the card, each with the agent's words. The card shows the viewing, waiting for the agent | Agent memory (SurrealDB), the renter's questions, booking. Verified live | No confirm line: say "on a second call it confirms what it heard" |
+| 1:45 | **Arian:** "The other agent didn't pick up. Landline left a voicemail with a number to call back, and that call goes straight to the agent working this listing." | The other phone shows the voicemail. Its pin shows no answer | Voicemail. First run at 15:00 | Don't place the call-back live in the 3-minute version |
+| 2:05 | **The agent who answered** opens the confirm link in the text, types their email, and presses Confirm | The card flips to confirmed without a reload. Both invite emails arrive: on the agent's phone, and in the aryan.boukani2@gmail.com inbox on screen. Arian's phone gets "Confirmed: … Invite sent to aryan.boukani2@gmail.com." | It acts end to end. First run at 15:00 | Link fails: "the agent confirms from a link, and both invites go out" |
+| 2:30 | **Arian:** "My text has what the calls found. Every fact says who said it, word for word. That's what makes it safe to act on." | The results text, and a card's facts with their quotes | Trust and provenance. Verified live | Show the card's facts instead |
+| 2:45 | **Arian:** "In testing: 19 real listing calls, 49 facts, every one with the agent's exact words. Eleven to twenty-eight cents a search. Landline is the renter's agent. We're Team AAMEL." | The board with the booked, confirmed card | Numbers, close | None needed |
 
 ### If the slot is five minutes
 
@@ -60,10 +62,10 @@ Add these after 2:30, in this order, and drop any that failed at 15:00.
 
 | Beat | Said on stage | What the room sees | Shows |
 |---|---|---|---|
-| Call-back | Agent B calls Landline's number back: "Hi, you left me a message about the unit." | It reaches the Caller for that listing, which asks its questions | Calls that come back. First run at 15:00 |
+| Call-back | The agent who got the voicemail calls Landline's number back: "Hi, you left me a message about the unit." | It reaches the Caller for that listing, which asks its questions | Calls that come back. First run at 15:00 |
 | Second call | Renter calls again: "What happened with the first one?" | The agent answers from the stored calls: the parking, the dog and the confirmed viewing | Memory by phone number. First run at 15:00 |
 | /me and the app | "Renters sign in with the phone they call from." | Phone sign-in on `/me`, then My listings with each fact's source. The same on the Expo app, which has a Call Landline button | Clerk and Expo. First run at 15:00 |
-| Scam check | Agent B, on a second listing: "Send the deposit by e-transfer before you see it." | The card is flagged, and the text says "so I'd skip it" | Protects the renter. Verified in the evals |
+| Scam check | An agent, on another listing: "Send the deposit by e-transfer before you see it." | The card is flagged, and the text says "so I'd skip it" | Protects the renter. Verified in the evals |
 | Another language | Renter switches to Spanish or Mandarin mid-call | It answers in that language, and the results text is translated | Multilingual. Spanish and Mandarin only |
 
 ### On stage
@@ -71,16 +73,16 @@ Add these after 2:30, in this order, and drop any that failed at 15:00.
 **Do**
 - Use short sentences, and let the agent finish before the next one.
 - Say the place exactly: "Cohere", "U of T", "TD Centre". For a bank or café, add the street.
-- Keep the same brief as the rehearsal, so the same listing comes first.
+- Keep the same brief and the same two picks as the rehearsal.
 - Keep a phone on speaker close to the mic.
 - If a beat fails, say what it does in one line and move on. The backup video covers it.
 
 **Don't**
 - Don't switch streets mid-call or say "near TD Bank" alone. It will ask which one.
-- Don't call from …3369 or …3462 as the renter. Those numbers reach the Caller.
+- Don't call Landline from 437 559 3462 or 437 986 1383 as the renter. They're agent phones, and a missed listing call routes them to the Caller.
 - Don't speak Farsi to it. It understands, but may answer in English.
 - Don't promise a text after the call-back. That's not built yet (A-13c).
-- Don't deploy after 12:00, and don't restart the API before the demo.
+- Don't deploy or restart the API after the 15:00 rehearsal.
 
 ### Numbers to quote
 
