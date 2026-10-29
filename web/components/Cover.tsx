@@ -118,8 +118,8 @@ export function Cover() {
 
         <footer className="t-caption c-2 mt-20 border-t border-hairline py-8 sm:mt-28">
           <p className="max-w-2xl">
-            Built on Boson AI&rsquo;s Higgs Realtime, on the renter&rsquo;s call and every listing call, by Team AAMEL
-            (Arian Boukani, Danial Kordmodanlou, Mahyar Jaberi). About 1,080 real Toronto listings.
+            Built by Team AAMEL (Arian Boukani, Danial Kordmodanlou, Mahyar Jaberi). About 1,080 real Toronto
+            listings.
           </p>
         </footer>
       </div>
