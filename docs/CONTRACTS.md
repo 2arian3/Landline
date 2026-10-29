@@ -41,7 +41,7 @@ Every event has `type`, `session_id`, `at`, `idem_key` and a payload. Handlers a
 
 | Event | Payload | Emitted by |
 |---|---|---|
-| `CallStateChanged` | `call_id`, `state`, `twilio_status?` | voice layer, Dispatcher |
+| `CallStateChanged` | `call_id`, `state`, `twilio_status?`, `listing_id?` (A-13b: a listing agent's callback joins the session as a new call for that listing in the plan, while calling or done) | voice layer, Dispatcher |
 | `FactRecorded` | `call_id`, `field`, `value`, `quote`, `turn_idx`, `confirmed` | Caller `record_fact` |
 | `QuestionNoted` | `call_id`, `question` | Caller `note_question` |
 | `ViewingBooked` | `call_id`, `listing_id`, `starts_at`, `slot_text` | Caller `book_viewing`, once code accepts the slot |

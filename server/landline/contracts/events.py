@@ -108,6 +108,7 @@ class CallStateChanged(EventBase):
     call_id: str
     state: CallState
     twilio_status: str | None = None
+    listing_id: str | None = None   # A-13b: a listing agent's callback joins as a new call for this listing
 
 
 class FactRecorded(EventBase):
