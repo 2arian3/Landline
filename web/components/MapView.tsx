@@ -19,10 +19,18 @@ setWorkerUrl("/maplibre/maplibre-gl-worker.mjs");
 const STYLE = "https://tiles.openfreemap.org/styles/positron";
 const TORONTO: [number, number] = [-79.39, 43.69];
 
-const INK = "#1a1815";
-const LAND = "#efece6";
-const WATER = "#cad7dc";
-const PARK = "#dfe5d4";
+/** The map's colours, from the tokens in app/globals.css (--color-ink, --color-map-*), so the map and the
+ *  kit change together. The fallbacks are the same values, for a page whose CSS hasn't loaded. */
+function colours() {
+  const css = getComputedStyle(document.documentElement);
+  const token = (name: string, fallback: string) => css.getPropertyValue(name).trim() || fallback;
+  return {
+    ink: token("--color-ink", "#191918"),
+    land: token("--color-map-land", "#efece6"),
+    water: token("--color-map-water", "#cad7dc"),
+    park: token("--color-map-park", "#dfe5d4"),
+  };
+}
 
 // Close enough to find the street, far enough that the board's neighbours stay on screen: a phone's
 // narrower map needs one step further out to show the same few kilometres.
@@ -106,14 +114,15 @@ export function MapView({
     map.current = m;
 
     m.on("load", () => {
-      tuneStyle(m);
+      const colour = colours();
+      tuneStyle(m, colour);
       m.addSource("catalogue", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
       m.addLayer({
         id: "catalogue",
         type: "circle",
         source: "catalogue",
         paint: {
-          "circle-color": INK,
+          "circle-color": colour.ink,
           "circle-radius": ["interpolate", ["linear"], ["zoom"], 10, 2, 13, 3.5, 16, 5.5],
           "circle-opacity": ["case", ["get", "match"], 0.34, 0.07],
           "circle-opacity-transition": { duration: 600, delay: 0 },
@@ -328,13 +337,13 @@ function reducedMotion(): boolean {
 }
 
 /** Warm the basemap so it sits under the ink instead of competing with it. */
-function tuneStyle(m: MapLibre) {
+function tuneStyle(m: MapLibre, colour: ReturnType<typeof colours>) {
   for (const layer of m.getStyle().layers ?? []) {
     try {
-      if (layer.type === "background") m.setPaintProperty(layer.id, "background-color", LAND);
-      else if (layer.type === "fill" && /water/.test(layer.id)) m.setPaintProperty(layer.id, "fill-color", WATER);
+      if (layer.type === "background") m.setPaintProperty(layer.id, "background-color", colour.land);
+      else if (layer.type === "fill" && /water/.test(layer.id)) m.setPaintProperty(layer.id, "fill-color", colour.water);
       else if (layer.type === "fill" && /park|grass|wood|landcover/.test(layer.id))
-        m.setPaintProperty(layer.id, "fill-color", PARK);
+        m.setPaintProperty(layer.id, "fill-color", colour.park);
       else if (layer.type === "symbol" && /poi/.test(layer.id)) m.setLayoutProperty(layer.id, "visibility", "none");
     } catch {
       // a layer the style doesn't let us repaint keeps its default
