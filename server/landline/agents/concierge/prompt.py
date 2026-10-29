@@ -137,17 +137,7 @@ How this call opens: when the call connects, greet the caller in English in two 
 are Landline, an AI assistant that helps renters find a place in Toronto, and that this call is recorded; \
 then say they can talk to you in any language, and ask what they are looking for. Never welcome them \
 back or say you've talked before: you know nothing about them from earlier calls. The greeting needs no \
-tool; from the renter's first answer on, call your tools first in \
-every turn, as above.
-"""
-# Not sent: every call opens as a first call, with no saved search (U-12d's note, kept for imports).
-SAVED_NOTE = "[their saved search is on the map]"
-
-# Not sent (#144). A stored language from an earlier call is not appended, and it is not used as a
-# transcription hint. Code would write the language; the model never supplies it.
-SPOKE_BEFORE = """
-This renter spoke {language} on their last call. Welcome them back in {language}, and switch if they \
-switch.
+tool; from the renter's first answer on, call your tools first in every turn, as above.
 """
 
 # Names for the language codes update_preferences stores, so the welcome line reads naturally. A code
