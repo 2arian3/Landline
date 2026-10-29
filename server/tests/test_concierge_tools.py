@@ -274,7 +274,10 @@ async def test_focus_area_says_it_cannot_when_places_finds_nothing_either(placed
 
 async def test_a_slow_lookup_answers_at_once_and_moves_the_map_when_it_lands(placed, monkeypatch):
     class Slow:
-        async def resolve(self, label: str) -> Point:
+        def known(self, label: str) -> None:
+            return None
+
+        async def resolve(self, label: str, near=()) -> Point:
             await asyncio.sleep(0.05)
             return Point(*CHRISTIE_PITS, "geocoder")
 
