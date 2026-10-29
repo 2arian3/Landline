@@ -714,6 +714,13 @@
 /* The group clips to its corners, so a button's focus ring sits inside it. */
 .mapctl button:focus-visible { outline-offset: -3px; }
 .maplibregl-ctrl-bottom-right .maplibregl-ctrl-attrib { margin: 0 16px 16px 0; }
+/* Under the sheet layout the attribution is its (i) alone, kept 16px above the sheet as it moves. */
+@media (max-width: 1023px) and (orientation: portrait), (max-width: 1023px) and (min-height: 521px) {
+  .maplibregl-ctrl-bottom-right { bottom: var(--map-chrome-bottom, 0px); transition: bottom var(--dur-morph) var(--ease-settle); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .maplibregl-ctrl-bottom-right { transition: none; }
+}
 .maplibregl-ctrl-attrib {
   display: flex;
   align-items: center;
