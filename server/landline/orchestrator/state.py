@@ -44,13 +44,14 @@ class SessionState(BaseModel):
     channel: str
     user_id: int | None = None
     caller_phone: str | None = None      # E.164 from Twilio; the results SMS goes here and nowhere else
-    # A caller this number has called before (Profiles, O-05): what was recalled when the call started.
+    # Never set: every call starts from the beginning, with nothing from the caller's earlier calls (#144).
+    # Kept so snapshots saved before that still load.
     returning: bool = False
     user_name: str | None = None
-    previous_results: str | None = None  # the last session's results, which this call opens with
-    recalled: dict[str, Said] = Field(default_factory=dict)   # reactions from earlier calls, by listing
-    opening: str | None = None           # what the Concierge remembers, ≤ 120 words
-    saved_search: str | None = None      # U-12d: the line for the saved search this call started from
+    previous_results: str | None = None
+    recalled: dict[str, Said] = Field(default_factory=dict)
+    opening: str | None = None
+    saved_search: str | None = None
     phase: Phase = "open"
     preferences: Preferences = Field(default_factory=Preferences)
     focus_listing_id: str | None = None

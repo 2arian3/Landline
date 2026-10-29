@@ -33,7 +33,6 @@ from landline.agents.concierge.prompt import (
     INSTRUCTIONS,
     LINK_SENT,
     MAPS_RULE,
-    SAVED_NOTE,
 )
 from landline.config import Settings
 from landline.contracts import SessionEnded, SessionStarted
@@ -42,7 +41,7 @@ from landline.voice import twilio
 from landline.voice.avatar_clip import Clips, gender_of_voice
 from landline.voice.calls import RenterCall, RenterCalls
 from landline.voice.higgs import PCMU, ConnectHiggs, session_config
-from landline.voice.line import BOARD, Item, Line, Lines
+from landline.voice.line import Item, Line, Lines
 from landline.voice.recorder import CallRecorder, Chunk, Placed, format_of
 from landline.voice.sms import Texter
 
@@ -103,8 +102,9 @@ async def converse(transport: Transport, call: RenterCall, *, calls: RenterCalls
                    lines: Lines | None = None, clips: Clips | None = None) -> str:
     """Runs one claimed call to its end, finalizes it and ends its session. Returns why it ended. The
     caller owns the socket and closes it afterwards. With a `texter`, a phone caller is texted the link
-    to their board once, when the call connects, whatever the Concierge does next (a returning caller's
-    board is already there). With `lines`, map taps reach the Concierge between turns (voice/line.py)."""
+    to their board once, when the call connects, whatever the Concierge does next. With `lines`, map taps
+    reach the Concierge between turns (voice/line.py). Every call starts from the beginning: nothing from the
+    caller's earlier calls reaches the Concierge (#144)."""
     reason = "error"
     # The call, its transcript and its audio are stored for the admin panel (orchestrator/calllog.py).
     kind = "voice" if transport.audio_format == PCMU else "browser"
@@ -155,10 +155,11 @@ def _link_texter(texter: Texter | None, call: RenterCall, settings: Settings) ->
 
 def opening(remembered: str | None = None, language: str | None = None) -> tuple[str, list[dict[str, Any]]]:
     """The Concierge's session instructions for a call, and the events that start it. Every call opens as a
-    first call. `remembered` and `language` are accepted and ignored: last-session memory is not appended
-    (#144). How the call opens sits in the session instructions (FIRST_CALL), and the call starts with a
-    quoted note and a plain response.create. Never a response object on response.create: its instructions
-    replace the session's, and calls sent GREETING that way called no tools all call (#129)."""
+    first call, never a returning caller's. `remembered` and `language` are accepted and ignored: nothing from
+    an earlier call is appended (#144). How the call opens sits in the session instructions (FIRST_CALL), and
+    the call starts with a quoted note and a plain response.create. Never a response object on
+    response.create: its instructions replace the session's, and calls sent GREETING that way called no tools
+    all call (#129)."""
     del remembered, language
     note = {"type": "message", "role": "user", "content": [{"type": "input_text", "text": CALL_CONNECTED}]}
     start = [{"type": "conversation.item.create", "item": note}, {"type": "response.create"}]
@@ -171,14 +172,6 @@ def _reader() -> Any | None:
     if not _READER:
         _READER.append(auditor_llm.from_env())
     return _READER[0]
-
-
-def with_saved_search(start: list[dict[str, Any]], saved: str) -> list[dict[str, Any]]:
-    """The call's start events, with the connected note also giving the saved search's line (U-12d), so the
-    greeting says it. Code wrote the line from the stored profile; the model only says it."""
-    text = f"{CALL_CONNECTED} {SAVED_NOTE} {saved}"
-    note = {"type": "message", "role": "user", "content": [{"type": "input_text", "text": text}]}
-    return [{"type": "conversation.item.create", "item": note}, *start[1:]]
 
 
 def hint(remembered: str | None, language: str | None) -> str | None:
@@ -216,11 +209,6 @@ async def _talk(transport: Transport, call: RenterCall, runtime: SessionRuntime,
     line = lines.open(call.session_id, higgs.send) if lines is not None else None
     if line is not None:   # a slow ask_maps answer comes between turns, like a map tap (O-07b)
         ctx.note = lambda said: line.push(Item("maps", said, line.clock()))
-    saved = runtime.state(call.session_id).saved_search   # U-12d: already on the map as the call opens
-    if saved:
-        start = with_saved_search(start, saved)
-        if line is not None:
-            line.board_told = f"{BOARD} {saved}"   # so the Line doesn't say it a second time
     try:
         for event in start:
             await higgs.send(event)

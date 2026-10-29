@@ -26,7 +26,7 @@ from landline.api.browser_audio import JUDGE_AUDIO_PATH
 from landline.api.twilio import BUSY, NOT_READY
 from landline.app import create_app
 from landline.config import Settings
-from landline.contracts import Listing
+from landline.contracts import FeedbackGiven, Listing, PreferenceDelta, Preferences, PreferencesUpdated
 from landline.db.catalogue import Catalogue
 from landline.voice import bridge, twilio
 from landline.voice.calls import CLAIM_WITHIN_S, RenterCalls
@@ -268,6 +268,44 @@ def test_last_session_memory_is_not_appended_to_the_call():
         assert fake.sent[:2] == [{"type": "conversation.item.create", "item": {
             "type": "message", "role": "user", "content": [{"type": "input_text", "text": CALL_CONNECTED}]}},
             {"type": "response.create"}]
+
+
+def test_a_second_call_from_the_same_number_opens_exactly_like_the_first():
+    """Every call starts from the beginning (#144): what the renter said and turned down on their last call
+    reaches neither the next call's board nor the Concierge's instructions or opening."""
+    phone, opened, sessions = "+14165550100", [], []
+    with _client() as c:
+        rt = c.app.state.runtime
+        for n in range(2):
+            fake = FakeHiggs()
+            c.app.state.connect_higgs = fake.connect
+            call = c.app.state.calls.open(caller=phone)
+            with c.websocket_connect("/twilio/media") as ws:
+                ws.send_json(_start(call.call_id))
+                deadline = time.monotonic() + 5
+                while len(fake.sent) < 2 and time.monotonic() < deadline:   # the opening went to Higgs
+                    time.sleep(0.01)
+                if n == 0:   # the first call: a search and a reaction
+                    sid = call.session_id
+                    c.portal.call(rt.emit, PreferencesUpdated(
+                        session_id=sid, at=T0, idem_key=f"{sid}:p1",
+                        delta=PreferenceDelta(max_monthly=2600, min_beds=2, pets=["dog"])))
+                    c.portal.call(rt.emit, FeedbackGiven(
+                        session_id=sid, at=T0, idem_key=f"{sid}:f1", listing_id="t:2", reaction="reject",
+                        reason="too dark"))
+                ws.send_json({"event": "stop", "streamSid": "MZ1"})
+                with pytest.raises(WebSocketDisconnect):
+                    ws.receive_json()
+            opened.append((fake.session["session"]["instructions"], fake.sent[:2]))
+            sessions.append(call.session_id)
+        first, second = sessions
+        assert rt.get(first).preferences.max_monthly == 2600
+        assert opened[1] == opened[0] and opened[1][1] == STARTS
+        assert opened[1][0].endswith(FIRST_CALL) and "2,600" not in opened[1][0]
+        again = rt.get(second)
+        assert again.preferences == Preferences() and rt.state(second).reactions == {}
+        assert (again.returning, again.user_name, rt.opening(second)) == (False, None, None)
+        assert "t:2" in [card.listing_id for card in again.board]
 
 
 def test_a_phone_call_s_greeting_never_waits_on_the_caller_s_profile(caplog):

@@ -41,7 +41,6 @@ from landline.contracts import (
 from landline.db.catalogue import Catalogue
 from landline.db.migrations import apply
 from landline.db.rows import SessionRow, TurnRow
-from landline.orchestrator.profiles import Remembered
 from landline.voice.dispatch import CallResult
 
 NOW = datetime(2026, 10, 22, tzinfo=UTC)
@@ -500,19 +499,12 @@ def test_after_a_restart_a_session_reads_from_postgres(db_url):
 
 class MemoryProfiles:
     """O-05's Profiles, kept in memory instead of Postgres: enough to check the second call from a number
-    without a database. The runtime and the Narrator are the real ones."""
+    without a database. They only record; nothing reads them back into a call (#144). The runtime and the
+    Narrator are the real ones."""
 
     def __init__(self, name: str | None):
         self.name = name
-        self.users: dict[str, int] = {}
         self.results: dict[int, str | None] = {}
-
-    async def recall(self, phone: str) -> Remembered:
-        if phone not in self.users:
-            self.users[phone] = len(self.users) + 1
-            return Remembered(user_id=self.users[phone], returning=False)
-        user = self.users[phone]
-        return Remembered(user_id=user, returning=True, name=self.name, last_results=self.results.get(user))
 
     async def remember(self, state, event_type: str, address) -> None:
         if event_type == "CallsCompleted":
@@ -537,7 +529,7 @@ class _Scripted:
                                               end_reason="done", viewing=self.viewing))
 
 
-def test_a_returning_caller_opens_on_welcome_back_with_the_last_results():
+def test_a_second_call_from_the_same_number_does_not_open_on_the_last_results():
     phone, first, second = "+14165550123", "s_firstcall1", "s_secondcal1"
     with _client() as c:
         rt, run = c.app.state.runtime, c.portal.call

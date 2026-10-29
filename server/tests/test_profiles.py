@@ -1,4 +1,5 @@
-"""Profiles (O-05): a renter is stored by phone number. The next call does not load that memory (#144).
+"""Profiles (O-05): a renter is stored by phone number, for /me. Nothing of it is read back into a call: every
+call starts from the beginning (#144), even with "Start my next call from this search" on (U-12d is off).
 
 These run against Postgres in a throwaway schema (conftest.py) and skip without TEST_DATABASE_URL.
 """
@@ -11,6 +12,7 @@ import pytest
 
 from landline.config import Settings
 from landline.contracts import (
+    AnchorResolved,
     CallOutcome,
     CallPlan,
     CallsCompleted,
@@ -20,6 +22,7 @@ from landline.contracts import (
     Listing,
     OutcomeReady,
     PreferenceDelta,
+    Preferences,
     PreferencesUpdated,
     SessionEnded,
     SessionStarted,
@@ -28,15 +31,8 @@ from landline.contracts import (
 from landline.contracts.tools import AnchorRef
 from landline.db.catalogue import Catalogue
 from landline.db.pool import Database
-from landline.db.rows import SessionRow
 from landline.orchestrator import SessionRuntime
-from landline.orchestrator.profiles import (
-    CALLS_STALE_AFTER,
-    MAX_OPENING_WORDS,
-    Remembered,
-    calls_running,
-    opening,
-)
+from landline.voice import bridge
 from landline.voice.dispatch import Dispatcher
 
 T0 = datetime(2026, 10, 23, 12, 0, tzinfo=UTC)
@@ -240,17 +236,6 @@ async def test_a_session_stuck_in_calling_stops_counting_as_running(db):
     assert rt.opening("s_prof000017") is None   # a stuck session is not appended onto the next call (#144)
 
 
-def test_calling_counts_as_running_only_while_its_calls_could_still_be_going():
-    def last(status: str, age: timedelta) -> SessionRow:
-        return SessionRow(session_id="s_prof000099", user_id=1, channel="phone", status=status, version=3,
-                          snapshot={}, started_at=T0 - age, ended_at=None)
-
-    assert calls_running(last("calling", timedelta(minutes=20)), T0)
-    assert not calls_running(last("calling", CALLS_STALE_AFTER), T0)
-    assert not calls_running(last("done", timedelta(minutes=5)), T0)
-    assert not calls_running(None, T0)
-
-
 async def test_places_new_since_the_last_call_are_not_appended(db):
     fresh = _listing(6, 2100, first_seen=datetime.now(UTC) + timedelta(minutes=5))
     rt = _runtime(db, [*LISTINGS, fresh])
@@ -275,7 +260,7 @@ async def test_a_judge_session_gets_no_user_and_a_phone_start_never_looks_the_ca
     async def down(phone):
         raise ConnectionError("database is down")
 
-    monkeypatch.setattr(rt.profiles, "recall", down)   # never called: the start reads nothing about them
+    monkeypatch.setattr(db.users, "by_phone", down)   # never called: the start reads nothing about them
     view = await _call(rt, "s_prof000010")
     assert view.version == 1 and not view.returning and rt.state("s_prof000010").user_id is None
 
@@ -286,7 +271,7 @@ async def test_the_start_never_waits_on_the_caller_s_profile(db, monkeypatch):
     async def slow(phone):
         await asyncio.sleep(1)
 
-    monkeypatch.setattr(rt.profiles, "recall", slow)
+    monkeypatch.setattr(db.users, "by_phone", slow)
     started = time.monotonic()
     assert (await _call(rt, "s_prof000011")).returning is False
     assert time.monotonic() - started < 0.5
@@ -304,95 +289,84 @@ async def test_forget_me_removes_the_renter(db):
     assert not (await _call(rt, "s_prof000013")).returning
 
 
-def test_the_opening_keeps_the_results_and_stays_within_120_words():
-    results = " ".join(f"I booked {n} Long Street Name Avenue for Saturday at {n} pm." for n in range(1, 15))
-    r = Remembered(user_id=1, returning=True, last_seen_at=T0 - timedelta(days=2), last_results=results,
-                   summary="Wants up to $2,600 a month and 1 bedroom or more.")
-    said = opening(r, new_matches=3, now=T0)
-    assert said.startswith("This renter last called on Wednesday. Results of the calls you made for them: "
-                           "I booked 1 Long Street Name Avenue")
-    assert len(said.split()) <= MAX_OPENING_WORDS
+# Every call starts from the beginning: a saved search, a name, preferences, reactions and places from earlier
+# calls never reach a new one, even with "Start my next call from this search" on (U-12d is off)
 
-
-# U-12d: start the next call from the saved search, when the renter turned that on
-
-KING_AND_BAY = {"label": "King and Bay", "lat": 43.6487, "lng": -79.3817}
+CHRISTIE_PITS = {"label": "Christie Pits", "lat": 43.6645, "lng": -79.4207}
+FIRST_LINE = "Tell me what you're looking for, and the map will follow."
 
 
 async def _saved(db: Database, on: bool) -> int:
-    """A renter who saved up to $2,000, 1 bed or more, near King and Bay (with its point), and the switch."""
-    user = await db.users.upsert(PHONE)
+    """A renter named Sara who saved up to $2,000, 1 bed or more, near Christie Pits (with its point), and the
+    "Start my next call from this search" switch."""
+    user = await db.users.upsert(PHONE, name="Sara")
     await db.profiles.upsert(user.user_id, hard={"max_monthly": 2000, "min_beds": 1, "language": "fa"},
-                             priorities=[{"feature": "light"}], anchors=[KING_AND_BAY])
+                             priorities=[{"feature": "light"}], anchors=[CHRISTIE_PITS])
     async with db.transaction() as conn:
         await conn.execute("update users set use_saved_search = %s where user_id = %s", (on, user.user_id))
     return user.user_id
 
 
-async def test_with_the_switch_on_the_first_board_uses_the_saved_search(db, monkeypatch):
-    await _saved(db, on=True)
+def _fresh(rt: SessionRuntime, sid: str) -> None:
+    """The session is a first call's: nothing in it came from an earlier one."""
+    state, view = rt.state(sid), rt.get(sid)
+    assert view.version == 1 and view.preferences == Preferences() and state.reactions == {}
+    assert (view.returning, view.user_name, view.agent_says) == (False, None, FIRST_LINE)
+    assert (state.returning, state.user_name, state.saved_search, state.recalled) == (False, None, None, {})
+    assert rt.opening(sid) is None
+
+
+@pytest.mark.parametrize("on", [True, False])
+async def test_a_saved_search_never_starts_a_call_even_with_the_switch_on(db, monkeypatch, on):
+    await _saved(db, on=on)
     rt = _runtime(db)
 
-    async def no_lookup(label):
-        raise AssertionError(f"{label} was looked up again: its stored point should be used")
+    async def no_lookup(label, near=()):
+        raise AssertionError(f"{label} was looked up: nothing saved should reach the call")
     monkeypatch.setattr(rt.places, "resolve", no_lookup)
     sid = "s_prof000020"
-    first = await _call(rt, sid)
-    assert first.version == 1 and first.preferences.max_monthly is None   # the start waits on nothing
-    await rt.idle()
-    view = rt.get(sid)
-    assert view.version == 2   # one commit: the saved search and its place's point
-    p = view.preferences
-    assert (p.max_monthly, p.min_beds, p.priorities, p.language) == (2000, 1, ["light"], None)
-    assert [(a.label, a.lat, a.lng) for a in p.anchors] == [("King and Bay", 43.6487, -79.3817)]
-    # The budget filter keeps up to 10% over (docs/SCORING.md): $2,100 and $2,200 stay; $2,300 and up go.
-    assert {c.listing_id for c in view.board} == {"t:1", "t:2"}
-    said = "I've got your saved search: 1 bedroom under $2,000 near King and Bay. Want to start there?"
-    assert view.agent_says == said and rt.state(sid).saved_search == said
-
-
-async def test_with_the_switch_off_the_call_starts_fresh(db):
-    await _saved(db, on=False)
-    rt = _runtime(db)
-    sid = "s_prof000021"
     await _call(rt, sid)
-    await rt.idle()
-    view = rt.get(sid)
-    assert view.version == 1 and view.preferences.max_monthly is None and view.preferences.anchors == []
-    assert view.agent_says == "Tell me what you're looking for, and the map will follow."
-    assert rt.state(sid).saved_search is None
+    await rt.idle()   # nothing runs after the start's commit either
+    _fresh(rt, sid)
+    assert [e.type for e in await db.events.list(sid)] == ["SessionStarted"]
 
 
-async def test_what_the_renter_says_first_wins_over_a_saved_search_that_comes_late(db, monkeypatch):
+async def test_a_second_call_after_a_search_and_reactions_starts_fresh_and_the_concierge_hears_none_of_it(
+        db, monkeypatch):
     await _saved(db, on=True)
     rt = _runtime(db)
-    said, read = asyncio.Event(), rt.profiles.saved_search
 
-    async def late(phone):
-        await said.wait()   # the saved search comes back only after the renter has spoken
-        return await read(phone)
-    monkeypatch.setattr(rt.profiles, "saved_search", late)
-    sid = "s_prof000022"
-    await _call(rt, sid)
-    await rt.emit(PreferencesUpdated(**_meta(sid, "p1", 1), delta=PreferenceDelta(max_monthly=3000)))
-    said.set()
+    async def no_lookup(label, near=()):
+        return None
+    monkeypatch.setattr(rt.places, "resolve", no_lookup)
+    first = "s_prof000024"
+    await _call(rt, first)
+    wants = PreferenceDelta(max_monthly=2600, min_beds=1, priorities=["light"], pets=["dog"],
+                            anchors=[AnchorRef(label="Christie Pits")])
+    await rt.emit(PreferencesUpdated(**_meta(first, "p1", 1), delta=wants))
+    await rt.emit(AnchorResolved(**_meta(first, "place:christie pits", 2), label="Christie Pits",
+                                 lat=43.6645, lng=-79.4207))
+    await rt.emit(FeedbackGiven(**_meta(first, "f1", 3), listing_id="t:1", reaction="like"))
+    await rt.emit(FeedbackGiven(**_meta(first, "f2", 4), listing_id="t:2", reaction="reject",
+                                reason="too dark", attribute="light"))
+    await rt.emit(CallsRequested(**_meta(first, "plan", 5), listing_ids=["t:1"], may_book=True))
+    await _hang_up(rt, first)
+    user = await db.users.by_phone(PHONE)
+    assert (await db.profiles.get(user.user_id)).hard["max_monthly"] == 2600   # still recorded, for /me
+    assert len(await db.interactions.for_user(user.user_id)) == 2
+
+    second, stranger = "s_prof000025", "s_prof000026"
+    await _call(rt, second, phone="(416) 555-0100")   # the same number, written differently
+    await _call(rt, stranger, phone="+14165550199")   # a number never heard before
     await rt.idle()
-    view = rt.get(sid)
-    assert view.preferences.max_monthly == 3000 and view.preferences.anchors == []
-    assert rt.state(sid).saved_search is None
-
-
-def test_the_saved_search_line_says_only_the_stored_fields():
-    from landline.contracts import Anchor, Preferences
-    from landline.orchestrator.narrator import saved_search
-    from landline.orchestrator.profiles import delta_of
-
-    near = Preferences(max_monthly=2600, min_beds=2, anchors=[Anchor(label="King and Bay")])
-    assert saved_search(near) == (
-        "I've got your saved search: 2 bedrooms under $2,600 near King and Bay. Want to start there?")
-    assert saved_search(Preferences(areas=["Annex"], min_beds=0)) == (
-        "I've got your saved search: a studio or bigger in Annex. Want to start there?")
-    plain = "I've got your saved search on the map. Want to start there?"
-    assert saved_search(Preferences(pets=["dog"])) == plain
-    assert delta_of(Preferences()) is None
-    assert delta_of(Preferences(pets=["dog"])).model_dump(exclude_none=True) == {"pets": ["dog"]}
+    _fresh(rt, second)
+    # The board is the default one, the same a new caller sees, with the place they turned down back on it.
+    board = [c.listing_id for c in rt.get(second).board]
+    assert board == [c.listing_id for c in rt.get(stranger).board] and "t:2" in board
+    assert rt.state(second).calls == {} and rt.state(second).request is None
+    # What the bridge gives the Concierge (voice/bridge.py _talk) is a first call's, with nothing about them.
+    instructions, start = bridge.opening(rt.opening(second))
+    assert (instructions, start) == bridge.opening(None)
+    said = instructions + str(start)
+    for theirs in ("Sara", "Christie Pits", "2,600", "2,000", "1 Main St", "last called"):
+        assert theirs.lower() not in said.lower(), theirs

@@ -7,7 +7,7 @@
         await tx.apply(CallsScheduled(...))
         await db.calls.create(..., conn=tx.conn)
     runtime.on("SessionEnded", dispatcher.on_session_ended)   # runs after the commit
-    runtime.opening(sid)                              # None: last-session memory is not put on the call
+    runtime.opening(sid)                              # always None: a call knows nothing of earlier ones
 
 `session_tx` holds the session's lock, applies each event to a working copy, then
 re-ranks, appends the events, saves the snapshot and bumps the version in one
@@ -16,10 +16,10 @@ that fails or is refused leaves nothing behind. A duplicate `idem_key` is a no-o
 After the commit, SSE subscribers wake on `changed` and each subscriber to the
 committed event types runs as a background task, so none of them blocks a turn.
 
-With Postgres, a phone call's number is looked up when its session starts (Profiles, O-05): a new number
-gets a user, and a known number is linked to the same user. Nothing from earlier sessions is copied onto
-this call (#144). The profile is saved when the brief ends and again when the calls are done, after those
-commits.
+With Postgres, a phone session is linked to its caller's user by number when the brief ends (Profiles,
+O-05), and the profile is saved then and again when the calls are done, after those commits, for /me. Nothing
+is ever read back into a call: every call starts from the beginning, with no saved search, preferences,
+reactions, places, name or results from earlier sessions (#144).
 """
 from __future__ import annotations
 
@@ -38,7 +38,6 @@ from landline.contracts import (
     CommuteResolved,
     Event,
     Preferences,
-    PreferencesUpdated,
     SessionStarted,
     SessionView,
 )
@@ -49,7 +48,7 @@ from landline.orchestrator.calllog import CallLog
 from landline.orchestrator.commute import Commute
 from landline.orchestrator.maps_mcp import MapsMCP
 from landline.orchestrator.places import Places, Point, Unplaced
-from landline.orchestrator.profiles import SAVED_SEARCH, Profiles, delta_of, is_saved_search
+from landline.orchestrator.profiles import Profiles
 from landline.orchestrator.state import SessionState
 from landline.scoring import FeatureMatrix
 
@@ -57,7 +56,6 @@ log = logging.getLogger(__name__)
 
 Subscriber = Callable[[Event, SessionView], Awaitable[None]]
 PLACE_TIMEOUT_S = 20.0   # a place lookup off the hot path; past this the place stays unresolved
-SAVED_SEARCH_TIMEOUT_S = 2.0   # reading a saved search (U-12d); past this the call goes on fresh
 
 
 class UnknownSession(KeyError):
@@ -117,8 +115,7 @@ class SessionRuntime:
         self.profiles = Profiles(db) if db is not None else None
         if self.profiles is not None:
             self.on("SessionEnded", self._remember)
-            self.on("CallsCompleted", self._remember)
-            self.on("SessionStarted", self._start_from_saved_search)
+            self.on("CallsCompleted", self._remember)   # recorded for /me; never read back into a call
         # Places the renter names become points in the background, then AnchorResolved re-ranks (D-04).
         self.places = places or Places(self.matrix.named, contact=contact)
         self.on("PreferencesUpdated", self._resolve_places)
@@ -144,8 +141,9 @@ class SessionRuntime:
         return self._get(session_id).state.model_copy(deep=True)
 
     def opening(self, session_id: str) -> str | None:
-        """Last-session memory for the Concierge. Always None: a call does not append it (#144)."""
-        return self._get(session_id).state.opening
+        """Last-session memory for the Concierge. Always None: every call starts from the beginning (#144)."""
+        self._get(session_id)
+        return None
 
     def on(self, event_type: str, fn: Subscriber) -> None:
         """Run `fn(event, view)` after every committed event of `event_type`, as a background task."""
@@ -238,41 +236,11 @@ class SessionRuntime:
         if state.phase == "done" and state.results is None:
             state.results = narrator.results(state, view, self.catalogue)
         says = narrator.line(before, view, events, state, self.catalogue)
-        if says is not None and any(is_saved_search(e) for e in events):
-            state.saved_search = says   # what the Concierge's greeting or Line says about it (U-12d)
         if says is None and before is not None:
             says = before.agent_says
+        # Never a returning caller, and no name from an earlier call: every call starts fresh (#144).
         return view.model_copy(update={"agent_says": says or view.agent_says, "results": state.results,
-                                       "returning": state.returning, "user_name": state.user_name})
-
-    async def _start_from_saved_search(self, event: Event, view: SessionView) -> None:
-        """U-12d: a phone renter who turned on "Start my next call from this search" starts from it. After
-        the start's commit, so the greeting waits on nothing (#149): the stored search goes on as one
-        PreferencesUpdated, its places with their stored points (AnchorResolved, so none is looked up again),
-        and only while the renter hasn't changed anything yet. With the switch off, nothing happens."""
-        if self.profiles is None or not isinstance(event, SessionStarted) or event.channel != "phone" \
-                or not event.caller_phone:
-            return
-        try:
-            async with asyncio.timeout(SAVED_SEARCH_TIMEOUT_S):
-                saved = await self.profiles.saved_search(event.caller_phone)
-        except Exception:
-            log.exception("could not read the saved search for %s; the call starts fresh", event.session_id)
-            return
-        delta = delta_of(saved) if saved is not None else None
-        if saved is None or delta is None:
-            return
-        sid, at = event.session_id, datetime.now(UTC)
-        async with self.session_tx(sid) as tx:
-            if tx.state.preferences != Preferences():
-                return   # the renter already said something: their words win over the saved search
-            await tx.apply(PreferencesUpdated(session_id=sid, at=at, idem_key=f"{sid}:{SAVED_SEARCH}",
-                                              delta=delta))
-            for anchor in saved.anchors:
-                if anchor.lat is not None and anchor.lng is not None:
-                    key = " ".join(anchor.label.lower().split())   # the same key as _resolve_places
-                    await tx.apply(AnchorResolved(session_id=sid, at=at, idem_key=f"{sid}:place:{key}",
-                                                  label=anchor.label, lat=anchor.lat, lng=anchor.lng))
+                                       "returning": False, "user_name": None})
 
     async def place(self, session_id: str, label: str) -> Point | Unplaced | None:
         """Where a place this session's renter named is (Places), with their other places to judge a far
