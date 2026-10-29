@@ -2,9 +2,10 @@
 
 import { AnimatePresence, LayoutGroup, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
-import { ListingCard, type Mark, type Move } from "./ListingCard";
+import { ListingCard, type Move } from "./ListingCard";
+import type { Stage } from "@/lib/status";
 import type { Unheard } from "@/lib/outcome";
-import type { Card } from "@/lib/types";
+import type { CallView, Card } from "@/lib/types";
 
 const MOVE_MS = 4000;
 
@@ -22,6 +23,8 @@ export function Board({
   hoverId,
   marks = {},
   ended = {},
+  calls = [],
+  plan = [],
   onSelect,
   onHover,
 }: {
@@ -29,8 +32,12 @@ export function Board({
   loading: boolean;
   focusId: string | null;
   hoverId: string | null;
-  marks?: Record<string, Mark>;
+  marks?: Record<string, Stage>;
   ended?: Record<string, Unheard>;
+  /** The session's calls, oldest first: each card gets its place's latest (a callback is a newer call). */
+  calls?: CallView[];
+  /** The places the renter picked to call. */
+  plan?: string[];
   onSelect: (id: string) => void;
   onHover: (id: string | null) => void;
 }) {
@@ -73,6 +80,8 @@ export function Board({
                 moved={moves[card.listing_id] ?? null}
                 mark={marks[card.listing_id]}
                 ended={ended[card.listing_id]}
+                call={calls.filter((c) => c.listing_id === card.listing_id).at(-1) ?? null}
+                planned={plan.includes(card.listing_id)}
                 onSelect={onSelect}
                 onHover={onHover}
               />

@@ -18,6 +18,67 @@ const POLL_MS = 1000;
  * answer with their script until A-02 records real ones.
  */
 export function Captions({ call }: { call: CallView }) {
+  const { turns, onLine } = useTurns(call);
+
+  if (!turns.length) return null;
+  const lines = (
+    <ol className="mt-2 space-y-1.5" aria-live={onLine ? "polite" : undefined}>
+      {turns.map((t) => (
+        <li key={t.idx} lang={t.lang ?? undefined} className="text-support text-ink">
+          <span className="font-label text-ink-3">{SPEAKER[t.speaker]}</span> {t.text}
+        </li>
+      ))}
+    </ol>
+  );
+  if (onLine) {
+    return (
+      <div className="mt-3">
+        <p className="flex items-center gap-1.5 text-meta font-label text-live">
+          <span aria-hidden className="live-dot h-1.5 w-1.5 rounded-full bg-live" />
+          On the call now
+        </p>
+        {lines}
+      </div>
+    );
+  }
+  return (
+    <details className="mt-3">
+      <summary className="cursor-pointer list-none text-meta text-ink-3 underline decoration-dotted underline-offset-2">
+        The call, line by line
+      </summary>
+      {lines}
+    </details>
+  );
+}
+
+const WHO: Record<Turn["speaker"], string> = { agent: "Landline", landlord: "Agent", renter: "You" };
+
+/**
+ * The card's live lines (Lucent): the call's last two lines while it's on, the older one quieter, read out
+ * as they arrive. Nothing once the call is over: its lines stay in the detail.
+ */
+export function LiveLines({ call }: { call: CallView }) {
+  const { turns, onLine } = useTurns(call);
+  if (!onLine || !turns.length) return null;
+  const shown = turns.slice(-2);
+  return (
+    <span className="lines" aria-live="polite">
+      {shown.map((t, i) => (
+        <span
+          key={t.idx}
+          lang={t.lang ?? undefined}
+          className={`line ${i < shown.length - 1 ? "is-old" : "is-new"}`}
+        >
+          <span className="who">{WHO[t.speaker]}</span>
+          {t.text}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+/** A call's lines from GET /api/calls/{id}/turns, polled while it's on and a few times after it ends. */
+function useTurns(call: CallView): { turns: Turn[]; onLine: boolean } {
   const [turns, setTurns] = useState<Turn[]>([]);
   const last = useRef(-1);
   const onLine = ON_THE_LINE.includes(call.state);
@@ -62,33 +123,5 @@ export function Captions({ call }: { call: CallView }) {
     };
   }, [call.call_id, onLine, over]);
 
-  if (!turns.length) return null;
-  const lines = (
-    <ol className="mt-2 space-y-1.5" aria-live={onLine ? "polite" : undefined}>
-      {turns.map((t) => (
-        <li key={t.idx} lang={t.lang ?? undefined} className="text-support text-ink">
-          <span className="font-label text-ink-3">{SPEAKER[t.speaker]}</span> {t.text}
-        </li>
-      ))}
-    </ol>
-  );
-  if (onLine) {
-    return (
-      <div className="mt-3">
-        <p className="flex items-center gap-1.5 text-meta font-label text-live">
-          <span aria-hidden className="live-dot h-1.5 w-1.5 rounded-full bg-live" />
-          On the call now
-        </p>
-        {lines}
-      </div>
-    );
-  }
-  return (
-    <details className="mt-3">
-      <summary className="cursor-pointer list-none text-meta text-ink-3 underline decoration-dotted underline-offset-2">
-        The call, line by line
-      </summary>
-      {lines}
-    </details>
-  );
+  return { turns, onLine };
 }
