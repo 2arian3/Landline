@@ -1,10 +1,12 @@
 // My search's form logic (src/lib/search.ts): the API's limits, checked before sending, and only what
 // changed sent. npm test.
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { edit, formFrom, parseBudget, problems, problemsFrom422, savedFrom, splitList } from "../src/lib/search.ts";
+import {
+  bedOptions, edit, formFrom, rebase, parseBudget, problems, problemsFrom422, savedFrom, splitList,
+} from "../src/lib/search.ts";
 
 const profile = {
   phone: "+14165550100",
@@ -70,6 +72,31 @@ test("a 422 marks the fields it names", () => {
   assert.deepEqual(problemsFrom422(null), {});
 });
 
+test("a 422's message reads without Pydantic's \"Value error,\" prefix", () => {
+  const body = { detail: [
+    { loc: ["body", "move_in"], msg: "Value error, move_in must be a date" },
+    { loc: ["body", "email"], msg: "value error, That isn't an email address." },
+    { loc: ["body", "pets"], msg: "Value error, " },
+  ] };
+  assert.deepEqual(problemsFrom422(body), {
+    move_in: "Move_in must be a date",
+    email: "That isn't an email address.",
+    pets: "That isn't valid.",
+  });
+});
+
+// The web's /me form, whose bedroom chips the app's match.
+const WEB_ME = new URL("../../web/components/MySearch.tsx", import.meta.url);
+
+test("bedrooms offer the web's chips exactly, any to 4+, and a saved value they don't have keeps its own chip", () => {
+  const webChips = /const BEDS = \[([\s\S]*?)\] as const;/.exec(readFileSync(WEB_ME, "utf8"))[1];
+  const web = [...webChips.matchAll(/\["([^"]*)", "([^"]*)"\]/g)].map(([, v, w]) => [v, w]);
+  assert.deepEqual(bedOptions("2"), web);
+  assert.deepEqual(bedOptions("").map(([, w]) => w), ["Any", "Studio+", "1+", "2+", "3+", "4+"]);
+  assert.deepEqual(bedOptions("1.5").at(-1), ["1.5", "1.5+"]);
+  assert.deepEqual(bedOptions("5").at(-1), ["5", "5+"]);
+});
+
 // The web's form (U-12b, web/lib/searchForm.ts) checks and sends the same way; once it's on main, hold the
 // two to the same answers.
 const WEB = new URL("../../web/lib/searchForm.ts", import.meta.url);
@@ -84,3 +111,19 @@ test("the app's form answers as the web's does", { skip: !existsSync(WEB) && "we
     }
     assert.deepEqual(formFrom(saved), web.formFrom(web.savedFrom(profile)));
   });
+
+test("a reload or a save moves the form onto the new values, keeping only what the renter changed", () => {
+  const before = formFrom(savedFrom(profile));
+  // The renter changed the areas; meanwhile a call saved a new budget.
+  const typed = { ...before, areas: "Annex, Leslieville" };
+  const after = formFrom(savedFrom({ ...profile, preferences: { ...profile.preferences, max_monthly: 3000 } }));
+  const now = rebase(typed, before, after);
+  assert.equal(now.budget, "3000");                 // the call's budget, never the old one sent back
+  assert.equal(now.areas, "Annex, Leslieville");    // the renter's edit kept
+  assert.deepEqual(rebase(before, before, after), after);   // nothing typed: the server's values
+  // Typed while a save ran: the sent form is `before`, so only the new typing survives the save.
+  const sent = { ...before, pets: "cat" };
+  const during = { ...sent, must_have: "parking, laundry" };
+  const saved = formFrom(savedFrom({ ...profile, preferences: { ...profile.preferences, pets: ["cat"] } }));
+  assert.deepEqual(rebase(during, sent, saved), { ...saved, must_have: "parking, laundry" });
+});

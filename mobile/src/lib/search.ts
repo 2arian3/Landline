@@ -173,6 +173,32 @@ export function edit(form: Form, saved: Saved): Edit {
   return out;
 }
 
+/** A server message in the form's words: Pydantic's "Value error, " prefix dropped, the first letter capitalised. */
+function said(msg: string | undefined): string {
+  const words = (msg ?? "").replace(/^value error,\s*/i, "").trim();
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : "That isn't valid.";
+}
+
+/** Bedrooms, the fewest the renter would take: the web's chips exactly (web/components/MySearch.tsx BEDS, Any to
+ *  4+). A saved value the chips don't have (1.5, or 5 from a call) gets its own chip. */
+export function bedOptions(current: string): (readonly [string, string])[] {
+  const base: (readonly [string, string])[] = [
+    ["", "Any"], ["0", "Studio+"], ["1", "1+"], ["2", "2+"], ["3", "3+"], ["4", "4+"],
+  ];
+  return base.some(([v]) => v === current) ? base : [...base, [current, `${current}+`]];
+}
+
+/** A form moved onto new saved values: each field the renter changed from `before` (what the form started from,
+ *  or what a save sent) keeps what they typed, and every other field takes `after`. So a reload never sends old
+ *  values back over what a call just learned, and a save keeps what was typed while it ran. */
+export function rebase(typed: Form, before: Form, after: Form): Form {
+  const out: Form = { ...after };
+  for (const k of Object.keys(after) as Field[]) {
+    if (!same(typed[k], before[k])) (out as Record<string, unknown>)[k] = typed[k];
+  }
+  return out;
+}
+
 // The server's names for the form's two renamed fields.
 const FROM_API: Record<string, Field> = { max_monthly: "budget", min_beds: "beds" };
 
@@ -184,7 +210,7 @@ export function problemsFrom422(body: unknown): Problems {
   for (const d of detail as { loc?: unknown[]; msg?: string }[]) {
     const name = typeof d.loc?.[1] === "string" ? (d.loc[1] as string) : null;
     const field = name ? FROM_API[name] ?? (name as Field) : null;
-    if (field && !out[field]) out[field] = d.msg ?? "That isn't valid.";
+    if (field && !out[field]) out[field] = said(d.msg);
   }
   return out;
 }
