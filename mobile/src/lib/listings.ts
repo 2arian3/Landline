@@ -12,3 +12,20 @@ export function latest(listings: MyListing[]): MyListing[] {
 export function money(n: number): string {
   return `$${Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
 }
+
+/** Home's tally, counted from the same listings and viewing statuses the cards show, so the two can't disagree:
+ *  "3 places called", "1 viewing confirmed". A place called twice counts once, by its newest call. */
+export function tally(listings: MyListing[]): { kind: "called" | "confirmed" | "booked"; words: string }[] {
+  const newest = new Map<string, MyListing>();
+  for (const x of listings) if (!newest.has(x.listing_id)) newest.set(x.listing_id, x);
+  const places = newest.size;
+  const viewings = (status: "confirmed" | "booked") => {
+    const n = [...newest.values()].filter((x) => x.viewing?.status === status).length;
+    return n ? [{ kind: status, words: `${n} ${n === 1 ? "viewing" : "viewings"} ${status}` }] : [];
+  };
+  return [
+    { kind: "called" as const, words: `${places} ${places === 1 ? "place" : "places"} called` },
+    ...viewings("confirmed"),
+    ...viewings("booked"),
+  ];
+}
