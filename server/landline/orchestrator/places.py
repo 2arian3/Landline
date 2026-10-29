@@ -96,7 +96,7 @@ class Point:
     how: str             # neighbourhood | station | intersection | street | geocoder
     line: Line = ()      # a street's paths, which the location term measures from (#102)
     named: str = ""      # the geocoder's words for what it found ("TD Computer Centre on Progress Avenue")
-    name: str = ""       # and its name alone ("TD Computer Centre"), when it has one
+    name: str = ""       # its name: a landmark's, a station's, or the geocoder's ("TD Computer Centre")
 
 
 @dataclass(frozen=True)
@@ -127,7 +127,7 @@ class Places:
         where (Unplaced). None for anything else."""
         where = place_of(label)
         if landmark := _match(self._landmarks, where):
-            return Point(landmark["lat"], landmark["lng"], "landmark")
+            return Point(landmark["lat"], landmark["lng"], "landmark", name=landmark["name"])
         if held := _match(self._held, where):   # "Do you mean …?" "Yes": the answer it held back
             return held
         if brand := chain(where):
@@ -153,13 +153,18 @@ class Places:
             return held
         return point
 
+    def station(self, label: str) -> Point | None:
+        """A TTC subway station by its name, with no network: "Union", "St George station", "Queens Park"."""
+        words = _words(place_of(label))
+        found = self._stations.get(_key(" ".join(w for w in words if w not in _STATION_WORDS)))
+        return Point(found["lat"], found["lng"], "station", name=found["name"]) if found else None
+
     async def _resolve(self, label: str) -> Point | None:
         if hoods := self._named([label]):
             h = hoods[0]
             return Point(h.lat, h.lng, "neighbourhood")
-        station = self._stations.get(_key(" ".join(w for w in _words(label) if w not in _STATION_WORDS)))
-        if station:
-            return Point(station["lat"], station["lng"], "station")
+        if station := self.station(label):
+            return station
         if not self.contact:
             return None
         try:
