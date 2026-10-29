@@ -3,10 +3,10 @@ import { Redirect } from "expo-router";
 import { useState } from "react";
 import { ActivityIndicator, StyleSheet, Switch, Text, View } from "react-native";
 
-import { Button, Chips, ErrorLine, Field, LargeTitle, NoCallsYet, SaveBar, Screen, Tick } from "@/components/ui";
+import { Button, Chips, ErrorLine, Field, KeysBar, LargeTitle, NoCallsYet, SaveBar, Screen, Tick } from "@/components/ui";
 import { ApiError, getProfile, Refused, saveProfile } from "@/lib/api";
 import {
-  bedOptions, edit, type Field as FormField, type Form, formFrom, problems, type Problems, type Saved, savedFrom,
+  bedOptions, edit, type Field as FormField, type Form, formFrom, problems, type Problems, rebase, type Saved, savedFrom,
   SHAREABLE, type Shareable,
 } from "@/lib/search";
 import { color, hairline, radius, type } from "@/lib/theme";
@@ -22,6 +22,9 @@ const SHARE_LABEL: Record<Shareable, string> = {
 
 const COULD_NOT_SAVE = "Couldn't save. Try again in a moment.";
 
+/** The fields' keyboard bar (KeysBar): Done and Save on top of the keyboard. */
+const KEYS = "my-search-keys";
+
 /**
  * "My search" (U-13d), as on the web's /me: the renter edits the search Landline keeps, chooses what it may
  * tell listing agents, and whether the next call starts from this search. Only what changed is sent (PATCH
@@ -36,6 +39,18 @@ export default function MySearch() {
   const [wrong, setWrong] = useState<Problems>({});
   const [status, setStatus] = useState<"idle" | "saving" | "saved" | "failed">("idle");
   const [failure, setFailure] = useState(COULD_NOT_SAVE);
+  const [seen, setSeen] = useState(profile.data);            // the profile the form last moved onto
+
+  // The tab stays mounted, so a reload (back from a call, a pull) brings values a call may have just changed:
+  // move onto them, keeping only the fields the renter changed, so Save never sends old values back.
+  if (profile.data !== seen) {
+    setSeen(profile.data);
+    if (seen && profile.data) {
+      const before = formFrom(saved ?? savedFrom(seen));
+      setSaved(null);
+      if (typed) setTyped(rebase(typed, before, formFrom(savedFrom(profile.data))));
+    }
+  }
 
   if (!isLoaded) return <Screen><ActivityIndicator color={color.ink} /></Screen>;
   if (!isSignedIn) return <Redirect href="/sign-in" />;
@@ -81,10 +96,12 @@ export default function MySearch() {
       return;
     }
     setStatus("saving");
+    const sent = form;
     try {
       const now = savedFrom(await saveProfile(await getToken(), change));
       setSaved(now);
-      setTyped(formFrom(now));
+      // What the renter typed while it saved stays, and is still a change from the new saved values.
+      setTyped((cur) => rebase(cur ?? sent, sent, formFrom(now)));
       setWrong({});
       setStatus("saved");
     } catch (e) {
@@ -123,6 +140,7 @@ export default function MySearch() {
         </View>
 
         <Field
+          inputAccessoryViewID={KEYS}
           label="Monthly budget" hint="Whole dollars a month" error={wrong.budget} before="$" after="a month"
           value={form.budget} onChangeText={(budget) => set({ budget })}
           keyboardType="number-pad" placeholder="2600" maxLength={8}
@@ -137,27 +155,32 @@ export default function MySearch() {
           {wrong.beds ? <Text style={[styles.note, styles.wrong]}>{wrong.beds}</Text> : null}
         </View>
         <Field
+          inputAccessoryViewID={KEYS}
           label="Areas" hint="Neighbourhoods or streets, separated by commas" error={wrong.areas}
           value={form.areas} onChangeText={(areas) => set({ areas })}
           placeholder="Annex, Leslieville" autoCapitalize="words"
         />
         <Field
+          inputAccessoryViewID={KEYS}
           label="Pets" hint="Separated by commas" error={wrong.pets}
           value={form.pets} onChangeText={(pets) => set({ pets })}
           placeholder="cat" autoCapitalize="none"
         />
         <Field
+          inputAccessoryViewID={KEYS}
           label="Must-haves" hint="Separated by commas" error={wrong.must_have}
           value={form.must_have} onChangeText={(must_have) => set({ must_have })}
           placeholder="parking, laundry" autoCapitalize="none"
         />
         <Field
+          inputAccessoryViewID={KEYS}
           label="Move-in date" hint="The first day you could move, as YYYY-MM-DD" error={wrong.move_in}
           value={form.move_in} onChangeText={(move_in) => set({ move_in })}
           placeholder="2026-12-01" keyboardType="numbers-and-punctuation" maxLength={10}
           autoCapitalize="none" autoCorrect={false}
         />
         <Field
+          inputAccessoryViewID={KEYS}
           label="Email" hint="Where viewing invites go" error={wrong.email}
           value={form.email} onChangeText={(email) => set({ email })}
           placeholder="you@example.com" keyboardType="email-address" autoCapitalize="none" autoCorrect={false}
@@ -184,6 +207,14 @@ export default function MySearch() {
         {/* Room for the save bar, so the last field scrolls clear of it. */}
         {bar ? <View style={{ height: 72 }} /> : null}
       </Screen>
+      <KeysBar
+        nativeID={KEYS}
+        state={bar?.state ?? null}
+        tone={bar?.tone}
+        onSave={() => void save()}
+        busy={status === "saving"}
+        disabled={!dirty}
+      />
       {bar ? (
         <SaveBar
           state={bar.state}

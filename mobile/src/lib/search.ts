@@ -188,6 +188,17 @@ export function bedOptions(current: string): (readonly [string, string])[] {
   return base.some(([v]) => v === current) ? base : [...base, [current, `${current}+`]];
 }
 
+/** A form moved onto new saved values: each field the renter changed from `before` (what the form started from,
+ *  or what a save sent) keeps what they typed, and every other field takes `after`. So a reload never sends old
+ *  values back over what a call just learned, and a save keeps what was typed while it ran. */
+export function rebase(typed: Form, before: Form, after: Form): Form {
+  const out: Form = { ...after };
+  for (const k of Object.keys(after) as Field[]) {
+    if (!same(typed[k], before[k])) (out as Record<string, unknown>)[k] = typed[k];
+  }
+  return out;
+}
+
 // The server's names for the form's two renamed fields.
 const FROM_API: Record<string, Field> = { max_monthly: "budget", min_beds: "beds" };
 

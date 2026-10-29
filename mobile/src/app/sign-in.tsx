@@ -1,7 +1,7 @@
 import { useAuth, useSignIn, useSignUp } from "@clerk/expo";
 import { Redirect, useRouter } from "expo-router";
-import { useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { useRef, useState } from "react";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { Button, CodeBoxes, ErrorLine, Field, Glyph, LargeTitle, Screen, Wordmark } from "@/components/ui";
 import { phoneLabel } from "@/lib/heard";
@@ -17,7 +17,7 @@ const said = (e: Failure) => e.errors?.[0]?.longMessage ?? e.longMessage ?? e.me
 /**
  * Sign in with the phone number the renter calls Landline from: Clerk texts a code (Core 3 sign-in, or a
  * sign-up when Clerk doesn't know the number yet), and the code signs them in. The code step sends itself
- * once six digits are in, typed or taken from Messages.
+ * once six digits are in, typed or taken from Messages, and Sign in sends the same six again after a failure.
  */
 export default function SignIn() {
   const { isSignedIn } = useAuth();
@@ -29,6 +29,9 @@ export default function SignIn() {
   const [mode, setMode] = useState<"phone" | "sign-in" | "sign-up">("phone");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // One request at a time, decided now rather than at the last render: iOS can fill the code twice in one tick,
+  // and a second check of a code already used would fail and cover the sign-in that worked.
+  const inFlight = useRef(false);
 
   if (isSignedIn) return <Redirect href="/" />;
 
@@ -37,6 +40,8 @@ export default function SignIn() {
 
   async function sendCode() {
     if (!phone) return setError("Enter your phone number, like 416 555 0100.");
+    if (inFlight.current) return;
+    inFlight.current = true;
     setBusy(true);
     setError(null);
     try {
@@ -54,15 +59,18 @@ export default function SignIn() {
       if (sent.error) return setError(said(sent.error as Failure));
       setMode("sign-up");
     } finally {
+      inFlight.current = false;
       setBusy(false);
     }
   }
 
   async function verify(entered: string) {
-    if (busy) return;
+    if (inFlight.current) return;
     if (!/^\d{6}$/.test(entered)) return setError("Enter the 6-digit code from the text.");
+    inFlight.current = true;
     setBusy(true);
     setError(null);
+    let signedIn = false;
     try {
       if (mode === "sign-in") {
         const checked = await signIn.phoneCode.verifyCode({ code: entered });
@@ -76,8 +84,11 @@ export default function SignIn() {
         const done = await signUp.finalize();
         if (done.error) return setError(said(done.error as Failure));
       }
+      signedIn = true;
       router.replace("/");
     } finally {
+      // Signed in, it stays closed: a late second fill of the same code mustn't run a check that would fail.
+      if (!signedIn) inFlight.current = false;
       setBusy(false);
     }
   }
@@ -145,11 +156,20 @@ export default function SignIn() {
         />
       </View>
       <View style={styles.after}>
-        {busy ? <ActivityIndicator color={color.ink} /> : null}
-        {error ? <ErrorLine>{error}</ErrorLine> : busy ? null : (
+        {error ? <ErrorLine>{error}</ErrorLine> : (
           <Text style={styles.hint}>Tap the code above the keyboard, or type it.</Text>
         )}
       </View>
+      {/* The code sends itself at six digits; this sends the same six again after a failure (a dropped line,
+          Clerk down for a moment), without deleting a digit first. */}
+      <Button
+        block
+        busy={busy}
+        disabled={code.length !== 6}
+        label="Sign in"
+        onPress={() => void verify(code)}
+        style={{ marginTop: 16 }}
+      />
     </Screen>
   );
 }
@@ -161,6 +181,6 @@ const styles = StyleSheet.create({
     alignSelf: "flex-start", flexDirection: "row", alignItems: "center", gap: 2, minHeight: 44, marginLeft: -6,
   },
   backLabel: { fontSize: 17, fontWeight: "600", color: color.ink },
-  after: { marginTop: 8, minHeight: 24, flexDirection: "row", alignItems: "center", gap: 8 },
+  after: { marginTop: 8, minHeight: 24, justifyContent: "center" },
   hint: { fontSize: 15, lineHeight: 20, color: color.ink2 },
 });
