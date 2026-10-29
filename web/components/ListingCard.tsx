@@ -65,7 +65,7 @@ export function ListingCard({
   const live = s.kind === "on_phone" && call?.state === "live" ? call : null;
   // A flag says itself, in full, below; a flagged place with no flag text still gets its status line.
   const showStatus = !!s.words && !(s.kind === "flagged" && flag);
-  const foot = facts.length > 0 || !!flag || showStatus || !!live;
+  const foot = facts.length > 0 || !!flag || !!card.watch_out || showStatus || !!live;
   const moveWord = moved === "new" ? "New" : moved && moved > 0 ? `Up ${moved}` : moved && moved < 0 ? `Down ${-moved}` : null;
   const classes = ["card", focused && "is-focus", hovered && !focused && "is-hover", dead && "is-gone"];
   const said = formatClock(quote?.at);
@@ -143,10 +143,9 @@ export function ListingCard({
         {card.reasons.length > 0 && (
           // On a phone, once a call has heard facts, the facts say more than the reasons.
           <span className={`reasons line-clamp-2 ${facts.length ? "max-sm:hidden" : ""}`}>
-            {card.reasons.join(" · ")}
+            {leading(card.reasons).join(" · ")}
           </span>
         )}
-        {card.watch_out && <span className="reasons line-clamp-2 text-[var(--color-ink)]">{card.watch_out}</span>}
         {card.reaction && (
           <span className="you block truncate">
             <b>You:</b> {lower(card.reaction)}
@@ -178,8 +177,8 @@ export function ListingCard({
                 <span className="quote hidden min-[1600px]:block">
                   &ldquo;{quote.quote}&rdquo;{" "}
                   <span className="src">
-                    {quoteSource(quote.speaker)}
-                    {said ? `, ${said}` : ""}
+                    {quote.speaker || "Agent heard"}
+                    {said ? ` · ${said}` : ""}
                   </span>
                 </span>
               )}
@@ -187,6 +186,13 @@ export function ListingCard({
                 {quoteSource(quote?.speaker ?? card.facts[0]?.speaker ?? "Agent heard")} heard on the call
                 {quote ? ", in their words in the detail" : ""}
               </span>
+            </span>
+          )}
+          {card.watch_out && (
+            // A watch-out (a long commute, over budget) is ink, never red: red is a problem with the place.
+            <span className="fact">
+              <Icon name="triangle-alert" />
+              <span>{upper(card.watch_out)}</span>
             </span>
           )}
           {flag && (
@@ -218,3 +224,10 @@ function quoteSource(speaker: string): string {
 }
 
 const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
+const upper = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+/** The reasons as the server ranked them, with the commute to the place the renter named leading. */
+function leading(reasons: string[]): string[] {
+  const i = reasons.findIndex((r) => /\bmin by TTC\b/i.test(r));
+  return i <= 0 ? reasons : [reasons[i], ...reasons.slice(0, i), ...reasons.slice(i + 1)];
+}
