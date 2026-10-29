@@ -1,9 +1,9 @@
 import { GlassView, isLiquidGlassAvailable } from "expo-glass-effect";
 import { SymbolView, type SFSymbol } from "expo-symbols";
-import { type ComponentRef, type ReactNode, useRef, useState } from "react";
+import { type ComponentRef, type ReactNode, useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator, Linking, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, type TextInputProps,
-  View, type ViewStyle,
+  ActivityIndicator, InputAccessoryView, Keyboard, Linking, Platform, Pressable, RefreshControl, ScrollView, StyleSheet,
+  Text, TextInput, type TextInputProps, View, type ViewStyle,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -42,6 +42,7 @@ export function Screen({ children, scroll = false, onRefresh, refreshing = false
       {scroll || onRefresh ? (
         <ScrollView
           automaticallyAdjustKeyboardInsets
+          keyboardDismissMode="interactive"
           contentContainerStyle={[styles.scroll, room]}
           keyboardShouldPersistTaps="handled"
           refreshControl={onRefresh
@@ -324,7 +325,8 @@ export function Floating({ children, style }: { children: ReactNode; style?: Vie
   return <View style={[styles.floating, styles.floatingSolid, style]}>{children}</View>;
 }
 
-/** The floating save bar over the tab bar: what will be saved, or what happened, and Save. */
+/** The floating save bar over the tab bar: what will be saved, or what happened, and Save. On iOS it steps
+ *  aside while the keyboard is up, where KeysBar carries the same state and Save on top of the keyboard. */
 export function SaveBar({ state, tone = "ink", onSave, busy, disabled }: {
   state: string;
   tone?: "ink" | "real" | "dead";
@@ -333,20 +335,66 @@ export function SaveBar({ state, tone = "ink", onSave, busy, disabled }: {
   disabled: boolean;
 }) {
   const insets = useSafeAreaInsets();
-  const tint = tone === "real" ? color.real : tone === "dead" ? color.dead : color.ink;
+  const keyboard = useKeyboardUp();
+  if (keyboard && Platform.OS === "ios") return null;
   // Over the tab bar (66 tall) with 12 between, as the canvas draws it.
   return (
     <View pointerEvents="box-none" style={[styles.saveWrap, { bottom: tabBarBottom(insets.bottom) + 66 + 12 }]}>
       <Floating style={styles.saveBar}>
-        <View style={styles.saveState} accessibilityLiveRegion="polite">
-          {tone === "real" ? <Glyph name="checkmark.circle" size={18} tint={tint} /> : null}
-          {tone === "dead" ? <Glyph name="exclamationmark.circle" size={18} tint={tint} /> : null}
-          <Text style={[styles.saveText, { color: tint }]} numberOfLines={2}>{state}</Text>
-        </View>
+        <SaveState state={state} tone={tone} />
         <Button label="Save" onPress={onSave} busy={busy} disabled={disabled} style={{ minWidth: 108 }} />
       </Floating>
     </View>
   );
+}
+
+/** On iOS, the bar on top of the keyboard for the fields that name its `nativeID` (inputAccessoryViewID): the
+ *  save state, Done (a number pad has no return key) and Save, so saving never waits on closing the keyboard.
+ *  Elsewhere the keyboard resizes the screen, and the floating bar stays in reach. */
+export function KeysBar({ nativeID, state, tone = "ink", onSave, busy, disabled }: {
+  nativeID: string;
+  state: string | null;
+  tone?: "ink" | "real" | "dead";
+  onSave: () => void;
+  busy: boolean;
+  disabled: boolean;
+}) {
+  if (Platform.OS !== "ios") return null;
+  return (
+    <InputAccessoryView nativeID={nativeID}>
+      <View style={styles.keysBar}>
+        <SaveState state={state ?? ""} tone={tone} />
+        <Button label="Done" kind="quiet" onPress={() => Keyboard.dismiss()} />
+        <Button label="Save" onPress={onSave} busy={busy} disabled={disabled} style={{ minWidth: 92 }} />
+      </View>
+    </InputAccessoryView>
+  );
+}
+
+function SaveState({ state, tone }: { state: string; tone: "ink" | "real" | "dead" }) {
+  const tint = tone === "real" ? color.real : tone === "dead" ? color.dead : color.ink;
+  return (
+    <View style={styles.saveState} accessibilityLiveRegion="polite">
+      {tone === "real" ? <Glyph name="checkmark.circle" size={18} tint={tint} /> : null}
+      {tone === "dead" ? <Glyph name="exclamationmark.circle" size={18} tint={tint} /> : null}
+      <Text style={[styles.saveText, { color: tint }]} numberOfLines={2}>{state}</Text>
+    </View>
+  );
+}
+
+/** Whether the keyboard is up (on iOS from the moment it starts to rise). */
+function useKeyboardUp(): boolean {
+  const [up, setUp] = useState(false);
+  useEffect(() => {
+    const ios = Platform.OS === "ios";
+    const show = Keyboard.addListener(ios ? "keyboardWillShow" : "keyboardDidShow", () => setUp(true));
+    const hide = Keyboard.addListener(ios ? "keyboardWillHide" : "keyboardDidHide", () => setUp(false));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
+  return up;
 }
 
 /** How far above the screen's bottom edge the tab bar floats: just above the home indicator. */
@@ -440,5 +488,9 @@ const styles = StyleSheet.create({
     paddingVertical: 8, paddingRight: 8, paddingLeft: 20,
   },
   saveState: { flex: 1, flexDirection: "row", alignItems: "center", gap: 8 },
+  keysBar: {
+    flexDirection: "row", alignItems: "center", gap: 4, paddingVertical: 6, paddingLeft: 20, paddingRight: 8,
+    backgroundColor: color.surface, borderTopWidth: 1, borderTopColor: color.line,
+  },
   saveText: { ...type.callout, fontWeight: "500" },
 });

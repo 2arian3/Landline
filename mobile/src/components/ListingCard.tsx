@@ -4,20 +4,20 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { Glyph } from "@/components/ui";
 import type { HeardFact, MyListing } from "@/lib/api";
-import { factLine, viewingLine, WENT, when } from "@/lib/heard";
+import { factLine, formatWhen, viewingStatus, WENT } from "@/lib/heard";
 import { money } from "@/lib/listings";
 import { color, hairline, radius, type } from "@/lib/theme";
 
 /** How the call went, as a glyph beside its words. */
 const HOW: Record<string, SFSymbol> = { talked: "phone", voicemail: "recordingtape", no_answer: "phone.down" };
 
-/** A viewing's glyph and colour: ink while it waits for the agent, green once confirmed, red if declined (the
- *  board's statusOf says it the same way). */
-const VIEWING_LOOK: Record<string, { icon: SFSymbol; tint: string }> = {
-  booked: { icon: "calendar", tint: color.ink },
-  confirmed: { icon: "calendar.badge.checkmark", tint: color.real },
-  declined: { icon: "calendar.badge.exclamationmark", tint: color.dead },
-};
+/** A viewing's glyph and colour by its tone (viewingStatus, the board's statusOf): ink while it waits for the
+ *  agent, green once confirmed, red if declined. */
+const VIEWING_LOOK = {
+  ink: { icon: "calendar", tint: color.ink },
+  real: { icon: "calendar.badge.checkmark", tint: color.real },
+  dead: { icon: "calendar.badge.exclamationmark", tint: color.dead },
+} as const satisfies Record<string, { icon: SFSymbol; tint: string }>;
 
 /** Each fact's glyph, by what it's about; anything else is just "heard". */
 const FACT_ICON: Record<string, SFSymbol> = {
@@ -34,7 +34,6 @@ export function ListingCard({ listing: x, quotesOpen = false, called = true }: {
   quotesOpen?: boolean;
   called?: boolean;
 }) {
-  const look = x.viewing ? VIEWING_LOOK[x.viewing.status] ?? VIEWING_LOOK.booked : null;
   return (
     <View style={[styles.card, !x.facts.length && { paddingBottom: 18 }]}>
       <View style={styles.top}>
@@ -49,19 +48,8 @@ export function ListingCard({ listing: x, quotesOpen = false, called = true }: {
         {x.address}
         {x.unit_label ? <Text style={styles.unit}>, unit {x.unit_label}</Text> : null}
       </Text>
-      {called ? <Text style={styles.meta}>Called {when(x.called_at)}</Text> : null}
-      {x.viewing && look ? (
-        <View style={styles.status}>
-          <Glyph name={look.icon} size={18} tint={look.tint} />
-          <Text style={[styles.statusText, { color: look.tint }]}>{viewingLine(x.viewing)}</Text>
-        </View>
-      ) : null}
-      {x.red_flags.map((f) => (
-        <View key={f} style={styles.status}>
-          <Glyph name="exclamationmark.triangle" size={18} tint={color.dead} />
-          <Text style={[styles.statusText, { color: color.dead, fontWeight: "500" }]}>Something’s off: {f}</Text>
-        </View>
-      ))}
+      {called ? <Text style={styles.meta}>Called {formatWhen(x.called_at)}</Text> : null}
+      <Lines listing={x} />
       {x.facts.length ? (
         <View style={styles.facts}>
           {x.facts.map((f, n) => <FactRow key={`${f.field}-${n}`} fact={f} startOpen={quotesOpen} first={n === 0} />)}
@@ -71,18 +59,50 @@ export function ListingCard({ listing: x, quotesOpen = false, called = true }: {
   );
 }
 
-/** Home's short row for the latest results after the first: the place, its cost and when, how it went. */
+/** Home's short row for the latest results after the first: the place, its cost and when, how it went, and
+ *  the viewing and anything to watch out for, so a viewing Home counts always shows which place it's at. */
 export function ListingRow({ listing: x }: { listing: MyListing }) {
   return (
     <View style={styles.row}>
-      <View style={{ flex: 1, minWidth: 0 }}>
-        <Text style={styles.rowAddress} numberOfLines={1}>{x.address}</Text>
-        <Text style={styles.meta}>
-          {x.monthly_cost != null ? `${money(x.monthly_cost)} /mo · ` : ""}called {when(x.called_at)}
-        </Text>
+      <View style={styles.rowTop}>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={styles.rowAddress} numberOfLines={2}>
+            {x.address}
+            {x.unit_label ? <Text style={styles.unit}>, unit {x.unit_label}</Text> : null}
+          </Text>
+          <Text style={styles.meta}>
+            {x.monthly_cost != null ? `${money(x.monthly_cost)} /mo · ` : ""}called {formatWhen(x.called_at)}
+          </Text>
+        </View>
+        <How ended={x.ended} />
       </View>
-      <How ended={x.ended} />
+      <Lines listing={x} />
     </View>
+  );
+}
+
+/** The viewing, as the board's statusOf says it, and each red flag in full. */
+function Lines({ listing: x }: { listing: MyListing }) {
+  const v = x.viewing ? viewingStatus(x.viewing) : null;
+  const look = v ? VIEWING_LOOK[v.tone] : null;
+  return (
+    <>
+      {v && look ? (
+        <View style={styles.status}>
+          <Glyph name={look.icon} size={18} tint={look.tint} />
+          <Text style={[styles.statusText, { color: look.tint }]}>
+            {v.words}
+            {v.sub ? <Text style={styles.statusSub}>{"\n"}{v.sub}</Text> : null}
+          </Text>
+        </View>
+      ) : null}
+      {x.red_flags.map((f) => (
+        <View key={f} style={styles.status}>
+          <Glyph name="exclamationmark.triangle" size={18} tint={color.dead} />
+          <Text style={[styles.statusText, { color: color.dead, fontWeight: "500" }]}>Something’s off: {f}</Text>
+        </View>
+      ))}
+    </>
   );
 }
 
@@ -121,7 +141,7 @@ function FactRow({ fact: f, startOpen, first }: { fact: HeardFact; startOpen: bo
         {open ? (
           <View style={styles.quote}>
             <Text style={styles.quoteText}>“{f.quote}”</Text>
-            {f.at ? <Text style={styles.quoteAt}>{when(f.at)}</Text> : null}
+            {f.at ? <Text style={styles.quoteAt}>{formatWhen(f.at)}</Text> : null}
           </View>
         ) : null}
       </View>
@@ -147,6 +167,7 @@ const styles = StyleSheet.create({
   meta: { ...type.caption, fontWeight: "400", color: color.ink2, fontVariant: ["tabular-nums"] },
   status: { flexDirection: "row", alignItems: "flex-start", gap: 7, marginTop: 6 },
   statusText: { flex: 1, ...type.callout, fontWeight: "600" },
+  statusSub: { fontWeight: "400", color: color.ink2 },
   facts: { marginTop: 8, borderTopWidth: 1, borderTopColor: color.line },
   fact: { flexDirection: "row", alignItems: "flex-start", gap: 10, minHeight: 44, paddingVertical: 11 },
   factRule: { borderTopWidth: 1, borderTopColor: color.line },
@@ -156,9 +177,7 @@ const styles = StyleSheet.create({
   quote: { marginTop: 6, paddingLeft: 12, borderLeftWidth: 2, borderLeftColor: color.line },
   quoteText: { ...type.callout, color: color.ink },
   quoteAt: { ...type.caption, color: color.ink2, marginTop: 2, fontVariant: ["tabular-nums"] },
-  row: {
-    flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 14, paddingHorizontal: 18,
-    borderRadius: radius.card, backgroundColor: color.surface, ...hairline,
-  },
+  row: { gap: 2, paddingVertical: 14, paddingHorizontal: 18, borderRadius: radius.card, backgroundColor: color.surface, ...hairline },
+  rowTop: { flexDirection: "row", alignItems: "center", gap: 12 },
   rowAddress: { ...type.headline, color: color.ink },
 });

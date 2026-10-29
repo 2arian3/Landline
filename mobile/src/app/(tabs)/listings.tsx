@@ -4,15 +4,15 @@ import { ActivityIndicator } from "react-native";
 
 import { ListingCard } from "@/components/ListingCard";
 import { Button, Calm, ErrorLine, LargeTitle, NoCallsYet, Screen } from "@/components/ui";
-import { getListings, NO_CALLS_YET } from "@/lib/api";
+import { NO_CALLS_YET } from "@/lib/api";
+import { useListings } from "@/lib/listingsContext";
 import { color } from "@/lib/theme";
-import { useLoad } from "@/lib/useLoad";
 
 /** Every listing Landline called for the renter, newest call first, each with what the agent said, in their own
  *  words. A number Landline doesn't know yet gets how to start instead. */
 export default function Listings() {
   const { isLoaded, isSignedIn } = useAuth();
-  const { data: listings, error, newNumber, load, refresh, refreshing } = useLoad(getListings);
+  const { data: listings, error, newNumber, load, refresh, refreshing } = useListings();   // shared with Home
 
   if (!isLoaded) return <Screen><ActivityIndicator color={color.ink} /></Screen>;
   if (!isSignedIn) return <Redirect href="/sign-in" />;
