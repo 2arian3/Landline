@@ -48,6 +48,7 @@ class Brief:
     plan: CallPlan
     items: list[Item] = field(default_factory=list)
     texts_confirm: bool = False   # O-08b: this call has a number to text the confirm link to (calls.to_e164)
+    callback: bool = False        # A-13b: the listing agent called back after a call that reached no one
 
     def missing(self) -> list[Item]:
         return [i for i in self.items if not i.done]
@@ -77,11 +78,12 @@ class Brief:
 
 
 def brief(listing: Listing, plan: CallPlan, wants: frozenset[str] = frozenset(), known: Sequence[Known] = (),
-          now: datetime | None = None, texts_confirm: bool = False) -> Brief:
+          now: datetime | None = None, texts_confirm: bool = False, callback: bool = False) -> Brief:
     """`wants`: what the renter asked for that a call can check (`wants()`); the plan doesn't carry it.
     `known`: what earlier calls heard about the place (`memory.recall`), confirmed instead of asked cold;
     `now` dates them in words. `texts_confirm`: a booking texts this call's number a confirm link (O-08b),
-    so the Caller can say so; never set without a number to text, so it's never promised falsely."""
+    so the Caller can say so; never set without a number to text, so it's never promised falsely.
+    `callback`: the listing agent is calling back (A-13b), so the Caller answers and thanks them."""
     items = [Item("available", "whether it's still available, and from when",
                   ["available", "available_from"])]
     gaps: list[Item] = []
@@ -117,7 +119,7 @@ def brief(listing: Listing, plan: CallPlan, wants: frozenset[str] = frozenset(),
                           "book_viewing (it notes the time for the renter and books nothing)", ["other"]))
     if known:
         _confirm(items, known, (now or datetime.now(UTC)).astimezone(slots.TORONTO).date())
-    return Brief(listing, plan, items, texts_confirm=texts_confirm)
+    return Brief(listing, plan, items, texts_confirm=texts_confirm, callback=callback)
 
 
 def _confirm(items: list[Item], known: Sequence[Known], today: date) -> None:
@@ -239,8 +241,14 @@ def instructions(b: Brief) -> str:
          "to book_viewing: it notes it for the renter and books nothing, so never tell them it's booked.") \
         if plan.windows else \
         "You may not book anything, so don't ask about viewings."
-    return CALLER.format(address=_place(x), listing=_listing(x), checklist=checklist, windows=windows,
+    text = CALLER.format(address=_place(x), listing=_listing(x), checklist=checklist, windows=windows,
                          share=share, booking=booking)
+    return f"{text}\n\n{CALLED_BACK}" if b.callback else text
+
+
+# A-13b: the listing agent rang Landline back after a call that reached no one.
+CALLED_BACK = ("This call is different: the listing agent is calling you back, after Landline's earlier call "
+               "reached no one. You answered, so you speak first, and you thank them for calling back.")
 
 
 # Said once at booking, only on a call whose number the confirm link is texted to (O-08b).
@@ -252,8 +260,9 @@ NAMED = "Hi, this is Landline."
 
 
 def disclosure(b: Brief) -> str:
-    """The Caller's first words (hard rule 6), as CALLER gives them."""
-    return f"{NAMED} I'm an AI assistant calling for a renter about {_place(b.listing)}."
+    """The Caller's first words (hard rule 6), as CALLER gives them; on a callback, with thanks for it."""
+    said = f"{NAMED} I'm an AI assistant calling for a renter about {_place(b.listing)}."
+    return f"{said} Thanks for calling back." if b.callback else said
 
 
 CALLER = """\
