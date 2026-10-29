@@ -2,8 +2,7 @@
 
     line(before, after, events, state, catalogue)  the short line for `agent_says`: what the page shows
                                                     and what a Concierge tool reply speaks (≤ 25 words)
-    results(state, view, catalogue)                 the results after the calls: the SMS, the page text,
-                                                    and the next call's opening
+    results(state, view, catalogue)                 the results after the calls: the SMS and the page text
 
 Every number comes from the board or the call outcome, never from a model. Templates are English for now;
 the Concierge speaks a tool reply in the renter's own language.
@@ -14,9 +13,8 @@ from collections.abc import Sequence
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from landline.contracts import Card, Conflict, Event, Listing, Preferences, PreferencesUpdated, SessionView
+from landline.contracts import Card, Conflict, Event, Listing, PreferencesUpdated, SessionView
 from landline.db.catalogue import Catalogue
-from landline.orchestrator.profiles import is_saved_search
 from landline.orchestrator.state import SessionState
 from landline.scoring.weights import feature_key
 
@@ -62,8 +60,6 @@ def line(before: SessionView | None, after: SessionView, events: Sequence[Event]
     kinds = {e.type for e in events}
     if before is None:
         return "Tell me what you're looking for, and the map will follow."
-    if any(is_saved_search(e) for e in events):
-        return saved_search(after.preferences)
     if "CallsCompleted" in kinds:
         n = len(after.calls)
         return f"All {n} call{'s' if n != 1 else ''} are done. Here's what I found." if n else None
@@ -306,22 +302,6 @@ def _told_apart(x: Card | Listing, among: Sequence[Card | Listing]) -> str:
     if all(o.rent != x.rent for o in twins):
         return f"{x.address}, the ${x.rent:,} one"
     return x.address
-
-
-def saved_search(p: Preferences) -> str:
-    """The Concierge's line for a call that starts from the renter's saved search (U-12d): its beds, budget
-    and places, from the stored fields only."""
-    plural = "s" if p.min_beds != 1 else ""
-    beds = None if p.min_beds is None else (
-        "a studio or bigger" if p.min_beds == 0 else f"{p.min_beds:g} bedroom{plural}")
-    budget = f"under ${p.max_monthly:,}" if p.max_monthly is not None else None
-    places = (f"near {_join([a.label for a in p.anchors])}" if p.anchors
-              else f"in {_join(p.areas)}" if p.areas else None)
-    parts = [x for x in (beds, budget, places) if x]
-    plain = "I've got your saved search on the map. Want to start there?"
-    if not parts:
-        return plain
-    return _fit([f"I've got your saved search: {' '.join(parts)}.", "Want to start there?"], [plain])
 
 
 def _join(items: Sequence[str]) -> str:

@@ -1,79 +1,31 @@
-"""Profiles (O-05): renters remembered by phone number. Plain code, no model.
+"""Profiles (O-05): what a renter's calls are recorded as, by phone number. Plain code, no model.
 
-    remembered = await profiles.recall("+14165550100")   # at the start of a phone call
-    await profiles.remember(state, "SessionEnded", address)   # and again on "CallsCompleted"
+    await profiles.remember(state, "SessionEnded", address)   # when the brief ends, and on "CallsCompleted"
 
-`recall` returns the user for that number, created on the first call, with what they asked for last time,
-their reactions to listings and their last session's results. `remember` writes the profile, the memory
-summary and the listing interactions. The summary is a template over the stored fields, so it can only say
-what the renter said. `opening` is a ≤ 120-word brief of a returning caller. The call does not append it:
-a renter's next session starts with nothing from earlier ones (#144).
+`remember` writes the profile, the memory summary and the listing interactions, for /me and the app. The
+summary is a template over the stored fields, so it can only say what the renter said. Nothing here is read
+back into a call: every call starts from the beginning, with no saved search, preferences, reactions, places
+or results from earlier sessions (#144).
 """
 from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
-from zoneinfo import ZoneInfo
 
-from landline.contracts import Anchor, Event, PreferenceDelta, Preferences, as_e164
-from landline.contracts.tools import AnchorRef
+from landline.contracts import Anchor, Preferences, as_e164
 from landline.db.pool import Database
-from landline.db.rows import InteractionRow, ProfileRow, SessionRow
+from landline.db.rows import ProfileRow
 from landline.orchestrator.state import Said, SessionState
 
 log = logging.getLogger(__name__)
 
-TORONTO = ZoneInfo("America/Toronto")
-MAX_OPENING_WORDS = 120
-# The idem_key suffix of the PreferencesUpdated a call starts from when the renter turned on "Start my next
-# call from this search" (U-12d), so the Narrator and the Concierge's Line can tell it from what was said.
-SAVED_SEARCH = "saved-search"
-# From the session's start: the brief ends within its 15-minute deadline, and a plan's calls (at most 5,
-# each with a 5-minute deadline) within half an hour after that. Past this, `calling` means stuck.
-CALLS_STALE_AFTER = timedelta(minutes=45)
-# listing_interactions.action for each reaction, and back. A dislike keeps its reason without excluding.
+# listing_interactions.action for each reaction. A dislike keeps its reason without excluding.
 ACTION = {"like": "liked", "reject": "rejected", "dislike": "viewed"}
-REACTION = {"liked": "like", "rejected": "reject", "viewed": "dislike"}
-
-
-@dataclass(frozen=True)
-class Remembered:
-    user_id: int
-    returning: bool                  # this number has called before
-    name: str | None = None
-    preferences: Preferences = field(default_factory=Preferences)
-    reactions: dict[str, Said] = field(default_factory=dict)
-    last_seen_at: datetime | None = None
-    last_results: str | None = None  # the last session's results text, once its calls were done
-    calls_running: bool = False      # the last session's calls haven't finished yet
-    summary: str | None = None
 
 
 class Profiles:
     def __init__(self, db: Database):
         self.db = db
-
-    async def recall(self, phone: str) -> Remembered:
-        """The renter behind this number. A new number gets a user now and a profile when its brief ends."""
-        db = self.db
-        e164 = as_e164(phone) or phone
-        user = await db.users.by_phone(e164)
-        if user is None:
-            user = await db.users.upsert(e164)
-            return Remembered(user_id=user.user_id, returning=False)
-        profile = await db.profiles.get(user.user_id)
-        last = await db.sessions.latest_for_user(user.user_id)
-        last_state = (last.snapshot or {}).get("state", {}) if last else {}
-        return Remembered(
-            user_id=user.user_id, returning=True, name=user.name,
-            preferences=preferences_of(profile) if profile else Preferences(),
-            reactions=reactions_of(await db.interactions.for_user(user.user_id)),
-            last_seen_at=user.last_seen_at, last_results=last_state.get("results"),
-            calls_running=calls_running(last, datetime.now(UTC)),
-            summary=profile.memory_summary if profile else None,
-        )
 
     async def remember(self, state: SessionState, event_type: str, address: Callable[[str], str]) -> None:
         """Save what this session taught us about the renter. When the brief ends: the profile, its summary,
@@ -123,43 +75,6 @@ class Profiles:
         """forget_me: the user, their profile and interactions go; their sessions stay, unlinked."""
         return await self.db.users.forget(user_id)
 
-    async def saved_search(self, phone: str) -> Preferences | None:
-        """The search this number saved, when its renter turned on "Start my next call from this search"
-        (users.use_saved_search, U-12d); None with the switch off, or nothing saved. Only reads: a new number
-        still gets its user when its brief ends."""
-        user = await self.db.users.by_phone(as_e164(phone) or phone)
-        if user is None or not user.use_saved_search:
-            return None
-        profile = await self.db.profiles.get(user.user_id)
-        if profile is None:
-            return None
-        # The search, not the language: Higgs hears that on this call.
-        saved = preferences_of(profile).model_copy(update={"language": None})
-        return saved if delta_of(saved) is not None else None
-
-
-def delta_of(p: Preferences) -> PreferenceDelta | None:
-    """A saved search as one PreferencesUpdated delta: only the fields it has. None when it has none."""
-    delta = PreferenceDelta(
-        max_monthly=p.max_monthly, min_beds=p.min_beds, areas=p.areas or None,
-        anchors=[AnchorRef(label=a.label) for a in p.anchors] or None, pets=p.pets or None,
-        must_have=p.must_have or None, priorities=p.priorities or None, move_in=p.move_in,
-        occupants=p.occupants)
-    return delta if delta.model_dump(exclude_none=True) else None
-
-
-def is_saved_search(event: Event) -> bool:
-    """The PreferencesUpdated a call started from the renter's saved search, not from anything they said."""
-    return event.type == "PreferencesUpdated" and event.idem_key.endswith(f":{SAVED_SEARCH}")
-
-
-def calls_running(last: SessionRow | None, now: datetime) -> bool:
-    """The last session's calls are still going: it is `calling`, and recent enough that they could be. One
-    left in `calling` (its calls never placed, or the server restarted mid-plan) counts as finished once
-    CALLS_STALE_AFTER has passed, so later calls aren't told "still running" forever."""
-    return bool(last and last.status == "calling" and now - last.started_at < CALLS_STALE_AFTER)
-
-
 # Stored fields, both ways
 
 
@@ -182,15 +97,6 @@ def preferences_of(profile: ProfileRow) -> Preferences:
         priorities=[p["feature"] for p in profile.priorities if isinstance(p, dict) and p.get("feature")],
         anchors=[Anchor.model_validate(a) for a in profile.anchors],
     )
-
-
-def reactions_of(rows: Sequence[InteractionRow]) -> dict[str, Said]:
-    """The latest reaction to each listing (rows come most recent first)."""
-    out: dict[str, Said] = {}
-    for r in rows:
-        if r.listing_id not in out and r.action in REACTION and (r.action != "viewed" or r.reason):
-            out[r.listing_id] = Said(reaction=REACTION[r.action], reason=r.reason, attribute=r.attribute)
-    return out
 
 
 # Words
@@ -218,42 +124,6 @@ def summary(p: Preferences, reactions: dict[str, Said], address: Callable[[str],
     if passed:
         said.append(f"Turned down {_join(passed)}.")
     return " ".join(said)
-
-
-def opening(r: Remembered, new_matches: int, now: datetime) -> str:
-    """What the Concierge is told about a returning caller, facts only, within 120 words. The results
-    come first: the renter is calling back to hear them."""
-    lines = [f"This renter last called {_ago(r.last_seen_at, now)}." if r.last_seen_at else
-             "This renter has called before."]
-    if r.calls_running:
-        lines.append("The calls from their last call are still running.")
-    elif r.last_results:
-        lines.append(f"Results of the calls you made for them: {r.last_results}")
-    if r.summary:
-        lines.append(f"What you know: {r.summary}")
-    if new_matches:
-        lines.append(f"{new_matches} new place matches since then." if new_matches == 1
-                     else f"{new_matches} new places match since then.")
-    while len(" ".join(lines).split()) > MAX_OPENING_WORDS and len(lines) > 1:
-        # Results go sentence by sentence from the end before anything else is dropped.
-        results = next((i for i, s in enumerate(lines) if s.startswith("Results")), None)
-        if results is not None and len(lines[results].split(". ")) > 1:
-            lines[results] = lines[results].rsplit(". ", 1)[0] + "."
-        else:
-            lines.pop()
-    return " ".join(lines)
-
-
-def _ago(at: datetime, now: datetime) -> str:
-    then, today = at.astimezone(TORONTO), now.astimezone(TORONTO)
-    days = (today.date() - then.date()).days
-    if days == 0:
-        return "earlier today"
-    if days == 1:
-        return "yesterday"
-    if days < 7:
-        return f"on {then:%A}"
-    return f"on {then:%B} {then.day}"
 
 
 def _beds(n: float | None) -> str | None:

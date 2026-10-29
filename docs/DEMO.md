@@ -63,7 +63,7 @@ Add these after 2:30, in this order, and drop any that failed at 15:00.
 | Beat | Said on stage | What the room sees | Shows |
 |---|---|---|---|
 | Call-back | The agent who got the voicemail calls Landline's number back: "Hi, you left me a message about the unit." | It reaches the Caller for that listing, which asks its questions | Calls that come back. First run at 15:00 |
-| Second call | Renter calls again: "What happened with the first one?" | The agent answers from the stored calls: the parking, the dog and the confirmed viewing | Memory by phone number. First run at 15:00 |
+| Second call | Renter calls again from the same phone | It starts fresh: the first-time greeting and the default board. Nothing from the first call is used: no search, no reactions, no name. What the calls found is in the results text and on `/me` | Every call starts from the beginning. First run at 15:00 |
 | /me and the app | "Renters sign in with the phone they call from." | Phone sign-in on `/me`, then My listings with each fact's source. The same on the Expo app, which has a Call Landline button | Clerk and Expo. First run at 15:00 |
 | Scam check | An agent, on another listing: "Send the deposit by e-transfer before you see it." | The card is flagged, and the text says "so I'd skip it" | Protects the renter. Verified in the evals |
 | Another language | Renter switches to Spanish or Mandarin mid-call | It answers in that language, and the results text is translated | Multilingual. Spanish and Mandarin only |
