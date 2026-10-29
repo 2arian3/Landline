@@ -1,11 +1,13 @@
 "use client";
 
+import { motion, useReducedMotion } from "motion/react";
 import { Icon } from "./Icon";
 import { FeeLine, Price } from "./Money";
 import { LiveLines } from "./Captions";
 import { cardFacts, newestQuote } from "@/lib/facts";
 import { money, photoAt, specLine } from "@/lib/format";
 import type { Unheard } from "@/lib/outcome";
+import { SPRING_DETAIL } from "@/lib/motion";
 import { type Stage, statusOf } from "@/lib/status";
 import { formatClock } from "@/lib/time";
 import type { CallView, Card } from "@/lib/types";
@@ -50,6 +52,9 @@ export function ListingCard({
   onHover: (id: string | null) => void;
 }) {
   const s = statusOf(card, { call, planned, stage: mark ?? undefined, ended: ended?.reason ?? null });
+  // The photo, price and address travel into the detail (LiveBoard), unless motion is reduced.
+  const reduced = useReducedMotion();
+  const travel = (part: string) => (reduced ? undefined : `${part}-${card.listing_id}`);
   const dead = s.kind === "gone";
   const flag = card.red_flags[0];
   const facts = cardFacts(card.facts);
@@ -80,7 +85,9 @@ export function ListingCard({
           // Source photos stay on the source's CDN, attributed in the detail view. The top card's is
           // usually the largest thing on a phone's first screen, so it loads first rather than lazily.
           // eslint-disable-next-line @next/next/no-img-element
-          <img
+          <motion.img
+            layoutId={travel("photo")}
+            transition={SPRING_DETAIL}
             src={photoAt(card.photo, 208)}
             srcSet={`${photoAt(card.photo, 208)} 208w, ${photoAt(card.photo, 312)} 312w`}
             sizes="(min-width: 1600px) 104px, 88px"
@@ -111,7 +118,9 @@ export function ListingCard({
 
       <span className="card-body">
         <span className="card-top">
-          <Price monthly={card.monthly_cost} />
+          <motion.span layoutId={travel("price")} transition={SPRING_DETAIL}>
+            <Price monthly={card.monthly_cost} />
+          </motion.span>
           {moveWord && (
             <span aria-hidden className="move">
               {typeof moved === "number" && <Icon name={moved > 0 ? "arrow-up" : "arrow-down"} />}
@@ -126,7 +135,9 @@ export function ListingCard({
           hold={inCalls}
         />
         {/* Two lines at most on a phone; one on a desktop and the projector. */}
-        <span className="addr block max-sm:line-clamp-2 sm:truncate">{card.address}</span>
+        <motion.span layoutId={travel("addr")} transition={SPRING_DETAIL} className="addr block max-sm:line-clamp-2 sm:truncate">
+          {card.address}
+        </motion.span>
         <span className="spec block truncate">{specLine(card)}</span>
         {card.reasons.length > 0 && (
           // On a phone, once a call has heard facts, the facts say more than the reasons.

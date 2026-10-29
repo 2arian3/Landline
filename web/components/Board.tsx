@@ -1,18 +1,23 @@
 "use client";
 
-import { AnimatePresence, LayoutGroup, motion } from "motion/react";
+import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { ListingCard, type Move } from "./ListingCard";
+import { EXIT, REDUCED, SPRING_RANK } from "@/lib/motion";
 import type { Stage } from "@/lib/status";
 import type { Unheard } from "@/lib/outcome";
 import type { CallView, Card } from "@/lib/types";
 
 const MOVE_MS = 4000;
+/** Lucent's enter for a card that's new to the board: 700ms on the settle curve. */
+const ENTER = { duration: 0.7, ease: [0.22, 1, 0.36, 1] } as const;
 
 /**
  * The ranked list. `board` arrives ranked from the server and is never sorted
  * here. Cards are keyed by listing so a re-rank animates each card to its new
- * place (layout animation) instead of re-rendering the list. For a few seconds
+ * place on the rank spring instead of re-rendering the list; one moving up passes over one moving down,
+ * new ones fade up and ones that leave fade out faster. Under reduced motion the order changes at once with
+ * a short fade. For a few seconds
  * after a re-rank each card that moved says so ("Up 2", "New"), so the renter
  * can see what their last sentence did.
  */
@@ -42,6 +47,7 @@ export function Board({
   onHover: (id: string | null) => void;
 }) {
   const moves = useMoves(board);
+  const reduced = useReducedMotion();
 
   if (loading) {
     return (
@@ -67,11 +73,13 @@ export function Board({
           {board.map((card) => (
             <motion.li
               key={card.listing_id}
-              layout="position"
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-              transition={{ type: "tween", ease: [0.23, 1, 0.32, 1], duration: 0.42 }}
+              layout={reduced ? false : "position"}
+              initial={reduced ? { opacity: 0 } : { opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0, transition: reduced ? REDUCED : ENTER }}
+              exit={{ opacity: 0, transition: reduced ? REDUCED : EXIT }}
+              transition={reduced ? REDUCED : SPRING_RANK}
+              // A card moving up passes over one moving down.
+              style={{ position: "relative", zIndex: rises(moves[card.listing_id]) ? 2 : 1 }}
             >
               <ListingCard
                 card={card}
@@ -92,6 +100,9 @@ export function Board({
     </LayoutGroup>
   );
 }
+
+/** A card going up the list, or new to it, passes over the ones going down. */
+const rises = (m: Move | undefined) => m === "new" || (typeof m === "number" && m > 0);
 
 /** Rank changes since the previous board, held for MOVE_MS. The first board shows none. */
 function useMoves(board: Card[]): Record<string, Move> {
