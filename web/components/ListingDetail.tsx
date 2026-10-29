@@ -328,18 +328,17 @@ export function ListingDetail({
       )}
 
       {/* Before the listing's own fields, so it's on a projector's first screen. While the listing loads, a
-          row is held for its subway walk, which comes first. */}
+          row is held for its subway walk, which comes first, so the lines the card already gave (a commute)
+          don't move when it lands. */}
       {(around.length > 0 || loading) && (
         <section className="section px-4" aria-labelledby="around-heading">
           <h3 id="around-heading" className="t-headline">
             Getting around
           </h3>
           <div>
-            {loading && !around.length && (
-              <div aria-hidden className="h-[var(--text-body--line-height)] rounded-[8px] bg-fill-muted" />
-            )}
+            {loading && !around.some((line) => line.key === "transit") && <HeldRow />}
             {around.map((line) => (
-              <Row key={line.key} icon="map-pin" value={line.text} source={line.source} />
+              <Row key={line.key} icon={aroundIcon(line.key)} value={line.text} source={line.source} />
             ))}
           </div>
         </section>
@@ -437,6 +436,27 @@ function Hero({ photos, address, travel }: { photos: string[]; address: string; 
         </div>
       )}
     </figure>
+  );
+}
+
+/** Getting around's glyphs, as Board-new draws them: the subway, the commute's pin, a pharmacy, groceries. */
+function aroundIcon(key: string): IconName {
+  if (key === "transit") return "train-front";
+  if (key === "pharmacy") return "pill";
+  if (key === "grocery") return "shopping-basket";
+  return "map-pin"; // commute:…
+}
+
+/** A row's room, held while its line loads: the same grid, a value line and a source line. */
+function HeldRow() {
+  return (
+    <div aria-hidden className="grid grid-cols-[20px_minmax(0,1fr)] gap-x-3 py-3 first:pt-1">
+      <span className="mt-[3px] h-5 w-5 rounded-full bg-fill-muted" />
+      <div>
+        <div className="h-[var(--text-body--line-height)] w-3/5 rounded-[8px] bg-fill-muted" />
+        <div className="mt-0.5 h-[var(--text-caption--line-height)] w-2/5 rounded-[8px] bg-fill-muted" />
+      </div>
+    </div>
   );
 }
 
