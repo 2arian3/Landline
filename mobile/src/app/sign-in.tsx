@@ -1,11 +1,12 @@
 import { useAuth, useSignIn, useSignUp } from "@clerk/expo";
 import { Redirect, useRouter } from "expo-router";
 import { useState } from "react";
-import { StyleSheet, Text, TextInput } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 
-import { Button, ErrorLine, Screen } from "@/components/ui";
-import { toE164 } from "@/lib/phone";
-import { color, radius } from "@/lib/theme";
+import { Button, CodeBoxes, ErrorLine, Field, Glyph, LargeTitle, Screen, Wordmark } from "@/components/ui";
+import { phoneLabel } from "@/lib/heard";
+import { grouped, toE164 } from "@/lib/phone";
+import { color, type } from "@/lib/theme";
 
 type Failure = { code?: string; message?: string; longMessage?: string; errors?: { code?: string; longMessage?: string }[] };
 
@@ -15,7 +16,8 @@ const said = (e: Failure) => e.errors?.[0]?.longMessage ?? e.longMessage ?? e.me
 
 /**
  * Sign in with the phone number the renter calls Landline from: Clerk texts a code (Core 3 sign-in, or a
- * sign-up when Clerk doesn't know the number yet), and the code signs them in.
+ * sign-up when Clerk doesn't know the number yet), and the code signs them in. The code step sends itself
+ * once six digits are in, typed or taken from Messages.
  */
 export default function SignIn() {
   const { isSignedIn } = useAuth();
@@ -30,8 +32,10 @@ export default function SignIn() {
 
   if (isSignedIn) return <Redirect href="/" />;
 
+  // Ten digits are a Canadian or US number, which the field's "+1" says; one typed with its own "+" is taken as is.
+  const phone = toE164(typed);
+
   async function sendCode() {
-    const phone = toE164(typed);
     if (!phone) return setError("Enter your phone number, like 416 555 0100.");
     setBusy(true);
     setError(null);
@@ -54,18 +58,19 @@ export default function SignIn() {
     }
   }
 
-  async function verify() {
-    if (!/^\d{6}$/.test(code.trim())) return setError("Enter the 6-digit code from the text.");
+  async function verify(entered: string) {
+    if (busy) return;
+    if (!/^\d{6}$/.test(entered)) return setError("Enter the 6-digit code from the text.");
     setBusy(true);
     setError(null);
     try {
       if (mode === "sign-in") {
-        const checked = await signIn.phoneCode.verifyCode({ code: code.trim() });
+        const checked = await signIn.phoneCode.verifyCode({ code: entered });
         if (checked.error) return setError(said(checked.error as Failure));
         const done = await signIn.finalize();
         if (done.error) return setError(said(done.error as Failure));
       } else {
-        const checked = await signUp.verifications.verifyPhoneCode({ code: code.trim() });
+        const checked = await signUp.verifications.verifyPhoneCode({ code: entered });
         if (checked.error) return setError(said(checked.error as Failure));
         if (signUp.status !== "complete") return setError("Clerk needs more than a phone number. Check the Clerk settings.");
         const done = await signUp.finalize();
@@ -77,62 +82,85 @@ export default function SignIn() {
     }
   }
 
+  if (mode === "phone") {
+    return (
+      <Screen scroll gap={0}>
+        <Wordmark />
+        <View style={{ marginTop: 28 }}>
+          <LargeTitle title="Sign in with your phone" />
+        </View>
+        <Text style={styles.lead}>Use the number you call Landline from. We’ll text you a code.</Text>
+        <View style={{ marginTop: 24 }}>
+          <Field
+            big
+            label="Phone number"
+            hint="Canadian and US numbers"
+            error={error ?? undefined}
+            before={typed.trim().startsWith("+") ? undefined : "+1"}
+            autoComplete="tel"
+            autoFocus
+            keyboardType="phone-pad"
+            onChangeText={(t) => { setTyped(grouped(t)); setError(null); }}
+            onSubmitEditing={() => void sendCode()}
+            placeholder="416 555 0100"
+            textContentType="telephoneNumber"
+            value={typed}
+          />
+        </View>
+        <Button
+          block
+          busy={busy}
+          disabled={!phone}
+          label="Text me a code"
+          onPress={() => void sendCode()}
+          style={{ marginTop: 8 }}
+        />
+      </Screen>
+    );
+  }
+
   return (
-    <Screen>
-      <Text style={styles.brand}>Landline</Text>
-      <Text style={styles.title}>{mode === "phone" ? "Sign in with your phone" : "Enter the code"}</Text>
-      <Text style={styles.body}>
-        {mode === "phone"
-          ? "Use the number you call Landline from. We’ll text you a code."
-          : `We texted a code to ${toE164(typed)}.`}
+    <Screen scroll gap={0}>
+      <Pressable
+        accessibilityRole="button"
+        hitSlop={8}
+        onPress={() => { setMode("phone"); setCode(""); setError(null); }}
+        style={({ pressed }) => [styles.back, pressed && { opacity: 0.6 }]}
+      >
+        <Glyph name="chevron.left" size={18} />
+        <Text style={styles.backLabel}>Use another number</Text>
+      </Pressable>
+      <View style={{ marginTop: 14 }}>
+        <LargeTitle title="Enter the code" />
+      </View>
+      <Text style={styles.lead}>
+        We texted a code to <Text style={styles.number}>{phone ? phoneLabel(phone) : typed}</Text>.
       </Text>
-      {mode === "phone" ? (
-        <TextInput
-          accessibilityLabel="Phone number"
-          autoComplete="tel"
-          keyboardType="phone-pad"
-          onChangeText={setTyped}
-          onSubmitEditing={() => void sendCode()}
-          placeholder="416 555 0100"
-          placeholderTextColor={color.ink3}
-          style={styles.input}
-          textContentType="telephoneNumber"
-          value={typed}
-        />
-      ) : (
-        <TextInput
-          accessibilityLabel="Code from the text"
-          autoComplete="sms-otp"
-          keyboardType="number-pad"
-          maxLength={6}
-          onChangeText={setCode}
-          onSubmitEditing={() => void verify()}
-          placeholder="123456"
-          placeholderTextColor={color.ink3}
-          style={styles.input}
-          textContentType="oneTimeCode"
+      <View style={{ marginTop: 24 }}>
+        <CodeBoxes
           value={code}
+          onChange={(c) => { setCode(c); setError(null); }}
+          onDone={(c) => void verify(c)}
+          error={!!error}
         />
-      )}
-      {error ? <ErrorLine>{error}</ErrorLine> : null}
-      {mode === "phone" ? (
-        <Button busy={busy} label="Text me a code" onPress={() => void sendCode()} />
-      ) : (
-        <>
-          <Button busy={busy} label="Sign in" onPress={() => void verify()} />
-          <Button label="Use another number" onPress={() => { setMode("phone"); setCode(""); setError(null); }} quiet />
-        </>
-      )}
+      </View>
+      <View style={styles.after}>
+        {busy ? <ActivityIndicator color={color.ink} /> : null}
+        {error ? <ErrorLine>{error}</ErrorLine> : busy ? null : (
+          <Text style={styles.hint}>Tap the code above the keyboard, or type it.</Text>
+        )}
+      </View>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  brand: { fontSize: 17, fontWeight: "600", color: color.ink },
-  title: { fontSize: 28, fontWeight: "600", color: color.ink },
-  body: { fontSize: 16, lineHeight: 22, color: color.ink2 },
-  input: {
-    height: 52, borderRadius: radius.control, paddingHorizontal: 16, fontSize: 20, color: color.ink,
-    backgroundColor: color.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: color.line,
+  lead: { ...type.body, color: color.ink2, marginTop: 8 },
+  number: { color: color.ink, fontWeight: "600", fontVariant: ["tabular-nums"] },
+  back: {
+    alignSelf: "flex-start", flexDirection: "row", alignItems: "center", gap: 2, minHeight: 44, marginLeft: -6,
   },
+  backLabel: { fontSize: 17, fontWeight: "600", color: color.ink },
+  after: { marginTop: 8, minHeight: 24, flexDirection: "row", alignItems: "center", gap: 8 },
+  hint: { fontSize: 15, lineHeight: 20, color: color.ink2 },
 });
