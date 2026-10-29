@@ -14,17 +14,21 @@ export function money(n: number): string {
 }
 
 /** Home's tally, counted from the same listings and viewing statuses the cards show, so the two can't disagree:
- *  "3 places called", "1 viewing confirmed". A place called twice counts once, by its newest call. */
+ *  "3 places called", "1 viewing confirmed". A place called twice counts once, with the newest viewing any of
+ *  its calls has (a later call that reached nobody doesn't lose it). */
 export function tally(listings: MyListing[]): { kind: "called" | "confirmed" | "booked"; words: string }[] {
-  const newest = new Map<string, MyListing>();
-  for (const x of listings) if (!newest.has(x.listing_id)) newest.set(x.listing_id, x);
-  const places = newest.size;
+  const places = new Set<string>();
+  const viewing = new Map<string, string>();
+  for (const x of listings) {   // newest call first
+    places.add(x.listing_id);
+    if (x.viewing && !viewing.has(x.listing_id)) viewing.set(x.listing_id, x.viewing.status);
+  }
   const viewings = (status: "confirmed" | "booked") => {
-    const n = [...newest.values()].filter((x) => x.viewing?.status === status).length;
+    const n = [...viewing.values()].filter((s) => s === status).length;
     return n ? [{ kind: status, words: `${n} ${n === 1 ? "viewing" : "viewings"} ${status}` }] : [];
   };
   return [
-    { kind: "called" as const, words: `${places} ${places === 1 ? "place" : "places"} called` },
+    { kind: "called" as const, words: `${places.size} ${places.size === 1 ? "place" : "places"} called` },
     ...viewings("confirmed"),
     ...viewings("booked"),
   ];

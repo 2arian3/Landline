@@ -5,9 +5,10 @@ import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
 import { ListingCard, ListingRow } from "@/components/ListingCard";
 import { Button, CallLandline, Calm, ErrorLine, Glyph, LargeTitle, NoCallsYet, Screen } from "@/components/ui";
-import { getListings, getMe, NO_CALLS_YET } from "@/lib/api";
+import { getMe, NO_CALLS_YET } from "@/lib/api";
 import { phoneLabel } from "@/lib/heard";
 import { latest, tally } from "@/lib/listings";
+import { useListings } from "@/lib/listingsContext";
 import { color, type } from "@/lib/theme";
 import { useLoad } from "@/lib/useLoad";
 
@@ -19,7 +20,7 @@ export default function Home() {
   const { signOut } = useClerk();
   // Two loads, so a failed listings request still shows who the renter is.
   const who = useLoad(getMe);
-  const called = useLoad(getListings);
+  const called = useListings();   // shared with My listings
 
   if (!isLoaded) return <Screen><ActivityIndicator color={color.ink} /></Screen>;
   if (!isSignedIn) return <Redirect href="/sign-in" />;
