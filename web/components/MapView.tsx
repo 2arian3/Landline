@@ -9,7 +9,7 @@ import {
   Marker,
   setWorkerUrl,
 } from "maplibre-gl";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import { type Stage, type Status, statusOf } from "@/lib/status";
 import type { Anchor, Area, Card, CataloguePoint } from "@/lib/types";
 import { glyphElement, type IconName } from "./Icon";
@@ -329,7 +329,9 @@ export function MapView({
   // The legend names only what's on the map.
   const shown = new Set(board.filter((c) => onMap(c.lat, c.lng)).map((c) => statuses.get(c.listing_id)!.pin));
   return (
-    <div className="absolute inset-0">
+    // Where the panel floats over the map (its fit padding is the panel plus 16 + 64), the map's corners keep
+    // clear of it: the map buttons and attribution sit 16px left of the glass, and the legend wraps short of it.
+    <div className="absolute inset-0" style={{ "--map-chrome-right": `${Math.max(0, padding.right - 64)}px` } as CSSProperties}>
       <div ref={container} className="h-full w-full" aria-label="Map of matching rentals" />
       {ready && <Legend ref={legend} shapes={shown} named={placed.length > 0} />}
     </div>

@@ -734,7 +734,8 @@
 /* On a phone the header card floats over the map's top (Shell, LiveBoard): the map buttons, shown where
    there's a mouse, go below it rather than under its "Live" pill. The split layout has no floating header.
    Keep the media query in step with the split variant above. */
-.maplibregl-ctrl-top-right { top: calc(max(12px, env(safe-area-inset-top)) + 40px); }
+/* (the glass capsule: 12px down, 52px tall; the buttons' 16px margin then clears it by 16px) */
+.maplibregl-ctrl-top-right { top: calc(max(12px, env(safe-area-inset-top)) + 52px); }
 @media (min-width: 1024px), (orientation: landscape) and (max-height: 520px) {
   .maplibregl-ctrl-top-right { top: 0; }
   .maplibregl-ctrl-top-right, .maplibregl-ctrl-bottom-right { right: var(--map-chrome-right, 0px); }
