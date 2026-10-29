@@ -1357,6 +1357,62 @@
         "title": "ViewingBooked",
         "type": "object"
       },
+      "ViewingDecided": {
+        "description": "The listing agent's answer to a booked viewing, from its confirm page (O-08c). Code decided it once in\nviewing_confirmations; this flips the card's viewing. The listing is the call's, and `starts_at` is the\ntime the agent answered for.",
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "call_id": {
+            "title": "Call Id",
+            "type": "string"
+          },
+          "idem_key": {
+            "title": "Idem Key",
+            "type": "string"
+          },
+          "listing_id": {
+            "title": "Listing Id",
+            "type": "string"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "starts_at": {
+            "format": "date-time",
+            "title": "Starts At",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "confirmed",
+              "declined"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "type": {
+            "const": "ViewingDecided",
+            "default": "ViewingDecided",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "at",
+          "idem_key",
+          "call_id",
+          "listing_id",
+          "starts_at",
+          "status"
+        ],
+        "title": "ViewingDecided",
+        "type": "object"
+      },
       "Window": {
         "properties": {
           "end": {
@@ -1396,7 +1452,8 @@
         "QuestionNoted": "#/$defs/QuestionNoted",
         "SessionEnded": "#/$defs/SessionEnded",
         "SessionStarted": "#/$defs/SessionStarted",
-        "ViewingBooked": "#/$defs/ViewingBooked"
+        "ViewingBooked": "#/$defs/ViewingBooked",
+        "ViewingDecided": "#/$defs/ViewingDecided"
       },
       "propertyName": "type"
     },
@@ -1451,6 +1508,9 @@
       },
       {
         "$ref": "#/$defs/CallsCompleted"
+      },
+      {
+        "$ref": "#/$defs/ViewingDecided"
       }
     ]
   },

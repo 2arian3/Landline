@@ -70,7 +70,8 @@ def _card(state: SessionState, x: Listing, n: int, why: Ranked, heard: dict) -> 
         watch_out=why.watch_out, reaction=(said.reason or said.reaction) if said else None,
         facts=list(outcome.facts) if outcome else list(state.heard.get(lid, [])),
         red_flags=list(outcome.red_flags) if outcome else [],
-        # The booked viewing (O-08b), waiting for the listing agent to confirm it; O-08c adds the answer.
-        viewing=CardViewing(starts_at=booked.starts_at, slot_text=booked.slot_text, status="booked")
+        # The booked viewing (O-08b), and the listing agent's answer once they give one (O-08c).
+        viewing=CardViewing(starts_at=booked.starts_at, slot_text=booked.slot_text,
+                            status=state.viewing_status.get(lid, "booked"))
         if booked else None,
     )

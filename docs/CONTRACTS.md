@@ -48,6 +48,7 @@ Every event has `type`, `session_id`, `at`, `idem_key` and a payload. Handlers a
 | `CallEnded` | `call_id`, `reason` | `finalize()` |
 | `OutcomeReady` | `CallOutcome` | Auditor (async) |
 | `CallsCompleted` | `call_ids[]` | Dispatcher, when every call in the plan has an outcome or timed out |
+| `ViewingDecided` | `call_id`, `listing_id`, `starts_at`, `status` (`confirmed` \| `declined`) | The confirm page's answer (O-08c), once `viewing_confirmations` decided it, while the session is live. Flips the card's `viewing.status` when `starts_at` is still the booked time |
 
 ## Concierge tools (Higgs Realtime function tools)
 
