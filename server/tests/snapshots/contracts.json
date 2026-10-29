@@ -359,6 +359,18 @@
             "title": "Idem Key",
             "type": "string"
           },
+          "listing_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Listing Id"
+          },
           "session_id": {
             "title": "Session Id",
             "type": "string"
