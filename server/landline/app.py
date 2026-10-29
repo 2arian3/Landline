@@ -84,6 +84,8 @@ def create_app(settings: Settings | None = None, catalogue: Catalogue | None = N
         # Each listing call's facts, mirrored to SurrealDB Agent Memory after its outcome commits (O-09a), and
         # read back as a call is dialled, for the Caller to confirm (O-09b). None without the SPECTRON_* keys.
         app.state.memory = memory.install(app.state.runtime, settings)
+        # listing_status (A-14) adds what other calls heard about a place, from the same client.
+        app.state.runtime.memory = app.state.memory
         # Map taps and background re-ranks, to the live Concierge between turns (A-02, voice/line.py).
         app.state.lines = Lines(app.state.runtime)
         app.state.judges = JudgeLines(settings.higgs_max_sessions)
