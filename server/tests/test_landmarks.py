@@ -114,6 +114,14 @@ async def test_a_workplace_or_campus_comes_from_the_list_with_no_network(said, w
     assert net.calls == []
 
 
+def test_a_landmark_or_a_station_says_its_name():
+    p = _places()
+    assert p.known("UofT").name == "University of Toronto, St. George campus"
+    union = p.station("Union station")
+    assert (union.lat, union.lng, union.how, union.name) == (43.6453, -79.3806, "station", "Union")
+    assert p.station("the Starbucks near Union") == union and p.station("Cohere") is None
+
+
 async def test_td_centre_is_at_king_and_bay_not_in_scarborough():
     net = Net(found={"TD Centre": TD_COMPUTER_CENTRE})
     point = await _places(net).resolve("TD Centre")
