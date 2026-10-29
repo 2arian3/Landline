@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Mark } from "@/components/Icon";
 import { LANDLINE_PHONE } from "@/lib/phone";
 
 export const metadata: Metadata = {
@@ -23,11 +24,7 @@ export default function NoSuchCall() {
         style={{ borderRadius: "var(--radius-lg)", boxShadow: "var(--shadow-glass)" }}
       >
         <p className="wordmark">
-          <span className="mark" aria-hidden>
-            <svg viewBox="0 0 32 32">
-              <path d="M16 5.5c-4.1 0-7.5 3.3-7.5 7.4 0 5.3 7.5 13.6 7.5 13.6s7.5-8.3 7.5-13.6c0-4.1-3.4-7.4-7.5-7.4zm0 10.2a2.8 2.8 0 1 1 0-5.6 2.8 2.8 0 0 1 0 5.6z" />
-            </svg>
-          </span>
+          <Mark />
           Landline
         </p>
         <h1 className="t-headline mt-6">We couldn&rsquo;t find this call</h1>
