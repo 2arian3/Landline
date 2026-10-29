@@ -15,33 +15,24 @@ export const statuses = (view: SessionView) =>
     status: statusOf(card, { call: latestCall(view, card.listing_id), planned: view.plan.includes(card.listing_id) }),
   }));
 
-/** How many places stand where, in the cards' own words, going first: "1 on the phone · 1 left a message". */
+/** How many places stand where, in statusOf's own count words, going first: "1 on the phone · 1 left a
+ *  message". A place with no status (ranked, not called) counts for nothing. */
 export function tally(rows: { status: Status }[]): { going: string[]; done: [Status["pin"], string][] } {
-  const counts = new Map<string, { pin: Status["pin"]; n: number }>();
+  const counts = new Map<string, { pin: Status["pin"]; n: number; going: boolean }>();
   for (const { status } of rows) {
-    const key = TALLY[status.kind] ?? (status.kind === "unheard" ? status.words.toLowerCase() : null);
-    if (!key) continue;
-    counts.set(key, { pin: status.pin, n: (counts.get(key)?.n ?? 0) + 1 });
+    if (!status.words || status.kind === "will_call") continue;
+    const going = GOING.has(status.kind);
+    counts.set(status.tally, { pin: status.pin, n: (counts.get(status.tally)?.n ?? 0) + 1, going });
   }
-  const line = (key: string, n: number) => `${n} ${n > 1 ? key.replace(/^viewing /, "viewings ") : key}`;
+  const line = (word: string, n: number) => `${n} ${n > 1 ? word.replace(/^viewing /, "viewings ") : word}`;
+  const all = [...counts];
   return {
-    going: [...GOING].filter((key) => counts.has(key)).map((key) => line(key, counts.get(key)?.n ?? 0)),
-    done: [...counts].filter(([key]) => !GOING.has(key)).map(([key, { pin, n }]) => [pin, line(key, n)]),
+    going: all.filter(([, c]) => c.going).map(([word, c]) => line(word, c.n)),
+    done: all.filter(([, c]) => !c.going).map(([word, { pin, n }]) => [pin, line(word, n)]),
   };
 }
 
-const TALLY: Partial<Record<Status["kind"], string>> = {
-  on_phone: "on the phone",
-  ringing: "ringing",
-  queued: "queued",
-  booked: "viewing booked",
-  confirmed: "viewing confirmed",
-  declined: "viewing declined",
-  checked: "checked by phone",
-  flagged: "flagged",
-  gone: "already rented",
-};
-const GOING = new Set(["on the phone", "ringing", "queued"]);
+const GOING = new Set<Status["kind"]>(["on_phone", "ringing", "queued"]);
 
 /** The places the renter's calls were about, a booked viewing first, then in the plan's order, then any
  *  other place a call was to (a callback). */

@@ -1,6 +1,6 @@
 "use client";
 
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react";
 import dynamic from "next/dynamic";
 import { notFound } from "next/navigation";
 import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -32,6 +32,7 @@ import { nothingHeard } from "@/lib/format";
 import { type Unheard, unheard } from "@/lib/outcome";
 import { useAvatarClips } from "@/lib/avatars";
 import { api, postJSON, tap, useCatalogue, useLiveSession } from "@/lib/live";
+import { EXIT, REDUCED } from "@/lib/motion";
 import { OFFLINE, unsaved } from "@/lib/pill";
 import { viewingWhen } from "@/lib/time";
 import type { SessionView } from "@/lib/types";
@@ -197,6 +198,7 @@ export function LiveBoard({
 
   // A tap shows at once; one the server didn't save puts the card back, so it never pretends it worked.
   const { toasts, toast, dismiss } = useToasts();
+  const reduced = useReducedMotion();
   const react = useCallback(
     async (id: string, reaction: Reaction, reason: string | null) => {
       if (!sessionId) return;
@@ -329,41 +331,45 @@ export function LiveBoard({
     intro && !sessionId ? (
       <div className="px-4 pb-8 pt-1">{intro}</div>
     ) : (
-      <AnimatePresence mode="wait" initial={false}>
-        {selected ? (
-          <motion.div
-            key="detail"
-            ref={detailShown}
-            initial={{ opacity: 0, x: 24 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 24 }}
-            transition={{ duration: 0.22, ease: [0.23, 1, 0.32, 1] }}
-          >
-            <ListingDetail
-              id={selected}
-              card={selectedCard}
-              places={board.length}
-              mark={marks[selected]}
-              call={view?.calls.filter((c) => c.listing_id === selected).pop()}
-              results={view?.phase === "done" ? view.results : null}
-              onBack={() => setSelected(null)}
-              onReact={(reaction, reason) => react(selected, reaction, reason)}
-            />
-          </motion.div>
-        ) : (
-          <motion.div
-            key="list"
-            ref={listShown}
-            initial={{ opacity: 0, x: -24 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -24 }}
-            transition={{ duration: 0.22, ease: [0.23, 1, 0.32, 1] }}
-            className="px-4 pb-8 pt-1"
-          >
-            {list}
-          </motion.div>
-        )}
-      </AnimatePresence>
+      // The card opens into its place: its photo, price and address travel on the detail spring (their
+      // layoutIds in ListingCard and ListingDetail), and the rest fades up 160ms later; back reverses it.
+      // Both stay mounted for the swap so the shared parts have somewhere to travel from. Reduced motion:
+      // a short cross-fade.
+      <LayoutGroup>
+        <AnimatePresence mode="popLayout" initial={false}>
+          {selected ? (
+            <motion.div
+              key="detail"
+              ref={detailShown}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1, transition: reduced ? REDUCED : { duration: 0.3, delay: 0.16 } }}
+              exit={{ opacity: 0, transition: reduced ? REDUCED : EXIT }}
+            >
+              <ListingDetail
+                id={selected}
+                card={selectedCard}
+                places={board.length}
+                mark={marks[selected]}
+                call={view?.calls.filter((c) => c.listing_id === selected).pop()}
+                results={view?.phase === "done" ? view.results : null}
+                onBack={() => setSelected(null)}
+                onReact={(reaction, reason) => react(selected, reaction, reason)}
+              />
+            </motion.div>
+          ) : (
+            <motion.div
+              key="list"
+              ref={listShown}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1, transition: reduced ? REDUCED : { duration: 0.3, delay: 0.16 } }}
+              exit={{ opacity: 0, transition: reduced ? REDUCED : EXIT }}
+              className="px-4 pb-8 pt-1"
+            >
+              {list}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </LayoutGroup>
     );
 
   // A link that matches no call, found out after the page's own check: the same not-found page.
