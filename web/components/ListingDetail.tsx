@@ -232,7 +232,7 @@ export function ListingDetail({
       {/* A booked viewing is what the renter acts on next, so it leads. */}
       {viewingWords && (
         <section className="px-4" aria-label="Viewing" aria-live="polite">
-          <div className="viewing" style={{ color: TONE[viewingKind?.tone ?? "ink"] }}>
+          <div className={`viewing ${TONE_CLASS[viewingKind?.tone ?? "ink"]}`}>
             <Icon
               name={
                 viewingKind?.kind === "confirmed"
@@ -392,13 +392,8 @@ export function ListingDetail({
   );
 }
 
-const TONE: Record<string, string> = {
-  ink: "var(--color-ink)",
-  quiet: "var(--color-ink-secondary)",
-  live: "var(--color-live)",
-  real: "var(--color-real)",
-  dead: "var(--color-dead)",
-};
+// The viewing block's colour, by the same classes as the card's `.status is-…` lines, so the two can't drift.
+const TONE_CLASS: Record<string, string> = { ink: "", quiet: "c-2", live: "c-live", real: "c-real", dead: "c-dead" };
 
 /** The photos, one at a time, swiped or scrolled, with a dot for each (the canvas's hero). */
 function Hero({ photos, address, travel }: { photos: string[]; address: string; travel?: string }) {
@@ -426,7 +421,7 @@ function Hero({ photos, address, travel }: { photos: string[]; address: string; 
             alt={i === 0 ? `Photo of ${address}` : ""}
             loading={i < 2 ? "eager" : "lazy"}
             fetchPriority={i === 0 ? "high" : "auto"}
-            className="h-full w-full shrink-0 snap-start object-contain text-[0px]"
+            className="h-full w-full shrink-0 snap-start object-cover text-[0px]"
           />
         ))}
       </div>
