@@ -472,7 +472,8 @@ async def test_bad_arguments_unknown_and_deferred_tools(ctx):
     assert await _say(ctx, "dial_anyone", '{"number": "+1"}') == tools.UNKNOWN
     assert await _say(ctx, "remember_me") == tools.UNKNOWN
     assert {t["name"] for t in tools.TOOLS} == {"update_preferences", "give_feedback", "focus_listing",
-                                                "focus_area", "call_listings", "end_session"}
+                                                "focus_area", "call_listings", "listing_status",
+                                                "end_session"}
 
 
 def test_a_place_to_live_near_is_saved_and_focus_area_is_only_for_show_me():
