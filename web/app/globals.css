@@ -79,6 +79,16 @@
   --text-callout--letter-spacing: -0.003em;
   --text-caption: 13px;
   --text-caption--line-height: 18px;
+  /* Lucent's Display group, for the cover only (the board's largest type is the price): title-1 for its one
+     headline, title-2 for its sections. */
+  --text-title-1: 44px;
+  --text-title-1--line-height: 48px;
+  --text-title-1--letter-spacing: -0.025em;
+  --text-title-1--font-weight: 700;
+  --text-title-2: 28px;
+  --text-title-2--line-height: 34px;
+  --text-title-2--letter-spacing: -0.015em;
+  --text-title-2--font-weight: 600;
   /* Today's names: fact = headline's size, support = callout, meta = caption. */
   --text-fact: var(--text-headline);
   --text-fact--line-height: var(--text-headline--line-height);
@@ -205,6 +215,10 @@
     --text-callout--line-height: 23px;
     --text-caption: 15px;
     --text-caption--line-height: 20px;
+    --text-title-1: 52px;
+    --text-title-1--line-height: 56px;
+    --text-title-2: 34px;
+    --text-title-2--line-height: 40px;
     /* today's names, resolved again here (a var() resolves where it's declared, on :root) */
     --text-fact: 20px;
     --text-fact--line-height: 26px;
@@ -289,9 +303,8 @@
 
   /* ── map pins ─────────────────────────────────────────────────────────── */
 
-  /* The button is the 44 px tap target; the 30 px face inside it is what shows. The board's pins take their
-     shape from data-s (lib/status.ts, the kit's rules below); the cover's drawn pins (Cover.tsx) still name
-     the server's status in data-status, and the rules after this one keep them looking as they did. */
+  /* The button is the 44 px tap target; the 30 px face inside it is what shows. Every pin takes its shape
+     from data-s (lib/status.ts, the kit's rules below), the cover's drawn ones too. */
   .pin {
     padding: 0;
     border: 0;
@@ -302,38 +315,6 @@
   .pin:focus-visible { outline: none; }
   .pin:focus-visible .pin-face { outline: 3px solid var(--color-accent); outline-offset: 3px; }
   .pin:hover .pin-face { transform: scale(1.12); }
-
-  /* The cover's drawn pins (no data-s) */
-  .pin:not([data-s])[data-focus="true"] .pin-face {
-    transform: scale(1.22);
-    box-shadow: 0 0 0 2px var(--color-ink), 0 6px 16px rgba(25, 25, 24, 0.3);
-  }
-  .pin:not([data-s])[data-status="verified"] .pin-face,
-  .pin:not([data-s])[data-status="booked"] .pin-face { background: var(--color-real); }
-  .pin:not([data-s])[data-status="no_answer"] .pin-face::after {
-    content: "";
-    position: absolute;
-    inset: -6px;
-    border-radius: 999px;
-    border: 2px dashed var(--color-quiet);
-  }
-  .pin:not([data-s])[data-status="suspect"] .pin-face { background: #fff; color: var(--color-dead); border-color: var(--color-dead); }
-  .pin:not([data-s])[data-status="suspect"] .pin-face::before,
-  .pin:not([data-s])[data-status="booked"] .pin-face::before {
-    position: absolute;
-    top: -7px;
-    right: -7px;
-    display: grid;
-    place-items: center;
-    width: 16px;
-    height: 16px;
-    border-radius: 999px;
-    border: 1.5px solid #fff;
-    color: #fff;
-    font: 700 10px/1 var(--font-sans);
-  }
-  .pin:not([data-s])[data-status="suspect"] .pin-face::before { content: "!"; background: var(--color-dead); }
-  .pin:not([data-s])[data-status="booked"] .pin-face::before { content: "★"; background: var(--color-ink); font-size: 9px; }
 
 
   /* The calling dot in the activity line breathes with the pin's ring. */
@@ -611,6 +592,19 @@
   .btn-quiet.is-hover, .btn-secondary.is-hover { background: var(--color-accent-tint); }
   .btn.is-pressed { transform: scale(0.96); }
   .btn.is-disabled { opacity: 0.45; }
+  /* The same states, live: hover changes the fill only; a press gives 4% and, let go, settles on Lucent's
+     jelly spring (460/16, lib/motion.ts's SPRING_JELLY, sampled as a CSS curve). */
+  @media (hover: hover) {
+    .btn-quiet:not(:disabled):hover, .btn-secondary:not(:disabled):hover { background: var(--color-accent-tint); }
+  }
+  .btn:not(:disabled):active { transform: scale(0.96); }
+  .btn:disabled { opacity: 0.45; cursor: default; }
+  @media (prefers-reduced-motion: no-preference) {
+    .btn:not(:active) {
+      transition-duration: var(--dur-jelly);
+      transition-timing-function: linear(0, 0.1484, 0.4677, 0.8142, 1.0878, 1.2423, 1.2791, 1.2299, 1.1378, 1.0419, 0.9724, 0.9309, 0.9221, 0.9367, 0.9628, 0.9895, 1.0096, 1.0201, 1.0216, 1.017, 1.0095, 1.0022, 0.9969, 0.9942, 0.994, 0.9955, 0.9976, 0.9996, 1.0009, 1.0016, 1.0017, 1.0012, 1.0006, 1.0001, 0.9997, 0.9995, 1), var(--ease-settle);
+    }
+  }
   .btn-icon { width: 44px; padding: 0; }
   .btn-small { min-height: 44px; padding: 0 16px; font-size: var(--text-callout); }
   .back { display: inline-flex; align-items: center; gap: 2px; min-height: 44px; padding: 0 14px 0 8px; border-radius: 999px; font: 600 var(--text-callout)/1 var(--font-text); }

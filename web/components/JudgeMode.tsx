@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Icon, type IconName } from "./Icon";
 import { LiveBoard } from "./LiveBoard";
 import { askForMic, useJudgeLine } from "@/lib/judgeAudio";
 import { api } from "@/lib/live";
@@ -120,60 +121,68 @@ function Intro({ phase, waitMin, onStart }: { phase: Phase; waitMin: number; onS
   return (
     <div className="space-y-6 pt-2">
       <div>
-        <h1 className="text-title font-strong">Talk to Landline</h1>
-        <p className="mt-2 text-support text-ink-2">
+        <h1 className="t-title">Talk to Landline</h1>
+        <p className="t-callout c-2 mt-2">
           Tell it what you&rsquo;re looking for in Toronto. The map follows the conversation, and when you ask, it
           phones the listing agents and brings back what they said.
         </p>
       </div>
 
-      <div>
-        <h2 className="text-meta font-label text-ink-3">Try saying</h2>
+      {/* Content inside the glass sits on solid white. */}
+      <div className="rounded-[var(--radius-md)] bg-surface p-4 shadow-[var(--shadow-hairline)]">
+        <h2 className="label">
+          <Icon name="message-circle" />
+          Try saying
+        </h2>
         <ul className="mt-2 space-y-2">
           {TRY_SAYING.map((s) => (
-            <li key={s} className="text-fact text-ink">
+            <li key={s} className="said">
               &ldquo;{s}&rdquo;
             </li>
           ))}
         </ul>
       </div>
 
-      <p className="text-meta text-ink-3">
+      <p className="t-caption c-2">
         The listing agents here are simulated, so no real phone rings. Speak in English or your own language; Landline
         answers in yours.
       </p>
 
       {phase === "denied" && (
-        <Notice>
+        <Notice glyph="circle-alert">
           Landline can&rsquo;t hear you. Allow the microphone for this site (the icon at the left of the address bar),
           then try again.
         </Notice>
       )}
-      {phase === "nomic" && <Notice>No microphone found. Plug one in or switch devices, then try again.</Notice>}
+      {phase === "nomic" && (
+        <Notice glyph="circle-alert">No microphone found. Plug one in or switch devices, then try again.</Notice>
+      )}
       {phase === "soon" && (
-        <Notice>Judge mode opens soon. You can look around the live board in the meantime.</Notice>
+        <Notice glyph="clock">Judge mode opens soon. You can look around the live board in the meantime.</Notice>
       )}
       {phase === "limited" && (
-        <Notice>
+        <Notice glyph="clock">
           This network has started a few sessions already. Try again in{" "}
           {waitMin === 1 ? "a minute" : `${waitMin} minutes`}.
         </Notice>
       )}
-      {phase === "busy" && <Notice>All lines are busy right now. Try again in a minute.</Notice>}
+      {phase === "busy" && <Notice glyph="clock">All lines are busy right now. Try again in a minute.</Notice>}
       {phase === "closed" && (
-        <Notice>Judge mode isn&rsquo;t open right now. You can still look around the live board.</Notice>
+        <Notice glyph="circle-alert">Judge mode isn&rsquo;t open right now. You can still look around the live board.</Notice>
       )}
 
-      <div className="space-y-3">
+      <div className="space-y-2">
         {/* Closed until the browser audio is live: nothing to start, so no button that asks for the mic. */}
         {phase !== "soon" && (
           <>
+            {/* While it waits it stays readable (it says what it's waiting for) and ignores a second press. */}
             <button
               type="button"
-              onClick={onStart}
-              disabled={waiting}
-              className="h-12 w-full rounded-[var(--radius-control)] bg-ink text-support font-label text-white transition-opacity duration-150 disabled:opacity-60"
+              onClick={waiting ? undefined : onStart}
+              aria-disabled={waiting || undefined}
+              className="btn btn-primary w-full"
             >
+              {!waiting && <Icon name="audio-lines" size={20} />}
               {phase === "asking"
                 ? "Waiting for the microphone…"
                 : phase === "starting"
@@ -182,29 +191,27 @@ function Intro({ phase, waitMin, onStart }: { phase: Phase; waitMin: number; onS
                     ? "Start talking"
                     : "Try again"}
             </button>
-            <p className="text-meta text-ink-3">
+            <p className="t-caption c-2">
               {phase === "asking"
                 ? "Your browser is asking to use the microphone."
                 : "Uses your microphone. The call is recorded. You can mute or end any time."}
             </p>
           </>
         )}
-        <a href="/?dev=1" className="inline-flex min-h-11 items-center text-support text-ink-2 underline underline-offset-2">
+        <a href="/?dev=1" className="btn btn-quiet btn-small -ml-3 gap-1 pr-2!">
           Look around without talking
+          <Icon name="chevron-right" size={18} />
         </a>
       </div>
     </div>
   );
 }
 
-function Notice({ children }: { children: React.ReactNode }) {
+function Notice({ glyph, children }: { glyph: IconName; children: React.ReactNode }) {
   return (
-    <p
-      role="alert"
-      className="rounded-[var(--radius-card)] bg-surface p-3 text-support text-ink"
-      style={{ boxShadow: "0 0 0 1px var(--color-line)" }}
-    >
-      {children}
+    <p role="alert" className="banner">
+      <Icon name={glyph} />
+      <span>{children}</span>
     </p>
   );
 }
@@ -232,66 +239,41 @@ function VoiceBar({
               : "Listening";
 
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex items-center gap-2">
       <div className="flex min-w-0 flex-1 items-center gap-2.5" aria-live="polite">
         {!over && <Meter level={line.level} talking={line.talking} />}
-        <p className="truncate text-support font-label text-ink">{label}</p>
+        <p className="t-headline truncate">{label}</p>
       </div>
       {over ? (
         <>
           {/* A dropped line can still end the brief, so what the judge picked gets called; a Done that
               couldn't reach the server can be tried again. */}
           {(line.state === "dropped" || doneFailed) && (
-            <Secondary onClick={onDone}>{doneFailed ? "Try again" : "Done"}</Secondary>
+            <button type="button" onClick={onDone} className="btn btn-secondary btn-small shrink-0">
+              {doneFailed ? "Try again" : "Done"}
+            </button>
           )}
-          <button
-            type="button"
-            onClick={onAgain}
-            className="h-11 shrink-0 rounded-[var(--radius-control)] bg-ink px-4 text-support font-label text-white"
-          >
+          <button type="button" onClick={onAgain} className="btn btn-primary btn-small shrink-0">
             Start again
           </button>
         </>
       ) : (
         <>
-          <Secondary onClick={line.toggleMute} pressed={line.muted} disabled={line.state !== "live"}>
-            {line.muted ? "Unmute" : "Mute"}
-          </Secondary>
           <button
             type="button"
-            onClick={onDone}
-            className="h-11 shrink-0 rounded-[var(--radius-control)] bg-ink px-4 text-support font-label text-white"
+            onClick={line.toggleMute}
+            aria-pressed={line.muted}
+            disabled={line.state !== "live"}
+            className="btn btn-secondary btn-small shrink-0"
           >
+            {line.muted ? "Unmute" : "Mute"}
+          </button>
+          <button type="button" onClick={onDone} className="btn btn-primary btn-small shrink-0">
             Done
           </button>
         </>
       )}
     </div>
-  );
-}
-
-function Secondary({
-  children,
-  onClick,
-  pressed,
-  disabled,
-}: {
-  children: React.ReactNode;
-  onClick: () => void;
-  pressed?: boolean;
-  disabled?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={pressed}
-      disabled={disabled}
-      className="h-11 shrink-0 rounded-[var(--radius-control)] bg-surface px-3 text-support font-label text-ink hover:bg-press disabled:opacity-60"
-      style={{ boxShadow: "0 0 0 1px var(--color-line)" }}
-    >
-      {children}
-    </button>
   );
 }
 
