@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { announced, owed } from "./owed.ts";
 import { sessionPath } from "./sessionPath";
 import type { CataloguePoint, SessionView } from "./types";
 
@@ -61,6 +62,8 @@ export function useLiveSession(sessionId: string | null) {
     // the session the page left can't land on the next one, or hold up its first request.
     const left = new AbortController();
     let inFlight = false;
+    let wanted = 0; // the newest version the stream announced (lib/owed.ts)
+    let chased = 0; // asks since then for a version still owed; a few, then the tick's polling is the net
     let source: EventSource | null = null;
     let errors = 0;
     let retryIn = RETRY_MS; // until a closed stream is opened again; doubles up to REOPEN_MS
@@ -93,6 +96,12 @@ export function useLiveSession(sessionId: string | null) {
         // keep the last good state
       } finally {
         inFlight = false;
+        // A newer version announced while this fetch was out, and it brought an older one: ask again, or
+        // the board sits on it for good (the stream's pings stop the tick from polling). Spaced out, so a
+        // server that keeps failing (or restarted, counting from 1 again) isn't asked in a loop.
+        if (!left.signal.aborted && owed(wanted, current.current?.version) && chased++ < 8) {
+          setTimeout(() => void refresh(), 250);
+        }
       }
     };
     void refresh();
@@ -115,6 +124,8 @@ export function useLiveSession(sessionId: string | null) {
         heard();
         try {
           const { version } = JSON.parse(ev.data) as { version: number };
+          if (announced(wanted, version) > wanted) chased = 0;
+          wanted = announced(wanted, version);
           if (!current.current || version > current.current.version) void refresh();
         } catch {
           void refresh();
