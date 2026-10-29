@@ -13,6 +13,9 @@ datetimes, whether Landline may book, and only what they agreed to share: user_p
 Each call ends once (`CallEnded`, keyed on the call) and its outcome follows (`OutcomeReady`). When every
 call in the plan has an outcome, it emits `CallsCompleted`, and the renter is texted the results once.
 
+A listing agent who calls back about a call that reached no one (A-13b, voice/callbacks.py) gets the same:
+`callback()` makes it a new call in that session, for that listing and plan, with a deadline and one end.
+
 Placing one call is a `CallRunner`'s job: the Caller over Twilio (A-05), the sim landlord (A-03), or a fake
 in tests. With no runner, the plan is still frozen and its calls end `blocked` at once: nothing is made up,
 and the session doesn't wait in `calling` for calls nobody will place.
@@ -46,6 +49,7 @@ from landline.contracts import (
 )
 from landline.contracts.tools import Availability
 from landline.orchestrator import Refused, SessionRuntime, SessionState
+from landline.voice.callbacks import Missed
 from landline.voice.calls import mint
 from landline.voice.sms import Texter
 
@@ -67,6 +71,8 @@ class Dial:
     to: str | None          # an allowlisted number for a phone call; None off the phone network
     plan: CallPlan
     deadline: datetime
+    callback: bool = False  # the listing agent called us back (A-13b): the Caller answers, it dials nothing
+    twilio_sid: str | None = None   # a callback's own call, already on the line
 
 
 @dataclass(frozen=True)
@@ -151,6 +157,90 @@ class Dispatcher:
         pick = getattr(self.runner, "for_session", None)
         return pick(session_id) if pick is not None else self.runner
 
+    # A listing agent calling back (A-13b)
+
+    @property
+    def takes_callbacks(self) -> bool:
+        """Whether any runner here can answer a listing agent's call back: without one, an incoming call never
+        waits on the lookup."""
+        phone = getattr(self.runner, "phone", self.runner)   # ByChannel's phone runner, or the only one
+        return bool(getattr(phone, "answers_callbacks", False))
+
+    def callback_runner(self, session_id: str) -> CallRunner | None:
+        """The runner that can answer a callback about this session's calls: one that took its calls over the
+        phone and can pick up a call that's already on the line. None: the call goes to the Concierge."""
+        runner = self.runner_for(session_id)
+        return runner if runner is not None and getattr(runner, "answers_callbacks", False) else None
+
+    async def callback(self, missed: Missed, phone: str | None, twilio_sid: str | None) -> str | None:
+        """A listing agent calling back about `missed`, a call that reached no one (voice/callbacks.py).
+        It's a new listing call, its id minted here, that joins the missed call's session for the same
+        listing and plan (CallStateChanged with its listing_id), so its facts, booking and outcome land like
+        any listing call's. The runner answers it with the Caller once Twilio opens the stream; like any
+        listing call it has a deadline and ends once (_finish). Returns its call id, or None when it can't be
+        taken here (no runner for it, or the session refuses it), and the call goes to the Concierge."""
+        sid, lid = missed.session_id, missed.listing_id
+        runner = self.callback_runner(sid)
+        plan = self.runtime.state(sid).plan if runner is not None else None
+        if runner is None or plan is None or lid not in plan.listing_ids:
+            return None
+        now, cid, to = self.clock(), mint("c_"), as_e164(phone) if phone else None
+        dial = Dial(call_id=cid, session_id=sid, listing_id=lid, to=to, plan=plan, callback=True,
+                    twilio_sid=twilio_sid or None,
+                    deadline=now + timedelta(seconds=self.settings.listing_call_max_s))
+        try:
+            async with self.runtime.session_tx(sid) as tx:
+                joined = await tx.apply(CallStateChanged(session_id=sid, at=now, idem_key=f"{cid}:joined",
+                                                         call_id=cid, state="queued", listing_id=lid))
+                db = self.runtime.db
+                if joined and tx.conn is not None and db is not None:
+                    await db.calls.create(cid, session_id=sid, role="listing", transport=runner.transport,
+                                          state="queued", listing_id=lid, deadline_at=dial.deadline,
+                                          to_e164=to, conn=tx.conn)
+        except Refused as e:
+            log.warning("callback about %s refused by session %s: %s", missed.call_id, sid, e)
+            return None
+        log.info("callback %s about missed call %s (%s, session %s)", cid, missed.call_id, lid, sid)
+        held = self._hold_phone(to)   # their phone is busy with us: no listing call rings it meanwhile
+        self._spawn(self._answer(dial, runner, held))
+        await asyncio.sleep(0)   # place() holds the call (OutboundCalls) before Twilio opens its stream
+        return cid
+
+    async def _answer(self, dial: Dial, runner: CallRunner, held: str | None) -> None:
+        """Runs the callback to its end. One that never got on the line (the stream never came) ends
+        without an outcome: the card keeps what the missed call said, and the agent's next try is still a
+        callback."""
+        live = False
+
+        async def report(state: CallState) -> None:
+            nonlocal live
+            live = live or state == "live"
+            await self._state(dial.session_id, dial.call_id, state)
+
+        try:
+            async with asyncio.timeout(self.settings.listing_call_max_s):
+                result = await runner.place(dial, report)
+        except TimeoutError:
+            result = CallResult("timeout")
+        except Exception:
+            log.exception("callback %s about %s failed", dial.call_id, dial.listing_id)
+            result = CallResult("failed")
+        finally:
+            if held is not None:
+                self._phones.put_nowait(held)
+        await self._finish(dial.plan, dial.call_id, dial.listing_id, result, settle=live)
+
+    def _hold_phone(self, number: str | None) -> str | None:
+        """Takes an allowlisted phone out of the free ones while its owner is on a callback; returns it if it
+        was free, so `_answer` gives it back. One already ringing for a listing call stays with that call."""
+        if number not in self.allowlist:
+            return None
+        free = [self._phones.get_nowait() for _ in range(self._phones.qsize())]
+        for n in free:
+            if n != number:
+                self._phones.put_nowait(n)
+        return number if number in free else None
+
     # One call
 
     async def _call(self, call_id: str, listing_id: str, plan: CallPlan, runner: CallRunner) -> None:
@@ -204,13 +294,17 @@ class Dispatcher:
         if self.runtime.db is not None:
             await self.runtime.db.calls.set_state(call_id, state, to_e164=to, answered=state == "live")
 
-    async def _finish(self, plan: CallPlan, call_id: str, listing_id: str, result: CallResult) -> None:
-        """End the call once, then record its outcome, then complete the plan if this was the last one."""
+    async def _finish(self, plan: CallPlan, call_id: str, listing_id: str, result: CallResult, *,
+                      settle: bool = True) -> None:
+        """End the call once, then record its outcome, then complete the plan if this was the last one.
+        `settle=False`: end it only (a callback that never got on the line), leaving the outcome as it was."""
         sid, now, reason = plan.session_id, self.clock(), result.end_reason
         await self._emit(CallEnded(session_id=sid, at=now, idem_key=f"{call_id}:ended", call_id=call_id,
                                    reason=reason))
         if self.runtime.db is not None:
             await self.runtime.db.calls.finalize(call_id, reason)   # the first end wins
+        if not settle:
+            return
         outcome = result.outcome or CallOutcome(call_id=call_id, listing_id=listing_id, end_reason=reason)
         await self._emit(OutcomeReady(session_id=sid, at=now, idem_key=f"{call_id}:outcome", outcome=outcome))
         state = self.runtime.state(sid)
