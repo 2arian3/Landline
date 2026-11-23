@@ -200,3 +200,9 @@ Read [AGENTS.md](AGENTS.md) before writing code, then take the next open task in
 ## Prior work
 
 Landline grows out of **Realest**, which the same team built at *Agents, Everywhere* (Toronto, 12 Sep 2026). We port selected pieces and fix them on the way in. Each ported piece arrives in its own commit marked as ported, and [docs/PORTING.md](docs/PORTING.md) lists exactly what came from where.
+
+## License
+
+Landline is licensed under the [Apache License 2.0](LICENSE). You may use, change and share the code, including commercially, as long as you credit Team AAMEL: keep the copyright notice and the [NOTICE](NOTICE) file in any copy or derived work you distribute, and mark the files you changed.
+
+The OpenStreetMap data in `pipeline/data/` is © OpenStreetMap contributors and stays under the [ODbL 1.0](https://www.openstreetmap.org/copyright), not this license.

@@ -1,0 +1,15 @@
+Landline
+Copyright 2026 Arian Boukani, Danial Kordmodanlou and Mahyar Jaberi (Team AAMEL)
+
+This product includes software developed by Team AAMEL:
+  Arian Boukani        https://github.com/2arian3
+  Danial Kordmodanlou  https://github.com/Danial-Kord
+  Mahyar Jaberi        https://github.com/mahyar-jbr
+
+Original source: https://github.com/2arian3/Landline
+
+This product includes map data from OpenStreetMap, © OpenStreetMap
+contributors, available under the Open Database License 1.0
+(https://www.openstreetmap.org/copyright):
+  pipeline/data/toronto_landmarks.json
+  pipeline/data/ttc_subway_stations.json
